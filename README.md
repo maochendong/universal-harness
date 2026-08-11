@@ -19,11 +19,12 @@ create or adopt a project
 
 The design uses one Git-native ledger with Artifact Graph and Execution Graph views. Agents propose semantic work; the Harness controls plans, context, capabilities, budgets, termination, evidence, recovery, and authoritative updates.
 
-The project is currently in the design phase. Implementation starts only after the written M1 design is reviewed and an implementation plan is approved.
+The M1 design is approved and the project is currently in implementation planning. Product code starts only after the written implementation plan is reviewed and approved.
 
 ## Design
 
-- [M1 design](docs/superpowers/specs/2026-08-11-universal-harness-m1-design.md)
+- [Approved M1 design](docs/superpowers/specs/2026-08-11-universal-harness-m1-design.md)
+- [Proposed M1 implementation plan](docs/superpowers/plans/2026-08-11-universal-harness-m1-implementation-plan.md)
 
 ## License
 
