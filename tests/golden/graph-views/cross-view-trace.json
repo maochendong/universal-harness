@@ -1,0 +1,25 @@
+{
+  "sharedEvidence": {
+    "id": "evidence_01",
+    "digest": "06237db4d2c196325c5b0105a93fa57093f7c9d1d3e36b3397b7baa654c2fdd9",
+    "executionDigest": "06237db4d2c196325c5b0105a93fa57093f7c9d1d3e36b3397b7baa654c2fdd9"
+  },
+  "artifactBridgesFromEvidence": [
+    {
+      "edge": "edge-run-produces-evidence_01",
+      "peer": "run_01",
+      "direction": "incoming"
+    }
+  ],
+  "executionBridgesFromTask": [
+    {
+      "edge": "edge-task-implements-requirement_01",
+      "peer": "requirement_01",
+      "direction": "outgoing"
+    }
+  ],
+  "pathRunToRequirement": {
+    "nodes": ["run_01", "evidence_01", "requirement_01"],
+    "edges": ["edge-run-produces-evidence_01", "edge-evidence-supports-requirement_01"]
+  }
+}

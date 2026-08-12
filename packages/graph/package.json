@@ -13,7 +13,8 @@
     "dist"
   ],
   "scripts": {
-    "build": "tsc -b",
+    "build": "tsc -b && node scripts/copy-schema.mjs",
+    "test": "vitest run --root ../.. packages/graph/test",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {

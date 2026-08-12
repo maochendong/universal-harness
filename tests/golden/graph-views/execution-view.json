@@ -1,0 +1,139 @@
+{
+  "nodes": [
+    {
+      "id": "approval-request_01",
+      "type": "ApprovalRequest",
+      "revision": 1,
+      "status": "accepted",
+      "digest": "63041af667e85842531c1a5c7c9d4371a9c28e28e68f510a05b9db6ccf74cd9f"
+    },
+    {
+      "id": "approval_01",
+      "type": "Approval",
+      "revision": 1,
+      "status": "accepted",
+      "digest": "668ed8f1d9cf3a4f2c4796a72db78bd610984ed87a59789b301fc57497cf8f0e"
+    },
+    {
+      "id": "context_01",
+      "type": "ContextBundle",
+      "revision": 1,
+      "status": "accepted",
+      "digest": "dcf1020d16f80471745e0f440458e6b7158906e05148958e2a4f238ed186df25"
+    },
+    {
+      "id": "evidence_01",
+      "type": "Evidence",
+      "revision": 1,
+      "status": "accepted",
+      "digest": "06237db4d2c196325c5b0105a93fa57093f7c9d1d3e36b3397b7baa654c2fdd9"
+    },
+    {
+      "id": "iteration_01",
+      "type": "Iteration",
+      "revision": 1,
+      "status": "accepted",
+      "digest": "535f214debb84d62befaed43edeaf1cd39af8880cb9d93ee86fd97339430cf5f"
+    },
+    {
+      "id": "plan_01",
+      "type": "ExecutionPlan",
+      "revision": 1,
+      "status": "accepted",
+      "digest": "c4b666ad6bab239672316c191150447074a318e66a79776cb115cef0ba50e307"
+    },
+    {
+      "id": "run_01",
+      "type": "Run",
+      "revision": 1,
+      "status": "accepted",
+      "digest": "9a0d7c0b047d6bb157d399df932476de17be4697c3ca51c34fd4de122e6d7a14"
+    },
+    {
+      "id": "task_01",
+      "type": "Task",
+      "revision": 1,
+      "status": "accepted",
+      "digest": "239d6c4494ed1dadb9577ca2b4d73a49accb37eafcf54a348f6306094574ac69"
+    }
+  ],
+  "edges": [
+    {
+      "id": "edge-approval-approves-plan_01",
+      "type": "APPROVES",
+      "source_id": "approval_01",
+      "target_id": "plan_01",
+      "status": "accepted",
+      "confidence": 1,
+      "digest": "8c93a781dbf06e14501dc0e76f37ac5454ee588550749826fdec1ae3293e80d0"
+    },
+    {
+      "id": "edge-approval-request-targets-plan_01",
+      "type": "REQUESTS_APPROVAL_FOR",
+      "source_id": "approval-request_01",
+      "target_id": "plan_01",
+      "status": "accepted",
+      "confidence": 1,
+      "digest": "fad6d5c3620131a4cc6564abfa16261693bf66605850f785aad4bac5e2eeb8bb"
+    },
+    {
+      "id": "edge-approval-resolves-request_01",
+      "type": "RESOLVES",
+      "source_id": "approval_01",
+      "target_id": "approval-request_01",
+      "status": "accepted",
+      "confidence": 1,
+      "digest": "b4b13bfc282cffebc000df945e1670e6c2042abe484c0d6018f952f82e1e37c7"
+    },
+    {
+      "id": "edge-iteration-contains-plan_01",
+      "type": "CONTAINS",
+      "source_id": "iteration_01",
+      "target_id": "plan_01",
+      "status": "accepted",
+      "confidence": 1,
+      "digest": "54a3924f0339cac25f90b6104217505a96306821579e803326b4cf4fbfd0b8b7"
+    },
+    {
+      "id": "edge-plan-contains-task_01",
+      "type": "CONTAINS",
+      "source_id": "plan_01",
+      "target_id": "task_01",
+      "status": "accepted",
+      "confidence": 1,
+      "digest": "08538cdc470f1e5f515843e20c14cde76e3ad8ba4bb32d3c303a3caed975d5b5"
+    },
+    {
+      "id": "edge-run-executes-task_01",
+      "type": "EXECUTES",
+      "source_id": "run_01",
+      "target_id": "task_01",
+      "status": "accepted",
+      "confidence": 1,
+      "digest": "a7f4318a130fe7efd4a9bae289733538b84ae8b0d354445486115b82e1462d80"
+    },
+    {
+      "id": "edge-run-produces-evidence_01",
+      "type": "PRODUCES",
+      "source_id": "run_01",
+      "target_id": "evidence_01",
+      "status": "accepted",
+      "confidence": 1,
+      "digest": "81d69409b7f50d21de9369b3a068ad47218e02fe60db8e5d90b5c47c20fdb940"
+    },
+    {
+      "id": "edge-run-uses-context_01",
+      "type": "USES_CONTEXT",
+      "source_id": "run_01",
+      "target_id": "context_01",
+      "status": "accepted",
+      "confidence": 1,
+      "digest": "e12915e95876a0798f905ab0df2add8a482ae47ee69d88e0dc29f5c7d780b16d"
+    }
+  ],
+  "events": [
+    "event-op-01-started_01",
+    "event-op-02-plan-accepted_01",
+    "event-op-03-gate-completed_01"
+  ]
+}

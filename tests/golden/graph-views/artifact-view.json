@@ -1,0 +1,150 @@
+{
+  "nodes": [
+    {
+      "id": "code_01",
+      "type": "CodeArtifact",
+      "revision": 1,
+      "status": "accepted",
+      "digest": "432ba065886626013c39d0cc6639d5be0f14514f9f09256f3f794c038710aa32"
+    },
+    {
+      "id": "component_01",
+      "type": "Component",
+      "revision": 1,
+      "status": "accepted",
+      "digest": "35a7523284cdbec2806de1745793dc14f12e1da3afebb20b16bfb56957bc2dd2"
+    },
+    {
+      "id": "decision_01",
+      "type": "Decision",
+      "revision": 1,
+      "status": "accepted",
+      "digest": "219ebb310530b9c1f2d4801e1bb5961d84ac7ac45589b2c3342de6e35bed2308"
+    },
+    {
+      "id": "evidence_01",
+      "type": "Evidence",
+      "revision": 1,
+      "status": "accepted",
+      "digest": "06237db4d2c196325c5b0105a93fa57093f7c9d1d3e36b3397b7baa654c2fdd9"
+    },
+    {
+      "id": "intent_01",
+      "type": "Intent",
+      "revision": 1,
+      "status": "accepted",
+      "digest": "9d1bd43dae7bc722c492357cd82c313bd1e7ba1109c18b4304aa82f8be1729b0"
+    },
+    {
+      "id": "project_01",
+      "type": "Project",
+      "revision": 1,
+      "status": "accepted",
+      "digest": "42f7f3326e4eee52aec387b5b5ecea7741d465a71014b12c0f61165b1d9154e1"
+    },
+    {
+      "id": "repository_01",
+      "type": "Repository",
+      "revision": 1,
+      "status": "accepted",
+      "digest": "2cb405421a06d392818dac75f9ff5c67d8d7467f70f6c327ff682a778b17a8d7"
+    },
+    {
+      "id": "requirement_01",
+      "type": "Requirement",
+      "revision": 2,
+      "status": "accepted",
+      "digest": "4d1600385a64194a253f35a558a8310ecae1d3f83b8e5a46915905050a159e26"
+    },
+    {
+      "id": "test_01",
+      "type": "Test",
+      "revision": 1,
+      "status": "accepted",
+      "digest": "5a6aa0d74c741300a9980c62639ce54efb99b143566b4e0899c3a51e66a1a1c1"
+    }
+  ],
+  "edges": [
+    {
+      "id": "edge-code-realizes-component_01",
+      "type": "REALIZES",
+      "source_id": "code_01",
+      "target_id": "component_01",
+      "status": "accepted",
+      "confidence": 1,
+      "digest": "c48136ff272b53128912600cc1c7808f30868ee88e92ae2e8b5d78283aa1c9fb"
+    },
+    {
+      "id": "edge-decision-addresses-requirement_01",
+      "type": "ADDRESSES",
+      "source_id": "decision_01",
+      "target_id": "requirement_01",
+      "status": "accepted",
+      "confidence": 1,
+      "digest": "ea59c7acb2cd4b3b6d14017f2a56a17cebd56c8e8021e17d48679bee2ebee320"
+    },
+    {
+      "id": "edge-decision-shapes-component_01",
+      "type": "SHAPES",
+      "source_id": "decision_01",
+      "target_id": "component_01",
+      "status": "accepted",
+      "confidence": 1,
+      "digest": "39680f97603dae6c796800dd687f4a3361a76c1b88f6e517f5b0c6924ccc5160"
+    },
+    {
+      "id": "edge-evidence-supports-requirement_01",
+      "type": "SUPPORTS",
+      "source_id": "evidence_01",
+      "target_id": "requirement_01",
+      "status": "accepted",
+      "confidence": 0.6,
+      "digest": "4947d161cf150d9cdb792ded43623d901880d47e84f91ece70b21e17983a178d"
+    },
+    {
+      "id": "edge-evidence-supports-test_01",
+      "type": "SUPPORTS",
+      "source_id": "evidence_01",
+      "target_id": "test_01",
+      "status": "accepted",
+      "confidence": 1,
+      "digest": "8f127c530dac1812543996da45fb6c0a6f93ebfc4a778aab3d8bbeb0bad77900"
+    },
+    {
+      "id": "edge-intent-decomposes-requirement_01",
+      "type": "DECOMPOSES_TO",
+      "source_id": "intent_01",
+      "target_id": "requirement_01",
+      "status": "accepted",
+      "confidence": 1,
+      "digest": "70f1c9de0b9886166170a58cc2f90936f47ef832ec657761e3e834437334f85b"
+    },
+    {
+      "id": "edge-project-contains-intent_01",
+      "type": "CONTAINS",
+      "source_id": "project_01",
+      "target_id": "intent_01",
+      "status": "accepted",
+      "confidence": 1,
+      "digest": "17f4feebc159957f555b73e5a1e58e6edeb554a67d438a33fdfa108ffe45b7c8"
+    },
+    {
+      "id": "edge-project-contains-repository_01",
+      "type": "CONTAINS",
+      "source_id": "project_01",
+      "target_id": "repository_01",
+      "status": "accepted",
+      "confidence": 1,
+      "digest": "cd6d903ca47e145541ba1e4976b73ca9ad35fea1e27332d44a9d6c936ef16a8f"
+    },
+    {
+      "id": "edge-test-verifies-requirement_01",
+      "type": "VERIFIES",
+      "source_id": "test_01",
+      "target_id": "requirement_01",
+      "status": "accepted",
+      "confidence": 1,
+      "digest": "b3ae18af66832b34b32d68be35597aaa9efb52a670525082c80341c81373a2ae"
+    }
+  ]
+}
