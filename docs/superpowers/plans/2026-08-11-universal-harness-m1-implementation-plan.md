@@ -27,6 +27,18 @@
 
 Task 1 会在完成许可证、原生二进制和跨平台检查后选择并锁定依赖版本。不得从其他产品仓库复制实现。
 
+### 2.1 风险与实施节奏
+
+| 风险项 | 等级 | 关闭任务 | 控制方式 |
+|---|---|---|---|
+| Operation/Iteration State 与 Run 追加协议返工 | 高 | 2、10、17 | Task 2 前冻结 Schema、映射和重放 Golden |
+| Windows 原子替换、目录锁与 junction 语义 | 高 | 4、7、27 | 三平台故障测试；无法证明原子性时类型化阻塞 |
+| Adopt 扫描误纳入或越界 | 高 | 9、26 | Staging-only、根边界、Preview Digest 和拒绝无副作用 |
+| 20k/100k 性能基线延期 | 高 | 5、14、27 | Task 5/14 先保留测量点，Task 27 执行发布阈值 |
+| Provider Projection 漂移或覆盖用户配置 | 中 | 22、24–26、28 | 受管路径、Preview、Digest、Drift Golden 和 E2E |
+
+权威 Schema、Ledger、Workflow 与 Projection 任务按依赖顺序合入 `main`。Fixture、Golden Dataset 和文档示例可以在不改变公共契约时并行准备，但必须等对应契约任务通过后才能成为验收 Evidence。
+
 ## 3. 交付纪律
 
 每个编号任务都遵循同一循环：
@@ -139,10 +151,10 @@ node scripts/check-standalone.mjs
 
 **步骤**：
 
-1. 为所有节点类别、关系、来源、状态、Run outcome、termination reason、ApprovalRequest 和 Approval Decision 编写有效与无效夹具。
+1. 为所有节点类别、关系、来源、Iteration/Operation State、`workflow_operation_id`/`attempt_id`/`ledger_operation_id`、RunStarted/RunProgress/RunTerminated/RunInterrupted、Run outcome、termination reason、ApprovalRequest 和 Approval Decision 编写有效与无效夹具。
 2. 实现拒绝未知字段的严格 Schema，只允许显式扩展命名空间；Policy 字段必须声明 merge operator，不能依赖整对象覆盖。
 3. 导出生成的 JSON Schema 和协议版本常量。
-4. 添加兼容性测试：拒绝不支持的主版本，只在扩展字段中保留未来未知数据。
+4. 添加兼容性测试：拒绝不支持的主版本，只在扩展字段中保留未来未知数据；用 Golden 固定 Operation→Iteration 映射和 Run 恰好一个 Start/Terminal 的不变量。
 
 **验证**：`pnpm --filter @universal-harness-internal/core test`。
 
@@ -179,10 +191,11 @@ node scripts/check-standalone.mjs
 
 **步骤**：
 
-1. 定义包含 operation ID、预期 baseline、待写工件、已接受边、事件和摘要的事务 manifest。
+1. 定义包含 `ledger_operation_id`、所属 `workflow_operation_id`/`attempt_id`、预期 baseline、待写工件、Edge/Event 分片、逻辑 sequence 和摘要的事务 manifest；Edge 使用 `ledger/edges/YYYY-MM/<ledger-operation-id>.jsonl`，Event 使用 `events/YYYY-MM/<ledger-operation-id>.jsonl`。
 2. 创建共享故障注入 Helper，按命名 durable boundary 注入 process kill、timeout、corrupt output 与 uncertain result；先用于原子成功、校验失败、并发写拒绝、提交前中断和已完成操作重放。
-3. 实现 staging、同文件系统原子 rename、原子目录锁和只追加序列校验。
-4. 恢复未完成 staging，但不得把它视为已接受权威数据。
+3. 实现 staging、同文件系统原子 rename、原子目录锁和只追加序列校验；Materializer 依据 Manifest Sequence 而不是目录顺序重放。
+4. 恢复未完成 staging，但不得把它视为已接受权威数据；测试跨 Branch 不同 Operation 正常合并、相同 ID/digest 冲突、Revision 分叉和 baseline 不兼容必须阻塞。
+5. 在 Windows 覆盖 sharing violation、有界退避、进程终止后句柄释放、symlink/junction、锁清理和不支持原子性的文件系统；禁止静默退化为非原子写入。
 
 **验证**：`pnpm test -- ledger-interruption` 及 core ledger 测试。
 
@@ -265,7 +278,7 @@ node scripts/check-standalone.mjs
 
 1. 为 help、结构化 JSON 输出、退出码和非交互错误添加 CLI snapshot tests。
 2. 实现命令路由和依赖注入；`new`、`adopt`、`iterate`、`resume` 处理器委托给类型化 Runtime Service stub，命令处理器中不放业务逻辑。
-3. 实现 `.harness` 布局、manifest、pack lock 校验、受管 `.gitignore` 和根边界检查。
+3. 实现 `.harness` 布局、manifest、pack lock 校验、受管 `.gitignore`/`.gitattributes` 和根边界检查；Edge/Event/Manifest 不得使用文本 union merge。
 4. 预留类型化 Acceptance Evidence 上报 Hook；在后续任务完成前，未实现的编排命令必须返回明确阶段状态，不得伪报成功。
 
 **验证**：`pnpm --filter universal-harness test` 和 `pnpm harness --help`。
@@ -303,10 +316,10 @@ node scripts/check-standalone.mjs
 
 **步骤**：
 
-1. 测试 created、awaiting input、awaiting approval、planned、running、verifying、repairing、completed、blocked、aborted 转换表，以及 recoverable failure → `blocked`、显式取消/类型化不可恢复原因 → `aborted` 的夹具。
+1. 分别测试 IterationState 与 OperationState 转换表、Operation→Iteration 映射，以及 recoverable failure → `blocked`、同一 `workflow_operation_id` 以新 `attempt_id` 恢复到 `resume_state`、显式取消/类型化不可恢复原因 → `aborted` 的夹具。
 2. 强制只有 Workflow Engine 能提交 WorkingState；Adapter 只能返回类型化提案。
 3. 在权威提交、批准、Task、Gate、外部动作和 Snapshot 后持久化 checkpoint。
-4. 校验 baseline、输入、策略、批准和 ContextBundle 摘要后，从最新有效 checkpoint 恢复。
+4. 校验 baseline、输入、策略、批准和 ContextBundle 摘要后，从最新有效 checkpoint 恢复；无 Terminal Record 的 Run 先追加 `RunInterrupted`，新 Run 以 `RESUMES` 关联旧 Run。
 
 **验证**：runtime workflow tests，以及每个 checkpoint 边界的中断测试。
 
@@ -325,7 +338,7 @@ node scripts/check-standalone.mjs
 1. 把 intent 输入转换为 Intent、Requirement、Constraint 和 acceptance Test 提案。
 2. 缺少必填需求字段或可验证验收条件时必须要求澄清。
 3. 在提示前持久化 ApprovalRequest 与 Checkpoint，绑定 artifact、baseline、policy、Impact Path 和 preview digest；Preview 与 JSON 输出来自同一记录。
-4. 实现显式 approve/reject/defer、非交互 `ApprovalRequired`、Ctrl-C/EOF → defer、单请求顺序处理和稳定 Operation ID；不允许隐式默认或 M1 批量批准。
+4. 实现显式 approve/reject/defer、非交互 `ApprovalRequired`、Ctrl-C/EOF → defer、单请求顺序处理和稳定 `workflow_operation_id`；不允许隐式默认或 M1 批量批准。
 5. Decision/Resume 时重新校验绑定；摘要变化时追加失效记录并重发请求，Agent 或 Tool 不得自我批准。
 
 **验证**：requirements 和 approval 聚焦测试。
@@ -383,7 +396,7 @@ node scripts/check-standalone.mjs
 1. 测试来源优先级、受保护字段、排除项、分层预算、压缩和不可变 manifest。
 2. 实现确定性 Graph 邻域选择，并记录选择每个来源的原因。
 3. 压缩可插拔；M1 确定性压缩器必须保留受保护内容并记录大小变化。
-4. 任一来源、Requirement、Approval、Policy、Plan 或 baseline digest 改变时，使 bundle 失效；相邻 DAG Task 必须分别编译与摘要各自 Bundle。
+4. 任一来源、Requirement、Approval、Policy、Plan 或 baseline digest 改变时，使 bundle 失效；进行中的原子调用先完成/对账并只产生 provisional Evidence，下一个 Step 或权威提交前必须重新编译；相邻 DAG Task 分别编译与摘要各自 Bundle。
 
 **验证**：context tests，包括随机预算保持属性。
 
@@ -413,16 +426,18 @@ node scripts/check-standalone.mjs
 **创建**：
 
 - `packages/runtime/src/tools/{definition,registry,invocation,action-intent,reconciliation}.ts`
+- `packages/runtime/src/secrets/environment-reference.ts`
 - `packages/runtime/test/tools/*.test.ts`
 - `tests/fault/uncertain-external-action.test.ts`
 - `tests/security/tool-validation.test.ts`
 
 **步骤**：
 
-1. 测试未知 Tool、非法输入/输出、错误 phase、禁止 resource、过期 approval、quota、retry、redaction 和 timeout。
+1. 测试未知 Tool、非法输入/输出、错误 phase、禁止 resource、过期 approval、quota、retry、redaction、timeout 和 Environment Secret Reference 注入/脱敏。
 2. 实现调用前、调用中、调用后校验及规范化 Evidence。
 3. 调用前提交 external action intent，调用后提交 completed 或 uncertain 状态；复用共享故障注入 Helper 覆盖中断、Timeout、Invalid Tool Output 与 Uncertain Result。
 4. 恢复时先按 idempotency key 对账再重试；Provider 无法安全对账时必须人工处理。
+5. M1 只接受 Environment Secret Reference，任何持久化结构拒绝 Secret Value；Provider 暴露的 MCP Capability 必须先规范化为普通 ToolDefinition，M1 不实现 MCP Transport 或 Discovery。
 
 **验证**：tool tests 和 uncertain-action fault test。
 
@@ -442,7 +457,7 @@ node scripts/check-standalone.mjs
 2. 对规范化 tool call、相关 state 和 evidence progress 生成指纹。
 3. 只接受类型化 state proposal，每步执行后收窄 grant。
 4. Model completion 只能进入 `verifying`；只有当前外部证据可产生 `success`。
-5. 所有退出路径都产生已定义 outcome 和独立 termination reason。
+5. 所有退出路径都追加恰好一个 `RunTerminated` 或 `RunInterrupted`；Outcome 与独立 termination reason 只存在于 Terminal Record，Partial Output 作为 Evidence/Proposal 追加。
 
 **验证**：使用 fake clock、fake usage meter 和 repeat trace 的 loop tests。
 
@@ -536,6 +551,7 @@ node scripts/check-standalone.mjs
 **创建**：
 
 - `adapters/projection-markdown/src/{prd,architecture,spec,plan,snapshot}.ts`
+- `packages/runtime/src/projection/{provider-instruction,managed-output,drift}.ts`
 - `packages/runtime/src/audit/auditor.ts`
 - `packages/runtime/src/doctor/doctor.ts`
 - `packages/runtime/src/status/status.ts`
@@ -545,15 +561,15 @@ node scripts/check-standalone.mjs
 
 **步骤**：
 
-1. 生成带 source ID、revision 和 generation digest 的 Markdown view。
+1. 生成带 source ID、revision 和 generation digest 的 Markdown view，并实现 Provider Instruction Projection 的受管输出、Preview、Digest、Drift Detection 与禁止覆盖用户配置的基础 Engine。
 2. Audit 检查 traceability、stale knowledge、contradiction、orphan、missing verification、context health 和未提升高风险 improvement。
 3. 以可执行类型化结果诊断 Git、Schema、Pack、Adapter、cache 和 environment 问题。
 4. Status 显示 control level、evaluation coverage、blocker、stale Evidence、approval、budget 和 next action。
-5. 构建 `completed`、`blocked`、`aborted` Snapshot；存在未完成 Task、blocking Finding、stale Evidence 或未解决外部动作时拒绝 completed。可恢复状态必须生成含 `resume_phase`、Blocker、Checkpoint 和 Operation ID 的 `blocked`，只有显式取消或类型化不可恢复原因才能生成 `aborted`。
+5. 构建 `completed`、`blocked`、`aborted` Snapshot；存在未完成 Task、blocking Finding、stale Evidence 或未解决外部动作时拒绝 completed。可恢复状态必须生成含 `resume_phase`、Blocker、Checkpoint 和 `workflow_operation_id` 的 `blocked`，只有显式取消或类型化不可恢复原因才能生成 `aborted`。
 
 **验证**：projection goldens 和 runtime utility tests。
 
-**完成条件**：所有人类可读视图均为可复现投影，Snapshot 状态由 Evidence 而非 Agent 声明决定。
+**完成条件**：所有人类可读视图与 Provider Mirror 均为可复现投影，未经批准不覆盖用户配置；Snapshot 状态由 Evidence 而非 Agent 声明决定。
 
 ### Task 23：接通编排入口和高级命令
 
@@ -572,7 +588,7 @@ node scripts/check-standalone.mjs
 
 1. 先接通 graph sync/query/check、impact、plan、run、verify、eval、approve、snapshot、audit、doctor、status。
 2. 让 `new`、`adopt`、`iterate` 通过同一个 phase orchestrator。
-3. 交互批准在同一会话按 request ID 顺序继续；Ctrl-C/EOF 生成 defer/blocked；非交互返回结构化 ApprovalRequired 与 resumable operation ID，Resume 前重新校验全部绑定。
+3. 交互批准在同一会话按 request ID 顺序继续；Ctrl-C/EOF 生成 defer/blocked；非交互返回结构化 ApprovalRequired 与可恢复 `workflow_operation_id`，Resume 前重新校验全部绑定。
 4. 在每个 committed phase 周围发出有序 lifecycle event，但不暴露公共 Hook SDK。
 5. 添加中断点，证明 `resume` 不会重复 authority 或 side effect。
 
@@ -594,10 +610,10 @@ node scripts/check-standalone.mjs
 
 **步骤**：
 
-1. 固化设计中的 M1 versioned port 和 capability manifest。
+1. 固化设计中的 M1 versioned port、capability manifest 与 Provider Projection Plugin Contract。
 2. Plugin 执行前校验协议版本、声明能力、resource need、output schema 和 control-profile claim。
 3. 在最小化子进程环境中运行 Plugin，并限制输入输出、返回类型化错误。
-4. 发布所有第一方 Adapter 和 Pack 共用的 conformance runner。
+4. 发布所有第一方 Adapter 和 Pack 共用的 conformance runner；Projection Conformance 必须验证同一 Canonical Pack + Task Envelope + ContextBundle 产生相同 Mirror Digest，且输出限定在受管路径。
 
 **验证**：Plugin SDK、conformance tests 和最小 Plugin 示例构建。
 
@@ -616,13 +632,13 @@ node scripts/check-standalone.mjs
 **步骤**：
 
 1. 实现 Generic 默认值，包括已批准的 LoopPolicy ceiling。
-2. 添加 Node、Python、Java 的确定性检测、扫描和默认 Gate。
+2. 添加 Node、Python、Java 的确定性检测、扫描、默认 Gate 和 Provider Instruction Template；Generic Pack 提供中立默认 Template。
 3. Project override 与 upstream Pack 分离存储，并用 Policy Schema 的字段级 Operator 合并；测试 Project 不能放宽 Installation Hard Bound、Deny 优先、Ceiling 取最小值、Allow Set 取交集、Approval Requirement 取并集。
 4. 实现 upgrade preview、digest-bound approval、transactional migration、rollback 和 lockfile update；升级后记录各层 Policy Digest 与 Effective Policy Digest。
 
 **验证**：每个 Pack 的 conformance fixture 与失败迁移测试。
 
-**完成条件**：Pack upgrade 保留 override，四个 Pack 都提供有效 context、Gate、Policy 和 Projection。
+**完成条件**：Pack upgrade 保留 override，四个 Pack 都提供有效 context、Gate、Policy 和可复现 Provider Projection。
 
 ### Task 26：构建独立的跨 Stack E2E Fixture
 
@@ -636,8 +652,8 @@ node scripts/check-standalone.mjs
 
 1. 创建原创、小型、无需网络且测试确定的 Fixture。
 2. 对每个 Stack 运行 new、adopt 和后续 iterate。
-3. 断言 Requirement、两个 Graph View、ImpactSet、ExecutionPlan、ContextBundle、Run、Gate、Evaluation、注入 Gate Failure、Invalid Tool Output、Uncertain External Action 时的 feedback/blocked-resume、Approval、Evidence 和 final Snapshot。
-4. 从 clean clone 重跑每个 Fixture，并比较规范化 Ledger 和 Projection。
+3. 断言 Requirement、两个 Graph View、ImpactSet、ExecutionPlan、ContextBundle、Run、Gate、Evaluation、注入 Gate Failure、Invalid Tool Output、Uncertain External Action 时的 feedback/blocked-resume、Approval、Evidence、Provider Projection 和 final Snapshot。
+4. 从 clean clone 重跑每个 Fixture，并比较规范化 Ledger、人类 Projection 和 Provider Mirror Digest；预置用户 Provider 配置并证明未批准时不会被覆盖。
 
 **验证**：在 Linux、macOS、Windows 上运行 `pnpm test:e2e`。
 
@@ -681,9 +697,9 @@ node scripts/check-standalone.mjs
 
 1. 本地打包 `universal-harness` 并安装到干净临时环境。
 2. 验证 `harness` binary、ESM exports、license、README、files list、provenance metadata，确保不包含 internal-only source。
-3. 把所有文档示例作为测试运行。
+3. 把所有文档示例作为测试运行；`operations-and-recovery` 列出 new/adopt/iterate 全部潜在批准点、触发条件、Decision、暂停/恢复行为和不会批量批准的 M1 限制。
 4. 实现自定义 Vitest Acceptance Reporter 和聚合脚本，从测试、fault、security、E2E 与 benchmark 的结构化输出生成 M1 acceptance report，把每项标准映射到 Evidence；生成报告不得人工改写结果区。
-5. 对文件、生成资产、package metadata、示例、Fixture 和 Git 历史运行独立内容扫描。
+5. 对文件、生成资产、Provider Mirror、package metadata、示例、Fixture 和 Git 历史运行独立内容扫描。
 
 **验证**：
 
@@ -702,13 +718,13 @@ pnpm test:release
 
 | 设计验收标准 | 主要实施任务 |
 |---|---|
-| AC1–AC4：new、adopt、iterate、可恢复单命令流程 | 8–11、23、26 |
-| AC5–AC7：确定性身份、双 Graph 与 Impact 正确性 | 3–6、12 |
+| AC1–AC4：new、adopt、iterate、分层状态与幂等恢复 | 2、8–11、17、23、26 |
+| AC5–AC7：确定性身份、分片 Ledger 合并、双 Graph 与 Impact 正确性 | 3–6、8、12 |
 | AC8–AC9：已批准声明式计划和执行模式 | 12–13 |
 | AC10–AC11：Task Envelope 与不可变受限 Context | 14、17 |
-| AC12–AC14：Tool 治理、幂等外部动作、硬预算 | 15–18 |
+| AC12–AC14：Tool/MCP/Secret 治理、幂等外部动作、硬预算 | 15–18、27 |
 | AC15：类型化 outcome 与 correct failure | 17、20 |
-| AC16–AC20：Gate、RCA 级联、改进与 freshness | 19–21 |
+| AC16–AC20：Gate、RCA 级联、改进与 freshness | 14、19–21 |
 | AC21：证据完备的 Snapshot | 22–23 |
 | AC22：SQLite 恢复 | 5–6 |
 | AC23：Adapter control profile 与行为评估 | 18、20、24 |
@@ -716,7 +732,7 @@ pnpm test:release
 | AC25：跨平台 CI | 1、3、7、26–28 |
 | AC26：安全升级与回滚 | 6、25 |
 | AC27：性能基线 | 27 |
-| AC28：独立仓库与历史 | 1、26、28 |
+| AC28：独立仓库、Provider Mirror 与历史 | 1、22、24–26、28 |
 
 每项验收标准还必须出现在 `docs/m1-acceptance-report.md`，包含测试命令、Evidence artifact、结果和相关 commit。
 
@@ -759,3 +775,4 @@ pnpm test:release
 3. 按顺序在 `main` 执行 Task 1–28，每个 Task 或不可分割的 red/green 对应一个聚焦提交。
 4. 实施证据与已批准架构边界冲突时停止编码并修订设计。
 5. 每个 Task 和切片退出门禁完成时更新计划状态与验收报告。
+6. 高风险任务预计无法满足其切片门禁、公共 Schema 需要不兼容变更、支持平台需要删除、或任一 Task 只能靠弱化 Approval/Recovery/Security 保证才能完成时，必须暂停实施并重新批准设计、范围或里程碑日期；不得静默把 M1 降级为部分闭环。

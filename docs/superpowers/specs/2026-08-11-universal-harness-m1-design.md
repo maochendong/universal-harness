@@ -46,7 +46,7 @@ harness iterate "Implement the next change"
 “一个命令”表示一个编排入口，而不是完全不需要人工监督：
 
 - 交互模式在同一命令会话中请求强制 Approval，批准后继续。
-- 非交互模式在 Approval 或外部授权点安全暂停，并返回可恢复的 operation ID。
+- 非交互模式在 Approval 或外部授权点安全暂停，并返回可恢复的 `workflow_operation_id`。
 - Resume 从最后一个已提交 Checkpoint 继续，不重复节点、Run、Evidence、commit 或外部副作用。
 - Mandatory Gate 失败会阻止生成 `completed` Snapshot。
 - ImprovementCandidate 未经批准不得修改 Requirement、Architecture Decision、Specification、Policy、Tool 或 Evaluation 资产。
@@ -89,6 +89,8 @@ M1 必须：
 - 分布式 Agent Lease、抢占或调度。
 - 自主 Multi-Agent 执行、动态 Model 路由或 Agent 间协商。
 - 公共第三方 Hook SDK；M1 仅向 Kernel 和版本化兼容端口发出有序 Lifecycle Event。
+- 原生 MCP Transport、Server Discovery 或第一方 MCP Adapter；M1 只治理由现有 Provider 作为普通 ToolDefinition 显式暴露的 MCP Capability。
+- 可插拔 SecretProvider；M1 只解析 Environment 中的 Secret Reference，不持久化 Secret Value。
 - 自动写入长期记忆、Vector Database 或未经评审的自我改进机制。
 - 跨仓库执行；M1 为 M3 保留 repository-qualified identity，但只操作一个仓库。
 - 使用 Graph Database 替代 Git。
@@ -143,7 +145,7 @@ Provenance Model 借鉴 [W3C PROV](https://www.w3.org/TR/prov-o/) 的 Entity、A
 | Policy and Approval Engine | Risk Rule、Approval 失效、Mandatory Gate 和 Task Boundary |
 | Evaluation and RCA Engine | 确定性/语义 Scorer、Trajectory Evaluation、RCA 路由和 ImprovementCandidate 生成 |
 | Plugin Runtime | Capability Discovery、协议校验、最小化子进程调用和结果规范化 |
-| Projection Engine | 人类可读 PRD、Architecture、Specification、Plan 和 JSON View |
+| Projection Engine | 人类可读 PRD、Architecture、Specification、Plan、JSON View 和可复现 Provider Instruction Mirror |
 
 ### 5.3 已否决方案
 
@@ -199,6 +201,7 @@ project/
 │   ├── manifest.yaml
 │   ├── harness.lock
 │   ├── .gitignore
+│   ├── .gitattributes
 │   ├── artifacts/
 │   │   ├── repositories/
 │   │   ├── intents/
@@ -219,9 +222,9 @@ project/
 │   │   ├── improvements/
 │   │   └── iterations/
 │   ├── ledger/
-│   │   ├── edges.jsonl
+│   │   ├── edges/YYYY-MM/<ledger-operation-id>.jsonl
 │   │   └── operations/
-│   ├── events/YYYY-MM/<operation-id>.jsonl
+│   ├── events/YYYY-MM/<ledger-operation-id>.jsonl
 │   ├── checkpoints/
 │   ├── packs/
 │   │   ├── upstream/
@@ -236,7 +239,9 @@ project/
 └── tests/
 ```
 
-Artifact、已接受 Edge、Operation Manifest、已脱敏结构化 Event、Checkpoint、Pack、Policy、View、Manifest 和 lockfile 提交到 Git。`.harness/.gitignore` 排除 `cache/`、`staging/`、`raw-traces/` 和生成的 Provider Mirror。生成 Mirror 可由 Canonical Pack、Graph Node 和 ContextBundle 复现；未经预览和批准，不得覆盖现有 Provider 配置。接管项目时无需修改其根 `.gitignore`。
+Artifact、已接受 Edge、Ledger Operation Manifest、已脱敏结构化 Event、Checkpoint、Pack、Policy、View、Manifest 和 lockfile 提交到 Git。Edge 与 Event 均按 Ledger Operation 写入不可变分片，避免多个 Branch 追加同一 JSONL File。`.harness/.gitattributes` 对 Edge、Event 和 Ledger Operation Manifest 禁止文本级自动合并；不同 `ledger_operation_id` 的文件可由 Git 正常合并，相同 `ledger_operation_id` 但 Digest 不同、同一 Artifact Revision 分叉或 Baseline 不兼容时，`harness graph check` 必须阻塞并要求重新计算或显式解决，不能使用 union merge 掩盖冲突。
+
+`.harness/.gitignore` 排除 `cache/`、`staging/`、`raw-traces/` 和生成的 Provider Mirror。生成 Mirror 可由 Canonical Pack、Graph Node 和 ContextBundle 复现；未经预览和批准，不得覆盖现有 Provider 配置。接管项目时无需修改其根 `.gitignore`。M1 对已脱敏结构化 Event 全量保留，不进行压缩或删除；Raw Trace 不入 Git，其本地保留由 Project Policy 控制且不影响权威恢复。
 
 ## 8. Git-native Graph Ledger
 
@@ -267,7 +272,7 @@ M1 每个 Project 只创建一个 Repository，但 Identity 带 `repository_id`�
 
 | Family | Relation |
 |---|---|
-| Provenance | 新 Artifact `DERIVES_FROM` 旧 Artifact；新 Node `SUPERSEDES` 旧 Node；Artifact `GENERATED_BY` Run |
+| Provenance | 新 Artifact `DERIVES_FROM` 旧 Artifact；新 Node `SUPERSEDES` 旧 Node；Artifact `GENERATED_BY` Run；新 Run `RESUMES` 被中断的旧 Run |
 | Intent and implementation | Intent `DECOMPOSES_TO` Requirement；Decision `ADDRESSES` Requirement；受控 Node `CONSTRAINED_BY` Constraint 且 `GOVERNED_BY` Policy；Decision `SHAPES` Component；CodeArtifact `REALIZES` Component；Task `IMPLEMENTS` Requirement/Decision |
 | Verification | Test `VERIFIES` Requirement/Constraint；EvaluationCase `EVALUATES` Task/Run；Run `EXECUTES` Task/Gate/EvaluationCase 且 `INVOKES` ToolDefinition；Run `PRODUCES` Evidence；Evidence `SUPPORTS`/`REFUTES` Test/Requirement/EvaluationCase；Finding `VIOLATES` Requirement/Constraint/Policy |
 | Control | ExecutionPlan `CONTAINS` Task；Task `DEPENDS_ON` Task；Run `USES_CONTEXT` ContextBundle；Checkpoint `CAPTURES` Run/Iteration；Finding `BLOCKS` Task/Iteration；ApprovalRequest `REQUESTS_APPROVAL_FOR` 受控 Node；Approval `RESOLVES` ApprovalRequest 并 `APPROVES` 受控 Node；Project/Repository/Iteration `CONTAINS` 子 Node |
@@ -292,7 +297,9 @@ Schema Registry 为每种 Relation 定义有效 source type、target type、传�
 ### 8.5 Mutation Rule
 
 - 权威非 Runtime Node 使用 Revision；每个 Revision 发出 Event。
-- ContextBundle、Run、Checkpoint、Evidence、ApprovalRequest 和 Approval 只追加；请求失效或被解决时追加新记录，不原地改写既有批准历史。
+- ContextBundle、Run、Checkpoint、Evidence、ApprovalRequest 和 Approval 只追加；失效、终止或解决均追加新记录，不原地改写既有 Runtime 历史。
+- Run 是由同一 `run_id` 聚合的追加记录流：恰好一个 `RunStarted`，零到多个 `RunProgress`/Evidence/Proposal，以及恰好一个 `RunTerminated` 或 `RunInterrupted`。Outcome 与 Termination Reason 只出现在 Terminal Record；Partial Output 作为独立 Evidence/Proposal 追加，不回写 RunStarted。
+- Resume 发现没有 Terminal Record 的 Run 时，先追加 `RunInterrupted`，再创建新 `run_id` 并以 `RESUMES` 指向旧 Run。重放相同 Operation 不得产生第二个 Terminal Record 或重复续跑 Run。
 - 删除产生 Tombstone。
 - Agent 推断 Edge 初始为 `proposed`，需批准或通过确定性校验后才成为 `accepted`。
 - ContextBundle Node 保存 source reference、priority、revision、freshness、exclusion、token allocation 和 digest。Policy 将内容判定为敏感时，组装后的原始 Context 可只保留在本地。
@@ -403,7 +410,7 @@ Iteration 是一个类型为 feature、bugfix、refactor、security 或 maintena
 - 可选创建 Worktree；
 - 记录 final commit 和 merge target。
 
-状态机：
+Iteration State 只表达业务交付生命周期：
 
 ```text
 draft → planned → running → verifying → completed
@@ -411,7 +418,32 @@ draft → planned → running → verifying → completed
   └──────────────→ aborted
 ```
 
-`blocked` Resume 到之前的 Phase；`aborted` 为终态，并保留 History、Branch 和用户文件。
+每个 `new`、`adopt` 或 `iterate` 入口创建一个具有稳定 `workflow_operation_id` 的 Workflow Operation；`resume` 重开同一个 Workflow Operation 并追加 `attempt_id`，不创建新的用户可见 ID。每次原子 Ledger Commit 另有唯一 `ledger_operation_id`，Manifest 同时记录所属 `workflow_operation_id` 和 `attempt_id`。两类 ID 不可互换：前者用于状态、批准和恢复，后者用于事务幂等、分片文件和重放。
+
+Operation State 表达 Workflow Operation 的细粒度生命周期：
+
+```text
+created → awaiting_input → awaiting_approval → planned → running → verifying → completed
+                                                               │
+                                                               ↓
+                                                          repairing ─→ running
+any nonterminal state → blocked → resume_state
+any nonterminal state → aborted（仅显式取消或不可恢复）
+```
+
+`awaiting_input`、`awaiting_approval` 和 `repairing` 是 Operation State，不是 Iteration State。两级状态映射如下：
+
+| Operation State | Iteration State | 规则 |
+|---|---|---|
+| `created`、`awaiting_input`、`awaiting_approval` | `draft` | 尚未形成或批准可执行 Plan |
+| `planned` | `planned` | 已批准 Requirement/Impact/Plan |
+| `running`、`repairing` | `running` | 正在执行或按 Finding 修复 |
+| `verifying` | `verifying` | 等待 Mandatory Gate/Evaluation |
+| `completed` | `completed` | 仅在全部 Required Operation/Task 与 Evidence 完成时聚合 |
+| `blocked` | `blocked` | 保存 `resume_state` 和最近有效 Checkpoint；恢复后映射回原 State |
+| `aborted` | `aborted` | 仅显式取消或类型化不可恢复原因，且为终态 |
+
+一个 Iteration 可以包含多个顺序 Operation。Operation 暂停不会丢失先前已提交结果；Iteration State 由 Workflow Engine 按上表聚合，Agent 不可直接设置。`blocked` Resume 到 `resume_state`；`aborted` 保留 History、Branch 和用户文件。
 
 ### 10.1 执行模式与声明式 Plan
 
@@ -442,7 +474,7 @@ Workflow Engine 是权威 WorkingState 的唯一 Writer。Agent 获得受限 Vie
 - ContextBundle 与 Input Digest；
 - External Action Intent 及其完成状态。
 
-Provider Chat History 是可选输入，不是 State。Context 编译在显式 Token Budget 下选择、排序、压缩和截断 Source。Goal、Acceptance Criteria、Safety Constraint、Active Approval 和 unresolved blocker 等受保护内容不得被压缩移除。Source Digest 过期时，下一 Loop Step 前使 ContextBundle 失效。
+Provider Chat History 是可选输入，不是 State。Context 编译在显式 Token Budget 下选择、排序、压缩和截断 Source。Goal、Acceptance Criteria、Safety Constraint、Active Approval 和 unresolved blocker 等受保护内容不得被压缩移除。Source Digest 过期时立即把当前 ContextBundle 标记为 stale，但不取消已经开始的原子 Tool Call：该调用必须先完成或对账，其结果只作为 provisional Evidence 保存；在下一个 Agent/Tool Step、Proposal Acceptance 或权威提交之前，Workflow Engine 必须 Checkpoint、重新编译 Context，并重新校验相关 Approval Binding。连续变化只合并为一次待处理失效，不反复重启同一原子 Step。
 
 `dag` Mode 只共享不可变的 Iteration Goal、Requirement Baseline、ExecutionPlan 和 Effective Policy Digest。每个 Task 持有独立的 ContextBundle、Task-local WorkingState View、Run、Budget、Capability Grant、Approval Binding 和 Checkpoint Progress；Task 之间只能通过已提交 Artifact、Evidence、类型化 Proposal 和显式 Dependency 交换信息，不共享可变 Agent Memory、Provider Chat History 或 Adapter-local State。M1 即使顺序执行 DAG，也必须保持该隔离边界，使 M4 并行化无需改变 Authority Model。
 
@@ -450,7 +482,7 @@ Provider Chat History 是可选输入，不是 State。Context 编译在显式 T
 
 每个终止或暂停 Iteration 都可生成状态为 `completed`、`blocked` 或 `aborted` 的 Snapshot。Completed Snapshot 包含 final commit、已接受 Artifact Revision、ExecutionPlan、Adapter Control Profile、Run Outcome、已脱敏 Trajectory/Coverage Summary、Budget/Latency Summary、Approval、当前 Evidence、已关闭 Finding、未解决非阻塞项、rejected hypothesis 以及 proposed/promoted ImprovementCandidate。所有 Required Task 必须为 `success`；blocking Finding、stale Mandatory Evidence、未完成 External Action 或 Required Run 非成功都会阻止 `completed`。
 
-可恢复状态统一生成 `blocked` Snapshot，并保存 `resume_phase`、Blocker、所需 Input/Approval/Repair、最近有效 Checkpoint 和 Operation ID。可恢复状态包括缺少输入、等待批准、Stale Evidence、可对账的 Uncertain External Action、可修复 Gate Failure、Budget Ceiling、临时 Environment/Provider Failure 与 Git Drift。只有用户显式取消，或 Policy/Schema Validation 判定不可恢复并记录类型化原因时，才生成终态 `aborted`；中断、EOF、超时或单次工具失败本身不得自动升级为 `aborted`。
+可恢复状态统一生成 `blocked` Snapshot，并保存 `resume_phase`、Blocker、所需 Input/Approval/Repair、最近有效 Checkpoint 和 `workflow_operation_id`。可恢复状态包括缺少输入、等待批准、Stale Evidence、可对账的 Uncertain External Action、可修复 Gate Failure、Budget Ceiling、临时 Environment/Provider Failure 与 Git Drift。只有用户显式取消，或 Policy/Schema Validation 判定不可恢复并记录类型化原因时，才生成终态 `aborted`；中断、EOF、超时或单次工具失败本身不得自动升级为 `aborted`。
 
 ## 11. 命令面
 
@@ -461,7 +493,7 @@ Provider Chat History 是可选输入，不是 State。Context 编译在显式 T
 | `harness new <name> --intent <text>` | 创建项目与 Git 仓库，初始化 Ledger 和 Pack，然后录入、规划、编译 Context、执行、验证、评估、修复并生成 Snapshot |
 | `harness adopt [path] --intent <text>` | 扫描并批准 Baseline，然后录入、分析、规划、编译 Context、执行、验证、评估、修复并生成 Snapshot |
 | `harness iterate <text>` | 为后续变更运行相同完整闭环 |
-| `harness resume <operation-id>` | 从最后已提交 Checkpoint 恢复暂停编排 |
+| `harness resume <workflow-operation-id>` | 从最后已提交 Checkpoint 恢复暂停编排 |
 
 ### 11.2 高级命令
 
@@ -483,11 +515,11 @@ Provider Chat History 是可选输入，不是 State。Context 编译在显式 T
 
 ### 11.3 Approval 交互契约
 
-每个批准点先在同一 Ledger Operation 中持久化 ApprovalRequest 和 Checkpoint，再等待任何人工输入。ApprovalRequest 至少包含 request ID、受控对象 ID/type/digest、baseline/policy digest、Impact Path、Risk、Reason、预期副作用、允许的 Decision、创建时间、Operation ID 和 Resume Phase；人类可读 Preview 与 `--json` 输出必须来自同一规范记录。
+每个批准点先在同一 Ledger Operation 中持久化 ApprovalRequest 和 Checkpoint，再等待任何人工输入。ApprovalRequest 至少包含 request ID、受控对象 ID/type/digest、baseline/policy digest、Impact Path、Risk、Reason、预期副作用、允许的 Decision、创建时间、`workflow_operation_id` 和 Resume Phase；人类可读 Preview 与 `--json` 输出必须来自同一规范记录。
 
 - 交互模式只接受显式 `approve`、`reject` 或 `defer`，不设置默认选项；`--json` 模式输出结构化 `ApprovalRequired`，并只接受绑定 request ID 与 object digest 的结构化 Decision。
-- Ctrl-C、EOF、终端断开或输入解析失败都按 `defer` 处理：保持 Proposal 为 `proposed`，生成 `blocked` Checkpoint，并返回可恢复 Operation ID，不能推断为拒绝或批准。
-- 非交互模式永不读取 stdin，也不自动批准；它返回类型化 `ApprovalRequired`、Request ID、Operation ID、Resume Command 和稳定错误类别。
+- Ctrl-C、EOF、终端断开或输入解析失败都按 `defer` 处理：保持 Proposal 为 `proposed`，生成 `blocked` Checkpoint，并返回可恢复 `workflow_operation_id`，不能推断为拒绝或批准。
+- 非交互模式永不读取 stdin，也不自动批准；它返回类型化 `ApprovalRequired`、Request ID、`workflow_operation_id`、Resume Command 和稳定错误类别。
 - M1 每次只解决一个精确 request/object/digest，不支持批量、通配或对未来对象生效的批准。多个请求按确定性顺序逐个处理。
 - 决策提交与 Resume 前重新校验 object、baseline、policy、Impact Path 和 Preview Digest；任一绑定项变化会追加失效记录并创建新 ApprovalRequest，旧 Decision 不可复用。
 - `reject` 关闭当前 Proposal 但保留审计历史；`defer` 保持其可恢复；`approve` 创建独立 Approval 记录。Agent、Tool、Adapter 或产生 Proposal 的 Actor 均不能解决自己的请求。
@@ -617,7 +649,7 @@ Context Compiler 按以下优先级组装 Bundle：
 
 ### 13.5 ToolProvider 与 Tool Registry
 
-任何可执行命令、Script、MCP Capability 和 External API 在使用前都必须注册。ToolProvider 声明：
+任何可执行命令、Script、由 Provider 暴露的 MCP Capability 和 External API 在使用前都必须注册。M1 不实现 MCP Transport、Server Discovery 或第一方 MCP Adapter；若 AgentAdapter/Plugin 已连接 MCP，它只能把具体 Capability 按普通 ToolDefinition 注册，接受完全相同的 Schema、Grant、Approval、Redaction 和对账约束。ToolProvider 声明：
 
 - 稳定 Name、Version、Description 和 Input/Output JSON Schema；
 - Allowed Phase、Resource Pattern 和 Parameter Constraint；
@@ -667,7 +699,7 @@ M1 在内部使用这些 Event，并通过 EventStreamPort 暴露。公共 Hook 
 - Harness 仅授权并提交已声明 Path、State Proposal Field、Registered Capability、Parameter Bound、Resource Scope、Phase、Budget 和 Approval。
 - Tool Description、Retrieved Document、Repository Content 和 Provider Output 都是不可信 Context，不能授予 Capability 或改变 Policy。
 - Agent 不能批准自己的 Proposal、接受自己的 Evidence、提升自己的 ImprovementCandidate，或将自己的语义判断归类为 Mandatory Pass。
-- Secret 来自 Environment 或 Secret Provider，永不进入 Ledger File、Event、Projection 或 Log。
+- M1 Secret 只来自 Environment，并通过名称引用在 Invocation Boundary 注入；Schema、Ledger、Event、Projection、Checkpoint 和 Log 只能保存 Secret Reference 与脱敏结果，不能保存 Secret Value。可插拔 SecretProvider 留待独立后续设计。
 - Evidence 提交前结构化脱敏；不安全 Raw Log 保持本地，只通过 Locator 和 Hash 引用。
 - Pack 安装与升级校验 Content Digest 并显示 Provenance。
 
@@ -689,13 +721,16 @@ Installation Policy、Pack Policy 与 Project Policy 不允许通过整对象覆
 
 ### 15.1 逻辑事务
 
-- Write 在 `.harness/staging/<operation-id>/` 中准备。
+- Write 在 `.harness/staging/<ledger-operation-id>/` 中准备。
 - Commit 前校验 Schema、Reference、Policy 和 Baseline Revision。
-- 先原子 rename Target File，再原子写最终 `ledger/operations/<operation-id>.json` Commit Manifest。
+- 先原子 rename Target File，再原子写最终 `ledger/operations/<ledger-operation-id>.json` Commit Manifest。
 - Materialization 只读取具有有效 Manifest 且 File Digest 匹配的 Operation。
+- Edge 与 Event 分别写入 `ledger/edges/YYYY-MM/<ledger-operation-id>.jsonl` 和 `events/YYYY-MM/<ledger-operation-id>.jsonl`；Materializer 按 Manifest 中的逻辑 Sequence 而非文件系统遍历顺序重放。
 - Event 每个 Operation 使用单独 JSONL File，不并发追加到一个共享 File。
-- Operation ID 使 Retry 幂等。
+- `ledger_operation_id` 使事务 Retry 幂等。
 - M1 使用一个 Project-level Write Lock，同时允许并发 Read Query。
+
+原子替换、目录锁与 Path Boundary 必须按平台封装。Windows 实现需要处理 rename sharing violation、目录锁清理、symlink/junction 和杀进程后的句柄释放，并使用有界退避；若当前文件系统无法证明同卷原子替换或可靠加锁，Operation 以类型化 `UnsupportedAtomicity`/`LockUnavailable` 阻塞，不能退化成非原子写入。
 
 ### 15.2 Error Policy
 
@@ -708,7 +743,7 @@ Installation Policy、Pack Policy 与 Project Policy 不允许通过整对象覆
 | Unknown Tool、Invalid Parameter、Capability Violation 或 Invalid Tool Output | 权威变更前拒绝，追加已脱敏 Trace Event，只应用声明的 Retry/Handoff Policy |
 | External Action Result 不确定 | 保留 Action Intent，阻止盲目 Retry，通过 ToolProvider 或人工评审对账 |
 | Gate 或 Evaluation 失败 | 创建 Finding 和临时 ImpactSet，安排 RCA，RCA 后刷新 Impact，只重跑受影响 Task、Gate 和 EvaluationCase |
-| Context Source 过期 | 使 ContextBundle 失效、Checkpoint、重新编译 Context 并重新评估受影响 Approval Binding |
+| Context Source 过期 | 当前原子调用先完成/对账且结果标记 provisional；下一个 Step 或权威提交前 Checkpoint、重新编译 Context 并重新评估受影响 Approval Binding |
 | Git Baseline Drift | 暂停并重新计算 Diff、Impact 和 Approval |
 | Policy Conflict | 阻塞直到 Policy 变化或获得显式 Approval |
 | SQLite 损坏 | 删除 Cache，并从 Git Ledger 重建 |
@@ -765,15 +800,15 @@ Ledger Transaction Commit 和受影响 Projection Generation 在同一 Dataset �
 1. 一次 `harness new ... --intent ...` 调用可以完成首次 Iteration，只在强制 Input、Approval 或 External Authorization 时暂停。
 2. 一次 `harness adopt ... --intent ...` 调用可以批准 Baseline，并按相同暂停规则完成所请求 Iteration。
 3. `harness iterate ...` 为后续变更运行相同完整闭环。
-4. 交互中断按 `defer` 保存 Proposal；非交互批准点返回结构化 ApprovalRequest 与可恢复 Operation ID；Resume 重新校验绑定且不产生重复 Node、Run、Evidence、Commit 或 External Side Effect。
-5. 相同 Repository 和 Configuration 产生相同、带 Repository 限定的扫描 Node ID、Edge 和 Digest。
+4. Iteration/Operation State 映射确定且 `blocked` 保存 `resume_state`；交互中断按 `defer` 保存 Proposal，非交互批准点返回结构化 ApprovalRequest 与可恢复 `workflow_operation_id`；Resume 为未终止 Run 追加唯一 `RunInterrupted` 和 `RESUMES` 关系，不产生重复 Node、Terminal Record、Evidence、Commit 或 External Side Effect。
+5. 相同 Repository 和 Configuration 产生相同、带 Repository 限定的扫描 Node ID、Edge 和 Digest；不同 Ledger Operation 分片可安全 Git Merge，相同 `ledger_operation_id` 摘要冲突、Revision 分叉或 Baseline 不兼容会被阻塞。
 6. Artifact Graph 与 Execution Graph Query 从同一 Authority Ledger 物化，并保持相互可追溯。
 7. 已知 Change Scenario 生成正确 ImpactSet，不把无关 Artifact 分类为 `must-change`。
 8. Planning 只从已批准 ImpactSet 开始，生成声明式 Task Specification，并拒绝 Plan Proposal 中嵌入的 Command 或未授权 Capability Expansion。
 9. 结构化或可确定性转换的 Intent 可选择 `direct`；需语义解释的自由文本录入选择受限 `single-loop`；`dag` Fixture 只在每个 Task 满足独立价值规则时创建多个 Task，且 Task-local State、Context、Budget、Grant 和 Checkpoint 相互隔离。
 10. 每个 Task 获得不可变 ContextBundle、Field-level State Contract、Capability Grant、LoopPolicy、Acceptance Criteria 和 Input Digest；Approval 前可见 Adapter Control Profile。
 11. Context Compilation 保留 Protected Field、遵循 Token Allocation、记录 Exclusion，并使 Stale Bundle 失效。
-12. Unknown Harness-managed Tool、Invalid Parameter、Disallowed Resource、Capability Violation 和 Invalid Output 在权威变更前被阻止并留痕；Opaque Delegated Provider 永远不会被描述为完全受治理。
+12. Unknown Harness-managed Tool、Invalid Parameter、Disallowed Resource、Capability Violation 和 Invalid Output 在权威变更前被阻止并留痕；MCP Capability 只有注册为普通 ToolDefinition 后可用，Secret Value 不进入任何持久化记录；Opaque Delegated Provider 永远不会被描述为完全受治理。
 13. External Action Intent 持久且幂等；Resume 对账 Uncertain Action，而不是盲目重放。
 14. Managed Execution 无需依赖 Model 遵从即可强制 Step、Token、Duration、Retry 和 Repeat-action Ceiling；Effective Policy 按字段最严格合并并记录来源 Digest，Project/Pack 不能放宽 Installation Hard Bound；缺少等价控制的 Delegated Adapter 被强制设为 Supervised Mode。
 15. 每个 Run 记录一个已定义 Outcome 和 Termination Reason；Correct-block、Clarification 和 Handoff Fixture 通过。
@@ -781,7 +816,7 @@ Ledger Transaction Commit 和受影响 Projection Generation 在同一 Dataset �
 17. 失败场景生成结构化 RCA 和 ImpactSet Routing；下游 Phase 不能直接修改上游 Artifact。
 18. 可复用失败可以产生 Evaluation、Knowledge 或 Engineering ImprovementCandidate；未经批准不得 Promotion。
 19. 当前 Repair Evidence 可以关闭 Finding；Stale Evidence 不可以。
-20. Artifact、Code、Context Source、Gate、Evaluation 或 Policy 变化会按适用范围使绑定 Approval、ContextBundle 和 Evidence 失效。
+20. Artifact、Code、Context Source、Gate、Evaluation 或 Policy 变化会按适用范围使绑定 Approval、ContextBundle 和 Evidence 失效；进行中的原子调用只产生 provisional Evidence，下一个 Step 或权威提交前重新编译并校验。
 21. Completed Snapshot 包含 Final Commit、Plan、Adapter Control Profile、Outcome、Trajectory/Coverage Summary、Budget Use、Approval、Current Evidence、未解决非阻塞项和 Improvement Status；可恢复失败生成带 Resume Phase 的 `blocked`，只有显式取消或类型化不可恢复原因生成 `aborted`。
 22. SQLite 被删除或损坏后可从 Git Ledger 恢复。
 23. Manual/Command AgentAdapter 通过 Contract、Control-profile、Behavioral Evaluation 和 E2E Test；控制或可见性不足时始终阻止无人值守选择。
@@ -789,7 +824,7 @@ Ledger Transaction Commit 和受影响 Projection Generation 在同一 Dataset �
 25. Linux、macOS 和 Windows CI 通过。
 26. Pack/CLI Upgrade 保留 Project Override，失败 Migration 回滚。
 27. Graph 与 Context Performance 硬阈值通过，并生成 Ledger Commit 与 Projection Generation 的可复现基线。
-28. Repository Content、Package Metadata、Example、Fixture、Generated Provider Projection 和 Git History 保持独立，不包含原产品品牌、路径或业务领域示例。
+28. Repository Content、Package Metadata、Example、Fixture、Generated Provider Projection 和 Git History 保持独立，不包含原产品品牌、路径或业务领域示例；Provider Mirror 可复现、限定在受管路径且未经批准不覆盖用户配置。
 
 ## 18. M2–M4 兼容端口
 
