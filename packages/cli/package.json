@@ -1,0 +1,29 @@
+{
+  "name": "universal-harness",
+  "version": "0.0.0",
+  "private": false,
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -b",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@universal-harness-internal/adapter-agent-command": "workspace:*",
+    "@universal-harness-internal/adapter-agent-manual": "workspace:*",
+    "@universal-harness-internal/adapter-projection-markdown": "workspace:*",
+    "@universal-harness-internal/adapter-vcs-git": "workspace:*",
+    "@universal-harness-internal/core": "workspace:*",
+    "@universal-harness-internal/eval": "workspace:*",
+    "@universal-harness-internal/graph": "workspace:*",
+    "@universal-harness-internal/runtime": "workspace:*"
+  }
+}

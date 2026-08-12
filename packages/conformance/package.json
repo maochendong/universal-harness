@@ -1,0 +1,26 @@
+{
+  "name": "@universal-harness-internal/conformance",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -b",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@universal-harness-internal/core": "workspace:*",
+    "@universal-harness-internal/eval": "workspace:*",
+    "@universal-harness-internal/graph": "workspace:*",
+    "@universal-harness-internal/plugin-sdk": "workspace:*",
+    "@universal-harness-internal/runtime": "workspace:*"
+  }
+}

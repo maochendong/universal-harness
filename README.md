@@ -19,7 +19,7 @@ create or adopt a project
 
 The design uses one Git-native ledger with Artifact Graph and Execution Graph views. Agents propose semantic work; the Harness controls plans, context, capabilities, budgets, termination, evidence, recovery, and authoritative updates.
 
-The M1 design and implementation plan are approved. Task 1 workspace implementation is now in progress.
+The M1 design and implementation plan are approved. Task 1 established the reproducible workspace; Task 2 is next.
 
 ## Design
 

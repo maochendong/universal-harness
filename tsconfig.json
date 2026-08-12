@@ -1,0 +1,20 @@
+{
+  "files": [],
+  "references": [
+    { "path": "packages/core" },
+    { "path": "packages/graph" },
+    { "path": "packages/runtime" },
+    { "path": "packages/eval" },
+    { "path": "packages/plugin-sdk" },
+    { "path": "packages/conformance" },
+    { "path": "adapters/agent-manual" },
+    { "path": "adapters/agent-command" },
+    { "path": "adapters/vcs-git" },
+    { "path": "adapters/projection-markdown" },
+    { "path": "packs/generic" },
+    { "path": "packs/node" },
+    { "path": "packs/python" },
+    { "path": "packs/java" },
+    { "path": "packages/cli" }
+  ]
+}

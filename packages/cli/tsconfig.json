@@ -1,0 +1,15 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": { "outDir": "dist", "rootDir": "src" },
+  "include": ["src/**/*.ts"],
+  "references": [
+    { "path": "../core" },
+    { "path": "../graph" },
+    { "path": "../runtime" },
+    { "path": "../eval" },
+    { "path": "../../adapters/agent-manual" },
+    { "path": "../../adapters/agent-command" },
+    { "path": "../../adapters/vcs-git" },
+    { "path": "../../adapters/projection-markdown" }
+  ]
+}
