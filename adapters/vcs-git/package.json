@@ -14,6 +14,7 @@
   ],
   "scripts": {
     "build": "tsc -b",
+    "test": "vitest run --root ../.. adapters/vcs-git/test",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
