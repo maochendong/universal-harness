@@ -7,10 +7,12 @@ export const ProtocolVersionSchema = Type.String({
   default: PROTOCOL_VERSION,
 });
 
+export const IDENTIFIER_PATTERN = "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$" as const;
+
 export const IdentifierSchema = Type.String({
   minLength: 3,
   maxLength: 160,
-  pattern: "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+  pattern: IDENTIFIER_PATTERN,
 });
 
 export const DigestSchema = Type.String({ pattern: "^[a-f0-9]{64}$" });
