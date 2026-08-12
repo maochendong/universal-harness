@@ -1,0 +1,5 @@
+{
+  "operations": ["ledger-op_zzzz", "ledger-op_aaaa"],
+  "events": ["event_ledger-op_zzzz", "event_ledger-op_aaaa"],
+  "edges": ["edge_ledger-op_zzzz", "edge_ledger-op_aaaa"]
+}

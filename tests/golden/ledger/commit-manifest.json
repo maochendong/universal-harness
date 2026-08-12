@@ -1,0 +1,16 @@
+{
+  "protocol_version": "1.0.0",
+  "record_kind": "ledger_operation",
+  "ledger_operation_id": "ledger-op_01",
+  "workflow_operation_id": "workflow-op_01",
+  "attempt_id": "attempt_01",
+  "baseline_commit": "0123456789abcdef",
+  "sequence": 1,
+  "artifact_digests": ["de926544608e185d413982b84e78a67264b0713da471f8159da82d1307ab4411"],
+  "edge_file": "ledger/edges/2026-08/ledger-op_01.jsonl",
+  "event_file": "events/2026-08/ledger-op_01.jsonl",
+  "edge_file_digest": "17cd1df6f0718960703bc00627bc68328430e50bffadf8b6b74169481247647c",
+  "event_file_digest": "dfc4f488b1acb3e5f0172b875a921238dcb602e325241d7e9f9aa8d9fef85fa4",
+  "committed_at": "2026-08-12T00:00:00.000Z",
+  "digest": "0229aa6f8a1113b2f5c0d3a3fe267e361e3cd9ea151c046bbd0a8b7db9cfa451"
+}

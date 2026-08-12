@@ -62,6 +62,8 @@
       "pattern": "^events/[0-9]{4}-[0-9]{2}/[^/]+\\.jsonl$",
       "type": "string"
     },
+    "edge_file_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
+    "event_file_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
     "committed_at": { "format": "date-time", "type": "string" },
     "digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
     "extensions": {

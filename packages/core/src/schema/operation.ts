@@ -89,6 +89,10 @@ export const LedgerOperationSchema = strictObject({
   artifact_digests: Type.Array(DigestSchema, { uniqueItems: true }),
   edge_file: Type.String({ pattern: "^ledger/edges/[0-9]{4}-[0-9]{2}/[^/]+\\.jsonl$" }),
   event_file: Type.String({ pattern: "^events/[0-9]{4}-[0-9]{2}/[^/]+\\.jsonl$" }),
+  // Content digests of the immutable shard files. Writers must record them so
+  // materialization can reject a manifest whose shard bytes no longer match.
+  edge_file_digest: Type.Optional(DigestSchema),
+  event_file_digest: Type.Optional(DigestSchema),
   committed_at: TimestampSchema,
   digest: DigestSchema,
   extensions: Type.Optional(ExtensionsSchema),
