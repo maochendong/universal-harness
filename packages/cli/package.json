@@ -9,11 +9,15 @@
       "import": "./dist/index.js"
     }
   },
+  "bin": {
+    "harness": "./dist/bin.js"
+  },
   "files": [
     "dist"
   ],
   "scripts": {
     "build": "tsc -b",
+    "test": "vitest run --root ../.. packages/cli/test",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {

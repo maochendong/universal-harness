@@ -1,0 +1,258 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`harness CLI help and version > prints global help for --help, -h and no arguments 1`] = `
+"Universal Harness - graph-native, Git-native engineering harness.
+
+Usage: harness <command> [options]
+
+Orchestration:
+  new <name> --intent <text>      Create a managed project and run the first iteration
+  adopt [path] --intent <text>    Adopt an existing project and run an iteration
+  iterate <text>                  Run a full iteration for a follow-up change
+  resume <workflow-operation-id>  Resume a paused orchestration from its checkpoint
+
+Inspection:
+  status                          Show project state, cache health and next action
+  doctor                          Diagnose environment, Git, layout and cache issues
+  graph sync                      Rebuild the SQLite graph cache from the ledger
+  graph query [--type <type>]     Query materialized graph nodes
+  graph check                     Verify ledger integrity and cache consistency
+
+Global options:
+  --json                          Emit one canonical JSON record (machine readable)
+  --help, -h                      Show help
+  --version                       Show the CLI version
+"
+`;
+
+exports[`harness CLI help and version > prints global help for --help, -h and no arguments 2`] = `
+"Universal Harness - graph-native, Git-native engineering harness.
+
+Usage: harness <command> [options]
+
+Orchestration:
+  new <name> --intent <text>      Create a managed project and run the first iteration
+  adopt [path] --intent <text>    Adopt an existing project and run an iteration
+  iterate <text>                  Run a full iteration for a follow-up change
+  resume <workflow-operation-id>  Resume a paused orchestration from its checkpoint
+
+Inspection:
+  status                          Show project state, cache health and next action
+  doctor                          Diagnose environment, Git, layout and cache issues
+  graph sync                      Rebuild the SQLite graph cache from the ledger
+  graph query [--type <type>]     Query materialized graph nodes
+  graph check                     Verify ledger integrity and cache consistency
+
+Global options:
+  --json                          Emit one canonical JSON record (machine readable)
+  --help, -h                      Show help
+  --version                       Show the CLI version
+"
+`;
+
+exports[`harness CLI help and version > prints global help for --help, -h and no arguments 3`] = `
+"Universal Harness - graph-native, Git-native engineering harness.
+
+Usage: harness <command> [options]
+
+Orchestration:
+  new <name> --intent <text>      Create a managed project and run the first iteration
+  adopt [path] --intent <text>    Adopt an existing project and run an iteration
+  iterate <text>                  Run a full iteration for a follow-up change
+  resume <workflow-operation-id>  Resume a paused orchestration from its checkpoint
+
+Inspection:
+  status                          Show project state, cache health and next action
+  doctor                          Diagnose environment, Git, layout and cache issues
+  graph sync                      Rebuild the SQLite graph cache from the ledger
+  graph query [--type <type>]     Query materialized graph nodes
+  graph check                     Verify ledger integrity and cache consistency
+
+Global options:
+  --json                          Emit one canonical JSON record (machine readable)
+  --help, -h                      Show help
+  --version                       Show the CLI version
+"
+`;
+
+exports[`harness CLI help and version > prints per-command help 1`] = `
+"Usage: harness new <name> --intent <text> [--json]
+
+Create a managed project directory, initialize the .harness control plane
+(manifest, pack lock, ledger, managed .gitignore/.gitattributes) and run the
+first full iteration for the given intent.
+"
+`;
+
+exports[`harness CLI help and version > prints per-command help 2`] = `
+"Usage: harness adopt [path] --intent <text> [--json]
+
+Adopt an existing project: scan it into staging, approve the deterministic
+baseline, then run the requested iteration. Nothing outside .harness is
+modified, and the project root .gitignore is never touched.
+"
+`;
+
+exports[`harness CLI help and version > prints per-command help 3`] = `
+"Usage: harness iterate <text> [--json]
+
+Run the full closed loop (capture, plan, execute, verify, evaluate, repair,
+snapshot) for a follow-up change inside the current managed project.
+"
+`;
+
+exports[`harness CLI help and version > prints per-command help 4`] = `
+"Usage: harness resume <workflow-operation-id> [--json]
+
+Resume a paused orchestration from its last committed checkpoint. The
+workflow operation id is returned by earlier blocked or deferred runs.
+"
+`;
+
+exports[`harness CLI help and version > prints per-command help 5`] = `
+"Usage: harness status [--json]
+
+Show the managed project identity, committed ledger operation count, graph
+cache health and the last ledger operation for the current project.
+"
+`;
+
+exports[`harness CLI help and version > prints per-command help 6`] = `
+"Usage: harness doctor [--json]
+
+Diagnose the runtime environment, Git availability, managed project layout
+and graph cache health. Exits non-zero when any check fails.
+"
+`;
+
+exports[`harness CLI help and version > prints per-command help 7`] = `
+"Usage: harness graph <sync|query|check> [options]
+
+  sync    Rebuild the disposable SQLite cache from the authoritative ledger
+  query   Query materialized graph nodes (--type, --limit, --cursor)
+  check   Verify ledger integrity invariants and cache consistency
+"
+`;
+
+exports[`harness CLI help and version > prints the CLI version 1`] = `
+"universal-harness 0.0.0
+"
+`;
+
+exports[`harness CLI inspection commands > fails graph query before the first sync 1`] = `
+"{"category":"command_failed","data":{"cache_status":"missing"},"message":"graph cache is missing; run harness graph sync first","status":"error"}
+"
+`;
+
+exports[`harness CLI inspection commands > rejects unknown graph subcommands and node types 1`] = `
+"error [usage_error]: unknown graph subcommand: explode; expected sync, query or check
+"
+`;
+
+exports[`harness CLI inspection commands > rejects unknown graph subcommands and node types 2`] = `
+"error [usage_error]: unknown node type: Nonsense; expected one of Project, Repository, Iteration, Intent, Requirement, Constraint, Decision, Component, ExecutionPlan, Task, CodeArtifact, Policy, ToolDefinition, Test, EvaluationCase, Gate, ContextBundle, Run, Checkpoint, Evidence, ApprovalRequest, Approval, Finding, RootCauseAnalysis, ImprovementCandidate, ImpactSet
+"
+`;
+
+exports[`harness CLI inspection commands > runs doctor checks in and outside a project 1`] = `
+{
+  "command": "doctor",
+  "data": {
+    "checks": [
+      {
+        "detail": "v22.23.1 (requires >= 22.13.0)",
+        "name": "node_runtime",
+        "status": "pass",
+      },
+      {
+        "detail": "git version 2.50.0",
+        "name": "git_executable",
+        "status": "pass",
+      },
+      {
+        "detail": "no managed project at or above the working directory (project checks skipped)",
+        "name": "project_layout",
+        "status": "pass",
+      },
+    ],
+    "failed_checks": 0,
+  },
+  "message": "all 3 checks passed",
+  "status": "ok",
+}
+`;
+
+exports[`harness CLI inspection commands > syncs, queries and checks the graph cache 1`] = `
+"{"command":"graph sync","data":{"database_path":"<PROJECT_ROOT>/.harness/cache/graph.db","edges":0,"events":0,"last_sequence":0,"nodes":0,"operations":0,"project_root":"<PROJECT_ROOT>","projection_digest":"9ed879368dae585c03d103d0ed45eb059de0167a32b14ed3e564d841bcc96430","recovered_from":"missing","skipped_artifacts":0},"message":"graph cache rebuilt: 0 nodes, 0 edges, 0 events","status":"ok"}
+"
+`;
+
+exports[`harness CLI inspection commands > syncs, queries and checks the graph cache 2`] = `
+"{"command":"graph check","data":{"graph_cache":"ok","integrity_violations":0,"project_root":"<PROJECT_ROOT>","violations":[]},"message":"ledger integrity and cache consistency verified","status":"ok"}
+"
+`;
+
+exports[`harness CLI inspection commands > syncs, queries and checks the graph cache 3`] = `
+"{"command":"graph query","data":{"count":0,"nodes":[],"project_root":"<PROJECT_ROOT>"},"message":"0 nodes","status":"ok"}
+"
+`;
+
+exports[`harness CLI orchestration stubs > fails iterate and resume outside a managed project 1`] = `
+"{"category":"project_not_found","message":"no managed project found at or above /","status":"error"}
+"
+`;
+
+exports[`harness CLI orchestration stubs > fails iterate and resume outside a managed project 2`] = `
+"{"category":"project_not_found","message":"no managed project found at or above /","status":"error"}
+"
+`;
+
+exports[`harness CLI orchestration stubs > fails iterate and resume outside a managed project 3`] = `
+"{"category":"project_not_found","message":"no managed project found at or above /","status":"error"}
+"
+`;
+
+exports[`harness CLI orchestration stubs > returns an explicit stage status instead of faking success 1`] = `
+"{"command":"new","data":{"request":{"intent":"build it","name":"demo"},"stage":"bootstrap.new_project"},"message":"orchestration stage bootstrap.new_project is not implemented yet; no project state was changed","status":"stage_unavailable"}
+"
+`;
+
+exports[`harness CLI orchestration stubs > returns an explicit stage status instead of faking success 2`] = `
+"{"command":"adopt","data":{"request":{"intent":"change it","path":"<PROJECT_ROOT>"},"stage":"bootstrap.adopt_project"},"message":"orchestration stage bootstrap.adopt_project is not implemented yet; no project state was changed","status":"stage_unavailable"}
+"
+`;
+
+exports[`harness CLI orchestration stubs > returns an explicit stage status instead of faking success 3`] = `
+"{"command":"iterate","data":{"request":{"projectRoot":"<PROJECT_ROOT>","text":"next change"},"stage":"orchestration.iterate"},"message":"orchestration stage orchestration.iterate is not implemented yet; no project state was changed","status":"stage_unavailable"}
+"
+`;
+
+exports[`harness CLI orchestration stubs > returns an explicit stage status instead of faking success 4`] = `
+"{"command":"resume","data":{"request":{"projectRoot":"<PROJECT_ROOT>","workflowOperationId":"wf-op_1"},"stage":"orchestration.resume"},"message":"orchestration stage orchestration.resume is not implemented yet; no project state was changed","status":"stage_unavailable"}
+"
+`;
+
+exports[`harness CLI usage errors > rejects unknown commands with the usage exit code 1`] = `
+"error [usage_error]: unknown command: frobnicate; run harness --help
+"
+`;
+
+exports[`harness CLI usage errors > rejects unknown options as usage errors 1`] = `
+"error [usage_error]: Unknown option '--bogus'. To specify a positional argument starting with a '-', place it at the end of the command after '--', as in '-- "--bogus"; usage: harness status
+"
+`;
+
+exports[`harness CLI usage errors > reports structured JSON usage errors in --json mode 1`] = `
+"{"category":"usage_error","message":"harness new requires --intent <text>; usage: harness new <name> --intent <text>","status":"error"}
+"
+`;
+
+exports[`harness CLI usage errors > requires --intent for new and adopt 1`] = `
+"error [usage_error]: harness new requires --intent <text>; usage: harness new <name> --intent <text>
+"
+`;
+
+exports[`harness CLI usage errors > requires --intent for new and adopt 2`] = `
+"error [usage_error]: harness adopt requires --intent <text>; usage: harness adopt [path] --intent <text>
+"
+`;

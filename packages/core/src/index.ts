@@ -1,5 +1,6 @@
 export * from "./identity/index.js";
 export * from "./ledger/index.js";
+export * from "./project/index.js";
 export * from "./schema/index.js";
 export * from "./version.js";
 
