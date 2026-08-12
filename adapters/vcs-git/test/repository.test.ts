@@ -39,6 +39,28 @@ describe("detectRepository", () => {
   });
 });
 
+describe("initRepository", () => {
+  it("initializes a repository on the requested initial branch", async () => {
+    const root = makeTempDir("harness-vcs-init-");
+    const result = await adapter.initRepository(root, { initialBranch: "main" });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.root).toBe(root);
+    expect(result.value.branch).toBe("main");
+    expect(result.value.head).toBeNull();
+    const detected = await adapter.detectRepository(root);
+    expect(detected.ok).toBe(true);
+  });
+
+  it("initializes a repository with the git default branch when none is given", async () => {
+    const root = makeTempDir("harness-vcs-init-default-");
+    const result = await adapter.initRepository(root);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(typeof result.value.branch).toBe("string");
+  });
+});
+
 describe("baselineCommit", () => {
   it("returns the current HEAD commit hash", async () => {
     const root = makeRepo();

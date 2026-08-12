@@ -63,6 +63,7 @@ export const ARTIFACT_DIRECTORIES = [
   "artifacts/approvals",
   "artifacts/improvements",
   "artifacts/iterations",
+  "artifacts/code-artifacts",
 ] as const;
 
 export const MANAGED_DIRECTORIES = [

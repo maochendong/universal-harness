@@ -167,6 +167,13 @@ importers:
       '@universal-harness-internal/graph':
         specifier: workspace:*
         version: link:../graph
+      '@universal-harness-internal/plugin-sdk':
+        specifier: workspace:*
+        version: link:../plugin-sdk
+    devDependencies:
+      '@universal-harness-internal/adapter-vcs-git':
+        specifier: workspace:*
+        version: link:../../adapters/vcs-git
 
   packs/generic:
     dependencies:

@@ -18,6 +18,10 @@
   },
   "dependencies": {
     "@universal-harness-internal/core": "workspace:*",
-    "@universal-harness-internal/graph": "workspace:*"
+    "@universal-harness-internal/graph": "workspace:*",
+    "@universal-harness-internal/plugin-sdk": "workspace:*"
+  },
+  "devDependencies": {
+    "@universal-harness-internal/adapter-vcs-git": "workspace:*"
   }
 }

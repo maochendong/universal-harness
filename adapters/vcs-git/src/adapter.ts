@@ -9,6 +9,7 @@ import {
   type DiffFileSummary,
   type DiffSummary,
   type DriftReport,
+  type InitRepositoryOptions,
   type RemoveWorktreeOptions,
   type RepositoryInfo,
   type VcsAdapter,
@@ -52,6 +53,19 @@ async function readRepositoryInfo(
  */
 export function createGitVcsAdapter(options: GitVcsAdapterOptions = {}): VcsAdapter {
   const run = createGitRunner(options);
+
+  async function initRepository(
+    path: string,
+    initOptions?: InitRepositoryOptions,
+  ): Promise<VcsResult<RepositoryInfo>> {
+    const args = ["init"];
+    if (initOptions?.initialBranch !== undefined) {
+      args.push("--initial-branch", initOptions.initialBranch);
+    }
+    const initialized = await run("initRepository", path, args);
+    if (!initialized.ok) return initialized;
+    return readRepositoryInfo(run, "initRepository", path);
+  }
 
   async function detectRepository(path: string): Promise<VcsResult<RepositoryInfo>> {
     return readRepositoryInfo(run, "detectRepository", path);
@@ -122,7 +136,17 @@ export function createGitVcsAdapter(options: GitVcsAdapterOptions = {}): VcsAdap
 
     // Committing with a pathspec records the declared paths only; unrelated
     // staged and unstaged user changes are preserved.
+    const identityArgs =
+      request.identity === undefined
+        ? []
+        : [
+            "-c",
+            `user.name=${request.identity.name}`,
+            "-c",
+            `user.email=${request.identity.email}`,
+          ];
     const committed = await run("commit", root, [
+      ...identityArgs,
       "commit",
       "--no-verify",
       "-m",
@@ -267,6 +291,7 @@ export function createGitVcsAdapter(options: GitVcsAdapterOptions = {}): VcsAdap
 
   return {
     name: "git",
+    initRepository,
     detectRepository,
     status,
     baselineCommit,

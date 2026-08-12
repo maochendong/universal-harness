@@ -1,4 +1,8 @@
 import { execFileSync } from "node:child_process";
+import { resolve } from "node:path";
+
+import { createGitVcsAdapter } from "@universal-harness-internal/adapter-vcs-git";
+import { createRuntimeService, type BootstrapError } from "@universal-harness-internal/runtime";
 
 import { EXIT_CODES, asCliError, usageError } from "./errors.js";
 import {
@@ -67,9 +71,9 @@ function stageUnavailable(
 }
 
 /**
- * Stub runtime service injected until the orchestration tasks land. It
- * answers every orchestration command with an explicit stage status instead
- * of faking success, so scripts can rely on the exit code today.
+ * Stub runtime service for orchestration stages that have not landed yet
+ * (iterate/resume). It answers with an explicit stage status instead of
+ * faking success, so scripts can rely on the exit code today.
  */
 export function createStubRuntimeService(): RuntimeService {
   return {
@@ -81,6 +85,73 @@ export function createStubRuntimeService(): RuntimeService {
       Promise.resolve(stageUnavailable("iterate", "orchestration.iterate", { ...request })),
     resume: (request) =>
       Promise.resolve(stageUnavailable("resume", "orchestration.resume", { ...request })),
+  };
+}
+
+function bootstrapFailure(command: string, error: BootstrapError): CommandResult {
+  return {
+    command,
+    status: "failed",
+    message: error.message,
+    data: { kind: error.kind, ...(error.data ?? {}) },
+  };
+}
+
+/**
+ * Default runtime wiring: `new` and `adopt` delegate to the runtime bootstrap
+ * service over the Git VCS adapter, while iterate/resume keep reporting their
+ * explicit stage status. The adopt route stops at the staged preview: the
+ * approval interaction (Task 11) is not implemented yet, so no authoritative
+ * state changes and the stage status says exactly that.
+ */
+export function createDefaultRuntimeService(cwd: string): RuntimeService {
+  const runtime = createRuntimeService({ vcs: createGitVcsAdapter() });
+  const stub = createStubRuntimeService();
+  return {
+    newProject: async (request) => {
+      const outcome = await runtime.newProject({
+        parentDirectory: cwd,
+        name: request.name,
+        intent: request.intent,
+      });
+      if (!outcome.ok) return bootstrapFailure("new", outcome.error);
+      const value = outcome.value;
+      return {
+        command: "new",
+        status: "ok",
+        message: `created project ${value.name} with bootstrap baseline ${value.ledgerOperationId}`,
+        data: { ...value },
+      };
+    },
+    adoptProject: async (request) => {
+      const outcome = await runtime.prepareAdoption({
+        projectRoot: resolve(cwd, request.path),
+        intent: request.intent,
+      });
+      if (!outcome.ok) return bootstrapFailure("adopt", outcome.error);
+      const value = outcome.value;
+      return {
+        command: "adopt",
+        status: "stage_unavailable",
+        message:
+          `adoption preview staged under .harness/staging/${value.stagingOperationId}; ` +
+          "baseline approval is not implemented yet; no authoritative state was changed",
+        data: {
+          stage: "approval.interaction",
+          staging_operation_id: value.stagingOperationId,
+          preview_digest: value.previewDigest,
+          baseline_commit: value.baselineCommit,
+          workflow_operation_id: value.workflowOperationId,
+          stack: value.preview.stack.primary,
+          files: value.preview.files.length,
+          components: value.preview.components.length,
+          conflicts: value.preview.conflicts,
+          unknown_items: value.preview.unknown_items,
+        },
+      };
+    },
+    iterate: stub.iterate,
+    resume: stub.resume,
   };
 }
 
@@ -265,7 +336,7 @@ export async function runCli(
     io,
     cwd: dependencies.cwd,
     json: flags.json,
-    runtime: dependencies.runtime ?? createStubRuntimeService(),
+    runtime: dependencies.runtime ?? createDefaultRuntimeService(dependencies.cwd),
     gitVersion: dependencies.gitVersion ?? defaultGitVersion,
   };
   try {

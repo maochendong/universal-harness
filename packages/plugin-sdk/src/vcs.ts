@@ -97,6 +97,11 @@ export interface DriftReport {
   readonly worktree: WorktreeStatus;
 }
 
+export interface InitRepositoryOptions {
+  /** Initial branch name; defaults to the Git default when omitted. */
+  readonly initialBranch?: string;
+}
+
 export interface CommitRequest {
   readonly message: string;
   /**
@@ -104,6 +109,14 @@ export interface CommitRequest {
    * committed; every other staged or unstaged user change is left untouched.
    */
   readonly paths: readonly string[];
+  /**
+   * Explicit author/committer identity for this commit only (applied via
+   * `git -c`), so tool-authored commits never depend on ambient git config.
+   */
+  readonly identity?: {
+    readonly name: string;
+    readonly email: string;
+  };
 }
 
 export interface CreateBranchOptions {
@@ -133,6 +146,11 @@ export interface RemoveWorktreeOptions {
 
 export interface VcsAdapter {
   readonly name: string;
+  /**
+   * Initialize a new repository at `path` (which must already exist) without
+   * touching any existing repository state elsewhere.
+   */
+  initRepository(path: string, options?: InitRepositoryOptions): Promise<VcsResult<RepositoryInfo>>;
   detectRepository(path: string): Promise<VcsResult<RepositoryInfo>>;
   status(root: string): Promise<VcsResult<WorktreeStatus>>;
   /** Current HEAD commit hash; the baseline an iteration binds to. */

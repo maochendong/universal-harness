@@ -132,12 +132,6 @@ describe("harness CLI orchestration stubs", () => {
   it("returns an explicit stage status instead of faking success", async () => {
     const projectRoot = makeManagedProject();
     const cases: { argv: string[]; cwd: string; stage: string }[] = [
-      { argv: ["new", "demo", "--intent", "build it"], cwd: "/", stage: "bootstrap.new_project" },
-      {
-        argv: ["adopt", projectRoot, "--intent", "change it"],
-        cwd: "/",
-        stage: "bootstrap.adopt_project",
-      },
       { argv: ["iterate", "next change"], cwd: projectRoot, stage: "orchestration.iterate" },
       { argv: ["resume", "wf-op_1"], cwd: projectRoot, stage: "orchestration.resume" },
     ];

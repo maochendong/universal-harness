@@ -213,21 +213,11 @@ exports[`harness CLI orchestration stubs > fails iterate and resume outside a ma
 `;
 
 exports[`harness CLI orchestration stubs > returns an explicit stage status instead of faking success 1`] = `
-"{"command":"new","data":{"request":{"intent":"build it","name":"demo"},"stage":"bootstrap.new_project"},"message":"orchestration stage bootstrap.new_project is not implemented yet; no project state was changed","status":"stage_unavailable"}
-"
-`;
-
-exports[`harness CLI orchestration stubs > returns an explicit stage status instead of faking success 2`] = `
-"{"command":"adopt","data":{"request":{"intent":"change it","path":"<PROJECT_ROOT>"},"stage":"bootstrap.adopt_project"},"message":"orchestration stage bootstrap.adopt_project is not implemented yet; no project state was changed","status":"stage_unavailable"}
-"
-`;
-
-exports[`harness CLI orchestration stubs > returns an explicit stage status instead of faking success 3`] = `
 "{"command":"iterate","data":{"request":{"projectRoot":"<PROJECT_ROOT>","text":"next change"},"stage":"orchestration.iterate"},"message":"orchestration stage orchestration.iterate is not implemented yet; no project state was changed","status":"stage_unavailable"}
 "
 `;
 
-exports[`harness CLI orchestration stubs > returns an explicit stage status instead of faking success 4`] = `
+exports[`harness CLI orchestration stubs > returns an explicit stage status instead of faking success 2`] = `
 "{"command":"resume","data":{"request":{"projectRoot":"<PROJECT_ROOT>","workflowOperationId":"wf-op_1"},"stage":"orchestration.resume"},"message":"orchestration stage orchestration.resume is not implemented yet; no project state was changed","status":"stage_unavailable"}
 "
 `;
