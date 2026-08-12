@@ -1,7 +1,7 @@
 # Universal Harness M1 实施计划
 
 **日期**：2026-08-11  
-**状态**：实施中；Task 1 已完成  
+**状态**：实施中；Task 1 已完成，评审修订已吸收
 **设计依据**：`docs/superpowers/specs/2026-08-11-universal-harness-m1-design.md`  
 **目标里程碑**：M1 完整纵向闭环
 
@@ -40,7 +40,7 @@ Task 1 会在完成许可证、原生二进制和跨平台检查后选择并锁�
 
 附加规则：
 
-- 本计划批准后，从 `codex/m1-implementation` 开始实施。
+- 本计划批准后直接在唯一 `main` 分支实施；按 Task 保持聚焦提交，并在推送前通过对应门禁。
 - 公共导出必须显式声明；package 不得导入其他 package 的私有源码路径。
 - 提交生成的 lockfile 和 schema；不提交缓存、原始轨迹、临时仓库或 Provider 镜像。
 - 每个持久化写入都必须经过中断或幂等重放测试。
@@ -66,7 +66,7 @@ universal-harness/
 │   └── projection-markdown/
 ├── packs/{generic,node,python,java}/
 ├── fixtures/{generic-project,node-project,python-project,java-project}/
-├── tests/{integration,e2e,fault,security,performance,golden}/
+├── tests/{integration,e2e,fault,security,performance,golden,helpers,reporting}/
 ├── examples/
 └── docs/
 ```
@@ -139,8 +139,8 @@ node scripts/check-standalone.mjs
 
 **步骤**：
 
-1. 为所有节点类别、关系、来源、状态、Run outcome 和 termination reason 编写有效与无效夹具。
-2. 实现拒绝未知字段的严格 Schema，只允许显式扩展命名空间。
+1. 为所有节点类别、关系、来源、状态、Run outcome、termination reason、ApprovalRequest 和 Approval Decision 编写有效与无效夹具。
+2. 实现拒绝未知字段的严格 Schema，只允许显式扩展命名空间；Policy 字段必须声明 merge operator，不能依赖整对象覆盖。
 3. 导出生成的 JSON Schema 和协议版本常量。
 4. 添加兼容性测试：拒绝不支持的主版本，只在扩展字段中保留未来未知数据。
 
@@ -159,9 +159,9 @@ node scripts/check-standalone.mjs
 **步骤**：
 
 1. 为仓库限定 Locator 和确定性 UUIDv5 节点 ID 添加 golden tests。
-2. 添加键顺序无关、Unicode 规范化、路径分隔符规范化和摘要稳定性属性。
+2. 添加键顺序无关、Unicode 规范化、路径分隔符规范化、摘要稳定性以及 rename chain 稳定、无环、无 orphan 属性。
 3. 实现规范化，且不得把 Locator 解析到仓库边界之外。
-4. 拒绝绝对路径、遍历片段、歧义驱动器前缀和非法 symbol fragment。
+4. 拒绝绝对路径、遍历片段、歧义驱动器前缀和非法 symbol fragment；证明纯 Rename 保留内容摘要并使用可追溯 `SUPERSEDES`，不复用不确定 Identity。
 
 **验证**：`pnpm --filter @universal-harness-internal/core test -- identity`。
 
@@ -173,13 +173,14 @@ node scripts/check-standalone.mjs
 
 - `packages/core/src/ledger/{layout,lock,transaction,event-store,repository}.ts`
 - `packages/core/test/ledger/*.test.ts`
+- `tests/helpers/fault-injection.ts`
 - `tests/fault/ledger-interruption.test.ts`
 - `tests/golden/ledger/*.json`
 
 **步骤**：
 
 1. 定义包含 operation ID、预期 baseline、待写工件、已接受边、事件和摘要的事务 manifest。
-2. 测试原子成功、校验失败、并发写拒绝、提交前中断和已完成操作重放。
+2. 创建共享故障注入 Helper，按命名 durable boundary 注入 process kill、timeout、corrupt output 与 uncertain result；先用于原子成功、校验失败、并发写拒绝、提交前中断和已完成操作重放。
 3. 实现 staging、同文件系统原子 rename、原子目录锁和只追加序列校验。
 4. 恢复未完成 staging，但不得把它视为已接受权威数据。
 
@@ -222,7 +223,7 @@ node scripts/check-standalone.mjs
 
 1. 添加悬空边拒绝、关系类型兼容、版本单调性和非法依赖环属性。
 2. 实现前向迁移预览、备份、应用、校验和回滚。
-3. 实现缓存损坏检测和完整重建。
+3. 复用 `tests/helpers/fault-injection.ts` 实现缓存损坏检测、迁移中断和完整重建。
 4. 仅在权威迁移成功后记录迁移事件。
 
 **验证**：graph tests 和 `pnpm test -- sqlite-corruption`。
@@ -257,14 +258,15 @@ node scripts/check-standalone.mjs
 - `packages/cli/src/commands/graph/{sync,query,check}.ts`
 - `packages/cli/test/help.test.ts`
 - `packages/core/src/project/{manifest,layout,lockfile}.ts`
+- `tests/reporting/acceptance-evidence.ts`
 - `fixtures/generic-project/`
 
 **步骤**：
 
 1. 为 help、结构化 JSON 输出、退出码和非交互错误添加 CLI snapshot tests。
-2. 实现命令路由和依赖注入，命令处理器中不放业务逻辑。
+2. 实现命令路由和依赖注入；`new`、`adopt`、`iterate`、`resume` 处理器委托给类型化 Runtime Service stub，命令处理器中不放业务逻辑。
 3. 实现 `.harness` 布局、manifest、pack lock 校验、受管 `.gitignore` 和根边界检查。
-4. 在后续任务完成前，未实现的编排命令必须返回明确阶段状态，不得伪报成功。
+4. 预留类型化 Acceptance Evidence 上报 Hook；在后续任务完成前，未实现的编排命令必须返回明确阶段状态，不得伪报成功。
 
 **验证**：`pnpm --filter universal-harness test` 和 `pnpm harness --help`。
 
@@ -282,9 +284,9 @@ node scripts/check-standalone.mjs
 
 **步骤**：
 
-1. 测试新建项目、已有路径拒绝、stack 检测、初始 repository ID 和 Bootstrap Iteration。
+1. 通过 Runtime Service 直接测试新建项目、已有路径拒绝、stack 检测、初始 repository ID 和 Bootstrap Iteration，并以 Task 8 CLI Route 增加一个薄契约测试。
 2. 测试接管扫描只进入 staging、忽略缓存和 VCS 内部、报告冲突与未知项、批准前不改变权威数据。
-3. 实现确定性文件、测试、组件扫描和语义边提案输入。
+3. 实现确定性文件、测试、组件扫描和语义边提案输入；本 Task 只提交确定性 Baseline，不提前生成 ImpactSet 或 ExecutionPlan。
 4. 仅在 Approval 绑定 preview digest 后原子提交 baseline。
 
 **验证**：在临时仓库运行 bootstrap integration tests。
@@ -301,7 +303,7 @@ node scripts/check-standalone.mjs
 
 **步骤**：
 
-1. 测试 created、awaiting input、awaiting approval、planned、running、verifying、repairing、completed、blocked、aborted 转换表。
+1. 测试 created、awaiting input、awaiting approval、planned、running、verifying、repairing、completed、blocked、aborted 转换表，以及 recoverable failure → `blocked`、显式取消/类型化不可恢复原因 → `aborted` 的夹具。
 2. 强制只有 Workflow Engine 能提交 WorkingState；Adapter 只能返回类型化提案。
 3. 在权威提交、批准、Task、Gate、外部动作和 Snapshot 后持久化 checkpoint。
 4. 校验 baseline、输入、策略、批准和 ContextBundle 摘要后，从最新有效 checkpoint 恢复。
@@ -315,15 +317,16 @@ node scripts/check-standalone.mjs
 **创建**：
 
 - `packages/runtime/src/requirements/{capture,baseline}.ts`
-- `packages/runtime/src/approval/{service,invalidation}.ts`
+- `packages/runtime/src/approval/{request,interaction,service,invalidation}.ts`
 - `packages/runtime/test/{requirements,approval}/*.test.ts`
 
 **步骤**：
 
 1. 把 intent 输入转换为 Intent、Requirement、Constraint 和 acceptance Test 提案。
 2. 缺少必填需求字段或可验证验收条件时必须要求澄清。
-3. Approval 绑定 artifact、baseline、policy 和 preview digest。
-4. 绑定摘要变化时使 Approval 失效；Agent 或 Tool 不得自我批准。
+3. 在提示前持久化 ApprovalRequest 与 Checkpoint，绑定 artifact、baseline、policy、Impact Path 和 preview digest；Preview 与 JSON 输出来自同一记录。
+4. 实现显式 approve/reject/defer、非交互 `ApprovalRequired`、Ctrl-C/EOF → defer、单请求顺序处理和稳定 Operation ID；不允许隐式默认或 M1 批量批准。
+5. Decision/Resume 时重新校验绑定；摘要变化时追加失效记录并重发请求，Agent 或 Tool 不得自我批准。
 
 **验证**：requirements 和 approval 聚焦测试。
 
@@ -340,9 +343,9 @@ node scripts/check-standalone.mjs
 **步骤**：
 
 1. 定义 feature、bugfix、refactor、security、maintenance 和 Finding 驱动的 golden scenarios。
-2. 实现确定性 seed、关系感知传播、风险和置信度、最短解释路径及 `must-change`/`should-review` 分类。
+2. 实现确定性 seed、关系感知传播、风险和置信度、最短解释路径及 `must-change`/`inspect`/`informational` 分类；接受推断 Edge 不得改写原始 Confidence。
 3. 将概率语义建议隔离为带理由和置信度的 proposed edge。
-4. 规划前必须批准精确的 ImpactSet digest。
+4. 规划前必须批准精确的 ImpactSet digest；添加纯 Rename 只产生 `informational`、内容/接口变化正常传播的对照 fixture。
 
 **验证**：`pnpm --filter @universal-harness-internal/graph test -- impact`。
 
@@ -358,10 +361,10 @@ node scripts/check-standalone.mjs
 
 **步骤**：
 
-1. 添加选择 `direct`、`single-loop` 和顺序 `dag` 的夹具。
+1. 添加结构化 Intent → `direct`、确定性 Pack 转换 → `direct`、无既有 Graph 的自由文本 Intent → 受限 `single-loop`，以及顺序 `dag` 的夹具。
 2. 创建多个 Task 节点前强制执行独立价值规则。
 3. 拒绝 planner proposal 中的命令、原始 Shell、未知 Tool、环、缺失 Gate 和能力扩张。
-4. 每个 Task 绑定已批准 ImpactSet 路径、预期输出、验收条件、依赖、风险和必需 Gate。
+4. 每个 Task 绑定已批准 ImpactSet 路径、预期输出、验收条件、依赖、风险和必需 Gate；DAG Fixture 断言 Task-local Context、WorkingState View、Budget、Grant、Approval Binding 和 Checkpoint 不共享可变状态。
 
 **验证**：planning tests 与 golden plan snapshots。
 
@@ -380,7 +383,7 @@ node scripts/check-standalone.mjs
 1. 测试来源优先级、受保护字段、排除项、分层预算、压缩和不可变 manifest。
 2. 实现确定性 Graph 邻域选择，并记录选择每个来源的原因。
 3. 压缩可插拔；M1 确定性压缩器必须保留受保护内容并记录大小变化。
-4. 任一来源、Requirement、Approval、Policy、Plan 或 baseline digest 改变时，使 bundle 失效。
+4. 任一来源、Requirement、Approval、Policy、Plan 或 baseline digest 改变时，使 bundle 失效；相邻 DAG Task 必须分别编译与摘要各自 Bundle。
 
 **验证**：context tests，包括随机预算保持属性。
 
@@ -397,9 +400,9 @@ node scripts/check-standalone.mjs
 **步骤**：
 
 1. 测试 action、规范化参数、resource、phase、risk、approval 和 Adapter control profile 的决策。
-2. 实现具有稳定理由的 allow、deny 和 requires-approval 结果。
+2. 实现具有稳定理由的 allow、deny 和 requires-approval 结果；按字段合并 Installation、Pack、Project Policy，覆盖 hard ceiling 最小值、allow set 交集、deny 优先、approval 并集及安全强度最严格值。
 3. 强制 read/write path scope、symlink-aware repository boundary、state field scope 和动态能力收窄。
-4. 拒绝通过 prompt 请求修改策略、增加 Tool、新增路径、自我批准或自行接受证据。
+4. 拒绝通过 prompt 请求修改策略、增加 Tool、新增路径、自我批准或自行接受证据；未声明 Merge Operator 或不可排序冲突必须 Block 并记录各层/effective digest。
 
 **验证**：policy tests 和 capability security tests。
 
@@ -418,7 +421,7 @@ node scripts/check-standalone.mjs
 
 1. 测试未知 Tool、非法输入/输出、错误 phase、禁止 resource、过期 approval、quota、retry、redaction 和 timeout。
 2. 实现调用前、调用中、调用后校验及规范化 Evidence。
-3. 调用前提交 external action intent，调用后提交 completed 或 uncertain 状态。
+3. 调用前提交 external action intent，调用后提交 completed 或 uncertain 状态；复用共享故障注入 Helper 覆盖中断、Timeout、Invalid Tool Output 与 Uncertain Result。
 4. 恢复时先按 idempotency key 对账再重试；Provider 无法安全对账时必须人工处理。
 
 **验证**：tool tests 和 uncertain-action fault test。
@@ -546,7 +549,7 @@ node scripts/check-standalone.mjs
 2. Audit 检查 traceability、stale knowledge、contradiction、orphan、missing verification、context health 和未提升高风险 improvement。
 3. 以可执行类型化结果诊断 Git、Schema、Pack、Adapter、cache 和 environment 问题。
 4. Status 显示 control level、evaluation coverage、blocker、stale Evidence、approval、budget 和 next action。
-5. 构建 `completed`、`blocked`、`aborted` Snapshot；存在未完成 Task、blocking Finding、stale Evidence 或未解决外部动作时拒绝 completed。
+5. 构建 `completed`、`blocked`、`aborted` Snapshot；存在未完成 Task、blocking Finding、stale Evidence 或未解决外部动作时拒绝 completed。可恢复状态必须生成含 `resume_phase`、Blocker、Checkpoint 和 Operation ID 的 `blocked`，只有显式取消或类型化不可恢复原因才能生成 `aborted`。
 
 **验证**：projection goldens 和 runtime utility tests。
 
@@ -569,7 +572,7 @@ node scripts/check-standalone.mjs
 
 1. 先接通 graph sync/query/check、impact、plan、run、verify、eval、approve、snapshot、audit、doctor、status。
 2. 让 `new`、`adopt`、`iterate` 通过同一个 phase orchestrator。
-3. 交互批准在同一会话继续；非交互批准返回 resumable operation ID。
+3. 交互批准在同一会话按 request ID 顺序继续；Ctrl-C/EOF 生成 defer/blocked；非交互返回结构化 ApprovalRequired 与 resumable operation ID，Resume 前重新校验全部绑定。
 4. 在每个 committed phase 周围发出有序 lifecycle event，但不暴露公共 Hook SDK。
 5. 添加中断点，证明 `resume` 不会重复 authority 或 side effect。
 
@@ -614,8 +617,8 @@ node scripts/check-standalone.mjs
 
 1. 实现 Generic 默认值，包括已批准的 LoopPolicy ceiling。
 2. 添加 Node、Python、Java 的确定性检测、扫描和默认 Gate。
-3. Project override 与 upstream Pack 分离存储。
-4. 实现 upgrade preview、digest-bound approval、transactional migration、rollback 和 lockfile update。
+3. Project override 与 upstream Pack 分离存储，并用 Policy Schema 的字段级 Operator 合并；测试 Project 不能放宽 Installation Hard Bound、Deny 优先、Ceiling 取最小值、Allow Set 取交集、Approval Requirement 取并集。
+4. 实现 upgrade preview、digest-bound approval、transactional migration、rollback 和 lockfile update；升级后记录各层 Policy Digest 与 Effective Policy Digest。
 
 **验证**：每个 Pack 的 conformance fixture 与失败迁移测试。
 
@@ -633,7 +636,7 @@ node scripts/check-standalone.mjs
 
 1. 创建原创、小型、无需网络且测试确定的 Fixture。
 2. 对每个 Stack 运行 new、adopt 和后续 iterate。
-3. 断言 Requirement、两个 Graph View、ImpactSet、ExecutionPlan、ContextBundle、Run、Gate、Evaluation、注入失败时的 feedback、Approval、Evidence 和 final Snapshot。
+3. 断言 Requirement、两个 Graph View、ImpactSet、ExecutionPlan、ContextBundle、Run、Gate、Evaluation、注入 Gate Failure、Invalid Tool Output、Uncertain External Action 时的 feedback/blocked-resume、Approval、Evidence 和 final Snapshot。
 4. 从 clean clone 重跑每个 Fixture，并比较规范化 Ledger 和 Projection。
 
 **验证**：在 Linux、macOS、Windows 上运行 `pnpm test:e2e`。
@@ -645,17 +648,18 @@ node scripts/check-standalone.mjs
 **创建**：
 
 - `tests/security/{path-traversal,symlink-escape,command-injection,secret-redaction,undeclared-write}.test.ts`
-- `tests/fault/{concurrent-write,process-kill,git-drift,expired-approval,budget-exhaustion,partial-gate}.test.ts`
-- `tests/performance/{dataset,impact,sqlite-rebuild}.test.ts`
+- `tests/fault/{concurrent-write,process-kill,git-drift,expired-approval,approval-cascade-invalidation,budget-exhaustion,partial-gate}.test.ts`
+- `tests/performance/{dataset,impact,sqlite-rebuild,context-compile,ledger-commit,projection-generation}.test.ts`
 - `scripts/generate-performance-dataset.mjs`
 
 **步骤**：
 
-1. 完成设计中的 security 和 fault-injection 矩阵。
-2. 为每个 durable operation 添加可重复 process-kill 边界。
+1. 完成设计中的 security 和 fault-injection 矩阵，扩展共享 Helper 而不为单个测试复制注入逻辑。
+2. 为每个 durable operation 添加可重复 process-kill 边界；增加批准后 Requirement/Policy/Impact 变化导致 Context、Evidence 与下游 Approval 级联失效的测试。
 3. 确定性生成 20,000 节点和 100,000 边。
-4. 在 `ubuntu-latest` 测量 warm Impact p95 小于两秒、完整 SQLite rebuild 小于 30 秒。
-5. 任何 approval bypass、authority divergence、unreconciled action、secret leak 或越过阈值的性能退化都阻止发布。
+4. 在 `ubuntu-latest` 测量 warm Impact p95 小于两秒、完整 SQLite rebuild 小于 30 秒、单 Task ContextBundle 编译 p95 小于三秒。
+5. 记录 Ledger Commit 与 Projection Generation 的 p50/p95/max、操作规模和 CI Environment，作为后续回归阈值的可复现 M1 基线。
+6. 任何 approval bypass、authority divergence、unreconciled action、secret leak、缺失必需基线或越过硬阈值的性能退化都阻止发布。
 
 **验证**：`pnpm test:security`、`pnpm test:fault`、`pnpm test:performance`。
 
@@ -667,6 +671,8 @@ node scripts/check-standalone.mjs
 
 - `packages/cli/package.json`
 - `packages/cli/src/public-api.ts`
+- `tests/reporting/{vitest-acceptance-reporter,aggregate-acceptance}.ts`
+- `scripts/generate-acceptance-report.mjs`
 - `README.md`
 - `docs/{getting-started,adopting-a-project,operations-and-recovery,plugin-contracts,m1-acceptance-report}.md`
 - `examples/{new-project,adopt-project,manual-adapter,command-adapter}/`
@@ -676,7 +682,7 @@ node scripts/check-standalone.mjs
 1. 本地打包 `universal-harness` 并安装到干净临时环境。
 2. 验证 `harness` binary、ESM exports、license、README、files list、provenance metadata，确保不包含 internal-only source。
 3. 把所有文档示例作为测试运行。
-4. 从测试和 benchmark 输出生成 M1 acceptance report，把每项标准映射到 Evidence。
+4. 实现自定义 Vitest Acceptance Reporter 和聚合脚本，从测试、fault、security、E2E 与 benchmark 的结构化输出生成 M1 acceptance report，把每项标准映射到 Evidence；生成报告不得人工改写结果区。
 5. 对文件、生成资产、package metadata、示例、Fixture 和 Git 历史运行独立内容扫描。
 
 **验证**：
@@ -749,7 +755,7 @@ pnpm test:release
 本计划已批准。实施按以下流程进行：
 
 1. 将已批准的设计和中文计划提交推送到现有 GitHub 仓库。
-2. 从已批准文档基线创建 `codex/m1-implementation`。
-3. 按顺序执行 Task 1–28，每个 Task 或不可分割的 red/green 对应一个聚焦提交。
+2. 保持远端只使用 `main`，不再创建长期实施分支。
+3. 按顺序在 `main` 执行 Task 1–28，每个 Task 或不可分割的 red/green 对应一个聚焦提交。
 4. 实施证据与已批准架构边界冲突时停止编码并修订设计。
 5. 每个 Task 和切片退出门禁完成时更新计划状态与验收报告。

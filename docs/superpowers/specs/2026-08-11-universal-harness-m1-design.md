@@ -221,7 +221,7 @@ project/
 │   ├── ledger/
 │   │   ├── edges.jsonl
 │   │   └── operations/
-│   ├── events/YYYY-MM/
+│   ├── events/YYYY-MM/<operation-id>.jsonl
 │   ├── checkpoints/
 │   ├── packs/
 │   │   ├── upstream/
@@ -258,7 +258,7 @@ Artifact、已接受 Edge、Operation Manifest、已脱敏结构化 Event、Chec
 | Delivery | ExecutionPlan、Task、CodeArtifact |
 | Control | Policy、ToolDefinition |
 | Verification | Test、EvaluationCase、Gate |
-| Runtime | ContextBundle、Run、Checkpoint、Evidence、Approval |
+| Runtime | ContextBundle、Run、Checkpoint、Evidence、ApprovalRequest、Approval |
 | Feedback | Finding、RootCauseAnalysis、ImprovementCandidate、ImpactSet |
 
 M1 每个 Project 只创建一个 Repository，但 Identity 带 `repository_id`，使 M3 可以在不改变 Locator 的情况下增加 Repository。Policy Node 物化 Canonical Policy File；ToolDefinition Node 物化已注册 Provider Manifest。领域概念作为 Pack Extension，不能重新定义 Core Node 语义。
@@ -270,7 +270,7 @@ M1 每个 Project 只创建一个 Repository，但 Identity 带 `repository_id`�
 | Provenance | 新 Artifact `DERIVES_FROM` 旧 Artifact；新 Node `SUPERSEDES` 旧 Node；Artifact `GENERATED_BY` Run |
 | Intent and implementation | Intent `DECOMPOSES_TO` Requirement；Decision `ADDRESSES` Requirement；受控 Node `CONSTRAINED_BY` Constraint 且 `GOVERNED_BY` Policy；Decision `SHAPES` Component；CodeArtifact `REALIZES` Component；Task `IMPLEMENTS` Requirement/Decision |
 | Verification | Test `VERIFIES` Requirement/Constraint；EvaluationCase `EVALUATES` Task/Run；Run `EXECUTES` Task/Gate/EvaluationCase 且 `INVOKES` ToolDefinition；Run `PRODUCES` Evidence；Evidence `SUPPORTS`/`REFUTES` Test/Requirement/EvaluationCase；Finding `VIOLATES` Requirement/Constraint/Policy |
-| Control | ExecutionPlan `CONTAINS` Task；Task `DEPENDS_ON` Task；Run `USES_CONTEXT` ContextBundle；Checkpoint `CAPTURES` Run/Iteration；Finding `BLOCKS` Task/Iteration；Approval `APPROVES` 受控 Node；Project/Repository/Iteration `CONTAINS` 子 Node |
+| Control | ExecutionPlan `CONTAINS` Task；Task `DEPENDS_ON` Task；Run `USES_CONTEXT` ContextBundle；Checkpoint `CAPTURES` Run/Iteration；Finding `BLOCKS` Task/Iteration；ApprovalRequest `REQUESTS_APPROVAL_FOR` 受控 Node；Approval `RESOLVES` ApprovalRequest 并 `APPROVES` 受控 Node；Project/Repository/Iteration `CONTAINS` 子 Node |
 | Feedback | Finding `DIAGNOSED_BY` RootCauseAnalysis；RootCauseAnalysis `PRODUCES` ImprovementCandidate；ImprovementCandidate `PROPOSES_CHANGE_TO` 任意可版本化 Requirement/Constraint/Decision/Component/ExecutionPlan/Task/CodeArtifact/Policy/ToolDefinition/Test/EvaluationCase/Gate；Finding/ImprovementCandidate `TRIGGERS` ImpactSet |
 
 Schema Registry 为每种 Relation 定义有效 source type、target type、传播方向、默认 risk 以及是否允许 inference。
@@ -282,17 +282,17 @@ Schema Registry 为每种 Relation 定义有效 source type、target type、传�
 - `id`、`type`、`revision` 和 `status`
 - `source`：human、scanner、agent、workflow、tool、gate、evaluation、audit 或 migration
 - `provenance`：iteration、run、actor 和 timestamp
-- `confidence`：显式关系为 `1.0`，推断关系为 `0..1`
+- `confidence`：显式关系为 `1.0`，推断关系为 `0..1`；Edge 的接受状态与 Confidence 相互独立，推断 Edge 被批准或确定性校验接受后仍保留原始 Confidence，不自动提升为 `1.0`
 - `digest`：规范化内容摘要
 - `locator`：带 `repository_id` 与相对路径的 repository-qualified URI，可进一步限定到 symbol、API 或 migration
 - `extensions`：带命名空间的扩展字段
 
-人类创建的 Node 使用带 type prefix 的 ULID；扫描 Node 使用 `UUIDv5(project_id, repository_id + type + canonical_locator)` 生成确定性 Identity。Rename 使用 Git rename 信息或内容摘要。Identity 不确定时，Scanner 创建新 Node 并以 `SUPERSEDES` 连接，而不复用不确定 ID。
+人类创建的 Node 使用带 type prefix 的 ULID；扫描 Node 使用 `UUIDv5(project_id, repository_id + type + canonical_locator)` 生成确定性 Identity。Rename 使用 Git rename 信息或内容摘要。Identity 不确定时，Scanner 创建新 Node 并以 `SUPERSEDES` 连接，而不复用不确定 ID。仅 Locator 变化且规范化内容摘要不变的 Rename，其 `SUPERSEDES` 路径默认只产生 `informational` Impact；内容、公开接口、关系或 Policy 绑定发生变化时，再按变化种子独立传播风险，避免纯 Rename 触发无意义的下游修改。
 
 ### 8.5 Mutation Rule
 
 - 权威非 Runtime Node 使用 Revision；每个 Revision 发出 Event。
-- ContextBundle、Run、Checkpoint、Evidence 和 Approval 只追加。
+- ContextBundle、Run、Checkpoint、Evidence、ApprovalRequest 和 Approval 只追加；请求失效或被解决时追加新记录，不原地改写既有批准历史。
 - 删除产生 Tombstone。
 - Agent 推断 Edge 初始为 `proposed`，需批准或通过确定性校验后才成为 `accepted`。
 - ContextBundle Node 保存 source reference、priority、revision、freshness、exclusion、token allocation 和 digest。Policy 将内容判定为敏感时，组装后的原始 Context 可只保留在本地。
@@ -373,6 +373,25 @@ Evidence or Trace
 → Snapshot
 ```
 
+RootCauseAnalysis 记录 observed symptom、Evidence、responsible layer、responsible module、root-cause category、confidence 和 proposed verification。确定性规则先分配已知 Failure Pattern；语义分析处理未分类情况；高风险或低 Confidence 结论需要人工评审。
+
+经验可复用时，RCA 还会生成一个或多个 ImprovementCandidate：`target_kind` 为 `evaluation`、`knowledge` 或 `engineering`，`target_layer` 为 `prd`、`architecture`、`spec`、`plan`、`policy`、`tool`、`test` 或 `eval`。Candidate 在 Promotion 前必须可复现、有明确期望行为、标识代表性 Failure Class、不含未批准敏感数据并给出 Verification Method。
+
+Target Layer 解析到权威 Graph Node，而不是直接编辑 Markdown：
+
+| Target layer | Owning Node |
+|---|---|
+| `prd` | Intent 和 Requirement |
+| `architecture` | Decision 和 Component |
+| `spec` | Requirement、Constraint 和 Acceptance Test |
+| `plan` | ExecutionPlan 和 Task |
+| `policy` | Policy 和 Pack 提供的 Constraint |
+| `tool` | ToolDefinition 及其 Provider Manifest |
+| `test` | Test |
+| `eval` | EvaluationCase 和 Scorer Policy |
+
+Feedback Cascade 不会盲目重写所有下游 Artifact。ImpactSet 标识 `must-change`、`inspect` 和 `informational` Node；Workflow Engine 将每个必须 Revision 路由到 Owner Phase；Projection 从已接受 Graph Revision 重新生成；只重跑受影响 Task、Gate 和 EvaluationCase。
+
 ## 10. Iteration 与 Git 生命周期
 
 Iteration 是一个类型为 feature、bugfix、refactor、security 或 maintenance 的可审计变更集，可以包含多个 Requirement 和 Task。
@@ -404,6 +423,8 @@ draft → planned → running → verifying → completed
 | `single-loop` | 一个受限目标只有一个独立可评审输出 | 一个 Task 通过一个 AgentAdapter 或 Manual Adapter 运行 |
 | `dag` | 两个或更多 Task 具有独立输出、Capability Boundary、Failure Isolation 或 Dependency | Task 按依赖顺序逐个通过一个 Adapter 运行；M4 可并行化合格 Task |
 
+Mode Selection 发生在 Requirement Capture 与 Baseline Approval 之后。只有 Intent 已满足结构化 Schema，或 Pack 能以确定性规则无损转换时，录入阶段才可进入 `direct`；需要语义解释、补全或澄清的自由文本 `--intent` 必须先通过受限 `single-loop` 完成需求录入，不能因为后续实现步骤确定性强而跳过该 Loop。
+
 Planner 输出声明式 Task Specification：objective、expected output、dependency、capability、risk、budget、acceptance criteria 和 required gate，不输出特权 Shell 命令或直接 Tool Invocation。Workflow Engine 在执行前校验、合并、拒绝、重排或暂停 Plan。
 
 ### 10.2 WorkingState 与 Context 生命周期
@@ -423,9 +444,13 @@ Workflow Engine 是权威 WorkingState 的唯一 Writer。Agent 获得受限 Vie
 
 Provider Chat History 是可选输入，不是 State。Context 编译在显式 Token Budget 下选择、排序、压缩和截断 Source。Goal、Acceptance Criteria、Safety Constraint、Active Approval 和 unresolved blocker 等受保护内容不得被压缩移除。Source Digest 过期时，下一 Loop Step 前使 ContextBundle 失效。
 
+`dag` Mode 只共享不可变的 Iteration Goal、Requirement Baseline、ExecutionPlan 和 Effective Policy Digest。每个 Task 持有独立的 ContextBundle、Task-local WorkingState View、Run、Budget、Capability Grant、Approval Binding 和 Checkpoint Progress；Task 之间只能通过已提交 Artifact、Evidence、类型化 Proposal 和显式 Dependency 交换信息，不共享可变 Agent Memory、Provider Chat History 或 Adapter-local State。M1 即使顺序执行 DAG，也必须保持该隔离边界，使 M4 并行化无需改变 Authority Model。
+
 ### 10.3 Snapshot 内容
 
-每个终止或暂停 Iteration 都可生成状态为 `completed`、`blocked` 或 `aborted` 的 Snapshot。Completed Snapshot 包含 final commit、已接受 Artifact Revision、ExecutionPlan、Adapter Control Profile、Run Outcome、已脱敏 Trajectory/Coverage Summary、Budget/Latency Summary、Approval、当前 Evidence、已关闭 Finding、未解决非阻塞项、rejected hypothesis 以及 proposed/promoted ImprovementCandidate。所有 Required Task 必须为 `success`；blocking Finding、stale Mandatory Evidence、未完成 External Action 或 Required Run 非成功都会阻止 `completed`，但仍可生成诊断性 `blocked` 或 `aborted` Snapshot。
+每个终止或暂停 Iteration 都可生成状态为 `completed`、`blocked` 或 `aborted` 的 Snapshot。Completed Snapshot 包含 final commit、已接受 Artifact Revision、ExecutionPlan、Adapter Control Profile、Run Outcome、已脱敏 Trajectory/Coverage Summary、Budget/Latency Summary、Approval、当前 Evidence、已关闭 Finding、未解决非阻塞项、rejected hypothesis 以及 proposed/promoted ImprovementCandidate。所有 Required Task 必须为 `success`；blocking Finding、stale Mandatory Evidence、未完成 External Action 或 Required Run 非成功都会阻止 `completed`。
+
+可恢复状态统一生成 `blocked` Snapshot，并保存 `resume_phase`、Blocker、所需 Input/Approval/Repair、最近有效 Checkpoint 和 Operation ID。可恢复状态包括缺少输入、等待批准、Stale Evidence、可对账的 Uncertain External Action、可修复 Gate Failure、Budget Ceiling、临时 Environment/Provider Failure 与 Git Drift。只有用户显式取消，或 Policy/Schema Validation 判定不可恢复并记录类型化原因时，才生成终态 `aborted`；中断、EOF、超时或单次工具失败本身不得自动升级为 `aborted`。
 
 ## 11. 命令面
 
@@ -447,7 +472,7 @@ Provider Chat History 是可选输入，不是 State。Context 编译在显式 T
 | `harness run` | 通过 Adapter 执行已规划 Task，支持 dry-run 和 resume |
 | `harness verify` | 运行三层 Gate 并生成 Evidence/Finding |
 | `harness eval` | 评估 Task Outcome、Safety、Trajectory、Efficiency 和 Correct Failure |
-| `harness approve <id>` | 批准 Baseline、Decision、ImpactSet、ImprovementCandidate Promotion 或 Risky Action |
+| `harness approve <id> --decision <approve\|reject\|defer>` | 解决 Baseline、Decision、ImpactSet、ImprovementCandidate Promotion 或 Risky Action 的 ApprovalRequest |
 | `harness snapshot` | 完成 Artifact、Evidence、Commit 和 Iteration Summary |
 | `harness status` | 显示 State、Adapter Control Level、Evaluation Coverage、Blocker、Stale Evidence、Approval 和 Next Action |
 | `harness doctor` | 诊断 Environment、Plugin、Git、Schema 和 Cache 问题 |
@@ -455,6 +480,17 @@ Provider Chat History 是可选输入，不是 State。Context 编译在显式 T
 | `harness graph sync/query/check` | 同步、查询和校验 Graph |
 
 高级命令用于检查、自动化和恢复；正常使用集中在 new、adopt、iterate、resume 和 status。
+
+### 11.3 Approval 交互契约
+
+每个批准点先在同一 Ledger Operation 中持久化 ApprovalRequest 和 Checkpoint，再等待任何人工输入。ApprovalRequest 至少包含 request ID、受控对象 ID/type/digest、baseline/policy digest、Impact Path、Risk、Reason、预期副作用、允许的 Decision、创建时间、Operation ID 和 Resume Phase；人类可读 Preview 与 `--json` 输出必须来自同一规范记录。
+
+- 交互模式只接受显式 `approve`、`reject` 或 `defer`，不设置默认选项；`--json` 模式输出结构化 `ApprovalRequired`，并只接受绑定 request ID 与 object digest 的结构化 Decision。
+- Ctrl-C、EOF、终端断开或输入解析失败都按 `defer` 处理：保持 Proposal 为 `proposed`，生成 `blocked` Checkpoint，并返回可恢复 Operation ID，不能推断为拒绝或批准。
+- 非交互模式永不读取 stdin，也不自动批准；它返回类型化 `ApprovalRequired`、Request ID、Operation ID、Resume Command 和稳定错误类别。
+- M1 每次只解决一个精确 request/object/digest，不支持批量、通配或对未来对象生效的批准。多个请求按确定性顺序逐个处理。
+- 决策提交与 Resume 前重新校验 object、baseline、policy、Impact Path 和 Preview Digest；任一绑定项变化会追加失效记录并创建新 ApprovalRequest，旧 Decision 不可复用。
+- `reject` 关闭当前 Proposal 但保留审计历史；`defer` 保持其可恢复；`approve` 创建独立 Approval 记录。Agent、Tool、Adapter 或产生 Proposal 的 Actor 均不能解决自己的请求。
 
 ## 12. 主流程
 
@@ -637,6 +673,18 @@ M1 在内部使用这些 Event，并通过 EventStreamPort 暴露。公共 Hook 
 
 Plugin 在最小化 Environment 和声明 Host Capability 的子进程中执行。M1 不声称 Subprocess Isolation、Worktree 或 Pre/Post Diff Inspection 是 OS Security Sandbox。第三方和 Delegated Provider Binary 被视为 Trusted Code，新增 Command Adapter Command 需要显式批准。
 
+### 14.1 Effective Policy 合并
+
+Installation Policy、Pack Policy 与 Project Policy 不允许通过整对象覆盖合并。Policy Schema 为每个字段声明 Merge Operator，并由 PolicyDecisionPort 产生 Effective Policy：
+
+- `hard_ceiling` 取最小值，Installation Ceiling 始终是不可突破的最大边界；
+- Capability、Path 和 Resource Allow Set 取交集，任一 Layer 的显式 Deny 优先；
+- Approval Requirement 取并集，Redaction、Retention 和 Verification Level 按 Schema 定义的安全强度取最严格值；
+- Pack 提供的 Default 可以被 Project 降低；提高 Default 必须有独立 Approval，且仍受所有 Hard Ceiling、Deny 与安全控制约束；
+- 没有已声明 Merge Operator、无法排序或相互矛盾的字段产生 `PolicyConflict` 并 Block，不能按来源优先级静默覆盖。
+
+每次决策记录 Installation、Pack、Project Policy Revision/Digest、逐字段 Merge Reason 和 Effective Policy Digest。Approval 只能满足 `requires-approval`，不能把 `deny` 改为 `allow`；M1 不提供绕过 Installation Hard Bound 的管理员例外。
+
 ## 15. 原子性、错误与恢复
 
 ### 15.1 逻辑事务
@@ -707,39 +755,40 @@ Conformance Fixture 包含 Successful Execution、Insufficient Requirement、Den
 
 - Warm-cache Impact Query p95 小于两秒；
 - 完整 SQLite Rebuild 小于 30 秒；
+- 单 Task ContextBundle 编译 p95 小于三秒；
 - 相同 Input 产生相同 Node ID、Edge 和规范化 Digest。
 
-任一指标超限都会阻止 M1 发布。
+Ledger Transaction Commit 和受影响 Projection Generation 在同一 Dataset 上记录 p50、p95、max、操作规模与 CI Environment，作为 M1 可复现基线；M1 不在缺少实测数据时臆造硬阈值，但缺失基线报告会阻止发布。任一已定义硬指标超限都会阻止 M1 发布。
 
 ## 17. M1 验收标准
 
 1. 一次 `harness new ... --intent ...` 调用可以完成首次 Iteration，只在强制 Input、Approval 或 External Authorization 时暂停。
 2. 一次 `harness adopt ... --intent ...` 调用可以批准 Baseline，并按相同暂停规则完成所请求 Iteration。
 3. `harness iterate ...` 为后续变更运行相同完整闭环。
-4. 非交互暂停返回可恢复 Operation ID；Resume 不产生重复 Node、Run、Evidence、Commit 或 External Side Effect。
+4. 交互中断按 `defer` 保存 Proposal；非交互批准点返回结构化 ApprovalRequest 与可恢复 Operation ID；Resume 重新校验绑定且不产生重复 Node、Run、Evidence、Commit 或 External Side Effect。
 5. 相同 Repository 和 Configuration 产生相同、带 Repository 限定的扫描 Node ID、Edge 和 Digest。
 6. Artifact Graph 与 Execution Graph Query 从同一 Authority Ledger 物化，并保持相互可追溯。
 7. 已知 Change Scenario 生成正确 ImpactSet，不把无关 Artifact 分类为 `must-change`。
 8. Planning 只从已批准 ImpactSet 开始，生成声明式 Task Specification，并拒绝 Plan Proposal 中嵌入的 Command 或未授权 Capability Expansion。
-9. 简单 Fixture 选择 `direct` 或 `single-loop`；`dag` Fixture 只在每个 Task 满足独立价值规则时创建多个 Task。
+9. 结构化或可确定性转换的 Intent 可选择 `direct`；需语义解释的自由文本录入选择受限 `single-loop`；`dag` Fixture 只在每个 Task 满足独立价值规则时创建多个 Task，且 Task-local State、Context、Budget、Grant 和 Checkpoint 相互隔离。
 10. 每个 Task 获得不可变 ContextBundle、Field-level State Contract、Capability Grant、LoopPolicy、Acceptance Criteria 和 Input Digest；Approval 前可见 Adapter Control Profile。
 11. Context Compilation 保留 Protected Field、遵循 Token Allocation、记录 Exclusion，并使 Stale Bundle 失效。
 12. Unknown Harness-managed Tool、Invalid Parameter、Disallowed Resource、Capability Violation 和 Invalid Output 在权威变更前被阻止并留痕；Opaque Delegated Provider 永远不会被描述为完全受治理。
 13. External Action Intent 持久且幂等；Resume 对账 Uncertain Action，而不是盲目重放。
-14. Managed Execution 无需依赖 Model 遵从即可强制 Step、Token、Duration、Retry 和 Repeat-action Ceiling；缺少等价控制的 Delegated Adapter 被强制设为 Supervised Mode。
+14. Managed Execution 无需依赖 Model 遵从即可强制 Step、Token、Duration、Retry 和 Repeat-action Ceiling；Effective Policy 按字段最严格合并并记录来源 Digest，Project/Pack 不能放宽 Installation Hard Bound；缺少等价控制的 Delegated Adapter 被强制设为 Supervised Mode。
 15. 每个 Run 记录一个已定义 Outcome 和 Termination Reason；Correct-block、Clarification 和 Handoff Fixture 通过。
 16. Mandatory Gate 或 Mandatory Evaluation Threshold 失败会创建 Finding 并阻止 Completed Snapshot。
 17. 失败场景生成结构化 RCA 和 ImpactSet Routing；下游 Phase 不能直接修改上游 Artifact。
 18. 可复用失败可以产生 Evaluation、Knowledge 或 Engineering ImprovementCandidate；未经批准不得 Promotion。
 19. 当前 Repair Evidence 可以关闭 Finding；Stale Evidence 不可以。
 20. Artifact、Code、Context Source、Gate、Evaluation 或 Policy 变化会按适用范围使绑定 Approval、ContextBundle 和 Evidence 失效。
-21. Completed Snapshot 包含 Final Commit、Plan、Adapter Control Profile、Outcome、Trajectory/Coverage Summary、Budget Use、Approval、Current Evidence、未解决非阻塞项和 Improvement Status。
+21. Completed Snapshot 包含 Final Commit、Plan、Adapter Control Profile、Outcome、Trajectory/Coverage Summary、Budget Use、Approval、Current Evidence、未解决非阻塞项和 Improvement Status；可恢复失败生成带 Resume Phase 的 `blocked`，只有显式取消或类型化不可恢复原因生成 `aborted`。
 22. SQLite 被删除或损坏后可从 Git Ledger 恢复。
 23. Manual/Command AgentAdapter 通过 Contract、Control-profile、Behavioral Evaluation 和 E2E Test；控制或可见性不足时始终阻止无人值守选择。
 24. Generic、Node、Python 和 Java Pack 通过各自 Fixture。
 25. Linux、macOS 和 Windows CI 通过。
 26. Pack/CLI Upgrade 保留 Project Override，失败 Migration 回滚。
-27. Performance Baseline 通过。
+27. Graph 与 Context Performance 硬阈值通过，并生成 Ledger Commit 与 Projection Generation 的可复现基线。
 28. Repository Content、Package Metadata、Example、Fixture、Generated Provider Projection 和 Git History 保持独立，不包含原产品品牌、路径或业务领域示例。
 
 ## 18. M2–M4 兼容端口
@@ -747,7 +796,7 @@ Conformance Fixture 包含 Successful Execution、Insufficient Requirement、Den
 M1 固化以下版本化 Interface：
 
 - `GraphQueryPort`：分页 Node、Edge、Path、ImpactSet 和 Neighborhood。
-- `EventStreamPort`：按 Project、Iteration 和 Sequence 读取 Event。
+- `EventStreamPort`：按 Project、Iteration 和 Sequence 读取 Event，并可用 Event Type Set 做可选确定性过滤。
 - `ExecutionGraphPort`：Plan、Run、Checkpoint、Outcome、Budget 和 Feedback Route。
 - `ContextAssemblyPort`：Source Selection、Budget、Manifest、Digest 和 Freshness。
 - `TaskDagPort`：Task、Dependency、State、Capability 和 Checkpoint。
@@ -777,24 +826,3 @@ M2 通过 GraphQueryPort、ExecutionGraphPort、EvaluationPort 和 EventStreamPo
 - Design Decision、Limitation 和 Future Compatibility Port 已记录；
 - 没有未解决 P0/P1 Defect、Schema Migration Gap 或 Approval Bypass；
 - 分别用一个 new Command 和一个 adopt Command 演示完整纵向闭环。
-
-
-
-RootCauseAnalysis 记录 observed symptom、Evidence、responsible layer、responsible module、root-cause category、confidence 和 proposed verification。确定性规则先分配已知 Failure Pattern；语义分析处理未分类情况；高风险或低 Confidence 结论需要人工评审。
-
-经验可复用时，RCA 还会生成一个或多个 ImprovementCandidate：`target_kind` 为 `evaluation`、`knowledge` 或 `engineering`，`target_layer` 为 `prd`、`architecture`、`spec`、`plan`、`policy`、`tool`、`test` 或 `eval`。Candidate 在 Promotion 前必须可复现、有明确期望行为、标识代表性 Failure Class、不含未批准敏感数据并给出 Verification Method。
-
-Target Layer 解析到权威 Graph Node，而不是直接编辑 Markdown：
-
-| Target layer | Owning Node |
-|---|---|
-| `prd` | Intent 和 Requirement |
-| `architecture` | Decision 和 Component |
-| `spec` | Requirement、Constraint 和 Acceptance Test |
-| `plan` | ExecutionPlan 和 Task |
-| `policy` | Policy 和 Pack 提供的 Constraint |
-| `tool` | ToolDefinition 及其 Provider Manifest |
-| `test` | Test |
-| `eval` | EvaluationCase 和 Scorer Policy |
-
-Feedback Cascade 不会盲目重写所有下游 Artifact。ImpactSet 标识 `must-change`、`inspect` 和 `informational` Node；Workflow Engine 将每个必须 Revision 路由到 Owner Phase；Projection 从已接受 Graph Revision 重新生成；只重跑受影响 Task、Gate 和 EvaluationCase。
