@@ -17,7 +17,14 @@ import {
 } from "@universal-harness-internal/core";
 import type { DatabaseSync } from "node:sqlite";
 
-import { META_KEYS, clearProjection, openGraphDatabase, writeMeta } from "./sqlite/database.js";
+import {
+  META_KEYS,
+  clearProjection,
+  openGraphDatabase,
+  readMeta,
+  writeMeta,
+} from "./sqlite/database.js";
+import { assertGraphIntegrity } from "./integrity.js";
 
 /**
  * Ledger materializer. Rebuilds the disposable SQLite projection from the
@@ -271,7 +278,7 @@ function insertEvents(
  * machine-checkable proof that SQLite holds no exclusive authoritative state.
  */
 function computeProjectionDigest(
-  nodes: readonly NodeRecord[],
+  nodes: readonly { id: string; revision: number; digest: string }[],
   edges: readonly { id: string; digest: string }[],
   eventIds: readonly string[],
 ): string {
@@ -282,6 +289,42 @@ function computeProjectionDigest(
     edges: edgeEntries,
     events: [...eventIds].sort(),
   });
+}
+
+/**
+ * Recompute the projection digest from the current table contents and compare
+ * it with the digest recorded in meta. Returns false on any inconsistency —
+ * including a missing digest or unreadable tables — so callers treat the
+ * cache as unrecoverable and rebuild instead of trusting it. Never throws.
+ */
+export function verifyProjectionDigest(database: DatabaseSync): boolean {
+  try {
+    const recorded = readMeta(database, META_KEYS.projectionDigest);
+    if (recorded === undefined) return false;
+    const nodeRows = database
+      .prepare("SELECT id, revision, digest FROM nodes")
+      .all() as unknown as {
+      id: string;
+      revision: number;
+      digest: string;
+    }[];
+    const edgeRows = database.prepare("SELECT id, digest FROM edges").all() as unknown as {
+      id: string;
+      digest: string;
+    }[];
+    const eventRows = database.prepare("SELECT event_id FROM events").all() as unknown as {
+      event_id: string;
+    }[];
+    return (
+      computeProjectionDigest(
+        nodeRows,
+        edgeRows,
+        eventRows.map((row) => row.event_id),
+      ) === recorded
+    );
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -299,7 +342,16 @@ export function materializeLedger(options: MaterializeOptions): Materialization 
     harnessRoot,
     authoritativeDigests,
   );
+  const replay = replayLedger(harnessRoot);
   const nodes = resolveCurrentNodes(candidates);
+  // Integrity gate: a ledger whose committed records violate graph invariants
+  // (dangling edges, incompatible relations, non-monotonic revisions or
+  // dependency cycles) is never projected into query results. Revision forks
+  // are still reported first by resolveCurrentNodes with their own typed error.
+  assertGraphIntegrity(
+    candidates.map((candidate) => candidate.record),
+    replay.edges,
+  );
   const sequenceByOperationId = new Map(
     operations.map((operation) => [
       operation.manifest.ledger_operation_id,
@@ -313,7 +365,6 @@ export function materializeLedger(options: MaterializeOptions): Materialization 
 
   const database = openGraphDatabase(options.databasePath);
   try {
-    const replay = replayLedger(harnessRoot);
     database.exec("BEGIN");
     clearProjection(database);
     insertOperations(database, operations);

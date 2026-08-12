@@ -32,9 +32,25 @@ function schemaDdl(): string {
 }
 
 /**
+ * Schema version recorded in an open database, or undefined when the meta
+ * table does not exist yet (a fresh database).
+ */
+export function readSchemaVersion(database: DatabaseSync): number | undefined {
+  const table = database
+    .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'meta'")
+    .get();
+  if (table === undefined) return undefined;
+  const recorded = readMeta(database, META_KEYS.schemaVersion);
+  return recorded === undefined ? undefined : Number(recorded);
+}
+
+/**
  * Open (creating when needed) a graph database and apply the schema.
  * Pass ":memory:" for an ephemeral database. A schema created by a newer
- * GRAPH_SCHEMA_VERSION is rejected so a stale cache is never read silently.
+ * GRAPH_SCHEMA_VERSION is rejected so a stale cache is never read silently;
+ * an older recorded version is rejected too — the caller must migrate the
+ * cache forward with the migration runner or rebuild it from the ledger,
+ * never silently reuse or overwrite it.
  */
 export function openGraphDatabase(databasePath: string): DatabaseSync {
   if (databasePath !== ":memory:") {
@@ -42,13 +58,18 @@ export function openGraphDatabase(databasePath: string): DatabaseSync {
   }
   const database = new DatabaseSync(databasePath);
   try {
-    database.exec(schemaDdl());
-    const recorded = readMeta(database, META_KEYS.schemaVersion);
-    if (recorded !== undefined && Number(recorded) > GRAPH_SCHEMA_VERSION) {
+    const recorded = readSchemaVersion(database);
+    if (recorded !== undefined && recorded > GRAPH_SCHEMA_VERSION) {
       throw new GraphDatabaseError(
         `graph cache schema version ${recorded} is newer than supported ${GRAPH_SCHEMA_VERSION}; rebuild the cache`,
       );
     }
+    if (recorded !== undefined && recorded < GRAPH_SCHEMA_VERSION) {
+      throw new GraphDatabaseError(
+        `graph cache schema version ${recorded} is older than ${GRAPH_SCHEMA_VERSION}; run graph migrations or rebuild the cache`,
+      );
+    }
+    database.exec(schemaDdl());
     writeMeta(database, META_KEYS.schemaVersion, String(GRAPH_SCHEMA_VERSION));
     return database;
   } catch (error) {
