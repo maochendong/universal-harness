@@ -1,0 +1,570 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.universal-harness.dev/m1/runtime.schema.json",
+  "anyOf": [
+    {
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "protocol_version",
+        "run_id",
+        "task_id",
+        "workflow_operation_id",
+        "attempt_id",
+        "sequence",
+        "timestamp",
+        "record_kind",
+        "context_bundle_id"
+      ],
+      "properties": {
+        "protocol_version": {
+          "pattern": "^1\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?:-[0-9A-Za-z.-]+)?(?:\\+[0-9A-Za-z.-]+)?$",
+          "default": "1.0.0",
+          "type": "string"
+        },
+        "run_id": {
+          "minLength": 3,
+          "maxLength": 160,
+          "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+          "type": "string"
+        },
+        "task_id": {
+          "minLength": 3,
+          "maxLength": 160,
+          "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+          "type": "string"
+        },
+        "workflow_operation_id": {
+          "minLength": 3,
+          "maxLength": 160,
+          "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+          "type": "string"
+        },
+        "attempt_id": {
+          "minLength": 3,
+          "maxLength": 160,
+          "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+          "type": "string"
+        },
+        "sequence": { "minimum": 1, "type": "integer" },
+        "timestamp": { "format": "date-time", "type": "string" },
+        "extensions": {
+          "additionalProperties": false,
+          "default": {},
+          "type": "object",
+          "patternProperties": { "^[a-z][a-z0-9]*(?:[.-][a-z0-9]+)+$": {} }
+        },
+        "record_kind": { "const": "run_started", "type": "string" },
+        "context_bundle_id": {
+          "minLength": 3,
+          "maxLength": 160,
+          "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+          "type": "string"
+        }
+      }
+    },
+    {
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "protocol_version",
+        "run_id",
+        "task_id",
+        "workflow_operation_id",
+        "attempt_id",
+        "sequence",
+        "timestamp",
+        "record_kind",
+        "step",
+        "message"
+      ],
+      "properties": {
+        "protocol_version": {
+          "pattern": "^1\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?:-[0-9A-Za-z.-]+)?(?:\\+[0-9A-Za-z.-]+)?$",
+          "default": "1.0.0",
+          "type": "string"
+        },
+        "run_id": {
+          "minLength": 3,
+          "maxLength": 160,
+          "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+          "type": "string"
+        },
+        "task_id": {
+          "minLength": 3,
+          "maxLength": 160,
+          "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+          "type": "string"
+        },
+        "workflow_operation_id": {
+          "minLength": 3,
+          "maxLength": 160,
+          "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+          "type": "string"
+        },
+        "attempt_id": {
+          "minLength": 3,
+          "maxLength": 160,
+          "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+          "type": "string"
+        },
+        "sequence": { "minimum": 1, "type": "integer" },
+        "timestamp": { "format": "date-time", "type": "string" },
+        "extensions": {
+          "additionalProperties": false,
+          "default": {},
+          "type": "object",
+          "patternProperties": { "^[a-z][a-z0-9]*(?:[.-][a-z0-9]+)+$": {} }
+        },
+        "record_kind": { "const": "run_progress", "type": "string" },
+        "step": { "minimum": 0, "type": "integer" },
+        "message": { "minLength": 1, "maxLength": 2000, "type": "string" },
+        "evidence_id": {
+          "minLength": 3,
+          "maxLength": 160,
+          "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+          "type": "string"
+        }
+      }
+    },
+    {
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "protocol_version",
+        "run_id",
+        "task_id",
+        "workflow_operation_id",
+        "attempt_id",
+        "sequence",
+        "timestamp",
+        "record_kind",
+        "outcome",
+        "termination_reason"
+      ],
+      "properties": {
+        "protocol_version": {
+          "pattern": "^1\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?:-[0-9A-Za-z.-]+)?(?:\\+[0-9A-Za-z.-]+)?$",
+          "default": "1.0.0",
+          "type": "string"
+        },
+        "run_id": {
+          "minLength": 3,
+          "maxLength": 160,
+          "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+          "type": "string"
+        },
+        "task_id": {
+          "minLength": 3,
+          "maxLength": 160,
+          "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+          "type": "string"
+        },
+        "workflow_operation_id": {
+          "minLength": 3,
+          "maxLength": 160,
+          "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+          "type": "string"
+        },
+        "attempt_id": {
+          "minLength": 3,
+          "maxLength": 160,
+          "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+          "type": "string"
+        },
+        "sequence": { "minimum": 1, "type": "integer" },
+        "timestamp": { "format": "date-time", "type": "string" },
+        "extensions": {
+          "additionalProperties": false,
+          "default": {},
+          "type": "object",
+          "patternProperties": { "^[a-z][a-z0-9]*(?:[.-][a-z0-9]+)+$": {} }
+        },
+        "record_kind": { "const": "run_terminated", "type": "string" },
+        "outcome": {
+          "anyOf": [
+            { "const": "success", "type": "string" },
+            { "const": "correct_block", "type": "string" },
+            { "const": "clarification_required", "type": "string" },
+            { "const": "handoff", "type": "string" },
+            { "const": "partial", "type": "string" },
+            { "const": "failed", "type": "string" }
+          ]
+        },
+        "termination_reason": {
+          "anyOf": [
+            { "const": "completion", "type": "string" },
+            { "const": "gate_failure", "type": "string" },
+            { "const": "policy_denial", "type": "string" },
+            { "const": "budget_ceiling", "type": "string" },
+            { "const": "repeat_detection", "type": "string" },
+            { "const": "timeout", "type": "string" },
+            { "const": "adapter_failure", "type": "string" },
+            { "const": "user_cancellation", "type": "string" },
+            { "const": "manual_stop", "type": "string" },
+            { "const": "process_interruption", "type": "string" }
+          ]
+        }
+      }
+    },
+    {
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "protocol_version",
+        "run_id",
+        "task_id",
+        "workflow_operation_id",
+        "attempt_id",
+        "sequence",
+        "timestamp",
+        "record_kind",
+        "outcome",
+        "termination_reason",
+        "partial_evidence_ids"
+      ],
+      "properties": {
+        "protocol_version": {
+          "pattern": "^1\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?:-[0-9A-Za-z.-]+)?(?:\\+[0-9A-Za-z.-]+)?$",
+          "default": "1.0.0",
+          "type": "string"
+        },
+        "run_id": {
+          "minLength": 3,
+          "maxLength": 160,
+          "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+          "type": "string"
+        },
+        "task_id": {
+          "minLength": 3,
+          "maxLength": 160,
+          "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+          "type": "string"
+        },
+        "workflow_operation_id": {
+          "minLength": 3,
+          "maxLength": 160,
+          "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+          "type": "string"
+        },
+        "attempt_id": {
+          "minLength": 3,
+          "maxLength": 160,
+          "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+          "type": "string"
+        },
+        "sequence": { "minimum": 1, "type": "integer" },
+        "timestamp": { "format": "date-time", "type": "string" },
+        "extensions": {
+          "additionalProperties": false,
+          "default": {},
+          "type": "object",
+          "patternProperties": { "^[a-z][a-z0-9]*(?:[.-][a-z0-9]+)+$": {} }
+        },
+        "record_kind": { "const": "run_interrupted", "type": "string" },
+        "outcome": {
+          "anyOf": [
+            { "const": "partial", "type": "string" },
+            { "const": "failed", "type": "string" },
+            { "const": "handoff", "type": "string" }
+          ]
+        },
+        "termination_reason": {
+          "const": "process_interruption",
+          "type": "string"
+        },
+        "partial_evidence_ids": {
+          "uniqueItems": true,
+          "type": "array",
+          "items": {
+            "minLength": 3,
+            "maxLength": 160,
+            "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+            "type": "string"
+          }
+        }
+      }
+    },
+    {
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "protocol_version",
+        "record_kind",
+        "context_bundle_id",
+        "task_id",
+        "source_digests",
+        "digest",
+        "stale"
+      ],
+      "properties": {
+        "protocol_version": {
+          "pattern": "^1\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?:-[0-9A-Za-z.-]+)?(?:\\+[0-9A-Za-z.-]+)?$",
+          "default": "1.0.0",
+          "type": "string"
+        },
+        "record_kind": { "const": "context_bundle", "type": "string" },
+        "context_bundle_id": {
+          "minLength": 3,
+          "maxLength": 160,
+          "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+          "type": "string"
+        },
+        "task_id": {
+          "minLength": 3,
+          "maxLength": 160,
+          "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+          "type": "string"
+        },
+        "source_digests": {
+          "minItems": 1,
+          "uniqueItems": true,
+          "type": "array",
+          "items": { "pattern": "^[a-f0-9]{64}$", "type": "string" }
+        },
+        "digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
+        "stale": { "type": "boolean" },
+        "extensions": {
+          "additionalProperties": false,
+          "default": {},
+          "type": "object",
+          "patternProperties": { "^[a-z][a-z0-9]*(?:[.-][a-z0-9]+)+$": {} }
+        }
+      }
+    },
+    {
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "protocol_version",
+        "record_kind",
+        "checkpoint_id",
+        "workflow_operation_id",
+        "attempt_id",
+        "phase",
+        "state_digest",
+        "timestamp"
+      ],
+      "properties": {
+        "protocol_version": {
+          "pattern": "^1\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?:-[0-9A-Za-z.-]+)?(?:\\+[0-9A-Za-z.-]+)?$",
+          "default": "1.0.0",
+          "type": "string"
+        },
+        "record_kind": { "const": "checkpoint", "type": "string" },
+        "checkpoint_id": {
+          "minLength": 3,
+          "maxLength": 160,
+          "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+          "type": "string"
+        },
+        "workflow_operation_id": {
+          "minLength": 3,
+          "maxLength": 160,
+          "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+          "type": "string"
+        },
+        "attempt_id": {
+          "minLength": 3,
+          "maxLength": 160,
+          "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+          "type": "string"
+        },
+        "phase": { "minLength": 1, "type": "string" },
+        "state_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
+        "timestamp": { "format": "date-time", "type": "string" },
+        "extensions": {
+          "additionalProperties": false,
+          "default": {},
+          "type": "object",
+          "patternProperties": { "^[a-z][a-z0-9]*(?:[.-][a-z0-9]+)+$": {} }
+        }
+      }
+    },
+    {
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "protocol_version",
+        "record_kind",
+        "evidence_id",
+        "evidence_type",
+        "subject_id",
+        "digest",
+        "provisional",
+        "created_at"
+      ],
+      "properties": {
+        "protocol_version": {
+          "pattern": "^1\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?:-[0-9A-Za-z.-]+)?(?:\\+[0-9A-Za-z.-]+)?$",
+          "default": "1.0.0",
+          "type": "string"
+        },
+        "record_kind": { "const": "evidence", "type": "string" },
+        "evidence_id": {
+          "minLength": 3,
+          "maxLength": 160,
+          "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+          "type": "string"
+        },
+        "evidence_type": { "minLength": 1, "type": "string" },
+        "subject_id": {
+          "minLength": 3,
+          "maxLength": 160,
+          "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+          "type": "string"
+        },
+        "digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
+        "provisional": { "type": "boolean" },
+        "created_at": { "format": "date-time", "type": "string" },
+        "extensions": {
+          "additionalProperties": false,
+          "default": {},
+          "type": "object",
+          "patternProperties": { "^[a-z][a-z0-9]*(?:[.-][a-z0-9]+)+$": {} }
+        }
+      }
+    },
+    {
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "protocol_version",
+        "record_kind",
+        "request_id",
+        "workflow_operation_id",
+        "object_id",
+        "object_type",
+        "object_digest",
+        "baseline_digest",
+        "policy_digest",
+        "preview_digest",
+        "impact_path",
+        "risk",
+        "reason",
+        "allowed_decisions",
+        "created_at",
+        "resume_phase"
+      ],
+      "properties": {
+        "protocol_version": {
+          "pattern": "^1\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?:-[0-9A-Za-z.-]+)?(?:\\+[0-9A-Za-z.-]+)?$",
+          "default": "1.0.0",
+          "type": "string"
+        },
+        "record_kind": { "const": "approval_request", "type": "string" },
+        "request_id": {
+          "minLength": 3,
+          "maxLength": 160,
+          "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+          "type": "string"
+        },
+        "workflow_operation_id": {
+          "minLength": 3,
+          "maxLength": 160,
+          "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+          "type": "string"
+        },
+        "object_id": {
+          "minLength": 3,
+          "maxLength": 160,
+          "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+          "type": "string"
+        },
+        "object_type": { "minLength": 1, "type": "string" },
+        "object_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
+        "baseline_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
+        "policy_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
+        "preview_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
+        "impact_path": {
+          "type": "array",
+          "items": {
+            "minLength": 3,
+            "maxLength": 160,
+            "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+            "type": "string"
+          }
+        },
+        "risk": {
+          "anyOf": [
+            { "const": "low", "type": "string" },
+            { "const": "medium", "type": "string" },
+            { "const": "high", "type": "string" },
+            { "const": "critical", "type": "string" }
+          ]
+        },
+        "reason": { "minLength": 1, "type": "string" },
+        "allowed_decisions": {
+          "minItems": 1,
+          "uniqueItems": true,
+          "type": "array",
+          "items": {
+            "anyOf": [
+              { "const": "approve", "type": "string" },
+              { "const": "reject", "type": "string" },
+              { "const": "defer", "type": "string" }
+            ]
+          }
+        },
+        "created_at": { "format": "date-time", "type": "string" },
+        "resume_phase": { "minLength": 1, "type": "string" },
+        "extensions": {
+          "additionalProperties": false,
+          "default": {},
+          "type": "object",
+          "patternProperties": { "^[a-z][a-z0-9]*(?:[.-][a-z0-9]+)+$": {} }
+        }
+      }
+    },
+    {
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "protocol_version",
+        "record_kind",
+        "approval_id",
+        "request_id",
+        "actor",
+        "decision",
+        "object_digest",
+        "decided_at"
+      ],
+      "properties": {
+        "protocol_version": {
+          "pattern": "^1\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?:-[0-9A-Za-z.-]+)?(?:\\+[0-9A-Za-z.-]+)?$",
+          "default": "1.0.0",
+          "type": "string"
+        },
+        "record_kind": { "const": "approval_decision", "type": "string" },
+        "approval_id": {
+          "minLength": 3,
+          "maxLength": 160,
+          "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+          "type": "string"
+        },
+        "request_id": {
+          "minLength": 3,
+          "maxLength": 160,
+          "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+          "type": "string"
+        },
+        "actor": { "minLength": 1, "type": "string" },
+        "decision": {
+          "anyOf": [
+            { "const": "approve", "type": "string" },
+            { "const": "reject", "type": "string" },
+            { "const": "defer", "type": "string" }
+          ]
+        },
+        "object_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
+        "decided_at": { "format": "date-time", "type": "string" },
+        "extensions": {
+          "additionalProperties": false,
+          "default": {},
+          "type": "object",
+          "patternProperties": { "^[a-z][a-z0-9]*(?:[.-][a-z0-9]+)+$": {} }
+        }
+      }
+    }
+  ]
+}

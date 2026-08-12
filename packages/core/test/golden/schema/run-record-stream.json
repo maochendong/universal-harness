@@ -1,0 +1,37 @@
+[
+  {
+    "protocol_version": "1.0.0",
+    "record_kind": "run_started",
+    "run_id": "run_01K1ABCDEFGHIJKLMNOPQRSTUV",
+    "task_id": "task_01K1ABCDEFGHIJKLMNOPQRSTU",
+    "workflow_operation_id": "workflow_01K1ABCDEFGHIJKLMNOPQ",
+    "attempt_id": "attempt_01K1ABCDEFGHIJKLMNOPQRST",
+    "sequence": 1,
+    "timestamp": "2026-08-12T00:00:00.000Z",
+    "context_bundle_id": "context_01K1ABCDEFGHIJKLMNOPQRS"
+  },
+  {
+    "protocol_version": "1.0.0",
+    "record_kind": "run_progress",
+    "run_id": "run_01K1ABCDEFGHIJKLMNOPQRSTUV",
+    "task_id": "task_01K1ABCDEFGHIJKLMNOPQRSTU",
+    "workflow_operation_id": "workflow_01K1ABCDEFGHIJKLMNOPQ",
+    "attempt_id": "attempt_01K1ABCDEFGHIJKLMNOPQRST",
+    "sequence": 2,
+    "timestamp": "2026-08-12T00:00:01.000Z",
+    "step": 1,
+    "message": "proposal produced"
+  },
+  {
+    "protocol_version": "1.0.0",
+    "record_kind": "run_terminated",
+    "run_id": "run_01K1ABCDEFGHIJKLMNOPQRSTUV",
+    "task_id": "task_01K1ABCDEFGHIJKLMNOPQRSTU",
+    "workflow_operation_id": "workflow_01K1ABCDEFGHIJKLMNOPQ",
+    "attempt_id": "attempt_01K1ABCDEFGHIJKLMNOPQRST",
+    "sequence": 3,
+    "timestamp": "2026-08-12T00:00:02.000Z",
+    "outcome": "success",
+    "termination_reason": "completion"
+  }
+]

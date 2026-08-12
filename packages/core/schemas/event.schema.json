@@ -1,0 +1,82 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.universal-harness.dev/m1/event.schema.json",
+  "additionalProperties": false,
+  "type": "object",
+  "required": [
+    "protocol_version",
+    "record_kind",
+    "event_id",
+    "event_type",
+    "project_id",
+    "iteration_id",
+    "workflow_operation_id",
+    "ledger_operation_id",
+    "sequence",
+    "timestamp",
+    "payload"
+  ],
+  "properties": {
+    "protocol_version": {
+      "pattern": "^1\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?:-[0-9A-Za-z.-]+)?(?:\\+[0-9A-Za-z.-]+)?$",
+      "default": "1.0.0",
+      "type": "string"
+    },
+    "record_kind": { "const": "event", "type": "string" },
+    "event_id": {
+      "minLength": 3,
+      "maxLength": 160,
+      "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+      "type": "string"
+    },
+    "event_type": {
+      "anyOf": [
+        { "const": "OperationStarted", "type": "string" },
+        { "const": "PlanAccepted", "type": "string" },
+        { "const": "BeforeContextCompile", "type": "string" },
+        { "const": "ContextCompiled", "type": "string" },
+        { "const": "BeforeToolCall", "type": "string" },
+        { "const": "AfterToolCall", "type": "string" },
+        { "const": "ApprovalRequired", "type": "string" },
+        { "const": "CheckpointCommitted", "type": "string" },
+        { "const": "GateCompleted", "type": "string" },
+        { "const": "EvaluationCompleted", "type": "string" },
+        { "const": "FindingCreated", "type": "string" },
+        { "const": "OperationCompleted", "type": "string" }
+      ]
+    },
+    "project_id": {
+      "minLength": 3,
+      "maxLength": 160,
+      "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+      "type": "string"
+    },
+    "iteration_id": {
+      "minLength": 3,
+      "maxLength": 160,
+      "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+      "type": "string"
+    },
+    "workflow_operation_id": {
+      "minLength": 3,
+      "maxLength": 160,
+      "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+      "type": "string"
+    },
+    "ledger_operation_id": {
+      "minLength": 3,
+      "maxLength": 160,
+      "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+      "type": "string"
+    },
+    "sequence": { "minimum": 1, "type": "integer" },
+    "timestamp": { "format": "date-time", "type": "string" },
+    "payload": { "type": "object", "patternProperties": { "^(.*)$": {} } },
+    "extensions": {
+      "additionalProperties": false,
+      "default": {},
+      "type": "object",
+      "patternProperties": { "^[a-z][a-z0-9]*(?:[.-][a-z0-9]+)+$": {} }
+    }
+  }
+}

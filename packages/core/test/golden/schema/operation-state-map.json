@@ -1,0 +1,12 @@
+{
+  "created": "draft",
+  "awaiting_input": "draft",
+  "awaiting_approval": "draft",
+  "planned": "planned",
+  "running": "running",
+  "verifying": "verifying",
+  "repairing": "running",
+  "blocked": "blocked",
+  "completed": "completed",
+  "aborted": "aborted"
+}

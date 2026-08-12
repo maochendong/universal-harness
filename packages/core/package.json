@@ -7,13 +7,22 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
-    }
+    },
+    "./schemas/*": "./schemas/*.schema.json"
   },
   "files": [
-    "dist"
+    "dist",
+    "schemas"
   ],
   "scripts": {
     "build": "tsc -b",
+    "schema:generate": "pnpm build && node scripts/write-schemas.mjs",
+    "test": "vitest run --root ../.. packages/core/test",
     "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@sinclair/typebox": "catalog:",
+    "ajv": "catalog:",
+    "ajv-formats": "catalog:"
   }
 }

@@ -1,0 +1,62 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.universal-harness.dev/m1/feedback.schema.json",
+  "additionalProperties": false,
+  "type": "object",
+  "required": [
+    "protocol_version",
+    "record_kind",
+    "id",
+    "type",
+    "iteration_id",
+    "status",
+    "summary",
+    "created_at",
+    "digest"
+  ],
+  "properties": {
+    "protocol_version": {
+      "pattern": "^1\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?:-[0-9A-Za-z.-]+)?(?:\\+[0-9A-Za-z.-]+)?$",
+      "default": "1.0.0",
+      "type": "string"
+    },
+    "record_kind": { "const": "feedback", "type": "string" },
+    "id": {
+      "minLength": 3,
+      "maxLength": 160,
+      "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+      "type": "string"
+    },
+    "type": {
+      "anyOf": [
+        { "const": "Finding", "type": "string" },
+        { "const": "RootCauseAnalysis", "type": "string" },
+        { "const": "ImprovementCandidate", "type": "string" },
+        { "const": "ImpactSet", "type": "string" }
+      ]
+    },
+    "iteration_id": {
+      "minLength": 3,
+      "maxLength": 160,
+      "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+      "type": "string"
+    },
+    "status": {
+      "anyOf": [
+        { "const": "proposed", "type": "string" },
+        { "const": "accepted", "type": "string" },
+        { "const": "closed", "type": "string" },
+        { "const": "superseded", "type": "string" }
+      ]
+    },
+    "summary": { "minLength": 1, "maxLength": 10000, "type": "string" },
+    "created_at": { "format": "date-time", "type": "string" },
+    "digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
+    "extensions": {
+      "additionalProperties": false,
+      "default": {},
+      "type": "object",
+      "patternProperties": { "^[a-z][a-z0-9]*(?:[.-][a-z0-9]+)+$": {} }
+    }
+  }
+}

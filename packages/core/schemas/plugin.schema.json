@@ -1,0 +1,59 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.universal-harness.dev/m1/plugin.schema.json",
+  "additionalProperties": false,
+  "type": "object",
+  "required": [
+    "protocol_version",
+    "record_kind",
+    "name",
+    "version",
+    "kind",
+    "capabilities",
+    "resources"
+  ],
+  "properties": {
+    "protocol_version": {
+      "pattern": "^1\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?:-[0-9A-Za-z.-]+)?(?:\\+[0-9A-Za-z.-]+)?$",
+      "default": "1.0.0",
+      "type": "string"
+    },
+    "record_kind": { "const": "plugin_manifest", "type": "string" },
+    "name": {
+      "minLength": 1,
+      "maxLength": 214,
+      "pattern": "^[a-z0-9@][a-z0-9@/._-]*$",
+      "type": "string"
+    },
+    "version": {
+      "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?:-[0-9A-Za-z.-]+)?(?:\\+[0-9A-Za-z.-]+)?$",
+      "type": "string"
+    },
+    "kind": {
+      "anyOf": [
+        { "const": "stack", "type": "string" },
+        { "const": "agent", "type": "string" },
+        { "const": "tool", "type": "string" },
+        { "const": "gate", "type": "string" },
+        { "const": "vcs", "type": "string" },
+        { "const": "projection", "type": "string" }
+      ]
+    },
+    "capabilities": {
+      "uniqueItems": true,
+      "type": "array",
+      "items": { "minLength": 1, "type": "string" }
+    },
+    "resources": {
+      "uniqueItems": true,
+      "type": "array",
+      "items": { "minLength": 1, "type": "string" }
+    },
+    "extensions": {
+      "additionalProperties": false,
+      "default": {},
+      "type": "object",
+      "patternProperties": { "^[a-z][a-z0-9]*(?:[.-][a-z0-9]+)+$": {} }
+    }
+  }
+}

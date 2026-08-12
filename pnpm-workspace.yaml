@@ -3,6 +3,11 @@ packages:
   - adapters/*
   - packs/*
 
+catalog:
+  "@sinclair/typebox": ^0.34.52
+  ajv: ^8.20.0
+  ajv-formats: ^3.0.1
+
 catalogMode: strict
 
 minimumReleaseAge: 1440

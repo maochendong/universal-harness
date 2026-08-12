@@ -1,0 +1,129 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.universal-harness.dev/m1/edge.schema.json",
+  "additionalProperties": false,
+  "type": "object",
+  "required": [
+    "protocol_version",
+    "record_kind",
+    "id",
+    "type",
+    "source_id",
+    "target_id",
+    "status",
+    "source",
+    "provenance",
+    "confidence",
+    "digest"
+  ],
+  "properties": {
+    "protocol_version": {
+      "pattern": "^1\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?:-[0-9A-Za-z.-]+)?(?:\\+[0-9A-Za-z.-]+)?$",
+      "default": "1.0.0",
+      "type": "string"
+    },
+    "record_kind": { "const": "edge", "type": "string" },
+    "id": {
+      "minLength": 3,
+      "maxLength": 160,
+      "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+      "type": "string"
+    },
+    "type": {
+      "anyOf": [
+        { "const": "DERIVES_FROM", "type": "string" },
+        { "const": "SUPERSEDES", "type": "string" },
+        { "const": "GENERATED_BY", "type": "string" },
+        { "const": "RESUMES", "type": "string" },
+        { "const": "DECOMPOSES_TO", "type": "string" },
+        { "const": "ADDRESSES", "type": "string" },
+        { "const": "CONSTRAINED_BY", "type": "string" },
+        { "const": "GOVERNED_BY", "type": "string" },
+        { "const": "SHAPES", "type": "string" },
+        { "const": "REALIZES", "type": "string" },
+        { "const": "IMPLEMENTS", "type": "string" },
+        { "const": "VERIFIES", "type": "string" },
+        { "const": "EVALUATES", "type": "string" },
+        { "const": "EXECUTES", "type": "string" },
+        { "const": "INVOKES", "type": "string" },
+        { "const": "PRODUCES", "type": "string" },
+        { "const": "SUPPORTS", "type": "string" },
+        { "const": "REFUTES", "type": "string" },
+        { "const": "VIOLATES", "type": "string" },
+        { "const": "CONTAINS", "type": "string" },
+        { "const": "DEPENDS_ON", "type": "string" },
+        { "const": "USES_CONTEXT", "type": "string" },
+        { "const": "CAPTURES", "type": "string" },
+        { "const": "BLOCKS", "type": "string" },
+        { "const": "REQUESTS_APPROVAL_FOR", "type": "string" },
+        { "const": "RESOLVES", "type": "string" },
+        { "const": "APPROVES", "type": "string" },
+        { "const": "DIAGNOSED_BY", "type": "string" },
+        { "const": "PROPOSES_CHANGE_TO", "type": "string" },
+        { "const": "TRIGGERS", "type": "string" }
+      ]
+    },
+    "source_id": {
+      "minLength": 3,
+      "maxLength": 160,
+      "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+      "type": "string"
+    },
+    "target_id": {
+      "minLength": 3,
+      "maxLength": 160,
+      "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+      "type": "string"
+    },
+    "status": {
+      "anyOf": [
+        { "const": "proposed", "type": "string" },
+        { "const": "accepted", "type": "string" },
+        { "const": "rejected", "type": "string" },
+        { "const": "superseded", "type": "string" }
+      ]
+    },
+    "source": {
+      "anyOf": [
+        { "const": "human", "type": "string" },
+        { "const": "scanner", "type": "string" },
+        { "const": "agent", "type": "string" },
+        { "const": "workflow", "type": "string" },
+        { "const": "tool", "type": "string" },
+        { "const": "gate", "type": "string" },
+        { "const": "evaluation", "type": "string" },
+        { "const": "audit", "type": "string" },
+        { "const": "migration", "type": "string" }
+      ]
+    },
+    "provenance": {
+      "additionalProperties": false,
+      "type": "object",
+      "required": ["iteration_id", "actor", "timestamp"],
+      "properties": {
+        "iteration_id": {
+          "minLength": 3,
+          "maxLength": 160,
+          "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+          "type": "string"
+        },
+        "run_id": {
+          "minLength": 3,
+          "maxLength": 160,
+          "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+          "type": "string"
+        },
+        "actor": { "minLength": 1, "maxLength": 200, "type": "string" },
+        "timestamp": { "format": "date-time", "type": "string" }
+      }
+    },
+    "confidence": { "minimum": 0, "maximum": 1, "type": "number" },
+    "digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
+    "extensions": {
+      "additionalProperties": false,
+      "default": {},
+      "type": "object",
+      "patternProperties": { "^[a-z][a-z0-9]*(?:[.-][a-z0-9]+)+$": {} }
+    }
+  }
+}

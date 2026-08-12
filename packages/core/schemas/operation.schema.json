@@ -1,0 +1,167 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.universal-harness.dev/m1/operation.schema.json",
+  "anyOf": [
+    {
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": { "state": { "const": "blocked" } },
+            "required": ["state"]
+          },
+          "then": {
+            "properties": { "resume_state": {} },
+            "required": ["resume_state"]
+          },
+          "else": {
+            "not": {
+              "properties": { "resume_state": {} },
+              "required": ["resume_state"]
+            }
+          }
+        }
+      ],
+      "type": "object",
+      "required": [
+        "protocol_version",
+        "record_kind",
+        "workflow_operation_id",
+        "attempt_id",
+        "iteration_id",
+        "state",
+        "updated_at"
+      ],
+      "properties": {
+        "protocol_version": {
+          "pattern": "^1\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?:-[0-9A-Za-z.-]+)?(?:\\+[0-9A-Za-z.-]+)?$",
+          "default": "1.0.0",
+          "type": "string"
+        },
+        "record_kind": { "const": "workflow_operation", "type": "string" },
+        "workflow_operation_id": {
+          "minLength": 3,
+          "maxLength": 160,
+          "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+          "type": "string"
+        },
+        "attempt_id": {
+          "minLength": 3,
+          "maxLength": 160,
+          "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+          "type": "string"
+        },
+        "iteration_id": {
+          "minLength": 3,
+          "maxLength": 160,
+          "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+          "type": "string"
+        },
+        "state": {
+          "anyOf": [
+            { "const": "created", "type": "string" },
+            { "const": "awaiting_input", "type": "string" },
+            { "const": "awaiting_approval", "type": "string" },
+            { "const": "planned", "type": "string" },
+            { "const": "running", "type": "string" },
+            { "const": "verifying", "type": "string" },
+            { "const": "repairing", "type": "string" },
+            { "const": "blocked", "type": "string" },
+            { "const": "completed", "type": "string" },
+            { "const": "aborted", "type": "string" }
+          ]
+        },
+        "resume_state": {
+          "anyOf": [
+            { "const": "created", "type": "string" },
+            { "const": "awaiting_input", "type": "string" },
+            { "const": "awaiting_approval", "type": "string" },
+            { "const": "planned", "type": "string" },
+            { "const": "running", "type": "string" },
+            { "const": "verifying", "type": "string" },
+            { "const": "repairing", "type": "string" }
+          ]
+        },
+        "updated_at": { "format": "date-time", "type": "string" },
+        "extensions": {
+          "additionalProperties": false,
+          "default": {},
+          "type": "object",
+          "patternProperties": { "^[a-z][a-z0-9]*(?:[.-][a-z0-9]+)+$": {} }
+        }
+      }
+    },
+    {
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "protocol_version",
+        "record_kind",
+        "ledger_operation_id",
+        "workflow_operation_id",
+        "attempt_id",
+        "baseline_commit",
+        "sequence",
+        "artifact_digests",
+        "edge_file",
+        "event_file",
+        "committed_at",
+        "digest"
+      ],
+      "properties": {
+        "protocol_version": {
+          "pattern": "^1\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?:-[0-9A-Za-z.-]+)?(?:\\+[0-9A-Za-z.-]+)?$",
+          "default": "1.0.0",
+          "type": "string"
+        },
+        "record_kind": { "const": "ledger_operation", "type": "string" },
+        "ledger_operation_id": {
+          "minLength": 3,
+          "maxLength": 160,
+          "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+          "type": "string"
+        },
+        "workflow_operation_id": {
+          "minLength": 3,
+          "maxLength": 160,
+          "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+          "type": "string"
+        },
+        "attempt_id": {
+          "minLength": 3,
+          "maxLength": 160,
+          "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+          "type": "string"
+        },
+        "baseline_commit": {
+          "minLength": 7,
+          "maxLength": 64,
+          "pattern": "^[a-f0-9]+$",
+          "type": "string"
+        },
+        "sequence": { "minimum": 1, "type": "integer" },
+        "artifact_digests": {
+          "uniqueItems": true,
+          "type": "array",
+          "items": { "pattern": "^[a-f0-9]{64}$", "type": "string" }
+        },
+        "edge_file": {
+          "pattern": "^ledger/edges/[0-9]{4}-[0-9]{2}/[^/]+\\.jsonl$",
+          "type": "string"
+        },
+        "event_file": {
+          "pattern": "^events/[0-9]{4}-[0-9]{2}/[^/]+\\.jsonl$",
+          "type": "string"
+        },
+        "committed_at": { "format": "date-time", "type": "string" },
+        "digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
+        "extensions": {
+          "additionalProperties": false,
+          "default": {},
+          "type": "object",
+          "patternProperties": { "^[a-z][a-z0-9]*(?:[.-][a-z0-9]+)+$": {} }
+        }
+      }
+    }
+  ]
+}
