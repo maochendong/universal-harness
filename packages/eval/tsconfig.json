@@ -2,5 +2,5 @@
   "extends": "../../tsconfig.base.json",
   "compilerOptions": { "outDir": "dist", "rootDir": "src" },
   "include": ["src/**/*.ts"],
-  "references": [{ "path": "../core" }, { "path": "../runtime" }]
+  "references": [{ "path": "../core" }, { "path": "../plugin-sdk" }, { "path": "../runtime" }]
 }

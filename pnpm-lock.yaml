@@ -143,6 +143,9 @@ importers:
       '@universal-harness-internal/core':
         specifier: workspace:*
         version: link:../core
+      '@universal-harness-internal/plugin-sdk':
+        specifier: workspace:*
+        version: link:../plugin-sdk
       '@universal-harness-internal/runtime':
         specifier: workspace:*
         version: link:../runtime
