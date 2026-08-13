@@ -1,0 +1,9 @@
+{
+  "protocol_version": "1.0.0",
+  "record_kind": "plugin_manifest",
+  "name": "@example/minimal-tool",
+  "version": "1.0.0",
+  "kind": "tool",
+  "capabilities": ["tool.echo"],
+  "resources": []
+}

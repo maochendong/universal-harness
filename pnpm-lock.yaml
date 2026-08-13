@@ -125,6 +125,19 @@ importers:
       '@universal-harness-internal/runtime':
         specifier: workspace:*
         version: link:../runtime
+    devDependencies:
+      '@universal-harness-internal/adapter-agent-command':
+        specifier: workspace:*
+        version: link:../../adapters/agent-command
+      '@universal-harness-internal/adapter-agent-manual':
+        specifier: workspace:*
+        version: link:../../adapters/agent-manual
+      '@universal-harness-internal/adapter-projection-markdown':
+        specifier: workspace:*
+        version: link:../../adapters/projection-markdown
+      '@universal-harness-internal/adapter-vcs-git':
+        specifier: workspace:*
+        version: link:../../adapters/vcs-git
 
   packages/core:
     dependencies:

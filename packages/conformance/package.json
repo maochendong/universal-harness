@@ -22,5 +22,11 @@
     "@universal-harness-internal/graph": "workspace:*",
     "@universal-harness-internal/plugin-sdk": "workspace:*",
     "@universal-harness-internal/runtime": "workspace:*"
+  },
+  "devDependencies": {
+    "@universal-harness-internal/adapter-agent-command": "workspace:*",
+    "@universal-harness-internal/adapter-agent-manual": "workspace:*",
+    "@universal-harness-internal/adapter-projection-markdown": "workspace:*",
+    "@universal-harness-internal/adapter-vcs-git": "workspace:*"
   }
 }

@@ -1,4 +1,9 @@
 import { contentDigest, type EdgeRecord, type NodeRecord } from "@universal-harness-internal/core";
+import type {
+  ProjectionDocument,
+  ProjectionGraph,
+  ProjectionSource,
+} from "@universal-harness-internal/plugin-sdk";
 
 /**
  * Markdown projection adapter (design 13.7, plan Task 22). Markdown is a
@@ -7,6 +12,10 @@ import { contentDigest, type EdgeRecord, type NodeRecord } from "@universal-harn
  * ids with revisions plus a generation digest, and regenerates byte-identical
  * output from the same ledger state.
  *
+ * The contract types (`ProjectionGraph`, `ProjectionSource`,
+ * `ProjectionDocument`) live in the Plugin SDK since Task 24 and are
+ * re-exported here, so every projection provider shares one definition.
+ *
  * Extension keys are duplicated here on purpose: the adapter depends on core
  * and plugin-sdk only, so the runtime-owned extension key strings are stated
  * as local constants instead of imported across the dependency boundary.
@@ -14,25 +23,7 @@ import { contentDigest, type EdgeRecord, type NodeRecord } from "@universal-harn
 export const REQUIREMENTS_EXTENSION_KEY = "harness.requirements";
 export const PLAN_EXTENSION_KEY = "harness.plan";
 
-/** Graph slice a projection renders from. */
-export interface ProjectionGraph {
-  readonly nodes: readonly NodeRecord[];
-  readonly edges: readonly EdgeRecord[];
-}
-
-/** One authoritative source a projection was generated from. */
-export interface ProjectionSource {
-  readonly id: string;
-  readonly revision: number;
-}
-
-/** A rendered, self-describing Markdown view. */
-export interface ProjectionDocument {
-  readonly view: string;
-  readonly sources: readonly ProjectionSource[];
-  readonly generation_digest: string;
-  readonly markdown: string;
-}
+export type { ProjectionDocument, ProjectionGraph, ProjectionSource };
 
 function byId(left: string, right: string): number {
   return left < right ? -1 : left > right ? 1 : 0;
