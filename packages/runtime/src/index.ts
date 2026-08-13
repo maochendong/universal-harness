@@ -442,6 +442,46 @@ export {
   type UsageMeter,
 } from "./loop/controller.js";
 export {
+  GATE_ERROR_KINDS,
+  GATE_LAYERS,
+  GATE_PHASE,
+  GateError,
+  normalizeGateDefinition,
+  runGate,
+  type GateDefinition,
+  type GateErrorKind,
+  type GateLayer,
+  type GateOutcome,
+  type GateRunOptions,
+} from "./gates/provider.js";
+export {
+  GATE_EVIDENCE_EXTENSION_KEY,
+  GATE_EVIDENCE_TYPE,
+  buildGateEvidence,
+  evidenceBindingsOf,
+  readGateEvidenceExtension,
+  type EvidenceBindings,
+  type GateEvidenceExtension,
+  type GateEvidenceRecord,
+  type GateEvidenceSpec,
+} from "./gates/evidence.js";
+export {
+  bindingsStalenessReasons,
+  evidenceFreshnessOf,
+  evidenceStalenessReasons,
+  findingClosableBy,
+  isEvidenceStale,
+  type CurrentEvidenceState,
+} from "./gates/freshness.js";
+export {
+  completionBlockers,
+  orderGates,
+  runGateSuite,
+  type GateRunResult,
+  type GateSuiteOutcome,
+  type GateSuiteSpec,
+} from "./gates/runner.js";
+export {
   ABORT_REASONS,
   InvalidStateTransition,
   RECOVERABLE_BLOCK_REASONS,
