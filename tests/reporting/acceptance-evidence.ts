@@ -40,7 +40,7 @@ export class AcceptanceEvidenceError extends Error {
   }
 }
 
-const CRITERION_PATTERN = /^AC-([1-9]|[12][0-8])$/u;
+const CRITERION_PATTERN = /^AC-([1-9]|1[0-9]|2[0-8])$/u;
 
 export function assertAcceptanceEvidenceRecord(record: AcceptanceEvidenceRecord): void {
   if (!CRITERION_PATTERN.test(record.criterion_id)) {

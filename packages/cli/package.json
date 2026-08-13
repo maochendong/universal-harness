@@ -1,6 +1,25 @@
 {
   "name": "universal-harness",
   "version": "0.0.0",
+  "description": "Graph-native, Git-native engineering harness: auditable new/adopt/iterate loops with governed agent execution.",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/maochendong/universal-harness.git"
+  },
+  "keywords": [
+    "engineering-harness",
+    "graph-ledger",
+    "agent-governance",
+    "audit"
+  ],
+  "engines": {
+    "node": ">=22.13.0"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
   "private": false,
   "type": "module",
   "exports": {

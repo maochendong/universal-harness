@@ -102,7 +102,9 @@ describe("new project bootstrap integration", () => {
     expect(existsSync(join(projectRoot, ".harness", "cache"))).toBe(true);
   });
 
-  it("reproduces the same baseline for identical inputs", async () => {
+  // Two full project bootstraps with real Git commits; well past the default
+  // 5s timeout on a loaded machine, so the budget is explicit.
+  it("reproduces the same baseline for identical inputs", { timeout: 30_000 }, async () => {
     await withPinnedGitDates(async () => {
       const serviceA = createRuntimeService(makeDeps());
       const serviceB = createRuntimeService(makeDeps());

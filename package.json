@@ -12,12 +12,15 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "lint": "eslint .",
+    "pack:smoke": "pnpm build && node scripts/pack-cli.mjs && node scripts/pack-smoke.mjs",
     "test": "vitest run --config vitest.workspace.ts",
+    "test:e2e": "vitest run --config vitest.workspace.ts tests/e2e",
     "test:fault": "vitest run --config vitest.workspace.ts tests/fault",
     "test:performance": "vitest run --config vitest.performance.ts",
+    "test:release": "pnpm test:security && pnpm test:fault && pnpm test:performance && pnpm test:e2e && node scripts/generate-acceptance-report.mjs",
     "test:security": "vitest run --config vitest.workspace.ts tests/security",
     "typecheck": "pnpm -r --if-present typecheck",
-    "verify": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm test && pnpm build && node scripts/check-standalone.mjs"
+    "verify": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm build && pnpm test && node scripts/check-standalone.mjs"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",

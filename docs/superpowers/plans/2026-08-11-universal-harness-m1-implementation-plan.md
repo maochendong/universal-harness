@@ -1,7 +1,7 @@
 # Universal Harness M1 实施计划
 
 **日期**：2026-08-11  
-**状态**：实施中；Task 1–27 已完成，评审修订已吸收
+**状态**：已完成；Task 1–28 全部完成，M1 完整纵向闭环验收通过
 **设计依据**：`docs/superpowers/specs/2026-08-11-universal-harness-m1-design.md`  
 **目标里程碑**：M1 完整纵向闭环
 

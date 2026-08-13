@@ -13,5 +13,8 @@ export default defineConfig({
     ],
     exclude: [...configDefaults.exclude, "tests/performance/**"],
     passWithNoTests: false,
+    // Plan Task 28: every run also emits the structured acceptance evidence
+    // consumed by scripts/generate-acceptance-report.mjs.
+    reporters: ["default", "./tests/reporting/vitest-acceptance-reporter.ts"],
   },
 });

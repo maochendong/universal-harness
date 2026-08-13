@@ -19,7 +19,15 @@ M1 的目标是通过一个编排命令完成完整纵向闭环：
 
 本设计采用一套 Git-native Ledger，并提供 Artifact Graph 与 Execution Graph 两个逻辑视图。Agent 提出语义工作建议；Harness 控制计划、上下文、能力、预算、终止、证据、恢复和权威更新。
 
-M1 设计与实施计划均已批准。Task 1–3 已建立可复现工作区、协议 Schema 与规范身份，下一步为 Task 4。
+M1 已完成：Task 1–28 全部落地，28 条验收标准均有通过证据（见 [M1 验收报告](docs/m1-acceptance-report.md)）。从 [快速开始](docs/getting-started.md) 运行你的第一次闭环。
+
+## 文档
+
+- [快速开始](docs/getting-started.md)
+- [接管已有项目](docs/adopting-a-project.md)
+- [运维与恢复](docs/operations-and-recovery.md)
+- [插件契约](docs/plugin-contracts.md)
+- [M1 验收报告](docs/m1-acceptance-report.md)
 
 ## 设计文档
 

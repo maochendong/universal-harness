@@ -80,38 +80,44 @@ describe("createNewProject", () => {
     ]);
   });
 
-  it("produces byte-identical .harness trees for identical inputs", async () => {
-    // Pin git timestamps so commit hashes — and therefore the recorded
-    // baseline binding — are reproducible for identical inputs.
-    const savedAuthorDate = process.env.GIT_AUTHOR_DATE;
-    const savedCommitterDate = process.env.GIT_COMMITTER_DATE;
-    process.env.GIT_AUTHOR_DATE = "2026-08-12T00:00:00Z";
-    process.env.GIT_COMMITTER_DATE = "2026-08-12T00:00:00Z";
-    try {
-      const parentA = makeTempDir("harness-new-a-");
-      const parentB = makeTempDir("harness-new-b-");
-      const first = await createNewProject(
-        { parentDirectory: parentA, name: "demo-app", intent: "build a demo" },
-        makeDeps(),
-      );
-      const second = await createNewProject(
-        { parentDirectory: parentB, name: "demo-app", intent: "build a demo" },
-        makeDeps(),
-      );
-      expect(first.ok && second.ok).toBe(true);
-      if (!first.ok || !second.ok) return;
-      expect(first.value.repositoryNodeId).toBe(second.value.repositoryNodeId);
-      expect(first.value.baselineCommit).toBe(second.value.baselineCommit);
-      const filesA = harnessFiles(first.value.projectRoot);
-      const filesB = harnessFiles(second.value.projectRoot);
-      expect(Object.fromEntries(filesA)).toEqual(Object.fromEntries(filesB));
-    } finally {
-      if (savedAuthorDate === undefined) delete process.env.GIT_AUTHOR_DATE;
-      else process.env.GIT_AUTHOR_DATE = savedAuthorDate;
-      if (savedCommitterDate === undefined) delete process.env.GIT_COMMITTER_DATE;
-      else process.env.GIT_COMMITTER_DATE = savedCommitterDate;
-    }
-  });
+  // Two full project bootstraps with real Git commits; well past the default
+  // 5s timeout on a loaded machine, so the budget is explicit.
+  it(
+    "produces byte-identical .harness trees for identical inputs",
+    { timeout: 30_000 },
+    async () => {
+      // Pin git timestamps so commit hashes — and therefore the recorded
+      // baseline binding — are reproducible for identical inputs.
+      const savedAuthorDate = process.env.GIT_AUTHOR_DATE;
+      const savedCommitterDate = process.env.GIT_COMMITTER_DATE;
+      process.env.GIT_AUTHOR_DATE = "2026-08-12T00:00:00Z";
+      process.env.GIT_COMMITTER_DATE = "2026-08-12T00:00:00Z";
+      try {
+        const parentA = makeTempDir("harness-new-a-");
+        const parentB = makeTempDir("harness-new-b-");
+        const first = await createNewProject(
+          { parentDirectory: parentA, name: "demo-app", intent: "build a demo" },
+          makeDeps(),
+        );
+        const second = await createNewProject(
+          { parentDirectory: parentB, name: "demo-app", intent: "build a demo" },
+          makeDeps(),
+        );
+        expect(first.ok && second.ok).toBe(true);
+        if (!first.ok || !second.ok) return;
+        expect(first.value.repositoryNodeId).toBe(second.value.repositoryNodeId);
+        expect(first.value.baselineCommit).toBe(second.value.baselineCommit);
+        const filesA = harnessFiles(first.value.projectRoot);
+        const filesB = harnessFiles(second.value.projectRoot);
+        expect(Object.fromEntries(filesA)).toEqual(Object.fromEntries(filesB));
+      } finally {
+        if (savedAuthorDate === undefined) delete process.env.GIT_AUTHOR_DATE;
+        else process.env.GIT_AUTHOR_DATE = savedAuthorDate;
+        if (savedCommitterDate === undefined) delete process.env.GIT_COMMITTER_DATE;
+        else process.env.GIT_COMMITTER_DATE = savedCommitterDate;
+      }
+    },
+  );
 
   it("refuses an existing target path", async () => {
     const parent = makeTempDir("harness-new-exists-");

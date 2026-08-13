@@ -15,5 +15,6 @@ export default defineConfig({
     include: ["tests/performance/**/*.test.ts"],
     fileParallelism: false,
     passWithNoTests: false,
+    reporters: ["default", "./tests/reporting/vitest-acceptance-reporter.ts"],
   },
 });
