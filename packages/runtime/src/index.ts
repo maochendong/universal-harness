@@ -382,6 +382,66 @@ export {
   type SecretErrorKind,
 } from "./secrets/environment-reference.js";
 export {
+  BUDGET_CEILING_MODES,
+  GENERIC_PACK_LOOP_DEFAULTS,
+  LOOP_ERROR_KINDS,
+  LoopError,
+  assertLoopPolicy,
+  isLoopPolicy,
+  resolveLoopPolicy,
+  type BudgetCeilingMode,
+  type LoopErrorKind,
+  type LoopPolicy,
+  type LoopPolicyOverrides,
+  type LoopPolicyRequest,
+  type RepeatDetectionPolicy,
+  type TerminationPolicy,
+} from "./loop/policy.js";
+export {
+  RepeatDetector,
+  actionFingerprint,
+  type NormalizedToolCall,
+  type RepeatDetectionResult,
+  type RepeatObservation,
+} from "./loop/repeat-detector.js";
+export {
+  LOOP_RUN_PHASES,
+  LoopPhaseMachine,
+  adapterFailureDecision,
+  budgetCeilingDecision,
+  cancellationDecision,
+  completionDecision,
+  repeatDetectionDecision,
+  timeoutDecision,
+  type LoopRunPhase,
+  type PartialOutput,
+  type RunOutcome,
+  type TerminalDecision,
+  type TerminationReason,
+} from "./loop/outcome.js";
+export {
+  EXTERNAL_SIDE_EFFECT_POLICIES,
+  STALE_INPUT_BEHAVIORS,
+  buildTaskEnvelope,
+  isTaskEnvelope,
+  type ExternalSideEffectPolicy,
+  type StaleInputBehavior,
+  type TaskEnvelope,
+  type TaskEnvelopeSpec,
+} from "./loop/task-envelope.js";
+export {
+  runManagedLoop,
+  type LoopProgressEvent,
+  type LoopStepInput,
+  type LoopStepRemaining,
+  type LoopToolCall,
+  type ManagedLoopDependencies,
+  type ManagedLoopResult,
+  type ModelStep,
+  type ModelStepOutcome,
+  type UsageMeter,
+} from "./loop/controller.js";
+export {
   ABORT_REASONS,
   InvalidStateTransition,
   RECOVERABLE_BLOCK_REASONS,
