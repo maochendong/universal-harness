@@ -209,6 +209,56 @@ export {
   type PlanningErrorKind,
 } from "./planning/validator.js";
 export {
+  CONTEXT_EXTENSION_KEY,
+  compileContextBundle,
+  type BundleBindings,
+  type CompileContextInput,
+  type CompiledContextBundle,
+  type ContextBundleManifest,
+  type ContextBundleRecord,
+  type ContextCandidate,
+  type ContextSourceEntry,
+  type ExcludedSource,
+  type Freshness,
+  type SourceExclusion,
+} from "./context/compiler.js";
+export {
+  TIER_WEIGHTS,
+  allocateTierBudgets,
+  estimateTokens,
+  type TierAllocation,
+} from "./context/budget.js";
+export {
+  NO_COMPRESSION,
+  TRUNCATE_COMPRESSOR_ID,
+  assertProtectedFieldsPresent,
+  createTruncateCompressor,
+  type CompressionResult,
+  type Compressor,
+} from "./context/compression.js";
+export {
+  freshnessOf,
+  invalidateContextBundle,
+  isContextBundleStale,
+  stalenessReasons,
+  type CurrentContextState,
+} from "./context/freshness.js";
+export {
+  CONTEXT_ERROR_KINDS,
+  ContextError,
+  DEFAULT_NEIGHBORHOOD_DEPTH,
+  KNOWLEDGE_LAYERS,
+  MAX_NEIGHBORHOOD_DEPTH,
+  SOURCE_TIERS,
+  knowledgeLayerFor,
+  selectTaskNeighborhood,
+  type ContextErrorKind,
+  type KnowledgeLayer,
+  type KnowledgeLayerTag,
+  type NeighborhoodSelection,
+  type SourceTier,
+} from "./context/selector.js";
+export {
   ABORT_REASONS,
   InvalidStateTransition,
   RECOVERABLE_BLOCK_REASONS,
