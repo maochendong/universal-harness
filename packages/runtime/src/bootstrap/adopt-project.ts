@@ -484,10 +484,22 @@ export async function commitAdoption(
     edges.push(
       edgeRecord(context, {
         type: "CONTAINS",
-        sourceId: componentId ?? repositoryNode.id,
+        sourceId: repositoryNode.id,
         targetId: fileNode.id,
       }),
     );
+    // Component membership follows the design relation matrix (design 8.3):
+    // a CodeArtifact REALIZES its component; CONTAINS stays with the
+    // Project/Repository/Iteration container nodes.
+    if (componentId !== undefined && fileNode.type === "CodeArtifact") {
+      edges.push(
+        edgeRecord(context, {
+          type: "REALIZES",
+          sourceId: fileNode.id,
+          targetId: componentId,
+        }),
+      );
+    }
   }
   const iterationNode = iterationNodeRecord(
     { ...context, actor: "harness-bootstrap" },

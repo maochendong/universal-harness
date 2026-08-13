@@ -10,6 +10,7 @@ import {
   type RuntimeService,
 } from "../../packages/cli/src/index.js";
 import type { AgentRunResult, AgentTaskEnvelope } from "../../packages/plugin-sdk/src/index.js";
+import type { GateDefinition, ToolRegistry } from "../../packages/runtime/src/index.js";
 
 /**
  * Shared E2E plumbing (plan Task 23): real CLI entry point over real Git
@@ -102,7 +103,14 @@ export function makeExecutor(): {
   };
 }
 
-export function makeHarness(cwd: string, newId: (kind: string) => string): E2eHarness {
+export function makeHarness(
+  cwd: string,
+  newId: (kind: string) => string,
+  injection?: {
+    readonly gates?: readonly GateDefinition[];
+    readonly toolRegistry?: ToolRegistry;
+  },
+): E2eHarness {
   const executor = makeExecutor();
   const runtime = createOrchestratedRuntimeService({
     cwd,
@@ -110,6 +118,8 @@ export function makeHarness(cwd: string, newId: (kind: string) => string): E2eHa
     now: () => FIXED_NOW,
     newId,
     execute: executor.executor,
+    ...(injection?.gates === undefined ? {} : { gates: injection.gates }),
+    ...(injection?.toolRegistry === undefined ? {} : { toolRegistry: injection.toolRegistry }),
   });
   return { runtime, executorCalls: executor.calls };
 }

@@ -130,7 +130,9 @@ describe("adoption preview integration", () => {
       ),
     ).toBe(true);
 
-    // Containment edges connect repository -> component -> files.
+    // Containment edges connect repository -> component and repository ->
+    // file; component membership follows the design relation matrix (design
+    // 8.3) as CodeArtifact REALIZES Component.
     const componentId = scannedNodeId({
       project_id: projectId,
       repository_id: repositoryId,
@@ -147,12 +149,16 @@ describe("adoption preview integration", () => {
       (edge) => `${edge.type}:${edge.source_id}->${edge.target_id}`,
     );
     expect(edgeEndpoints).toContain(`CONTAINS:${expectedRepositoryId}->${componentId}`);
-    expect(edgeEndpoints).toContain(`CONTAINS:${componentId}->${fileId}`);
+    expect(edgeEndpoints).toContain(`CONTAINS:${expectedRepositoryId}->${fileId}`);
+    expect(edgeEndpoints).toContain(`REALIZES:${fileId}->${componentId}`);
 
     // The semantic edge proposal input was staged for later enrichment, but
     // no inferred edge entered the committed baseline.
     expect(
-      replay.edges.every((edge) => edge.type === "CONTAINS" || edge.type === "DERIVES_FROM"),
+      replay.edges.every(
+        (edge) =>
+          edge.type === "CONTAINS" || edge.type === "DERIVES_FROM" || edge.type === "REALIZES",
+      ),
     ).toBe(true);
   });
 });

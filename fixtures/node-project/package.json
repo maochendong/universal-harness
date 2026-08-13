@@ -1,0 +1,10 @@
+{
+  "name": "node-project-fixture",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Small self-contained Node fixture for Universal Harness E2E tests",
+  "scripts": {
+    "test": "node --test"
+  }
+}

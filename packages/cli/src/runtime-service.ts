@@ -29,6 +29,8 @@ import {
 import { materializeLedger, pageEdges, pageNodes } from "@universal-harness-internal/graph";
 import type { EdgeRecord, NodeRecord } from "@universal-harness-internal/core";
 
+import type { GateDefinition, ToolRegistry } from "@universal-harness-internal/runtime";
+
 import type { CliIo, CommandResult } from "./io.js";
 import type {
   AdoptProjectRequest,
@@ -61,6 +63,12 @@ export interface OrchestratedServiceOptions {
   readonly prompter?: ApprovalPrompter;
   readonly decisionActor?: string;
   readonly vcs?: ReturnType<typeof createGitVcsAdapter>;
+  /**
+   * Custom verify-phase gate suite (plan Task 26 E2E injection); like the
+   * orchestrator port, a custom suite must come with its `toolRegistry`.
+   */
+  readonly gates?: readonly GateDefinition[];
+  readonly toolRegistry?: ToolRegistry;
 }
 
 /** Interactive stdin prompt; only constructed when the CLI runs on a TTY. */
@@ -217,6 +225,8 @@ export function createOrchestratedRuntimeService(
       options.evaluate ?? createEvalPackagePort(options.now ?? (() => new Date().toISOString())),
     ...(options.now === undefined ? {} : { now: options.now }),
     ...(options.newId === undefined ? {} : { newId: options.newId }),
+    ...(options.gates === undefined ? {} : { gates: options.gates }),
+    ...(options.toolRegistry === undefined ? {} : { toolRegistry: options.toolRegistry }),
     ...(prompter === undefined ? {} : { prompter }),
     decisionActor: actor,
   });

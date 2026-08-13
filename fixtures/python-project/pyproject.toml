@@ -1,0 +1,6 @@
+[project]
+name = "python-project-fixture"
+version = "0.0.0"
+description = "Small self-contained Python fixture for Universal Harness E2E tests"
+requires-python = ">=3.10"
+dependencies = []
