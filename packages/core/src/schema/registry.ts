@@ -74,6 +74,29 @@ function protocolVersionOf(value: unknown): string | undefined {
   return typeof protocolVersion === "string" ? protocolVersion : undefined;
 }
 
+/**
+ * Compiled validator for an arbitrary JSON Schema 2020-12 document, used by
+ * versioned Tool Descriptors whose input/output schemas are provider data
+ * rather than fixed protocol schemas (design 13.5). The `$id` keyword is
+ * stripped before compilation so two tools may share a schema document
+ * without colliding in the Ajv registry; every other keyword keeps its
+ * strict-mode semantics.
+ */
+export type CompiledSchemaValidator = (value: unknown) => ValidationResult;
+
+export function compileSchemaValidator(schema: unknown): CompiledSchemaValidator {
+  if (typeof schema !== "object" || schema === null || Array.isArray(schema)) {
+    throw new Error("a compilable schema must be a JSON Schema object");
+  }
+  const document = { ...(schema as Record<string, unknown>) };
+  delete document.$id;
+  const validate = ajv.compile(document);
+  return (value: unknown): ValidationResult =>
+    validate(value)
+      ? { valid: true, errors: [] }
+      : { valid: false, errors: normalizeErrors(validate.errors) };
+}
+
 export function validateSchema(key: SchemaKey, value: unknown): ValidationResult {
   const validator = validators.get(key);
   if (validator === undefined) {

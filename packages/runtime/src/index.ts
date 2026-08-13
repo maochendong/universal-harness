@@ -322,6 +322,66 @@ export {
   tryNormalizeRepoRelativePath,
 } from "./policy/path-boundary.js";
 export {
+  RECONCILIATION_MODES,
+  RETRY_CLASSES,
+  SIDE_EFFECT_CLASSES,
+  TOOL_ERROR_KINDS,
+  TOOL_NAME_PATTERN,
+  ToolError,
+  compareToolVersions,
+  normalizeToolDefinition,
+  resourceMatchesPatterns,
+  type ReconciliationMode,
+  type RetryClass,
+  type SideEffectClass,
+  type ToolDefinition,
+  type ToolErrorKind,
+} from "./tools/definition.js";
+export {
+  ToolRegistry,
+  type RegisteredTool,
+  type ToolHandler,
+  type ToolHandlerInput,
+  type ToolInvocationSummary,
+} from "./tools/registry.js";
+export {
+  ActionIntentJournal,
+  isActionIntentRecord,
+  requestDigest,
+  type ActionIntentRecord,
+  type OpenIntentInput,
+} from "./tools/action-intent.js";
+export {
+  invokeTool,
+  type ToolInvocationContext,
+  type ToolInvocationEvidence,
+  type ToolInvocationRequest,
+} from "./tools/invocation.js";
+export {
+  PROBE_OUTCOMES,
+  RECONCILIATION_DECISIONS,
+  reconcileIntent,
+  reconcileJournal,
+  type ProbeOutcome,
+  type ReconciliationDecision,
+  type ReconciliationDecisionKind,
+  type ReconciliationProbe,
+} from "./tools/reconciliation.js";
+export {
+  REDACTED_SECRET,
+  SECRET_ERROR_KINDS,
+  SECRET_NAME_PATTERN,
+  SECRET_REFERENCE_KEY,
+  SecretError,
+  assertNoSecretValues,
+  findSecretReferences,
+  isSecretReference,
+  redactSecretValues,
+  resolveSecretParameters,
+  type ResolvedSecrets,
+  type SecretErrorKind,
+} from "./secrets/environment-reference.js";
+export {
   ABORT_REASONS,
   InvalidStateTransition,
   RECOVERABLE_BLOCK_REASONS,
