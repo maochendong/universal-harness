@@ -42,7 +42,8 @@ function init(root: string) {
 afterEach(() => {
   while (createdRoots.length > 0) {
     const root = createdRoots.pop();
-    if (root !== undefined) rmSync(root, { recursive: true, force: true });
+    if (root !== undefined)
+      rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
   }
 });
 

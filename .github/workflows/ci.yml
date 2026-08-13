@@ -43,6 +43,9 @@ jobs:
           node-version-file: .node-version
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      # Cross-package imports resolve through package exports to dist/, so a
+      # clean checkout must build before the vitest gates run.
+      - run: pnpm build
       - run: pnpm test:security
       - run: pnpm test:fault
       - run: pnpm test:performance

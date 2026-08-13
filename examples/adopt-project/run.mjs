@@ -54,5 +54,5 @@ try {
 
   console.log(`adopt-project example passed: snapshot ${result.json.data.snapshot_id}`);
 } finally {
-  rmSync(parent, { recursive: true, force: true });
+  rmSync(parent, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
 }

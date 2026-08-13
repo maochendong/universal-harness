@@ -35,12 +35,15 @@ function makeRoot(prefix = "harness-drift-"): string {
 afterEach(() => {
   while (created.length > 0) {
     const directory = created.pop();
-    if (directory !== undefined) rmSync(directory, { recursive: true, force: true });
+    if (directory !== undefined)
+      rmSync(directory, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
   }
 });
 
 function git(cwd: string, ...args: string[]): string {
-  return execFileSync("git", args, { cwd, encoding: "utf8" });
+  // Pin autocrlf off: Windows CI runners default it to true, which would
+  // rewrite line endings and dirty otherwise clean test repositories.
+  return execFileSync("git", ["-c", "core.autocrlf=false", ...args], { cwd, encoding: "utf8" });
 }
 
 describe("git baseline drift", () => {

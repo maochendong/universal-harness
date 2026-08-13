@@ -27,7 +27,9 @@ export function makeTempDir(prefix) {
 }
 
 export function git(cwd, ...args) {
-  return execFileSync("git", args, { cwd, encoding: "utf8" });
+  // Pin autocrlf off: Windows CI runners default it to true, which would
+  // rewrite line endings and dirty otherwise clean example repositories.
+  return execFileSync("git", ["-c", "core.autocrlf=false", ...args], { cwd, encoding: "utf8" });
 }
 
 export function sequentialIds() {

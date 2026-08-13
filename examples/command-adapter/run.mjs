@@ -53,6 +53,6 @@ try {
 
   console.log(`command-adapter example passed: snapshot ${result.json.data.snapshot_id}`);
 } finally {
-  rmSync(parent, { recursive: true, force: true });
-  rmSync(evidenceDir, { recursive: true, force: true });
+  rmSync(parent, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+  rmSync(evidenceDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
 }

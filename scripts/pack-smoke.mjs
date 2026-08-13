@@ -236,6 +236,8 @@ try {
   );
   writeFileSync(join(legacyRoot, "src", "index.js"), "export const answer = 42;\n", "utf8");
   execFileSync("git", ["init", "-b", "main"], { cwd: legacyRoot, env: harnessEnv });
+  // Pin autocrlf off so the baseline stays clean on Windows runners.
+  execFileSync("git", ["config", "core.autocrlf", "false"], { cwd: legacyRoot, env: harnessEnv });
   execFileSync("git", ["add", "-A"], { cwd: legacyRoot, env: harnessEnv });
   execFileSync("git", ["commit", "-m", "legacy baseline"], { cwd: legacyRoot, env: harnessEnv });
 

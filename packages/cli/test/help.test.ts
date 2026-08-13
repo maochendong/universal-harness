@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -39,13 +39,19 @@ const createdRoots: string[] = [];
 function sanitize(text: string): string {
   let sanitized = text;
   for (const root of createdRoots) {
-    sanitized = sanitized.replaceAll(root, "<PROJECT_ROOT>");
+    // Windows emits the same root in several shapes: verbatim (backslashes),
+    // JSON-escaped (doubled backslashes) and POSIX-normalized (slashes).
+    for (const variant of [root.replaceAll("\\", "\\\\"), root, root.replaceAll("\\", "/")]) {
+      sanitized = sanitized.replaceAll(variant, "<PROJECT_ROOT>");
+    }
   }
   return sanitized;
 }
 
 function makeManagedProject(): string {
-  const root = mkdtempSync(join(tmpdir(), "harness-cli-"));
+  // realpathSync resolves 8.3 short names (e.g. RUNNER~1) on Windows so the
+  // root matches the canonical paths the CLI prints.
+  const root = realpathSync(mkdtempSync(join(tmpdir(), "harness-cli-")));
   createdRoots.push(root);
   initializeManagedLayout({
     projectRoot: root,
@@ -58,7 +64,8 @@ function makeManagedProject(): string {
 afterEach(() => {
   while (createdRoots.length > 0) {
     const root = createdRoots.pop();
-    if (root !== undefined) rmSync(root, { recursive: true, force: true });
+    if (root !== undefined)
+      rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
   }
 });
 

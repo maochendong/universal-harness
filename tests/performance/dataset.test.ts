@@ -28,7 +28,8 @@ function generate(): string {
 afterEach(() => {
   while (created.length > 0) {
     const directory = created.pop();
-    if (directory !== undefined) rmSync(directory, { recursive: true, force: true });
+    if (directory !== undefined)
+      rmSync(directory, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
   }
 });
 

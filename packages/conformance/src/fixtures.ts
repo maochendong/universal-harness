@@ -189,5 +189,5 @@ export function makeTempDir(prefix: string): string {
 }
 
 export function removeTempDir(directory: string): void {
-  rmSync(directory, { recursive: true, force: true });
+  rmSync(directory, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
 }

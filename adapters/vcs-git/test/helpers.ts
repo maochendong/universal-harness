@@ -12,12 +12,15 @@ const createdDirectories: string[] = [];
 export function cleanupDirectories(): void {
   while (createdDirectories.length > 0) {
     const directory = createdDirectories.pop();
-    if (directory !== undefined) rmSync(directory, { recursive: true, force: true });
+    if (directory !== undefined)
+      rmSync(directory, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
   }
 }
 
 export function git(cwd: string, ...args: string[]): string {
-  return execFileSync("git", args, { cwd, encoding: "utf8" });
+  // Pin autocrlf off: Windows CI runners default it to true, which would
+  // rewrite line endings and dirty otherwise clean test repositories.
+  return execFileSync("git", ["-c", "core.autocrlf=false", ...args], { cwd, encoding: "utf8" });
 }
 
 export function makeTempDir(prefix: string): string {

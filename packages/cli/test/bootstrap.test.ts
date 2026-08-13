@@ -41,7 +41,9 @@ function makeTempDir(prefix: string): string {
 }
 
 function git(cwd: string, ...args: string[]): string {
-  return execFileSync("git", args, { cwd, encoding: "utf8" });
+  // Pin autocrlf off: Windows CI runners default it to true, which would
+  // rewrite line endings and dirty otherwise clean test repositories.
+  return execFileSync("git", ["-c", "core.autocrlf=false", ...args], { cwd, encoding: "utf8" });
 }
 
 function makeRepo(): string {
@@ -59,7 +61,8 @@ function makeRepo(): string {
 afterEach(() => {
   while (createdRoots.length > 0) {
     const root = createdRoots.pop();
-    if (root !== undefined) rmSync(root, { recursive: true, force: true });
+    if (root !== undefined)
+      rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
   }
 });
 

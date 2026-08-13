@@ -73,7 +73,9 @@ export function createGitRunner(options: GitRunnerOptions = {}): GitRunner {
     new Promise<GitOutcome>((resolve) => {
       execFile(
         executable,
-        [...args],
+        // Pin core.autocrlf off so worktree digests and statuses are
+        // identical regardless of the host's global Git configuration.
+        ["-c", "core.autocrlf=false", ...args],
         {
           cwd,
           timeout: timeoutMs,

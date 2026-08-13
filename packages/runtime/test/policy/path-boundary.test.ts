@@ -43,7 +43,7 @@ describe("assertWithinRepositoryBoundary", () => {
   let root = "";
 
   afterEach(() => {
-    if (root !== "") rmSync(root, { recursive: true, force: true });
+    if (root !== "") rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
     root = "";
   });
 
@@ -80,7 +80,7 @@ describe("assertWithinRepositoryBoundary", () => {
     expect(() => assertWithinRepositoryBoundary(repository, "link/new-file.txt")).toThrowError(
       PolicyError,
     );
-    rmSync(outside, { recursive: true, force: true });
+    rmSync(outside, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
   });
 
   it("accepts a symlink that stays inside the repository", () => {

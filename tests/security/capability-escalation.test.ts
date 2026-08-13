@@ -197,7 +197,7 @@ describe("repository boundary enforcement", () => {
   let root = "";
 
   afterEach(() => {
-    if (root !== "") rmSync(root, { recursive: true, force: true });
+    if (root !== "") rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
     root = "";
   });
 
@@ -214,6 +214,6 @@ describe("repository boundary enforcement", () => {
       PolicyError,
     );
     expect(assertWithinRepositoryBoundary(root, "src/new-file.ts")).toContain("src");
-    rmSync(outside, { recursive: true, force: true });
+    rmSync(outside, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
   });
 });

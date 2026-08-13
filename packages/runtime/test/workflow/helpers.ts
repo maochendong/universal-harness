@@ -14,7 +14,8 @@ const createdDirectories: string[] = [];
 export function cleanupDirectories(): void {
   while (createdDirectories.length > 0) {
     const directory = createdDirectories.pop();
-    if (directory !== undefined) rmSync(directory, { recursive: true, force: true });
+    if (directory !== undefined)
+      rmSync(directory, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
   }
 }
 
