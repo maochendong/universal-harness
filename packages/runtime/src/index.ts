@@ -99,6 +99,80 @@ export {
 } from "./workflow/operation.js";
 export { resumeWorkflowOperation, type ResumeOutcome, type ResumedRun } from "./workflow/resume.js";
 export {
+  captureRequirements,
+  type AcceptanceCriterionInput,
+  type CaptureContext,
+  type CaptureIdKind,
+  type CaptureOutcome,
+  type CapturedAcceptanceCriterion,
+  type CapturedConstraint,
+  type CapturedRequirement,
+  type ClarificationQuestion,
+  type ConstraintInput,
+  type IntentInput,
+  type RequirementInput,
+  type RequirementProposal,
+} from "./requirements/capture.js";
+export {
+  REQUIREMENTS_EXTENSION_KEY,
+  baselineDocument,
+  baselineDocumentArtifactPath,
+  baselineNodeArtifactPath,
+  buildBaselineRecords,
+  commitRequirementBaseline,
+  requirementBaselineDigest,
+  type BaselineCommitBinding,
+  type BaselineContext,
+  type BaselineIdKind,
+  type BaselineRecords,
+  type CommittedRequirementBaseline,
+} from "./requirements/baseline.js";
+export {
+  APPROVAL_EXTENSION_KEY,
+  APPROVAL_RISKS,
+  ApprovalError,
+  approvalDecisionArtifact,
+  approvalDecisionArtifactPath,
+  approvalRequestArtifact,
+  approvalRequestArtifactPath,
+  buildApprovalDecision,
+  buildApprovalRequest,
+  previewDigestMatches,
+  proposedByOf,
+  readApprovalDecisions,
+  readApprovalRequests,
+  renderApprovalPreview,
+  supersededRequestId,
+  type ApprovalDecision,
+  type ApprovalDecisionRecord,
+  type ApprovalErrorKind,
+  type ApprovalRequestRecord,
+  type ApprovalRequestSpec,
+  type ApprovalRisk,
+} from "./approval/request.js";
+export {
+  APPROVAL_REQUIRED_CATEGORY,
+  approvalRequiredOutcome,
+  parseApprovalDecision,
+  promptForApprovalDecision,
+  resumeCommandFor,
+  type ApprovalPrompter,
+  type ApprovalRequiredOutcome,
+} from "./approval/interaction.js";
+export {
+  bindingDrift,
+  reissueRequestSpec,
+  type ApprovalBindingSnapshot,
+} from "./approval/invalidation.js";
+export {
+  ApprovalService,
+  type ApprovalDependencies,
+  type ApprovalIdKind,
+  type AwaitDecisionOutcome,
+  type RequestApprovalInput,
+  type ResolveDecisionInput,
+} from "./approval/service.js";
+export {
   ABORT_REASONS,
   InvalidStateTransition,
   RECOVERABLE_BLOCK_REASONS,

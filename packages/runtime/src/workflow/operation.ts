@@ -129,6 +129,16 @@ export interface AbortOperationInput {
 export interface CommitCheckpointInput {
   readonly boundary: CheckpointBoundary;
   readonly proposal: WorkingStateProposal;
+  /**
+   * Extra ledger artifacts committed atomically with the checkpoint (for
+   * example an ApprovalRequest persisted before any human input is awaited).
+   */
+  readonly artifacts?: readonly { readonly path: string; readonly content: string }[];
+  /** Extra lifecycle events appended after the CheckpointCommitted event. */
+  readonly events?: readonly {
+    readonly eventType: LifecycleEvent["event_type"];
+    readonly payload: Record<string, unknown>;
+  }[];
 }
 
 export interface BlockOutcome {
@@ -803,6 +813,7 @@ export class WorkflowEngine {
       timestamp,
       working_state: workingState,
     });
+    const firstSequence = nextEventSequence(this.deps, workflowOperationId);
     const events = [
       buildEvent({
         eventId: this.newId("event"),
@@ -811,7 +822,7 @@ export class WorkflowEngine {
         iterationId: current.iteration_id,
         workflowOperationId,
         ledgerOperationId,
-        sequence: nextEventSequence(this.deps, workflowOperationId),
+        sequence: firstSequence,
         timestamp,
         payload: {
           boundary: input.boundary,
@@ -819,12 +830,25 @@ export class WorkflowEngine {
           checkpoint_id: checkpointId,
         },
       }),
+      ...(input.events ?? []).map((extra, offset) =>
+        buildEvent({
+          eventId: this.newId("event"),
+          eventType: extra.eventType,
+          projectId: projectIdOf(current),
+          iterationId: current.iteration_id,
+          workflowOperationId,
+          ledgerOperationId,
+          sequence: firstSequence + 1 + offset,
+          timestamp,
+          payload: extra.payload,
+        }),
+      ),
     ];
     await commitWorkflowTransaction(this.deps, {
       ledgerOperationId,
       workflowOperationId,
       attemptId: current.attempt_id,
-      artifacts: [...checkpoint.files],
+      artifacts: [...(input.artifacts ?? []), ...checkpoint.files],
       events,
     });
     return checkpoint.record;
