@@ -1,4 +1,4 @@
-import { defineConfig } from "vitest/config";
+import { configDefaults, defineConfig } from "vitest/config";
 
 export default defineConfig({
   test: {
@@ -11,6 +11,7 @@ export default defineConfig({
       "adapters/**/test/**/*.test.ts",
       "packs/**/test/**/*.test.ts",
     ],
+    exclude: [...configDefaults.exclude, "tests/performance/**"],
     passWithNoTests: false,
   },
 });

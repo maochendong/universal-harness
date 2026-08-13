@@ -13,6 +13,9 @@
     "format:check": "prettier --check .",
     "lint": "eslint .",
     "test": "vitest run --config vitest.workspace.ts",
+    "test:fault": "vitest run --config vitest.workspace.ts tests/fault",
+    "test:performance": "vitest run --config vitest.performance.ts",
+    "test:security": "vitest run --config vitest.workspace.ts tests/security",
     "typecheck": "pnpm -r --if-present typecheck",
     "verify": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm test && pnpm build && node scripts/check-standalone.mjs"
   },
