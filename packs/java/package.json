@@ -14,6 +14,7 @@
   ],
   "scripts": {
     "build": "tsc -b",
+    "test": "vitest run --root ../.. packs/java/test",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {

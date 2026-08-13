@@ -2,6 +2,7 @@ export * from "./agent.js";
 export * from "./compatibility.js";
 export * from "./gate.js";
 export * from "./manifest.js";
+export * from "./pack.js";
 export * from "./projection.js";
 export * from "./stack.js";
 export * from "./subprocess.js";

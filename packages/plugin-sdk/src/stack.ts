@@ -1,3 +1,6 @@
+import { readdirSync } from "node:fs";
+import { join } from "node:path";
+
 import type { PluginManifest } from "@universal-harness-internal/core";
 
 /**
@@ -63,4 +66,58 @@ export interface StackAdapter {
   /** Scan artifacts, tests and deterministic relations without mutating anything. */
   scan(root: string): Promise<StackScan>;
   defaults(): StackDefaults;
+}
+
+/**
+ * Directories a stack scan never enters: VCS internals, harness state and
+ * reproducible caches. Mirrors the runtime bootstrap scanner's exclusion set;
+ * duplicated here because the dependency direction forbids packs from
+ * importing the runtime.
+ */
+export const STACK_SCAN_EXCLUDED_DIRECTORIES: readonly string[] = [
+  ".git",
+  ".hg",
+  ".svn",
+  ".harness",
+  ".idea",
+  ".vscode",
+  "node_modules",
+  "__pycache__",
+  ".pytest_cache",
+  ".mypy_cache",
+  ".venv",
+  "venv",
+  ".gradle",
+  ".next",
+  ".turbo",
+  "target",
+  "dist",
+  "coverage",
+];
+
+/**
+ * Deterministically list repository files as POSIX-style relative paths,
+ * sorted ascending. The walk never follows symlinks and never enters an
+ * excluded directory, so two scans of identical content always agree.
+ */
+export function listRepositoryFiles(root: string): readonly string[] {
+  const excluded = new Set(STACK_SCAN_EXCLUDED_DIRECTORIES);
+  const entries: string[] = [];
+  const walk = (directory: string, prefix: string): void => {
+    const children = readdirSync(directory, { withFileTypes: true }).sort((left, right) =>
+      left.name < right.name ? -1 : left.name > right.name ? 1 : 0,
+    );
+    for (const child of children) {
+      const relative = prefix.length === 0 ? child.name : `${prefix}/${child.name}`;
+      if (child.isSymbolicLink()) continue;
+      if (child.isDirectory()) {
+        if (excluded.has(child.name)) continue;
+        walk(join(directory, child.name), relative);
+      } else if (child.isFile()) {
+        entries.push(relative);
+      }
+    }
+  };
+  walk(root, "");
+  return entries.sort();
 }

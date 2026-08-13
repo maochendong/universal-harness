@@ -27,6 +27,10 @@
     "@universal-harness-internal/adapter-agent-command": "workspace:*",
     "@universal-harness-internal/adapter-agent-manual": "workspace:*",
     "@universal-harness-internal/adapter-projection-markdown": "workspace:*",
-    "@universal-harness-internal/adapter-vcs-git": "workspace:*"
+    "@universal-harness-internal/adapter-vcs-git": "workspace:*",
+    "@universal-harness-internal/pack-generic": "workspace:*",
+    "@universal-harness-internal/pack-java": "workspace:*",
+    "@universal-harness-internal/pack-node": "workspace:*",
+    "@universal-harness-internal/pack-python": "workspace:*"
   }
 }

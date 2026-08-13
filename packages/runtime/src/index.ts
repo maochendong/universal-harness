@@ -548,6 +548,56 @@ export {
   type ProjectionTarget,
 } from "./projection/drift.js";
 export {
+  PACKS_PROJECT_DIRECTORY,
+  PACKS_UPGRADES_DIRECTORY,
+  PACKS_UPSTREAM_DIRECTORY,
+  PACK_ERROR_KINDS,
+  PackError,
+  installUpstreamPack,
+  packStorageKey,
+  packUpgradeRelativePath,
+  parseProjectPackOverride,
+  projectOverrideRelativePath,
+  projectPackOverrideDigest,
+  readProjectPackOverride,
+  readUpstreamPack,
+  resolvePackPolicyLayers,
+  serializeProjectPackOverride,
+  upstreamPackRelativePath,
+  writeProjectPackOverride,
+  type OverrideWriteOutcome,
+  type PackErrorKind,
+  type PackInstallOutcome,
+  type ProjectPackOverride,
+  type ResolvedPackPolicyLayers,
+} from "./packs/resolver.js";
+export {
+  assertLockMatchesPack,
+  lockEntryForPack,
+  lockedPackEntry,
+  upsertLockedPack,
+} from "./packs/lockfile.js";
+export {
+  commitTransactionalWrites,
+  comparePackVersions,
+  planPackMigration,
+  runPackMigration,
+  type PackMigrationOutcome,
+  type PackMigrationRegistry,
+  type PackMigrationStep,
+  type TransactionalWrite,
+} from "./packs/migration.js";
+export {
+  applyPackUpgrade,
+  previewPackUpgrade,
+  type PackGateChanges,
+  type PackPolicyChange,
+  type PackUpgradeInput,
+  type PackUpgradeOutcome,
+  type PackUpgradePreview,
+  type PackUpgradeRecord,
+} from "./packs/upgrade.js";
+export {
   AUDIT_FINDING_KINDS,
   HIGH_RISK_IMPROVEMENT_LAYERS,
   auditGraph,

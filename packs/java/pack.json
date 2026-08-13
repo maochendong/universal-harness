@@ -1,0 +1,55 @@
+{
+  "pack_format": 1,
+  "name": "@universal-harness-internal/pack-java",
+  "version": "1.0.0",
+  "stack": "java",
+  "projection_views": ["prd", "plan"],
+  "detection": {
+    "markers": ["pom.xml", "build.gradle", "build.gradle.kts"],
+    "confidence": 0.9
+  },
+  "policies": [
+    { "path": "loop.max_steps", "merge_operator": "hard_ceiling", "value": 30 },
+    { "path": "loop.max_tokens", "merge_operator": "hard_ceiling", "value": 120000 },
+    { "path": "loop.max_duration_ms", "merge_operator": "hard_ceiling", "value": 2700000 },
+    { "path": "loop.max_tool_retries", "merge_operator": "hard_ceiling", "value": 2 },
+    {
+      "path": "loop.repeat_detection.window",
+      "merge_operator": "project_default",
+      "value": 6
+    },
+    {
+      "path": "loop.repeat_detection.identical_action_limit",
+      "merge_operator": "project_default",
+      "value": 2
+    },
+    { "path": "controls.redaction", "merge_operator": "strongest_control", "value": "references" },
+    { "path": "approvals.required", "merge_operator": "approval_union", "value": ["risk:high"] },
+    {
+      "path": "paths.deny",
+      "merge_operator": "deny_union",
+      "value": [".git", ".harness/locks", "target", ".gradle"]
+    }
+  ],
+  "gates": [
+    {
+      "gate_id": "gate_java_test",
+      "layer": "stack",
+      "name": "java test suite",
+      "mandatory": true,
+      "subject_id": "stack_java_test",
+      "tool": "java_test"
+    },
+    {
+      "gate_id": "gate_java_build",
+      "layer": "stack",
+      "name": "java build",
+      "mandatory": false,
+      "subject_id": "stack_java_build",
+      "tool": "java_build"
+    }
+  ],
+  "templates": {
+    "provider_instruction": "# Harness Provider Instructions (Java Pack)\n\nYou are working in a Java repository governed by Universal Harness.\n\n- Stay inside the task envelope: read only the declared read paths, write only\n  the declared write paths and call only the granted tools.\n- Keep the standard layout: sources under src/main/java and tests under\n  src/test/java named *Test.java.\n- Run the build and tests through the governed java_test tool; never bypass it\n  with ad hoc commands.\n- Keep build metadata deterministic; no dynamic or range dependency versions.\n- Report a structured result with a summary, the changed paths and evidence\n  references.\n"
+  }
+}

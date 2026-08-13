@@ -138,6 +138,18 @@ importers:
       '@universal-harness-internal/adapter-vcs-git':
         specifier: workspace:*
         version: link:../../adapters/vcs-git
+      '@universal-harness-internal/pack-generic':
+        specifier: workspace:*
+        version: link:../../packs/generic
+      '@universal-harness-internal/pack-java':
+        specifier: workspace:*
+        version: link:../../packs/java
+      '@universal-harness-internal/pack-node':
+        specifier: workspace:*
+        version: link:../../packs/node
+      '@universal-harness-internal/pack-python':
+        specifier: workspace:*
+        version: link:../../packs/python
 
   packages/core:
     dependencies:
