@@ -73,6 +73,8 @@ export const VERSIONABLE_NODE_TYPES = [
  */
 export const RELATION_COMPATIBILITY: readonly RelationRule[] = [
   { type: "DERIVES_FROM", sources: VERSIONABLE_NODE_TYPES, targets: VERSIONABLE_NODE_TYPES },
+  // Bootstrap binds each iteration to the repository baseline it derives from.
+  { type: "DERIVES_FROM", sources: ["Iteration"], targets: ["Repository"] },
   { type: "SUPERSEDES", sources: VERSIONABLE_NODE_TYPES, targets: VERSIONABLE_NODE_TYPES },
   { type: "GENERATED_BY", sources: VERSIONABLE_NODE_TYPES, targets: ["Run"] },
   { type: "RESUMES", sources: ["Run"], targets: ["Run"] },

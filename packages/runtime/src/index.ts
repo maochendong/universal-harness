@@ -519,6 +519,76 @@ export {
   type WorkingStateProposal,
   type WorkingStateWriter,
 } from "./workflow/working-state.js";
+export {
+  MANAGED_PROJECTION_DIRECTORY,
+  PROJECTION_ERROR_KINDS,
+  ProjectionError,
+  managedProjectionPath,
+  planManagedWrite,
+  writeManagedOutput,
+  type ManagedOutput,
+  type ManagedWriteAction,
+  type ManagedWritePlan,
+  type ManagedWriteResult,
+  type ProjectionErrorKind,
+} from "./projection/managed-output.js";
+export {
+  buildProviderInstructionMirror,
+  providerInstructionPath,
+  type ProviderInstructionMirror,
+  type ProviderInstructionSpec,
+} from "./projection/provider-instruction.js";
+export {
+  PROJECTION_DRIFT_STATUSES,
+  detectProjectionDrift,
+  detectProjectionDrifts,
+  type ProjectionDrift,
+  type ProjectionDriftStatus,
+  type ProjectionTarget,
+} from "./projection/drift.js";
+export {
+  AUDIT_FINDING_KINDS,
+  HIGH_RISK_IMPROVEMENT_LAYERS,
+  auditGraph,
+  type AuditFinding,
+  type AuditFindingKind,
+  type AuditGraph,
+  type AuditReport,
+} from "./audit/auditor.js";
+export {
+  DOCTOR_CATEGORIES,
+  collectDoctorProbes,
+  evaluateDoctorDiagnostics,
+  type DoctorCategory,
+  type DoctorDiagnostic,
+  type DoctorProbes,
+  type DoctorProjectProbes,
+  type DoctorReport,
+  type DoctorVerdict,
+} from "./doctor/doctor.js";
+export {
+  collectProjectStatus,
+  deriveProjectStatus,
+  type DerivedStatus,
+  type ProjectStatus,
+  type StatusDerivationInput,
+} from "./status/status.js";
+export {
+  SNAPSHOT_ERROR_KINDS,
+  SNAPSHOT_STATUSES,
+  SnapshotError,
+  buildSnapshot,
+  snapshotCompletionBlockers,
+  type SnapshotErrorKind,
+  type SnapshotEvidenceState,
+  type SnapshotFindingState,
+  type SnapshotImprovementState,
+  type SnapshotInput,
+  type SnapshotRecord,
+  type SnapshotRunResult,
+  type SnapshotStatus,
+  type SnapshotTaskResult,
+} from "./snapshot/builder.js";
 
 /**
  * Runtime orchestration service (design section 11.1). The CLI shell injects

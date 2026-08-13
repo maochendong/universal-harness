@@ -160,24 +160,28 @@ exports[`harness CLI inspection commands > runs doctor checks in and outside a p
   "data": {
     "checks": [
       {
-        "detail": "v22.23.1 (requires >= 22.13.0)",
+        "category": "environment",
+        "detail": "v22.23.1 satisfies >= 22.13.0",
         "name": "node_runtime",
         "status": "pass",
       },
       {
+        "category": "git",
         "detail": "git version 2.50.0",
         "name": "git_executable",
         "status": "pass",
       },
       {
+        "category": "schema",
         "detail": "no managed project at or above the working directory (project checks skipped)",
         "name": "project_layout",
         "status": "pass",
       },
     ],
     "failed_checks": 0,
+    "warning_checks": 0,
   },
-  "message": "all 3 checks passed",
+  "message": "all 3 checks passed (0 warnings)",
   "status": "ok",
 }
 `;

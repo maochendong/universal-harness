@@ -1,0 +1,246 @@
+import { describe, expect, it } from "vitest";
+
+import { contentDigest, type EdgeRecord, type NodeRecord } from "@universal-harness-internal/core";
+
+import { auditGraph, type AuditGraph } from "../../src/audit/auditor.js";
+
+const FIXED_NOW = "2026-08-12T00:00:00.000Z";
+
+interface NodeSpec {
+  readonly id: string;
+  readonly type: NodeRecord["type"];
+  readonly revision?: number;
+  readonly status?: NodeRecord["status"];
+  readonly extensions?: Record<string, unknown>;
+}
+
+function makeNode(spec: NodeSpec): NodeRecord {
+  const record: Record<string, unknown> = {
+    protocol_version: "1.0.0",
+    record_kind: "node",
+    id: spec.id,
+    type: spec.type,
+    revision: spec.revision ?? 1,
+    status: spec.status ?? "accepted",
+    source: "workflow",
+    provenance: { iteration_id: "iteration_01", actor: "audit-test", timestamp: FIXED_NOW },
+    confidence: 1,
+  };
+  if (spec.extensions !== undefined) record.extensions = spec.extensions;
+  return { ...record, digest: contentDigest(record) } as unknown as NodeRecord;
+}
+
+interface EdgeSpec {
+  readonly id: string;
+  readonly type: EdgeRecord["type"];
+  readonly sourceId: string;
+  readonly targetId: string;
+  readonly status?: EdgeRecord["status"];
+}
+
+function makeEdge(spec: EdgeSpec): EdgeRecord {
+  const record: Record<string, unknown> = {
+    protocol_version: "1.0.0",
+    record_kind: "edge",
+    id: spec.id,
+    type: spec.type,
+    source_id: spec.sourceId,
+    target_id: spec.targetId,
+    status: spec.status ?? "accepted",
+    source: "workflow",
+    provenance: { iteration_id: "iteration_01", actor: "audit-test", timestamp: FIXED_NOW },
+    confidence: 1,
+  };
+  return { ...record, digest: contentDigest(record) } as unknown as EdgeRecord;
+}
+
+/** Fully traced graph: no audit check should fire on it. */
+function healthyGraph(): AuditGraph {
+  return {
+    nodes: [
+      makeNode({ id: "intent_01", type: "Intent" }),
+      makeNode({ id: "requirement_01", type: "Requirement" }),
+      makeNode({ id: "task_01", type: "Task" }),
+      makeNode({ id: "test_01", type: "Test" }),
+      makeNode({ id: "evidence_01", type: "Evidence" }),
+    ],
+    edges: [
+      makeEdge({
+        id: "edge-intent-decomposes_01",
+        type: "DECOMPOSES_TO",
+        sourceId: "intent_01",
+        targetId: "requirement_01",
+      }),
+      makeEdge({
+        id: "edge-task-implements_01",
+        type: "IMPLEMENTS",
+        sourceId: "task_01",
+        targetId: "requirement_01",
+      }),
+      makeEdge({
+        id: "edge-test-verifies_01",
+        type: "VERIFIES",
+        sourceId: "test_01",
+        targetId: "requirement_01",
+      }),
+      makeEdge({
+        id: "edge-evidence-supports_01",
+        type: "SUPPORTS",
+        sourceId: "evidence_01",
+        targetId: "test_01",
+      }),
+    ],
+  };
+}
+
+describe("auditGraph", () => {
+  it("reports no findings on a fully traced graph", () => {
+    const report = auditGraph(healthyGraph());
+    expect(report.findings).toEqual([]);
+    expect(report.checked_nodes).toBe(5);
+    expect(report.checked_edges).toBe(4);
+  });
+
+  it("flags an accepted requirement with a traceability gap as blocking", () => {
+    const graph = healthyGraph();
+    const report = auditGraph({
+      nodes: graph.nodes,
+      edges: graph.edges.filter((edge) => edge.id !== "edge-task-implements_01"),
+    });
+    const finding = report.findings.find((entry) => entry.kind === "traceability_gap");
+    expect(finding).toBeDefined();
+    expect(finding?.subjects).toEqual(["requirement_01"]);
+    expect(finding?.blocking).toBe(true);
+    expect(finding?.summary).toContain("no Task IMPLEMENTS it");
+  });
+
+  it("flags active edges that still reference a superseded node", () => {
+    const graph = healthyGraph();
+    const report = auditGraph({
+      nodes: [
+        ...graph.nodes,
+        makeNode({ id: "decision_old", type: "Decision", status: "superseded" }),
+      ],
+      edges: [
+        ...graph.edges,
+        makeEdge({
+          id: "edge-decision-addresses_01",
+          type: "ADDRESSES",
+          sourceId: "decision_old",
+          targetId: "requirement_01",
+        }),
+      ],
+    });
+    const finding = report.findings.find((entry) => entry.kind === "stale_knowledge");
+    expect(finding).toBeDefined();
+    expect(finding?.subjects).toEqual(["decision_old", "edge-decision-addresses_01"]);
+  });
+
+  it("flags two accepted constraints stating the same rule as separate authorities", () => {
+    const report = auditGraph({
+      nodes: [
+        makeNode({
+          id: "constraint_01",
+          type: "Constraint",
+          extensions: { "harness.requirements": { statement: "No secrets in logs" } },
+        }),
+        makeNode({
+          id: "constraint_02",
+          type: "Constraint",
+          extensions: { "harness.requirements": { statement: "  no secrets in logs " } },
+        }),
+      ],
+      edges: [],
+    });
+    const finding = report.findings.find((entry) => entry.kind === "contradictory_constraint");
+    expect(finding).toBeDefined();
+    expect(finding?.subjects).toEqual(["constraint_01", "constraint_02"]);
+    expect(finding?.blocking).toBe(true);
+  });
+
+  it("flags orphan artifact nodes with no active relations", () => {
+    const report = auditGraph({
+      nodes: [makeNode({ id: "decision_01", type: "Decision" })],
+      edges: [],
+    });
+    const finding = report.findings.find((entry) => entry.kind === "orphan_node");
+    expect(finding).toBeDefined();
+    expect(finding?.subjects).toEqual(["decision_01"]);
+  });
+
+  it("flags an accepted test without any evidence verdict", () => {
+    const graph = healthyGraph();
+    const report = auditGraph({
+      nodes: graph.nodes,
+      edges: graph.edges.filter((edge) => edge.id !== "edge-evidence-supports_01"),
+    });
+    const finding = report.findings.find((entry) => entry.kind === "missing_verification");
+    expect(finding).toBeDefined();
+    expect(finding?.subjects).toEqual(["test_01"]);
+    expect(finding?.blocking).toBe(true);
+  });
+
+  it("flags unpromoted improvement candidates targeting high-risk layers", () => {
+    const report = auditGraph({
+      nodes: [
+        makeNode({
+          id: "improvement_01",
+          type: "ImprovementCandidate",
+          status: "proposed",
+          extensions: { "harness.improvement": { target_layer: "policy" } },
+        }),
+        makeNode({
+          id: "improvement_02",
+          type: "ImprovementCandidate",
+          status: "proposed",
+          extensions: { "harness.improvement": { target_layer: "test" } },
+        }),
+      ],
+      edges: [],
+    });
+    const findings = report.findings.filter(
+      (entry) => entry.kind === "unpromoted_high_risk_improvement",
+    );
+    expect(findings.map((finding) => finding.subjects)).toEqual([["improvement_01"]]);
+  });
+
+  it("flags a run that consumed a superseded context bundle", () => {
+    const report = auditGraph({
+      nodes: [
+        makeNode({ id: "run_01", type: "Run" }),
+        makeNode({ id: "context_01", type: "ContextBundle", status: "superseded" }),
+      ],
+      edges: [
+        makeEdge({
+          id: "edge-run-uses-context_01",
+          type: "USES_CONTEXT",
+          sourceId: "run_01",
+          targetId: "context_01",
+        }),
+      ],
+    });
+    const finding = report.findings.find((entry) => entry.kind === "unhealthy_context_source");
+    expect(finding).toBeDefined();
+    expect(finding?.subjects).toEqual(["context_01", "run_01"]);
+    expect(finding?.blocking).toBe(true);
+  });
+
+  it("ignores rejected and superseded edges", () => {
+    const graph = healthyGraph();
+    const report = auditGraph({
+      nodes: graph.nodes,
+      edges: graph.edges.map((edge) =>
+        edge.id === "edge-task-implements_01" ? { ...edge, status: "superseded" as const } : edge,
+      ),
+    });
+    // The superseded IMPLEMENTS edge no longer counts, so the gap reappears.
+    expect(report.findings.some((entry) => entry.kind === "traceability_gap")).toBe(true);
+    // But the superseded edge itself is never reported as stale knowledge.
+    expect(report.findings.filter((entry) => entry.kind === "stale_knowledge")).toEqual([]);
+  });
+
+  it("is deterministic: identical input produces identical findings", () => {
+    const graph = healthyGraph();
+    expect(auditGraph(graph)).toEqual(auditGraph(graph));
+  });
+});

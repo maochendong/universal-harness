@@ -1,11 +1,4 @@
-import {
-  GRAPH_DATABASE_RELATIVE_PATH,
-  harnessRootFor,
-  readCommittedOperations,
-  readManagedManifest,
-  resolveHarnessPath,
-} from "@universal-harness-internal/core";
-import { checkGraphCache } from "@universal-harness-internal/graph";
+import { collectProjectStatus } from "@universal-harness-internal/runtime";
 
 import { parseCommandArgs, requireProjectRoot, type CommandResult } from "../io.js";
 import { usageError } from "../errors.js";
@@ -13,29 +6,23 @@ import type { CommandContext } from "../router.js";
 
 const USAGE = "harness status";
 
-/** Project state shell view: identity, ledger size and cache health. */
+/**
+ * Project state view (design 11.2): identity, ledger size, cache health plus
+ * the derived facets -- iteration state, blockers, stale evidence, pending
+ * approvals, evaluation coverage, budget and next action. All derivation
+ * lives in the runtime; the handler only adapts the report to CommandResult.
+ */
 export function runStatusCommand(args: readonly string[], context: CommandContext): CommandResult {
   const { positionals } = parseCommandArgs(args, {}, USAGE);
   if (positionals.length > 0) {
     throw usageError(`harness status takes no arguments; usage: ${USAGE}`);
   }
   const projectRoot = requireProjectRoot(context.cwd);
-  const harnessRoot = harnessRootFor(projectRoot);
-  const manifest = readManagedManifest(projectRoot);
-  const operations = readCommittedOperations(harnessRoot);
-  const cache = checkGraphCache(resolveHarnessPath(harnessRoot, GRAPH_DATABASE_RELATIVE_PATH));
-  const lastOperation = operations.at(-1)?.manifest.ledger_operation_id ?? "none";
+  const status = collectProjectStatus(projectRoot);
   return {
     command: "status",
     status: "ok",
-    message: `project ${manifest.name}: ${operations.length} committed operations, graph cache ${cache.status}`,
-    data: {
-      project_root: projectRoot,
-      name: manifest.name,
-      repository_id: manifest.repository_id,
-      committed_operations: operations.length,
-      last_ledger_operation: lastOperation,
-      graph_cache: cache.status,
-    },
+    message: `project ${status.name}: ${status.committed_operations} committed operations, graph cache ${status.graph_cache}; next: ${status.next_action}`,
+    data: { ...status },
   };
 }
