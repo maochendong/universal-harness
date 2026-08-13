@@ -14,7 +14,9 @@ const userPathPatterns = [
 ];
 
 function git(...args) {
-  return execFileSync("git", args, { encoding: "utf8" });
+  // The full-history scan output grows with the repository; the default
+  // maxBuffer (1 MiB) overflows once committed diffs get large.
+  return execFileSync("git", args, { encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
 }
 
 function violations(label, content) {
