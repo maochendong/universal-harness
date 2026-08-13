@@ -43,4 +43,63 @@ export {
   type RunEvaluationReport,
 } from "./evaluator.js";
 
+export {
+  FEEDBACK_ERROR_KINDS,
+  FINDING_EXTENSION_KEY,
+  FINDING_ORIGINS,
+  FeedbackError,
+  acceptFinding,
+  buildFindingRecord,
+  closeFinding,
+  findingEdgeRecords,
+  findingNodeRecord,
+  readFindingSubject,
+  supersedeFinding,
+  type FeedbackDerivationContext,
+  type FeedbackErrorKind,
+  type FindingOrigin,
+  type FindingSpec,
+  type FindingSubject,
+} from "./feedback/finding.js";
+export {
+  HUMAN_REVIEW_CONFIDENCE,
+  RCA_EXTENSION_KEY,
+  ROOT_CAUSE_CATEGORIES,
+  analyzeRootCause,
+  diagnosisEdgeRecord,
+  readRootCauseContent,
+  type FailureSignal,
+  type RootCauseCategory,
+  type RootCauseContent,
+  type RootCauseSpec,
+} from "./feedback/rca.js";
+export {
+  DELIVERY_PHASES,
+  OWNING_NODE_TYPES,
+  OWNER_PHASE,
+  TARGET_LAYERS,
+  assertWriteAllowed,
+  ownerPhaseForLayer,
+  routeRevisionTask,
+  type DeliveryPhase,
+  type RepairRouting,
+  type RevisionTaskRequest,
+  type TargetLayer,
+} from "./feedback/router.js";
+export {
+  IMPROVEMENT_EXTENSION_KEY,
+  IMPROVEMENT_TARGET_KINDS,
+  buildImprovementCandidate,
+  improvementEdgeRecord,
+  readImprovementContent,
+  type ImprovementCandidateContent,
+  type ImprovementCandidateSpec,
+  type ImprovementTargetKind,
+} from "./feedback/improvement.js";
+export {
+  promoteImprovementCandidate,
+  type PromotionInput,
+  type PromotionOutcome,
+} from "./feedback/promotion.js";
+
 export const workspacePackageName = "@universal-harness-internal/eval" as const;

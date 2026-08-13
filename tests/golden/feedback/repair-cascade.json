@@ -1,0 +1,52 @@
+{
+  "finding": {
+    "id": "finding_build",
+    "status": "proposed",
+    "digest": "387ca1b72b15ec460d1dcc74798a510fc3497f804023e61b5ac44c660c86b5e7"
+  },
+  "rca": {
+    "id": "rca_build",
+    "digest": "7f5aeff1573b6229295c415c509dd0475467778b0c25129424fd5a61c6b8d16c",
+    "content": {
+      "finding_id": "finding_build",
+      "observed_symptom": "Mandatory stack gate gate_build failed: 2 tests failed",
+      "evidence_ids": ["evidence_build"],
+      "responsible_layer": "architecture",
+      "responsible_module": "packages/runtime",
+      "category": "implementation_defect",
+      "confidence": 0.7,
+      "proposed_verification": "re-run the failed stack gate after the component revision",
+      "requires_human_review": false,
+      "rule": "gate-stack"
+    }
+  },
+  "routing": {
+    "owner_phase": "architecture",
+    "responsible_layer": "architecture",
+    "task": {
+      "id": "task_revise-build-green",
+      "objective": "Revise architecture artifacts to resolve implementation_defect diagnosed in finding_build",
+      "impact_paths": [],
+      "expected_outputs": ["constraint_build-green"],
+      "capabilities": [],
+      "tools": [],
+      "dependencies": [],
+      "risk": "medium",
+      "budget": {
+        "steps": 20,
+        "tokens": 20000
+      },
+      "acceptance": [
+        {
+          "description": "re-run the failed stack gate after the component revision",
+          "verification": "re-run the failed stack gate after the component revision"
+        }
+      ],
+      "required_gates": ["gate_build"]
+    }
+  },
+  "closure": {
+    "status": "closed",
+    "digest": "08d0d7037a28d1425b6b977807f1360da7b851505c53a36b4fc1e1b080ecaad9"
+  }
+}

@@ -1,0 +1,17 @@
+{
+  "proposed": {
+    "id": "improvement_repeat-case",
+    "status": "proposed",
+    "digest": "84da875409a2f4b6be3f34c660c8bac14cce62ae2230331fa12f74aefd4d691e"
+  },
+  "promoted": {
+    "status": "accepted",
+    "digest": "d7e4875e9a31c32fc81fe0f59d9c25ed379029b601f39366b9521cae8d5e1bfd"
+  },
+  "revision": {
+    "id": "evaluationcase_repeat",
+    "revision": 2,
+    "status": "accepted",
+    "digest": "d8edf8a48fa437318784667afcf53a21977d900f8d84fd9f7cf6c4b849851d24"
+  }
+}
