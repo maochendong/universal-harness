@@ -1,8 +1,4 @@
 import { execFileSync } from "node:child_process";
-import { resolve } from "node:path";
-
-import { createGitVcsAdapter } from "@universal-harness-internal/adapter-vcs-git";
-import { createRuntimeService, type BootstrapError } from "@universal-harness-internal/runtime";
 
 import { EXIT_CODES, asCliError, usageError } from "./errors.js";
 import {
@@ -13,12 +9,21 @@ import {
   type CliIo,
   type CommandResult,
 } from "./io.js";
+import { createOrchestratedRuntimeService } from "./runtime-service.js";
 import { runAdoptCommand } from "./commands/adopt.js";
+import { runApproveCommand } from "./commands/approve.js";
+import { runAuditCommand } from "./commands/audit.js";
 import { runDoctorCommand } from "./commands/doctor.js";
+import { runEvalCommand } from "./commands/eval.js";
+import { runImpactCommand } from "./commands/impact.js";
 import { runIterateCommand } from "./commands/iterate.js";
 import { runNewCommand } from "./commands/new.js";
+import { runPlanCommand } from "./commands/plan.js";
 import { runResumeCommand } from "./commands/resume.js";
+import { runRunCommand } from "./commands/run.js";
+import { runSnapshotCommand } from "./commands/snapshot.js";
 import { runStatusCommand } from "./commands/status.js";
+import { runVerifyCommand } from "./commands/verify.js";
 import { runGraphCheckCommand } from "./commands/graph/check.js";
 import { runGraphQueryCommand } from "./commands/graph/query.js";
 import { runGraphSyncCommand } from "./commands/graph/sync.js";
@@ -27,8 +32,8 @@ export const CLI_VERSION = "0.0.0" as const;
 
 /**
  * Typed port between the CLI shell and the runtime orchestration services
- * (design section 11.1). Command handlers only parse arguments and delegate;
- * no business logic lives in the CLI package.
+ * (design section 11.1/11.2). Command handlers only parse arguments and
+ * delegate; no business logic lives in the CLI package.
  */
 export interface NewProjectRequest {
   readonly name: string;
@@ -38,6 +43,8 @@ export interface NewProjectRequest {
 export interface AdoptProjectRequest {
   readonly path: string;
   readonly intent: string;
+  /** Commit a previously staged adoption preview (the non-interactive approval path). */
+  readonly approveStaging?: string;
 }
 
 export interface IterateRequest {
@@ -50,11 +57,40 @@ export interface ResumeRequest {
   readonly projectRoot: string;
 }
 
+export interface ApproveRequest {
+  readonly requestId: string;
+  readonly decision: "approve" | "reject" | "defer";
+  readonly projectRoot: string;
+  readonly actor?: string;
+}
+
+export interface ImpactRequest {
+  readonly projectRoot: string;
+  readonly target?: string;
+}
+
+export interface ProjectRequest {
+  readonly projectRoot: string;
+}
+
+export interface RunRequest {
+  readonly projectRoot: string;
+  readonly dryRun: boolean;
+}
+
 export interface RuntimeService {
   newProject(request: NewProjectRequest): Promise<CommandResult>;
   adoptProject(request: AdoptProjectRequest): Promise<CommandResult>;
   iterate(request: IterateRequest): Promise<CommandResult>;
   resume(request: ResumeRequest): Promise<CommandResult>;
+  approve(request: ApproveRequest): Promise<CommandResult>;
+  impact(request: ImpactRequest): Promise<CommandResult>;
+  plan(request: ProjectRequest): Promise<CommandResult>;
+  run(request: RunRequest): Promise<CommandResult>;
+  verify(request: ProjectRequest): Promise<CommandResult>;
+  evaluate(request: ProjectRequest): Promise<CommandResult>;
+  snapshot(request: ProjectRequest): Promise<CommandResult>;
+  audit(request: ProjectRequest): Promise<CommandResult>;
 }
 
 function stageUnavailable(
@@ -71,9 +107,9 @@ function stageUnavailable(
 }
 
 /**
- * Stub runtime service for orchestration stages that have not landed yet
- * (iterate/resume). It answers with an explicit stage status instead of
- * faking success, so scripts can rely on the exit code today.
+ * Stub runtime service for tests that pin the CLI contract without a real
+ * project. It answers with an explicit stage status instead of faking
+ * success, so scripts can rely on the exit code.
  */
 export function createStubRuntimeService(): RuntimeService {
   return {
@@ -85,74 +121,30 @@ export function createStubRuntimeService(): RuntimeService {
       Promise.resolve(stageUnavailable("iterate", "orchestration.iterate", { ...request })),
     resume: (request) =>
       Promise.resolve(stageUnavailable("resume", "orchestration.resume", { ...request })),
-  };
-}
-
-function bootstrapFailure(command: string, error: BootstrapError): CommandResult {
-  return {
-    command,
-    status: "failed",
-    message: error.message,
-    data: { kind: error.kind, ...(error.data ?? {}) },
+    approve: (request) =>
+      Promise.resolve(stageUnavailable("approve", "approval.resolve", { ...request })),
+    impact: (request) =>
+      Promise.resolve(stageUnavailable("impact", "impact.preview", { ...request })),
+    plan: (request) => Promise.resolve(stageUnavailable("plan", "plan.read", { ...request })),
+    run: (request) => Promise.resolve(stageUnavailable("run", "orchestration.run", { ...request })),
+    verify: (request) =>
+      Promise.resolve(stageUnavailable("verify", "orchestration.verify", { ...request })),
+    evaluate: (request) =>
+      Promise.resolve(stageUnavailable("eval", "orchestration.evaluate", { ...request })),
+    snapshot: (request) =>
+      Promise.resolve(stageUnavailable("snapshot", "orchestration.snapshot", { ...request })),
+    audit: (request) => Promise.resolve(stageUnavailable("audit", "audit.run", { ...request })),
   };
 }
 
 /**
- * Default runtime wiring: `new` and `adopt` delegate to the runtime bootstrap
- * service over the Git VCS adapter, while iterate/resume keep reporting their
- * explicit stage status. The adopt route stops at the staged preview: the
- * approval interaction (Task 11) is not implemented yet, so no authoritative
- * state changes and the stage status says exactly that.
+ * Default runtime wiring: every entry and advanced command drives the runtime
+ * phase orchestrator (see runtime-service.ts). Interactive sessions prompt
+ * for mandatory approvals in the same process; non-interactive callers get
+ * structured ApprovalRequired outcomes with a resumable workflow operation.
  */
-export function createDefaultRuntimeService(cwd: string): RuntimeService {
-  const runtime = createRuntimeService({ vcs: createGitVcsAdapter() });
-  const stub = createStubRuntimeService();
-  return {
-    newProject: async (request) => {
-      const outcome = await runtime.newProject({
-        parentDirectory: cwd,
-        name: request.name,
-        intent: request.intent,
-      });
-      if (!outcome.ok) return bootstrapFailure("new", outcome.error);
-      const value = outcome.value;
-      return {
-        command: "new",
-        status: "ok",
-        message: `created project ${value.name} with bootstrap baseline ${value.ledgerOperationId}`,
-        data: { ...value },
-      };
-    },
-    adoptProject: async (request) => {
-      const outcome = await runtime.prepareAdoption({
-        projectRoot: resolve(cwd, request.path),
-        intent: request.intent,
-      });
-      if (!outcome.ok) return bootstrapFailure("adopt", outcome.error);
-      const value = outcome.value;
-      return {
-        command: "adopt",
-        status: "stage_unavailable",
-        message:
-          `adoption preview staged under .harness/staging/${value.stagingOperationId}; ` +
-          "baseline approval is not implemented yet; no authoritative state was changed",
-        data: {
-          stage: "approval.interaction",
-          staging_operation_id: value.stagingOperationId,
-          preview_digest: value.previewDigest,
-          baseline_commit: value.baselineCommit,
-          workflow_operation_id: value.workflowOperationId,
-          stack: value.preview.stack.primary,
-          files: value.preview.files.length,
-          components: value.preview.components.length,
-          conflicts: value.preview.conflicts,
-          unknown_items: value.preview.unknown_items,
-        },
-      };
-    },
-    iterate: stub.iterate,
-    resume: stub.resume,
-  };
+export function createDefaultRuntimeService(cwd: string, io: CliIo): RuntimeService {
+  return createOrchestratedRuntimeService({ cwd, io });
 }
 
 export interface CommandContext {
@@ -189,6 +181,16 @@ Orchestration:
   iterate <text>                  Run a full iteration for a follow-up change
   resume <workflow-operation-id>  Resume a paused orchestration from its checkpoint
 
+Automation and recovery:
+  run [--dry-run]                 Execute the open operation's planned tasks
+  verify                          Drive the open operation through the gate suite
+  eval                            Drive the open operation through run evaluation
+  snapshot                        Complete the open operation or show the latest snapshot
+  approve <id> --decision <d>     Resolve one pending approval request
+  impact [node-id]                Preview the ImpactSet for a change seed
+  plan                            Show the latest committed ExecutionPlan
+  audit                           Audit traceability, freshness and graph health
+
 Inspection:
   status                          Show project state, cache health and next action
   doctor                          Diagnose environment, Git, layout and cache issues
@@ -209,11 +211,12 @@ Create a managed project directory, initialize the .harness control plane
 (manifest, pack lock, ledger, managed .gitignore/.gitattributes) and run the
 first full iteration for the given intent.
 `,
-  adopt: `Usage: harness adopt [path] --intent <text> [--json]
+  adopt: `Usage: harness adopt [path] --intent <text> [--approve <staging-operation-id>] [--json]
 
 Adopt an existing project: scan it into staging, approve the deterministic
 baseline, then run the requested iteration. Nothing outside .harness is
-modified, and the project root .gitignore is never touched.
+modified, and the project root .gitignore is never touched. Non-interactive
+sessions approve a staged preview with --approve.
 `,
   iterate: `Usage: harness iterate <text> [--json]
 
@@ -224,6 +227,48 @@ snapshot) for a follow-up change inside the current managed project.
 
 Resume a paused orchestration from its last committed checkpoint. The
 workflow operation id is returned by earlier blocked or deferred runs.
+`,
+  approve: `Usage: harness approve <request-id> --decision <approve|reject|defer> [--actor <id>] [--json]
+
+Resolve exactly one pending approval request, bound to its recorded object
+digest. Defer keeps the proposal resumable; reject closes it but keeps the
+audit history.
+`,
+  impact: `Usage: harness impact [node-id] [--json]
+
+Preview the ImpactSet a change on the given (or latest) seed node would
+produce over the current artifact graph. Read-only.
+`,
+  plan: `Usage: harness plan [--json]
+
+Show the latest committed declarative ExecutionPlan: mode, bound impact set
+and task specifications.
+`,
+  run: `Usage: harness run [--dry-run] [--json]
+
+Execute the open workflow operation's planned tasks through the configured
+adapter. --dry-run renders the planned tasks without executing anything.
+`,
+  verify: `Usage: harness verify [--json]
+
+Drive the open workflow operation through the three-layer gate suite,
+producing bound Evidence and Findings for failed mandatory gates.
+`,
+  eval: `Usage: harness eval [--json]
+
+Drive the open workflow operation through run evaluation (outcome, safety,
+trajectory, correct failure, efficiency).
+`,
+  snapshot: `Usage: harness snapshot [--json]
+
+Drive the open workflow operation to its terminal snapshot, or report the
+latest committed snapshot when no operation is open.
+`,
+  audit: `Usage: harness audit [--json]
+
+Audit the committed graph for traceability gaps, stale knowledge,
+contradictions, orphans, missing verification and unpromoted high-risk
+improvements.
 `,
   status: `Usage: harness status [--json]
 
@@ -289,6 +334,22 @@ async function dispatch(args: readonly string[], context: CommandContext): Promi
       return runIterateCommand(rest, context);
     case "resume":
       return runResumeCommand(rest, context);
+    case "approve":
+      return runApproveCommand(rest, context);
+    case "impact":
+      return runImpactCommand(rest, context);
+    case "plan":
+      return runPlanCommand(rest, context);
+    case "run":
+      return runRunCommand(rest, context);
+    case "verify":
+      return runVerifyCommand(rest, context);
+    case "eval":
+      return runEvalCommand(rest, context);
+    case "snapshot":
+      return runSnapshotCommand(rest, context);
+    case "audit":
+      return runAuditCommand(rest, context);
     case "status":
       return runStatusCommand(rest, context);
     case "doctor":
@@ -336,7 +397,7 @@ export async function runCli(
     io,
     cwd: dependencies.cwd,
     json: flags.json,
-    runtime: dependencies.runtime ?? createDefaultRuntimeService(dependencies.cwd),
+    runtime: dependencies.runtime ?? createDefaultRuntimeService(dependencies.cwd, io),
     gitVersion: dependencies.gitVersion ?? defaultGitVersion,
   };
   try {

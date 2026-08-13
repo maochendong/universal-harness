@@ -64,21 +64,22 @@ afterEach(() => {
 });
 
 describe("harness new route", () => {
-  it("creates a managed project through the default runtime wiring", async () => {
+  it("bootstraps the project and pauses at the mandatory baseline approval", async () => {
     const parent = makeTempDir("harness-cli-new-");
     const captured = captureIo();
     const exitCode = await runCli(["new", "demo-app", "--intent", "build a demo", "--json"], {
       io: captured.io,
       cwd: parent,
     });
-    expect(exitCode).toBe(EXIT_CODES.ok);
+    expect(exitCode).toBe(EXIT_CODES.approvalRequired);
     expect(captured.stderr()).toBe("");
     const result = JSON.parse(captured.stdout()) as Record<string, unknown>;
-    expect(result["status"]).toBe("ok");
+    expect(result["status"]).toBe("approval_required");
     const data = result["data"] as Record<string, unknown>;
-    expect(data["repositoryId"]).toBe("repo_demo-app");
-    expect(data["stack"]).toBe("generic");
-    expect(typeof data["ledgerOperationId"]).toBe("string");
+    expect(data["object_type"]).toBe("RequirementBaseline");
+    expect(typeof data["request_id"]).toBe("string");
+    expect(typeof data["workflow_operation_id"]).toBe("string");
+    expect(typeof data["resume_command"]).toBe("string");
     expect(existsSync(join(parent, "demo-app", ".harness", "manifest.yaml"))).toBe(true);
   });
 
@@ -97,7 +98,7 @@ describe("harness new route", () => {
 });
 
 describe("harness adopt route", () => {
-  it("stages a preview without touching authoritative state", async () => {
+  it("stages a preview and returns a resumable approval request", async () => {
     const repo = makeRepo();
     const headBefore = git(repo, "rev-parse", "HEAD").trim();
     const captured = captureIo();
@@ -105,11 +106,13 @@ describe("harness adopt route", () => {
       io: captured.io,
       cwd: "/",
     });
-    expect(exitCode).toBe(EXIT_CODES.stageUnavailable);
+    expect(exitCode).toBe(EXIT_CODES.approvalRequired);
     const result = JSON.parse(captured.stdout()) as Record<string, unknown>;
     const data = result["data"] as Record<string, unknown>;
-    expect(data["stage"]).toBe("approval.interaction");
+    expect(data["object_type"]).toBe("AdoptionBaseline");
+    expect(typeof data["staging_operation_id"]).toBe("string");
     expect(typeof data["preview_digest"]).toBe("string");
+    expect(typeof data["resume_command"]).toBe("string");
     expect(data["files"]).toBe(1);
     // Approval has not happened: no manifest, no ledger, no git mutation.
     expect(existsSync(join(repo, ".harness", "manifest.yaml"))).toBe(false);

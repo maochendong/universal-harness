@@ -33,7 +33,7 @@ export function createProcessIo(): CliIo {
   };
 }
 
-export type CommandStatus = "ok" | "failed" | "stage_unavailable";
+export type CommandStatus = "ok" | "failed" | "stage_unavailable" | "approval_required" | "blocked";
 
 export interface CommandResult {
   readonly command: string;
@@ -51,6 +51,10 @@ export function exitCodeForStatus(status: CommandStatus): ExitCode {
       return EXIT_CODES.operationFailed;
     case "stage_unavailable":
       return EXIT_CODES.stageUnavailable;
+    case "approval_required":
+      return EXIT_CODES.approvalRequired;
+    case "blocked":
+      return EXIT_CODES.blocked;
   }
 }
 

@@ -11,6 +11,16 @@ Orchestration:
   iterate <text>                  Run a full iteration for a follow-up change
   resume <workflow-operation-id>  Resume a paused orchestration from its checkpoint
 
+Automation and recovery:
+  run [--dry-run]                 Execute the open operation's planned tasks
+  verify                          Drive the open operation through the gate suite
+  eval                            Drive the open operation through run evaluation
+  snapshot                        Complete the open operation or show the latest snapshot
+  approve <id> --decision <d>     Resolve one pending approval request
+  impact [node-id]                Preview the ImpactSet for a change seed
+  plan                            Show the latest committed ExecutionPlan
+  audit                           Audit traceability, freshness and graph health
+
 Inspection:
   status                          Show project state, cache health and next action
   doctor                          Diagnose environment, Git, layout and cache issues
@@ -35,6 +45,16 @@ Orchestration:
   adopt [path] --intent <text>    Adopt an existing project and run an iteration
   iterate <text>                  Run a full iteration for a follow-up change
   resume <workflow-operation-id>  Resume a paused orchestration from its checkpoint
+
+Automation and recovery:
+  run [--dry-run]                 Execute the open operation's planned tasks
+  verify                          Drive the open operation through the gate suite
+  eval                            Drive the open operation through run evaluation
+  snapshot                        Complete the open operation or show the latest snapshot
+  approve <id> --decision <d>     Resolve one pending approval request
+  impact [node-id]                Preview the ImpactSet for a change seed
+  plan                            Show the latest committed ExecutionPlan
+  audit                           Audit traceability, freshness and graph health
 
 Inspection:
   status                          Show project state, cache health and next action
@@ -61,6 +81,16 @@ Orchestration:
   iterate <text>                  Run a full iteration for a follow-up change
   resume <workflow-operation-id>  Resume a paused orchestration from its checkpoint
 
+Automation and recovery:
+  run [--dry-run]                 Execute the open operation's planned tasks
+  verify                          Drive the open operation through the gate suite
+  eval                            Drive the open operation through run evaluation
+  snapshot                        Complete the open operation or show the latest snapshot
+  approve <id> --decision <d>     Resolve one pending approval request
+  impact [node-id]                Preview the ImpactSet for a change seed
+  plan                            Show the latest committed ExecutionPlan
+  audit                           Audit traceability, freshness and graph health
+
 Inspection:
   status                          Show project state, cache health and next action
   doctor                          Diagnose environment, Git, layout and cache issues
@@ -85,11 +115,12 @@ first full iteration for the given intent.
 `;
 
 exports[`harness CLI help and version > prints per-command help 2`] = `
-"Usage: harness adopt [path] --intent <text> [--json]
+"Usage: harness adopt [path] --intent <text> [--approve <staging-operation-id>] [--json]
 
 Adopt an existing project: scan it into staging, approve the deterministic
 baseline, then run the requested iteration. Nothing outside .harness is
-modified, and the project root .gitignore is never touched.
+modified, and the project root .gitignore is never touched. Non-interactive
+sessions approve a staged preview with --approve.
 "
 `;
 
@@ -110,6 +141,72 @@ workflow operation id is returned by earlier blocked or deferred runs.
 `;
 
 exports[`harness CLI help and version > prints per-command help 5`] = `
+"Usage: harness approve <request-id> --decision <approve|reject|defer> [--actor <id>] [--json]
+
+Resolve exactly one pending approval request, bound to its recorded object
+digest. Defer keeps the proposal resumable; reject closes it but keeps the
+audit history.
+"
+`;
+
+exports[`harness CLI help and version > prints per-command help 6`] = `
+"Usage: harness impact [node-id] [--json]
+
+Preview the ImpactSet a change on the given (or latest) seed node would
+produce over the current artifact graph. Read-only.
+"
+`;
+
+exports[`harness CLI help and version > prints per-command help 7`] = `
+"Usage: harness plan [--json]
+
+Show the latest committed declarative ExecutionPlan: mode, bound impact set
+and task specifications.
+"
+`;
+
+exports[`harness CLI help and version > prints per-command help 8`] = `
+"Usage: harness run [--dry-run] [--json]
+
+Execute the open workflow operation's planned tasks through the configured
+adapter. --dry-run renders the planned tasks without executing anything.
+"
+`;
+
+exports[`harness CLI help and version > prints per-command help 9`] = `
+"Usage: harness verify [--json]
+
+Drive the open workflow operation through the three-layer gate suite,
+producing bound Evidence and Findings for failed mandatory gates.
+"
+`;
+
+exports[`harness CLI help and version > prints per-command help 10`] = `
+"Usage: harness eval [--json]
+
+Drive the open workflow operation through run evaluation (outcome, safety,
+trajectory, correct failure, efficiency).
+"
+`;
+
+exports[`harness CLI help and version > prints per-command help 11`] = `
+"Usage: harness snapshot [--json]
+
+Drive the open workflow operation to its terminal snapshot, or report the
+latest committed snapshot when no operation is open.
+"
+`;
+
+exports[`harness CLI help and version > prints per-command help 12`] = `
+"Usage: harness audit [--json]
+
+Audit the committed graph for traceability gaps, stale knowledge,
+contradictions, orphans, missing verification and unpromoted high-risk
+improvements.
+"
+`;
+
+exports[`harness CLI help and version > prints per-command help 13`] = `
 "Usage: harness status [--json]
 
 Show the managed project identity, committed ledger operation count, graph
@@ -117,7 +214,7 @@ cache health and the last ledger operation for the current project.
 "
 `;
 
-exports[`harness CLI help and version > prints per-command help 6`] = `
+exports[`harness CLI help and version > prints per-command help 14`] = `
 "Usage: harness doctor [--json]
 
 Diagnose the runtime environment, Git availability, managed project layout
@@ -125,7 +222,7 @@ and graph cache health. Exits non-zero when any check fails.
 "
 `;
 
-exports[`harness CLI help and version > prints per-command help 7`] = `
+exports[`harness CLI help and version > prints per-command help 15`] = `
 "Usage: harness graph <sync|query|check> [options]
 
   sync    Rebuild the disposable SQLite cache from the authoritative ledger
@@ -247,6 +344,6 @@ exports[`harness CLI usage errors > requires --intent for new and adopt 1`] = `
 `;
 
 exports[`harness CLI usage errors > requires --intent for new and adopt 2`] = `
-"error [usage_error]: harness adopt requires --intent <text>; usage: harness adopt [path] --intent <text>
+"error [usage_error]: harness adopt requires --intent <text>; usage: harness adopt [path] --intent <text> [--approve <staging-operation-id>]
 "
 `;

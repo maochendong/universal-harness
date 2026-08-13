@@ -9,6 +9,8 @@ export const EXIT_CODES = {
   usage: 2,
   projectNotFound: 3,
   stageUnavailable: 10,
+  approvalRequired: 11,
+  blocked: 12,
 } as const;
 
 export type ExitCode = (typeof EXIT_CODES)[keyof typeof EXIT_CODES];

@@ -10,7 +10,7 @@ import {
   initializeManagedLayout,
 } from "@universal-harness-internal/core";
 
-import { EXIT_CODES, runCli, type CliIo } from "../src/index.js";
+import { EXIT_CODES, createStubRuntimeService, runCli, type CliIo } from "../src/index.js";
 
 interface Captured {
   readonly io: CliIo;
@@ -74,7 +74,23 @@ describe("harness CLI help and version", () => {
   });
 
   it("prints per-command help", async () => {
-    for (const command of ["new", "adopt", "iterate", "resume", "status", "doctor", "graph"]) {
+    for (const command of [
+      "new",
+      "adopt",
+      "iterate",
+      "resume",
+      "approve",
+      "impact",
+      "plan",
+      "run",
+      "verify",
+      "eval",
+      "snapshot",
+      "audit",
+      "status",
+      "doctor",
+      "graph",
+    ]) {
       const captured = captureIo();
       const exitCode = await runCli([command, "--help"], { io: captured.io, cwd: "/" });
       expect(exitCode).toBe(EXIT_CODES.ok);
@@ -137,7 +153,11 @@ describe("harness CLI orchestration stubs", () => {
     ];
     for (const { argv, cwd, stage } of cases) {
       const captured = captureIo();
-      const exitCode = await runCli([...argv, "--json"], { io: captured.io, cwd });
+      const exitCode = await runCli([...argv, "--json"], {
+        io: captured.io,
+        cwd,
+        runtime: createStubRuntimeService(),
+      });
       expect(exitCode).toBe(EXIT_CODES.stageUnavailable);
       const result = JSON.parse(captured.stdout()) as Record<string, unknown>;
       expect(result["status"]).toBe("stage_unavailable");

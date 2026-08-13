@@ -54,6 +54,7 @@ export {
   commitAdoption,
   prepareAdoption,
   projectNameForPath,
+  readStagedAdoptionPreview,
   type AdoptCommitOutcome,
   type AdoptCommitRequest,
   type AdoptPreviewOutcome,
@@ -589,6 +590,48 @@ export {
   type SnapshotStatus,
   type SnapshotTaskResult,
 } from "./snapshot/builder.js";
+export {
+  ORCHESTRATION_ERROR_KINDS,
+  OrchestrationError,
+  createDefaultEvaluationPort,
+  createDefaultGateSuite,
+  createDirectExecutor,
+  createGenericInterpreter,
+  driveOpenOperation,
+  findOpenWorkflowOperation,
+  hashWorktreeCode,
+  previewImpactSet,
+  readLatestExecutionPlan,
+  readLatestSnapshot,
+  resolveApproval,
+  resumeIteration,
+  runIteration,
+  type EvaluationPort,
+  type EvaluationPortInput,
+  type EvaluationPortResult,
+  type IntentInterpreter,
+  type InterpretedIntent,
+  type OrchestrationErrorKind,
+  type OrchestrationExecutor,
+  type OrchestrationOutcome,
+  type OrchestratorDependencies,
+  type RunIterationInput,
+} from "./orchestration/orchestrator.js";
+export {
+  ORCHESTRATION_PHASES,
+  PHASE_CHECKPOINT_BOUNDARY,
+  PHASE_OPERATION_STATE,
+  isOrchestrationPhase,
+  nextPhase,
+  phaseRank,
+  type OrchestrationPhase,
+} from "./orchestration/phases.js";
+export {
+  assertLifecycleOrder,
+  phaseLifecycleEvents,
+  type PhaseLifecycleDetails,
+  type PhaseLifecycleEventSpec,
+} from "./orchestration/lifecycle-events.js";
 
 /**
  * Runtime orchestration service (design section 11.1). The CLI shell injects

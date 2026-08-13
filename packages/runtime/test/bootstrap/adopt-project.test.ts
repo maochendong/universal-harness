@@ -347,6 +347,8 @@ describe("commitAdoption", () => {
     expect(value.nodeCount).toBe(9);
   });
 
+  // Two full adoption commits exceed the default 5s timeout when the full
+  // suite runs in parallel, hence the explicit per-test timeout.
   it("commits byte-identical baselines for identical repositories", async () => {
     // Pin git timestamps so user and harness commit hashes — and the
     // recorded baseline binding — are reproducible for identical inputs.
@@ -414,5 +416,5 @@ describe("commitAdoption", () => {
       if (savedCommitterDate === undefined) delete process.env.GIT_COMMITTER_DATE;
       else process.env.GIT_COMMITTER_DATE = savedCommitterDate;
     }
-  });
+  }, 30000);
 });

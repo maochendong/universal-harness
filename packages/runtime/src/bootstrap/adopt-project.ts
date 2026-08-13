@@ -318,6 +318,22 @@ export async function prepareAdoption(
 }
 
 /**
+ * Read back a staged adoption preview for the approval flow (design 11.3):
+ * the adopting user approves one exact staging operation, and the commit path
+ * re-binds the stored preview digest. Returns `undefined` when no staged
+ * preview exists for the id.
+ */
+export function readStagedAdoptionPreview(
+  projectRoot: string,
+  stagingOperationId: string,
+): { readonly preview: AdoptionPreview; readonly previewDigest: string } | undefined {
+  const preview = readStagedDocument(resolve(projectRoot), stagingOperationId, PREVIEW_DOCUMENT) as
+    AdoptionPreview | undefined;
+  if (preview === undefined) return undefined;
+  return { preview, previewDigest: stagedPreviewDigest(preview) };
+}
+
+/**
  * Commit the staged baseline after approval. The approval decision must bind
  * the staged preview digest, and the repository is re-verified (HEAD, clean
  * worktree, identical rescan) before any byte is committed; drift or a
