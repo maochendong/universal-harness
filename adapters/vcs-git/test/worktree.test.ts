@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
   adapter,
   cleanupDirectories,
+  expectSameDirectory,
   git,
   makeRepo,
   makeTempDir,
@@ -24,7 +25,7 @@ describe("addWorktree", () => {
     });
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(result.value.root).toBe(path);
+    expectSameDirectory(result.value.root, path);
     expect(result.value.branch).toBe("harness/iteration_01-work");
     expect(existsSync(join(path, "README.md"))).toBe(true);
     const status = await adapter.status(path);

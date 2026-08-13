@@ -74,8 +74,10 @@ export function createGitRunner(options: GitRunnerOptions = {}): GitRunner {
       execFile(
         executable,
         // Pin core.autocrlf off so worktree digests and statuses are
-        // identical regardless of the host's global Git configuration.
-        ["-c", "core.autocrlf=false", ...args],
+        // identical regardless of the host's global Git configuration, and
+        // disable auto gc so no detached background maintenance rewrites
+        // .git after an operation has returned.
+        ["-c", "core.autocrlf=false", "-c", "gc.auto=0", ...args],
         {
           cwd,
           timeout: timeoutMs,

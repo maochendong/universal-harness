@@ -4,7 +4,14 @@ import { join } from "node:path";
 
 import { afterEach, describe, expect, it } from "vitest";
 
-import { adapter, cleanupDirectories, headOf, makeRepo, makeTempDir } from "./helpers.js";
+import {
+  adapter,
+  cleanupDirectories,
+  expectSameDirectory,
+  headOf,
+  makeRepo,
+  makeTempDir,
+} from "./helpers.js";
 
 afterEach(cleanupDirectories);
 
@@ -14,7 +21,7 @@ describe("detectRepository", () => {
     const result = await adapter.detectRepository(root);
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(result.value.root).toBe(root);
+    expectSameDirectory(result.value.root, root);
     expect(result.value.head).toBe(headOf(root));
     expect(result.value.branch).toBe("main");
   });
@@ -26,7 +33,7 @@ describe("detectRepository", () => {
     const result = await adapter.detectRepository(nested);
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(result.value.root).toBe(root);
+    expectSameDirectory(result.value.root, root);
   });
 
   it("reports a typed error outside any repository", async () => {
@@ -45,7 +52,7 @@ describe("initRepository", () => {
     const result = await adapter.initRepository(root, { initialBranch: "main" });
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(result.value.root).toBe(root);
+    expectSameDirectory(result.value.root, root);
     expect(result.value.branch).toBe("main");
     expect(result.value.head).toBeNull();
     const detected = await adapter.detectRepository(root);

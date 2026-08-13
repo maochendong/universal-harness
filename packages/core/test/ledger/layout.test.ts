@@ -1,3 +1,5 @@
+import { resolve } from "node:path";
+
 import { describe, expect, it } from "vitest";
 
 import {
@@ -25,7 +27,9 @@ describe("ledger layout", () => {
       "ledger/operations/ledger-op_01.json",
     );
     expect(stagingRelativePath("ledger-op_01")).toBe("staging/ledger-op_01");
-    expect(harnessRootFor("/repo")).toBe("/repo/.harness");
+    // Host-absolute pins go through resolve so the assertion holds on
+    // Windows, where a POSIX-style root gains the current drive prefix.
+    expect(harnessRootFor("/repo")).toBe(resolve("/repo", ".harness"));
   });
 
   it("derives the UTC calendar month shard from ISO timestamps", () => {
@@ -43,9 +47,11 @@ describe("ledger layout", () => {
   });
 
   it("confines resolved paths to the harness root", () => {
-    const root = "/repo/.harness";
+    // resolve() turns POSIX-style roots into host-absolute paths (adding the
+    // drive prefix on Windows), so build expectations through it as well.
+    const root = resolve("/repo/.harness");
     expect(resolveHarnessPath(root, "ledger/operations/ledger-op_01.json")).toBe(
-      "/repo/.harness/ledger/operations/ledger-op_01.json",
+      resolve(root, "ledger", "operations", "ledger-op_01.json"),
     );
     for (const escape of [
       "../outside.json",

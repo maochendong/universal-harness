@@ -21,11 +21,27 @@ export const FIXED_NOW = "2026-08-12T00:00:00.000Z";
 
 const createdRoots: string[] = [];
 
-export function cleanupE2eRoots(): void {
+/**
+ * Remove every created temp root. Git child processes (e.g. a just-detached
+ * auto gc) can briefly keep files under .git alive after a test returns, so
+ * retry on ENOTEMPTY/EBUSY instead of failing the suite on a cleanup race.
+ */
+export async function cleanupE2eRoots(): Promise<void> {
   while (createdRoots.length > 0) {
     const root = createdRoots.pop();
-    if (root !== undefined)
-      rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+    if (root === undefined) continue;
+    for (let attempt = 0; ; attempt += 1) {
+      try {
+        rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+        break;
+      } catch (error) {
+        const code = (error as { code?: unknown }).code;
+        if ((code !== "ENOTEMPTY" && code !== "EBUSY") || attempt >= 10) throw error;
+        await new Promise((resolve) => {
+          setTimeout(resolve, 250);
+        });
+      }
+    }
   }
 }
 
@@ -36,9 +52,12 @@ export function makeTempDir(prefix: string): string {
 }
 
 export function git(cwd: string, ...args: string[]): string {
-  // Pin autocrlf off: Windows CI runners default it to true, which would
-  // rewrite line endings and dirty otherwise clean test repositories.
-  return execFileSync("git", ["-c", "core.autocrlf=false", ...args], { cwd, encoding: "utf8" });
+  // Pin autocrlf off (Windows runners default it to true, which would dirty
+  // clean repositories) and disable auto gc (no detached maintenance).
+  return execFileSync("git", ["-c", "core.autocrlf=false", "-c", "gc.auto=0", ...args], {
+    cwd,
+    encoding: "utf8",
+  });
 }
 
 export interface Captured {

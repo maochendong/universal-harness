@@ -41,9 +41,12 @@ afterEach(() => {
 });
 
 function git(cwd: string, ...args: string[]): string {
-  // Pin autocrlf off: Windows CI runners default it to true, which would
-  // rewrite line endings and dirty otherwise clean test repositories.
-  return execFileSync("git", ["-c", "core.autocrlf=false", ...args], { cwd, encoding: "utf8" });
+  // Pin autocrlf off (Windows runners default it to true, which would dirty
+  // clean repositories) and disable auto gc (no detached maintenance).
+  return execFileSync("git", ["-c", "core.autocrlf=false", "-c", "gc.auto=0", ...args], {
+    cwd,
+    encoding: "utf8",
+  });
 }
 
 describe("git baseline drift", () => {

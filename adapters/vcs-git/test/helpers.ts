@@ -1,11 +1,24 @@
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+
+import { expect } from "vitest";
 
 import { createGitVcsAdapter } from "../src/adapter.js";
 
 export const adapter = createGitVcsAdapter();
+
+/**
+ * Assert two paths name the same directory. Git prints its own canonical
+ * form (forward slashes, long path names) while Node's temp roots may use
+ * 8.3 short-name aliases on Windows; device/inode identity is form-independent.
+ */
+export function expectSameDirectory(actual: string, expected: string): void {
+  const a = statSync(actual);
+  const b = statSync(expected);
+  expect([a.dev, a.ino]).toEqual([b.dev, b.ino]);
+}
 
 const createdDirectories: string[] = [];
 
@@ -18,9 +31,12 @@ export function cleanupDirectories(): void {
 }
 
 export function git(cwd: string, ...args: string[]): string {
-  // Pin autocrlf off: Windows CI runners default it to true, which would
-  // rewrite line endings and dirty otherwise clean test repositories.
-  return execFileSync("git", ["-c", "core.autocrlf=false", ...args], { cwd, encoding: "utf8" });
+  // Pin autocrlf off (Windows runners default it to true, which would dirty
+  // clean repositories) and disable auto gc (no detached maintenance).
+  return execFileSync("git", ["-c", "core.autocrlf=false", "-c", "gc.auto=0", ...args], {
+    cwd,
+    encoding: "utf8",
+  });
 }
 
 export function makeTempDir(prefix: string): string {

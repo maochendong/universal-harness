@@ -206,7 +206,14 @@ async function readAdoptableRepository(
       data: { vcs_kind: detected.error.kind },
     });
   }
-  if (resolve(detected.value.root) !== projectRoot) {
+  // Git reports its own canonical root (forward slashes and long path names
+  // on Windows, where the caller's path may use 8.3 short-name aliases), so
+  // a string comparison can reject the very directory git resolved. Compare
+  // device/inode identity instead: same directory, any textual form.
+  const detectedRoot = resolve(detected.value.root);
+  const callerStat = statSync(projectRoot);
+  const detectedStat = statSync(detectedRoot);
+  if (callerStat.dev !== detectedStat.dev || callerStat.ino !== detectedStat.ino) {
     return bootstrapErr({
       kind: "not_repository_root",
       message: `adopt the repository root ${detected.value.root}, not ${projectRoot}`,

@@ -1,3 +1,5 @@
+import { resolve } from "node:path";
+
 import { describe, expect, it } from "vitest";
 
 import {
@@ -23,7 +25,9 @@ import {
  * segments, absolute paths, drive prefixes, NUL bytes and separator tricks
  * before any byte is addressed on disk.
  */
-const HARNESS_ROOT = "/virtual/harness";
+// resolve() makes the virtual root host-absolute (Windows adds the drive
+// prefix) so resolveHarnessPath's containment check behaves identically.
+const HARNESS_ROOT = resolve("/virtual/harness");
 
 describe("ledger-relative path traversal", () => {
   it("rejects every escape form before resolving anything", () => {

@@ -45,7 +45,9 @@ function sanitize(text: string): string {
       sanitized = sanitized.replaceAll(variant, "<PROJECT_ROOT>");
     }
   }
-  return sanitized;
+  // Path tails joined under the root keep host separators (JSON-escaped in
+  // stdout); flatten them so snapshots match the POSIX-recorded ones.
+  return sanitized.replaceAll("\\\\", "/");
 }
 
 function makeManagedProject(): string {

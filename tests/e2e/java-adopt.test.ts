@@ -30,9 +30,9 @@ beforeEach(() => {
   vi.stubEnv("GIT_COMMITTER_DATE", "2026-08-12T00:00:00+00:00");
 });
 
-afterEach(() => {
+afterEach(async () => {
   vi.unstubAllEnvs();
-  cleanupE2eRoots();
+  await cleanupE2eRoots();
 });
 
 describe("java adopt E2E", { timeout: 90000 }, () => {
