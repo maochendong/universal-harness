@@ -1,0 +1,72 @@
+{
+  "scenario": "bugfix",
+  "impactSet": {
+    "id": "impactset_25cd17993dc81a87",
+    "status": "proposed",
+    "digest": "1b692c9a5d90fa2b1a443fe12d699261f2ada79e3535d211393190dfac89bb37"
+  },
+  "content": {
+    "content_digest": "25cd17993dc81a87b3369596c79b5afa16b1745de2c0b00388ca2e55466d3efa",
+    "seeds": [
+      {
+        "id": "seed_8ee0ed7998b29f2b",
+        "nodeId": "decision_01",
+        "kind": "content-change",
+        "iterationKind": "bugfix",
+        "reason": "content digest changed from 0000000000000000000000000000000000000000000000000000000000000000 to 1111111111111111111111111111111111111111111111111111111111111111"
+      }
+    ],
+    "entries": [
+      {
+        "node_id": "code_01",
+        "node_type": "CodeArtifact",
+        "classification": "must-change",
+        "risk": "high",
+        "confidence": 1,
+        "path": ["edge-decision-shapes-component", "edge-code-realizes-component"],
+        "reason": "high risk bugfix change propagated over 2 deterministic edge(s)",
+        "seed_id": "seed_8ee0ed7998b29f2b"
+      },
+      {
+        "node_id": "component_01",
+        "node_type": "Component",
+        "classification": "must-change",
+        "risk": "medium",
+        "confidence": 1,
+        "path": ["edge-decision-shapes-component"],
+        "reason": "medium risk bugfix change propagated over 1 deterministic edge(s)",
+        "seed_id": "seed_8ee0ed7998b29f2b"
+      },
+      {
+        "node_id": "decision_01",
+        "node_type": "Decision",
+        "classification": "must-change",
+        "risk": "medium",
+        "confidence": 1,
+        "path": [],
+        "reason": "change seed: content digest changed from 0000000000000000000000000000000000000000000000000000000000000000 to 1111111111111111111111111111111111111111111111111111111111111111",
+        "seed_id": "seed_8ee0ed7998b29f2b"
+      },
+      {
+        "node_id": "task_01",
+        "node_type": "Task",
+        "classification": "must-change",
+        "risk": "medium",
+        "confidence": 1,
+        "path": ["edge-task2-implements-decision", "edge-task2-depends-on-task1"],
+        "reason": "medium risk bugfix change propagated over 2 deterministic edge(s)",
+        "seed_id": "seed_8ee0ed7998b29f2b"
+      },
+      {
+        "node_id": "task_02",
+        "node_type": "Task",
+        "classification": "must-change",
+        "risk": "medium",
+        "confidence": 1,
+        "path": ["edge-task2-implements-decision"],
+        "reason": "medium risk bugfix change propagated over 1 deterministic edge(s)",
+        "seed_id": "seed_8ee0ed7998b29f2b"
+      }
+    ]
+  }
+}

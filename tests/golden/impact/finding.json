@@ -1,0 +1,169 @@
+{
+  "scenario": "finding",
+  "impactSet": {
+    "id": "impactset_22f4c64cd9c23e2d",
+    "status": "proposed",
+    "digest": "4932f1545aceb7c86f6d2a62f89abfc7baa0197a60293998ce093f920c8c8994"
+  },
+  "content": {
+    "content_digest": "22f4c64cd9c23e2d223f4d58d4716de9592f3fce655d8a599530c09186616502",
+    "seeds": [
+      {
+        "id": "seed_c0a1f32be242163a",
+        "nodeId": "finding_01",
+        "kind": "finding",
+        "iterationKind": "security",
+        "reason": "finding finding_01 revision 1 triggers impact analysis"
+      }
+    ],
+    "entries": [
+      {
+        "node_id": "code_01",
+        "node_type": "CodeArtifact",
+        "classification": "must-change",
+        "risk": "high",
+        "confidence": 1,
+        "path": [
+          "edge-finding-violates-policy",
+          "edge-requirement-governed-by",
+          "edge-decision-addresses-requirement",
+          "edge-decision-shapes-component",
+          "edge-code-realizes-component"
+        ],
+        "reason": "high risk security change propagated over 5 deterministic edge(s)",
+        "seed_id": "seed_c0a1f32be242163a"
+      },
+      {
+        "node_id": "component_01",
+        "node_type": "Component",
+        "classification": "must-change",
+        "risk": "high",
+        "confidence": 1,
+        "path": [
+          "edge-finding-violates-policy",
+          "edge-requirement-governed-by",
+          "edge-decision-addresses-requirement",
+          "edge-decision-shapes-component"
+        ],
+        "reason": "high risk security change propagated over 4 deterministic edge(s)",
+        "seed_id": "seed_c0a1f32be242163a"
+      },
+      {
+        "node_id": "constraint_01",
+        "node_type": "Constraint",
+        "classification": "must-change",
+        "risk": "high",
+        "confidence": 1,
+        "path": [
+          "edge-finding-violates-policy",
+          "edge-requirement-governed-by",
+          "edge-requirement-constrained-by"
+        ],
+        "reason": "high risk security change propagated over 3 deterministic edge(s)",
+        "seed_id": "seed_c0a1f32be242163a"
+      },
+      {
+        "node_id": "decision_01",
+        "node_type": "Decision",
+        "classification": "must-change",
+        "risk": "high",
+        "confidence": 1,
+        "path": [
+          "edge-finding-violates-policy",
+          "edge-requirement-governed-by",
+          "edge-decision-addresses-requirement"
+        ],
+        "reason": "high risk security change propagated over 3 deterministic edge(s)",
+        "seed_id": "seed_c0a1f32be242163a"
+      },
+      {
+        "node_id": "decision_02",
+        "node_type": "Decision",
+        "classification": "inspect",
+        "risk": "high",
+        "confidence": 0.5,
+        "path": [
+          "edge-finding-violates-policy",
+          "edge-requirement-governed-by",
+          "edge-decision2-addresses-requirement"
+        ],
+        "reason": "path traverses inferred edge edge-decision2-addresses-requirement (confidence 0.5); a human must confirm the relation",
+        "seed_id": "seed_c0a1f32be242163a"
+      },
+      {
+        "node_id": "finding_01",
+        "node_type": "Finding",
+        "classification": "must-change",
+        "risk": "high",
+        "confidence": 1,
+        "path": [],
+        "reason": "change seed: finding finding_01 revision 1 triggers impact analysis",
+        "seed_id": "seed_c0a1f32be242163a"
+      },
+      {
+        "node_id": "policy_01",
+        "node_type": "Policy",
+        "classification": "must-change",
+        "risk": "high",
+        "confidence": 1,
+        "path": ["edge-finding-violates-policy"],
+        "reason": "high risk security change propagated over 1 deterministic edge(s)",
+        "seed_id": "seed_c0a1f32be242163a"
+      },
+      {
+        "node_id": "rca_01",
+        "node_type": "RootCauseAnalysis",
+        "classification": "must-change",
+        "risk": "high",
+        "confidence": 1,
+        "path": ["edge-finding-diagnosed-by-rca"],
+        "reason": "high risk security change propagated over 1 deterministic edge(s)",
+        "seed_id": "seed_c0a1f32be242163a"
+      },
+      {
+        "node_id": "requirement_01",
+        "node_type": "Requirement",
+        "classification": "must-change",
+        "risk": "high",
+        "confidence": 1,
+        "path": ["edge-finding-violates-policy", "edge-requirement-governed-by"],
+        "reason": "high risk security change propagated over 2 deterministic edge(s)",
+        "seed_id": "seed_c0a1f32be242163a"
+      },
+      {
+        "node_id": "task_01",
+        "node_type": "Task",
+        "classification": "must-change",
+        "risk": "high",
+        "confidence": 1,
+        "path": ["edge-finding-blocks-task1"],
+        "reason": "high risk security change propagated over 1 deterministic edge(s)",
+        "seed_id": "seed_c0a1f32be242163a"
+      },
+      {
+        "node_id": "task_02",
+        "node_type": "Task",
+        "classification": "must-change",
+        "risk": "high",
+        "confidence": 1,
+        "path": ["edge-finding-blocks-task1", "edge-task2-depends-on-task1"],
+        "reason": "high risk security change propagated over 2 deterministic edge(s)",
+        "seed_id": "seed_c0a1f32be242163a"
+      },
+      {
+        "node_id": "test_01",
+        "node_type": "Test",
+        "classification": "must-change",
+        "risk": "high",
+        "confidence": 1,
+        "path": [
+          "edge-finding-violates-policy",
+          "edge-requirement-governed-by",
+          "edge-test-verifies-requirement"
+        ],
+        "reason": "high risk security change propagated over 3 deterministic edge(s)",
+        "seed_id": "seed_c0a1f32be242163a"
+      }
+    ]
+  }
+}

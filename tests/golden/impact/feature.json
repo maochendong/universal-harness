@@ -1,0 +1,126 @@
+{
+  "scenario": "feature",
+  "impactSet": {
+    "id": "impactset_7c023d5e9baaffaa",
+    "status": "proposed",
+    "digest": "4fc3467de40e6b4061400a697a5208f71286c775422cbcb8241b2ce0ac9094bb"
+  },
+  "content": {
+    "content_digest": "7c023d5e9baaffaa40b8c51f9cbc7abf1ef27b8508a25bcbcc93b4be1cc1b294",
+    "seeds": [
+      {
+        "id": "seed_e7e372e7f39ab3c6",
+        "nodeId": "requirement_01",
+        "kind": "content-change",
+        "iterationKind": "feature",
+        "reason": "content digest changed from 0000000000000000000000000000000000000000000000000000000000000000 to 1111111111111111111111111111111111111111111111111111111111111111"
+      }
+    ],
+    "entries": [
+      {
+        "node_id": "code_01",
+        "node_type": "CodeArtifact",
+        "classification": "must-change",
+        "risk": "high",
+        "confidence": 1,
+        "path": [
+          "edge-decision-addresses-requirement",
+          "edge-decision-shapes-component",
+          "edge-code-realizes-component"
+        ],
+        "reason": "high risk feature change propagated over 3 deterministic edge(s)",
+        "seed_id": "seed_e7e372e7f39ab3c6"
+      },
+      {
+        "node_id": "component_01",
+        "node_type": "Component",
+        "classification": "must-change",
+        "risk": "medium",
+        "confidence": 1,
+        "path": ["edge-decision-addresses-requirement", "edge-decision-shapes-component"],
+        "reason": "medium risk feature change propagated over 2 deterministic edge(s)",
+        "seed_id": "seed_e7e372e7f39ab3c6"
+      },
+      {
+        "node_id": "constraint_01",
+        "node_type": "Constraint",
+        "classification": "must-change",
+        "risk": "high",
+        "confidence": 1,
+        "path": ["edge-requirement-constrained-by"],
+        "reason": "high risk feature change propagated over 1 deterministic edge(s)",
+        "seed_id": "seed_e7e372e7f39ab3c6"
+      },
+      {
+        "node_id": "decision_01",
+        "node_type": "Decision",
+        "classification": "must-change",
+        "risk": "medium",
+        "confidence": 1,
+        "path": ["edge-decision-addresses-requirement"],
+        "reason": "medium risk feature change propagated over 1 deterministic edge(s)",
+        "seed_id": "seed_e7e372e7f39ab3c6"
+      },
+      {
+        "node_id": "decision_02",
+        "node_type": "Decision",
+        "classification": "inspect",
+        "risk": "medium",
+        "confidence": 0.5,
+        "path": ["edge-decision2-addresses-requirement"],
+        "reason": "path traverses inferred edge edge-decision2-addresses-requirement (confidence 0.5); a human must confirm the relation",
+        "seed_id": "seed_e7e372e7f39ab3c6"
+      },
+      {
+        "node_id": "policy_01",
+        "node_type": "Policy",
+        "classification": "must-change",
+        "risk": "high",
+        "confidence": 1,
+        "path": ["edge-requirement-governed-by"],
+        "reason": "high risk feature change propagated over 1 deterministic edge(s)",
+        "seed_id": "seed_e7e372e7f39ab3c6"
+      },
+      {
+        "node_id": "requirement_01",
+        "node_type": "Requirement",
+        "classification": "must-change",
+        "risk": "medium",
+        "confidence": 1,
+        "path": [],
+        "reason": "change seed: content digest changed from 0000000000000000000000000000000000000000000000000000000000000000 to 1111111111111111111111111111111111111111111111111111111111111111",
+        "seed_id": "seed_e7e372e7f39ab3c6"
+      },
+      {
+        "node_id": "task_01",
+        "node_type": "Task",
+        "classification": "must-change",
+        "risk": "medium",
+        "confidence": 1,
+        "path": ["edge-task1-implements-requirement"],
+        "reason": "medium risk feature change propagated over 1 deterministic edge(s)",
+        "seed_id": "seed_e7e372e7f39ab3c6"
+      },
+      {
+        "node_id": "task_02",
+        "node_type": "Task",
+        "classification": "must-change",
+        "risk": "medium",
+        "confidence": 1,
+        "path": ["edge-decision-addresses-requirement", "edge-task2-implements-decision"],
+        "reason": "medium risk feature change propagated over 2 deterministic edge(s)",
+        "seed_id": "seed_e7e372e7f39ab3c6"
+      },
+      {
+        "node_id": "test_01",
+        "node_type": "Test",
+        "classification": "must-change",
+        "risk": "medium",
+        "confidence": 1,
+        "path": ["edge-test-verifies-requirement"],
+        "reason": "medium risk feature change propagated over 1 deterministic edge(s)",
+        "seed_id": "seed_e7e372e7f39ab3c6"
+      }
+    ]
+  }
+}

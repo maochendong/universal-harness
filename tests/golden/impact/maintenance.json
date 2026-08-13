@@ -1,0 +1,32 @@
+{
+  "scenario": "maintenance",
+  "impactSet": {
+    "id": "impactset_9f8aa877a1eec415",
+    "status": "proposed",
+    "digest": "dda99a5e3643dec384a79d678c63b66a411ab397d0c4d1745e07824a3c2a20a5"
+  },
+  "content": {
+    "content_digest": "9f8aa877a1eec415a68f8e63694448db25919d110c009bcc9d366530790f1330",
+    "seeds": [
+      {
+        "id": "seed_edb3cec4faf6c954",
+        "nodeId": "code_01",
+        "kind": "content-change",
+        "iterationKind": "maintenance",
+        "reason": "content digest changed from 0000000000000000000000000000000000000000000000000000000000000000 to 1111111111111111111111111111111111111111111111111111111111111111"
+      }
+    ],
+    "entries": [
+      {
+        "node_id": "code_01",
+        "node_type": "CodeArtifact",
+        "classification": "must-change",
+        "risk": "low",
+        "confidence": 1,
+        "path": [],
+        "reason": "change seed: content digest changed from 0000000000000000000000000000000000000000000000000000000000000000 to 1111111111111111111111111111111111111111111111111111111111111111",
+        "seed_id": "seed_edb3cec4faf6c954"
+      }
+    ]
+  }
+}

@@ -1,3 +1,7 @@
+export * from "./impact/impact-set.js";
+export * from "./impact/propagation.js";
+export * from "./impact/scoring.js";
+export * from "./impact/seeds.js";
 export * from "./integrity.js";
 export * from "./materializer.js";
 export * from "./migrations/registry.js";

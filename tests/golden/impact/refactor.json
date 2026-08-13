@@ -1,0 +1,126 @@
+{
+  "scenario": "refactor",
+  "impactSet": {
+    "id": "impactset_e5b8276c8c59eec4",
+    "status": "proposed",
+    "digest": "25116688e5c14e228f7a6e1cfb3c7d69f0395674faf8261917b2cbcbdc5c2eb0"
+  },
+  "content": {
+    "content_digest": "e5b8276c8c59eec4f01fa0b9a9bf248d922aff74ba8cd82055957a19ae0123f7",
+    "seeds": [
+      {
+        "id": "seed_f3ad16c66122d67c",
+        "nodeId": "requirement_01",
+        "kind": "content-change",
+        "iterationKind": "refactor",
+        "reason": "content digest changed from 0000000000000000000000000000000000000000000000000000000000000000 to 1111111111111111111111111111111111111111111111111111111111111111"
+      }
+    ],
+    "entries": [
+      {
+        "node_id": "code_01",
+        "node_type": "CodeArtifact",
+        "classification": "must-change",
+        "risk": "high",
+        "confidence": 1,
+        "path": [
+          "edge-decision-addresses-requirement",
+          "edge-decision-shapes-component",
+          "edge-code-realizes-component"
+        ],
+        "reason": "high risk refactor change propagated over 3 deterministic edge(s)",
+        "seed_id": "seed_f3ad16c66122d67c"
+      },
+      {
+        "node_id": "component_01",
+        "node_type": "Component",
+        "classification": "informational",
+        "risk": "low",
+        "confidence": 1,
+        "path": ["edge-decision-addresses-requirement", "edge-decision-shapes-component"],
+        "reason": "low-risk refactor change; deterministic path of 2 edge(s) needs no revision",
+        "seed_id": "seed_f3ad16c66122d67c"
+      },
+      {
+        "node_id": "constraint_01",
+        "node_type": "Constraint",
+        "classification": "must-change",
+        "risk": "high",
+        "confidence": 1,
+        "path": ["edge-requirement-constrained-by"],
+        "reason": "high risk refactor change propagated over 1 deterministic edge(s)",
+        "seed_id": "seed_f3ad16c66122d67c"
+      },
+      {
+        "node_id": "decision_01",
+        "node_type": "Decision",
+        "classification": "informational",
+        "risk": "low",
+        "confidence": 1,
+        "path": ["edge-decision-addresses-requirement"],
+        "reason": "low-risk refactor change; deterministic path of 1 edge(s) needs no revision",
+        "seed_id": "seed_f3ad16c66122d67c"
+      },
+      {
+        "node_id": "decision_02",
+        "node_type": "Decision",
+        "classification": "inspect",
+        "risk": "low",
+        "confidence": 0.5,
+        "path": ["edge-decision2-addresses-requirement"],
+        "reason": "path traverses inferred edge edge-decision2-addresses-requirement (confidence 0.5); a human must confirm the relation",
+        "seed_id": "seed_f3ad16c66122d67c"
+      },
+      {
+        "node_id": "policy_01",
+        "node_type": "Policy",
+        "classification": "must-change",
+        "risk": "high",
+        "confidence": 1,
+        "path": ["edge-requirement-governed-by"],
+        "reason": "high risk refactor change propagated over 1 deterministic edge(s)",
+        "seed_id": "seed_f3ad16c66122d67c"
+      },
+      {
+        "node_id": "requirement_01",
+        "node_type": "Requirement",
+        "classification": "must-change",
+        "risk": "low",
+        "confidence": 1,
+        "path": [],
+        "reason": "change seed: content digest changed from 0000000000000000000000000000000000000000000000000000000000000000 to 1111111111111111111111111111111111111111111111111111111111111111",
+        "seed_id": "seed_f3ad16c66122d67c"
+      },
+      {
+        "node_id": "task_01",
+        "node_type": "Task",
+        "classification": "informational",
+        "risk": "low",
+        "confidence": 1,
+        "path": ["edge-task1-implements-requirement"],
+        "reason": "low-risk refactor change; deterministic path of 1 edge(s) needs no revision",
+        "seed_id": "seed_f3ad16c66122d67c"
+      },
+      {
+        "node_id": "task_02",
+        "node_type": "Task",
+        "classification": "informational",
+        "risk": "low",
+        "confidence": 1,
+        "path": ["edge-decision-addresses-requirement", "edge-task2-implements-decision"],
+        "reason": "low-risk refactor change; deterministic path of 2 edge(s) needs no revision",
+        "seed_id": "seed_f3ad16c66122d67c"
+      },
+      {
+        "node_id": "test_01",
+        "node_type": "Test",
+        "classification": "informational",
+        "risk": "low",
+        "confidence": 1,
+        "path": ["edge-test-verifies-requirement"],
+        "reason": "low-risk refactor change; deterministic path of 1 edge(s) needs no revision",
+        "seed_id": "seed_f3ad16c66122d67c"
+      }
+    ]
+  }
+}

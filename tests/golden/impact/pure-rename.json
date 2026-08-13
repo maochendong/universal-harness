@@ -1,0 +1,42 @@
+{
+  "scenario": "pure-rename",
+  "impactSet": {
+    "id": "impactset_03381451d8d713ac",
+    "status": "proposed",
+    "digest": "78f94282459480ceae80ae850ac47edf991c9a2198e479fdadb347ad3b6d6e78"
+  },
+  "content": {
+    "content_digest": "03381451d8d713ac74fe000b7f6dd1c2df6408acd1820b2b918f74897097a549",
+    "seeds": [
+      {
+        "id": "seed_339db4ce524befbc",
+        "nodeId": "code_03",
+        "kind": "pure-rename",
+        "iterationKind": "refactor",
+        "reason": "locator changed from repo://repository_01/src/widget.ts to repo://repository_01/src/renamed-widget.ts; content digest unchanged"
+      }
+    ],
+    "entries": [
+      {
+        "node_id": "code_01",
+        "node_type": "CodeArtifact",
+        "classification": "informational",
+        "risk": "low",
+        "confidence": 1,
+        "path": ["edge-code3-supersedes-code1"],
+        "reason": "pure rename: only the locator changed; the content digest is unchanged",
+        "seed_id": "seed_339db4ce524befbc"
+      },
+      {
+        "node_id": "code_03",
+        "node_type": "CodeArtifact",
+        "classification": "informational",
+        "risk": "low",
+        "confidence": 1,
+        "path": [],
+        "reason": "pure rename: only the locator changed; the content digest is unchanged",
+        "seed_id": "seed_339db4ce524befbc"
+      }
+    ]
+  }
+}
