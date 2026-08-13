@@ -20,7 +20,7 @@
     "test:release": "pnpm test:security && pnpm test:fault && pnpm test:performance && pnpm test:e2e && node scripts/generate-acceptance-report.mjs",
     "test:security": "vitest run --config vitest.workspace.ts tests/security",
     "typecheck": "pnpm -r --if-present typecheck",
-    "verify": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm build && pnpm test && node scripts/check-standalone.mjs"
+    "verify": "pnpm format:check && pnpm lint && pnpm build && pnpm typecheck && pnpm test && node scripts/check-standalone.mjs"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",
