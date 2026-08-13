@@ -1,0 +1,68 @@
+{
+  "scenario": "direct",
+  "plan": {
+    "id": "plan_003141e09ca68c25",
+    "status": "proposed",
+    "digest": "e179baee745e1cffb19ab553ad97bab16c2168964b3588fa3a6ec671f7a082e8"
+  },
+  "content": {
+    "mode": "direct",
+    "mode_reason": "structured intent with fully deterministic work runs without an agent loop",
+    "restricted": false,
+    "impact_set_id": "impactset_addc37b0c4bf64aa",
+    "impact_set_digest": "addc37b0c4bf64aa6360bba43fda7af1bdd10f17c93597111e0a5effd150822f",
+    "shared_context": {
+      "goal": "ship the health endpoint",
+      "requirement_baseline_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "policy_digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    },
+    "tasks": [
+      {
+        "id": "task_apply",
+        "objective": "apply the approved requirement change deterministically",
+        "impact_paths": [
+          [
+            "edge-decision-addresses-requirement",
+            "edge-decision-shapes-component",
+            "edge-code-realizes-component"
+          ],
+          ["edge-decision-addresses-requirement", "edge-decision-shapes-component"],
+          ["edge-decision-addresses-requirement"],
+          [],
+          ["edge-test-verifies-requirement"]
+        ],
+        "expected_outputs": ["requirement_01", "code_01", "test_01"],
+        "capabilities": ["fs.read", "fs.write", "test.run"],
+        "tools": ["tool:fs", "tool:test-runner"],
+        "dependencies": [],
+        "risk": "medium",
+        "budget": {
+          "steps": 8,
+          "tokens": 4000
+        },
+        "acceptance": [
+          {
+            "description": "the output verifies",
+            "verification": "gate:test"
+          }
+        ],
+        "required_gates": ["gate:test"]
+      }
+    ],
+    "content_digest": "003141e09ca68c253a7a71c2613321170348fafdd5b91654c4b8e0a5c4e57eaf"
+  },
+  "tasks": [
+    {
+      "id": "task_apply",
+      "digest": "96842983c35dbad53e41edca0714456f0ab614101f3b007dae048a986cbb8731"
+    }
+  ],
+  "edges": [
+    {
+      "id": "edge_30ee46d0f8a0327d",
+      "type": "CONTAINS",
+      "source_id": "plan_003141e09ca68c25",
+      "target_id": "task_apply"
+    }
+  ]
+}

@@ -1,0 +1,68 @@
+{
+  "scenario": "single-loop",
+  "plan": {
+    "id": "plan_bdda61125a60fd19",
+    "status": "proposed",
+    "digest": "940d53d43ba5abf44e910750a66953cda37b1b165dcefe1a82b6223089ae8bf8"
+  },
+  "content": {
+    "mode": "single-loop",
+    "mode_reason": "one bounded goal with one independently reviewable output",
+    "restricted": false,
+    "impact_set_id": "impactset_addc37b0c4bf64aa",
+    "impact_set_digest": "addc37b0c4bf64aa6360bba43fda7af1bdd10f17c93597111e0a5effd150822f",
+    "shared_context": {
+      "goal": "ship the health endpoint",
+      "requirement_baseline_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "policy_digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    },
+    "tasks": [
+      {
+        "id": "task_deliver",
+        "objective": "deliver the health endpoint end to end",
+        "impact_paths": [
+          [
+            "edge-decision-addresses-requirement",
+            "edge-decision-shapes-component",
+            "edge-code-realizes-component"
+          ],
+          ["edge-decision-addresses-requirement", "edge-decision-shapes-component"],
+          ["edge-decision-addresses-requirement"],
+          [],
+          ["edge-test-verifies-requirement"]
+        ],
+        "expected_outputs": ["requirement_01", "decision_01", "code_01", "test_01"],
+        "capabilities": ["fs.read", "fs.write"],
+        "tools": ["tool:fs"],
+        "dependencies": [],
+        "risk": "medium",
+        "budget": {
+          "steps": 8,
+          "tokens": 4000
+        },
+        "acceptance": [
+          {
+            "description": "the output verifies",
+            "verification": "gate:test"
+          }
+        ],
+        "required_gates": ["gate:test"]
+      }
+    ],
+    "content_digest": "bdda61125a60fd197a473368d9057b9b3f741726cdfc75c777be9600fdc71702"
+  },
+  "tasks": [
+    {
+      "id": "task_deliver",
+      "digest": "448ac58c32b0705b928609cbcd4650b9685fd5b34aab12cba8062d0d33cd46b6"
+    }
+  ],
+  "edges": [
+    {
+      "id": "edge_d8250d92548d9cc6",
+      "type": "CONTAINS",
+      "source_id": "plan_bdda61125a60fd19",
+      "target_id": "task_deliver"
+    }
+  ]
+}

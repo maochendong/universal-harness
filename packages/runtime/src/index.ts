@@ -173,6 +173,42 @@ export {
   type ResolveDecisionInput,
 } from "./approval/service.js";
 export {
+  PLAN_EXTENSION_KEY,
+  generateExecutionPlan,
+  readExecutionPlanContent,
+  type ExecutionPlanContent,
+  type ExecutionPlanRecords,
+  type PlanContext,
+  type PlanGenerationInput,
+  type PlanSharedContext,
+} from "./planning/execution-plan.js";
+export {
+  EXECUTION_MODES,
+  ModeSelectionError,
+  selectExecutionMode,
+  type ExecutionMode,
+  type IntentShape,
+  type ModeSelection,
+  type ModeSelectionInput,
+} from "./planning/mode-selector.js";
+export {
+  TASK_RISKS,
+  hasIndependentValue,
+  independentValueSignature,
+  type TaskAcceptanceCriterion,
+  type TaskBudget,
+  type TaskRisk,
+  type TaskSpecification,
+} from "./planning/task.js";
+export {
+  FORBIDDEN_PROPOSAL_KEYS,
+  PLANNING_ERROR_KINDS,
+  PlanningError,
+  validatePlanProposal,
+  type PlannerConstraints,
+  type PlanningErrorKind,
+} from "./planning/validator.js";
+export {
   ABORT_REASONS,
   InvalidStateTransition,
   RECOVERABLE_BLOCK_REASONS,

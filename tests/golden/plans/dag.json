@@ -1,0 +1,103 @@
+{
+  "scenario": "dag",
+  "plan": {
+    "id": "plan_cad22367e2d67090",
+    "status": "proposed",
+    "digest": "0e02f7ac9492281d616a536dc852eede7ea1c60e960294efe34ae80dec56679c"
+  },
+  "content": {
+    "mode": "dag",
+    "mode_reason": "2 tasks with independent value run in dependency order",
+    "restricted": false,
+    "impact_set_id": "impactset_addc37b0c4bf64aa",
+    "impact_set_digest": "addc37b0c4bf64aa6360bba43fda7af1bdd10f17c93597111e0a5effd150822f",
+    "shared_context": {
+      "goal": "ship the health endpoint",
+      "requirement_baseline_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "policy_digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    },
+    "tasks": [
+      {
+        "id": "task_implement",
+        "objective": "implement the component and code change",
+        "impact_paths": [
+          ["edge-decision-addresses-requirement"],
+          ["edge-decision-addresses-requirement", "edge-decision-shapes-component"],
+          [
+            "edge-decision-addresses-requirement",
+            "edge-decision-shapes-component",
+            "edge-code-realizes-component"
+          ]
+        ],
+        "expected_outputs": ["decision_01", "component_01", "code_01"],
+        "capabilities": ["fs.read", "fs.write"],
+        "tools": ["tool:fs"],
+        "dependencies": ["task_spec"],
+        "risk": "medium",
+        "budget": {
+          "steps": 8,
+          "tokens": 4000
+        },
+        "acceptance": [
+          {
+            "description": "the output verifies",
+            "verification": "gate:test"
+          }
+        ],
+        "required_gates": ["gate:build", "gate:test"]
+      },
+      {
+        "id": "task_spec",
+        "objective": "revise the requirement and its acceptance test",
+        "impact_paths": [[], ["edge-test-verifies-requirement"]],
+        "expected_outputs": ["requirement_01", "test_01"],
+        "capabilities": ["fs.read"],
+        "tools": ["tool:fs"],
+        "dependencies": [],
+        "risk": "medium",
+        "budget": {
+          "steps": 8,
+          "tokens": 4000
+        },
+        "acceptance": [
+          {
+            "description": "the output verifies",
+            "verification": "gate:test"
+          }
+        ],
+        "required_gates": ["gate:test"]
+      }
+    ],
+    "content_digest": "cad22367e2d67090b02ef12523794a63ca1be227c0a664e6893e61436d93ce37"
+  },
+  "tasks": [
+    {
+      "id": "task_implement",
+      "digest": "2f17088a1a5ca6a37055e8d00a349b1bfc496142de5a787c730ecea4a8b39e2b"
+    },
+    {
+      "id": "task_spec",
+      "digest": "6f5340d33ab8ae47359221a7db341221c03a5caf1a5820dc3f46ba8309c842ac"
+    }
+  ],
+  "edges": [
+    {
+      "id": "edge_9ed94d69ce45fe48",
+      "type": "CONTAINS",
+      "source_id": "plan_cad22367e2d67090",
+      "target_id": "task_implement"
+    },
+    {
+      "id": "edge_1038bbf17dacda11",
+      "type": "CONTAINS",
+      "source_id": "plan_cad22367e2d67090",
+      "target_id": "task_spec"
+    },
+    {
+      "id": "edge_779f09a505582346",
+      "type": "DEPENDS_ON",
+      "source_id": "task_implement",
+      "target_id": "task_spec"
+    }
+  ]
+}
