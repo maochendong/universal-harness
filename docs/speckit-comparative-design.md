@@ -5,7 +5,7 @@
 **Scope**: M1.x enhancements; no protocol changes required for directions 1-3, a minor schema-facing change only for direction 4
 
 This document compares SpecKit's specification-driven workflow (as used in
-the Spec-Driven-Design project) with Universal Harness, and derives four
+the Spec-Driven-Design project) with Universal Harness, and derives five
 engineering directions from it. Each direction is specified as a comparative
 design (what SpecKit form is borrowed, how the harness realizes it in its own
 idiom, which harness differences are kept on purpose) plus an independently
@@ -182,7 +182,51 @@ implicit answer.
   through a new intent capture with its own baseline approval; the harness
   never threads an answer around the approval gate.
 
-## 6. Cross-Cutting Differences the Harness Keeps
+## 6. Direction 5: Task-Level Quality Gates
+
+**SpecKit form borrowed.** The Implement-phase quality gate in `speckit.md`
+(every task must pass: all tests green, coverage >= 80%, no lint errors,
+acceptance criteria met), the per-task quality records under
+`.speckit/quality/` (`T001-quality.json`, plus phase-level
+`plan-quality.json` / `specification-quality.json`), and the
+`validate-*.js` mechanism: deterministic scripts that score structured
+checks against a threshold and block the flow with exit 1, triggered by
+hooks before/after the spec and plan files are written.
+
+**Harness realization.** The verify phase already runs a gate suite per
+iteration; direction 5 strengthens it into a *task-level* quality gate that
+also records *what* was verified. For each Task, the verify phase commits a
+quality record artifact (a ledger artifact, digest-sealed like every other
+record) holding structured, machine-checkable rows: tests passed/failed
+counts, coverage ratio, lint verdict, and -- crucially -- one row per
+acceptance assertion of the task (`pytest green`, `422 case covered`) with a
+boolean verdict and the evidence id that proved it, instead of a
+natural-language claim. The record binds the same digests as gate evidence
+(code, artifact, policy), so a later drift makes the record stale rather
+than silently green. A failed gate produces a Finding through the existing
+cascade and the task never reaches the snapshot -- this is already the
+gate-suite contract; the new part is the structured per-task record and the
+per-assertion rows. Relation to `task_stale` (direction 3): this direction
+governs *passing the gate at completion time* (the record and its verdicts);
+`task_stale` governs *the evidence still being present and current
+afterwards*. A task passes its quality gate once, and `task_stale` keeps
+watching that the proof has not rotted -- the two never fire for the same
+condition, because `task_stale` explicitly excludes a task whose quality
+record is itself fresh.
+
+**Differences kept.**
+
+- The record is a ledger artifact with a digest, bound to code and policy
+  digests -- SpecKit's `T00X-quality.json` is a hook by-product with no
+  content binding, so it cannot go stale; the harness record can, and stale
+  proof reopens the gate.
+- Thresholds stay policy, not script constants: whether coverage must be
+  80% is a Pack/Policy decision evaluated through the Tool Registry and
+  Policy layers, not a magic number in a validation script.
+- Gate failure routes to the Finding -> RCA -> human review cascade; the
+  harness never blocks on a bare exit code without provenance.
+
+## 7. Cross-Cutting Differences the Harness Keeps
 
 - **Graph/ledger provenance**: every borrowed artifact (task list, progress,
   coverage verdict) is derived from committed graph state and regenerable;
@@ -194,10 +238,14 @@ implicit answer.
   Evidence records bound to code/artifact digests; stale evidence reopens
   the question instead of lingering as a green checkmark.
 
-## 7. Task Cards
+## 8. Task Cards
 
-Ordered for implementation: 1 (projection), 3 (multi-task plan), 2 (analyze
-rules), 4 (clarify). Card ids below follow that order.
+Ordered for implementation: T1 (projection), T5 (task quality gate), T2
+(multi-task plan), T3 (analyze rules), T4 (clarify). T5 sits ahead of T2
+because it hardens the single-task verify phase that exists today -- it
+needs nothing from the multi-task plan, while T2's per-task loop inherits
+the quality record for free; T3 stays behind T2 because its rules need
+multi-task subjects.
 
 ### T1 -- tasks.md projection from graph Task nodes
 
@@ -223,6 +271,42 @@ rules), 4 (clarify). Card ids below follow that order.
     `depends on T001` ids.
 - **Dependencies**: none. Full dependency/`[P]` rendering becomes observable
   with T2, but the renderer already reads `DEPENDS_ON` edges correctly today.
+- **Size**: M.
+
+### T5 -- task-level quality gate with a structured quality record
+
+- **Goal**: every Task's verify phase commits a digest-bound quality record
+  (test counts, coverage, lint verdict, one machine-checkable row per
+  acceptance assertion with its evidence id); a failed gate raises a Finding
+  through the cascade and the task never reaches the snapshot.
+- **Modules/files**: gate suite and evidence builders in
+  `packages/runtime/src/gates/runner.ts` and
+  `packages/runtime/src/gates/evidence.ts`; quality record assembly and
+  commit in `phaseVerify` in
+  `packages/runtime/src/orchestration/orchestrator.ts`; assertion-row
+  extraction from task acceptance criteria in
+  `packages/runtime/src/planning/task.ts`; freshness/staleness reuse in
+  `packages/runtime/src/gates/freshness.ts`; tests in
+  `packages/runtime/test/gates/` and
+  `packages/runtime/test/orchestration/`.
+- **Acceptance assertions**:
+  - After a fixture iteration's verify phase, a committed quality record
+    artifact exists whose acceptance-assertion rows match the task's
+    acceptance criteria one for one, each with a boolean verdict and an
+    evidence id; the record digest verifies against its content.
+  - A fixture with a failing mandatory check yields a Finding (existing
+    cascade) and no completed snapshot; the quality record still commits
+    with the failed row marked, so the human reviews *what* failed.
+  - Changing a worktree file after the verify phase makes the record stale
+    under the current-digest check (same freshness semantics as gate
+    evidence), and a re-run supersedes it with a fresh record rather than
+    reusing the stale one.
+  - Single-task legacy iterations produce the record unchanged in shape
+    (no T2 dependency).
+- **Dependencies**: none (lands on the single-task verify phase); T2
+  consumes the per-task record when the multi-task loop exists. T3's
+  `task_stale` rule must treat a fresh quality record as satisfying
+  evidence, so the two never fire for the same condition.
 - **Size**: M.
 
 ### T2 -- multi-task ExecutionPlan with per-task progress
