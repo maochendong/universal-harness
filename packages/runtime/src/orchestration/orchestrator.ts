@@ -71,6 +71,7 @@ import {
   type ContextCandidate,
 } from "../context/compiler.js";
 import { normalizeGateDefinition, type GateDefinition } from "../gates/provider.js";
+import { evidenceBindingsOf, type GateEvidenceRecord } from "../gates/evidence.js";
 import { findingClosableBy, type CurrentEvidenceState } from "../gates/freshness.js";
 import { runGateSuite, type GateSuiteOutcome } from "../gates/runner.js";
 import { ProjectionError, writeManagedOutput } from "../projection/managed-output.js";
@@ -2065,6 +2066,216 @@ function verifyBindings(ctx: PipelineContext): VerifyPhaseArtifact["bindings"] {
   };
 }
 
+/**
+ * Evidence materialization (design 8.5/15.3): a passed, non-provisional gate
+ * verdict becomes an Evidence graph node with a SUPPORTS edge to every
+ * accepted Test it vouches for -- without this, the `missing_verification`
+ * audit rule could never stop reproducing. Binding rule mirrors the quality
+ * record: a Test whose verification text names a gate binds that gate's
+ * evidence; every other Test binds the whole mandatory suite. Nodes carry
+ * the evidence artifact digest and the bindings, so freshness follows the
+ * existing digest semantics: a re-run under changed bindings commits the
+ * next revision; an unchanged verdict is a no-op. The materials shape is
+ * deliberately minimal so both a fresh gate run and a replayed verify
+ * verdict (tests scanned into the graph after the original run) can
+ * materialize the same nodes and edges.
+ */
+interface EvidenceMaterial {
+  readonly gateId: string;
+  readonly mandatory: boolean;
+  readonly passed: boolean;
+  readonly provisional: boolean;
+  readonly evidenceId: string;
+  readonly evidenceDigest: string;
+}
+
+/** Evidence materials of a fresh gate suite run. */
+function freshEvidenceMaterials(outcome: GateSuiteOutcome): EvidenceMaterial[] {
+  return outcome.results.map((result) => ({
+    gateId: result.gate.gate_id,
+    mandatory: result.gate.mandatory,
+    passed: result.outcome.passed,
+    provisional: result.evidence.provisional,
+    evidenceId: result.evidence.evidence_id,
+    evidenceDigest: result.evidence.digest,
+  }));
+}
+
+/**
+ * Evidence materials reconstructed from a replayed verify verdict: the
+ * committed evidence artifact whose bindings still match the current ones
+ * supplies the digest and provisional flag. A verdict whose evidence cannot
+ * be matched contributes nothing instead of guessing.
+ */
+function storedEvidenceMaterials(
+  deps: OrchestratorDependencies,
+  gates: readonly GateDefinition[],
+  stored: VerifyPhaseArtifact,
+): EvidenceMaterial[] {
+  const materials: EvidenceMaterial[] = [];
+  for (const result of stored.results) {
+    const gate = gates.find((candidate) => candidate.gate_id === result.gate_id);
+    if (gate === undefined) continue;
+    const directory = resolveHarnessPath(
+      harnessRoot(deps),
+      `artifacts/evidence/${result.evidence_id}`,
+    );
+    if (!existsSync(directory)) continue;
+    for (const name of readdirSync(directory)
+      .filter((entry) => entry.endsWith(".json"))
+      .sort()) {
+      const record = readJsonArtifact<GateEvidenceRecord>(
+        deps,
+        `artifacts/evidence/${result.evidence_id}/${name}`,
+      );
+      if (record === undefined) continue;
+      const bound = evidenceBindingsOf(record);
+      if (bound === undefined) continue;
+      if (
+        JSON.stringify(bound.artifact_digests) !==
+          JSON.stringify(stored.bindings.artifact_digests) ||
+        JSON.stringify(bound.code_digests) !== JSON.stringify(stored.bindings.code_digests) ||
+        bound.policy_digest !== stored.bindings.policy_digest
+      ) {
+        continue;
+      }
+      materials.push({
+        gateId: gate.gate_id,
+        mandatory: gate.mandatory,
+        passed: result.passed,
+        provisional: record.provisional,
+        evidenceId: result.evidence_id,
+        evidenceDigest: record.digest,
+      });
+      break;
+    }
+  }
+  return materials;
+}
+
+async function commitEvidenceNodes(
+  ctx: PipelineContext,
+  materials: readonly EvidenceMaterial[],
+  bindings: VerifyPhaseArtifact["bindings"],
+): Promise<void> {
+  const { deps } = ctx;
+  const graph = materializeProjectGraph(deps.projectRoot);
+  let latest: ReadonlyMap<string, NodeRecord>;
+  let committedEdgeIds: ReadonlySet<string>;
+  try {
+    const byNodeId = new Map<string, NodeRecord>();
+    for (const node of graph.nodes) {
+      const current = byNodeId.get(node.id);
+      if (current === undefined || node.revision > current.revision) byNodeId.set(node.id, node);
+    }
+    latest = new Map([...byNodeId.entries()].filter(([, node]) => node.status !== "tombstoned"));
+    committedEdgeIds = new Set(graph.edges.map((edge) => edge.id));
+  } finally {
+    graph.close();
+  }
+  const tests = [...latest.values()].filter(
+    (node) => node.type === "Test" && node.status === "accepted",
+  );
+  if (tests.length === 0) return;
+  const verificationOf = (test: NodeRecord): string | undefined => {
+    const extension = test.extensions?.["harness.requirements"];
+    if (typeof extension !== "object" || extension === null) return undefined;
+    const verification = (extension as Record<string, unknown>).verification;
+    return typeof verification === "string" ? verification : undefined;
+  };
+
+  const artifacts: { readonly path: string; readonly content: string }[] = [];
+  const edges: EdgeRecord[] = [];
+  for (const material of materials) {
+    if (!material.passed || material.provisional) continue;
+    const evidenceId = material.evidenceId;
+    const current = latest.get(evidenceId);
+    const currentBinding =
+      current?.extensions?.["harness.evidence"] !== undefined &&
+      typeof current.extensions["harness.evidence"] === "object"
+        ? (current.extensions["harness.evidence"] as Record<string, unknown>).artifact_digest
+        : undefined;
+    if (current === undefined || currentBinding !== material.evidenceDigest) {
+      const revision = (current?.revision ?? 0) + 1;
+      const content: Record<string, unknown> = {
+        protocol_version: PROTOCOL_VERSION,
+        record_kind: "node",
+        id: evidenceId,
+        type: "Evidence",
+        revision,
+        status: "accepted",
+        source: "gate",
+        provenance: {
+          iteration_id: ctx.iterationId,
+          actor: "workflow-engine",
+          timestamp: nowOf(deps),
+        },
+        confidence: 1,
+        extensions: {
+          "harness.evidence": {
+            artifact_digest: material.evidenceDigest,
+            gate_id: material.gateId,
+            passed: true,
+            bindings,
+          },
+        },
+      };
+      const node = { ...content, digest: contentDigest(content) };
+      const validation = validateSchema("node", node);
+      if (!validation.valid) {
+        throw new OrchestrationError(
+          "configuration",
+          `invalid evidence node: ${validation.errors.map((issue) => issue.message).join("; ")}`,
+        );
+      }
+      artifacts.push({
+        path: `artifacts/evidence-nodes/${evidenceId}/${String(revision)}.json`,
+        content: `${canonicalizeJson(node)}\n`,
+      });
+    }
+    for (const test of tests) {
+      const verification = verificationOf(test);
+      const namesGate = verification !== undefined && verification.includes(material.gateId);
+      const namesNoGate =
+        verification === undefined ||
+        !materials.some((candidate) => verification.includes(candidate.gateId));
+      // A Test naming this gate binds its evidence; a Test naming no gate at
+      // all binds every mandatory gate's evidence (the suite verdict).
+      if (!namesGate && !(namesNoGate && material.mandatory)) continue;
+      const edgeId = `edge_${contentDigest({ type: "SUPPORTS", source: evidenceId, target: test.id }).slice(0, 16)}`;
+      if (committedEdgeIds.has(edgeId)) continue;
+      const content: Record<string, unknown> = {
+        protocol_version: PROTOCOL_VERSION,
+        record_kind: "edge",
+        id: edgeId,
+        type: "SUPPORTS",
+        source_id: evidenceId,
+        target_id: test.id,
+        status: "accepted",
+        source: "gate",
+        provenance: {
+          iteration_id: ctx.iterationId,
+          actor: "workflow-engine",
+          timestamp: nowOf(deps),
+        },
+        confidence: 1,
+      };
+      const edge = { ...content, digest: contentDigest(content) };
+      const validation = validateSchema("edge", edge);
+      if (!validation.valid) {
+        throw new OrchestrationError(
+          "configuration",
+          `invalid SUPPORTS edge: ${validation.errors.map((issue) => issue.message).join("; ")}`,
+        );
+      }
+      edges.push(edge as unknown as EdgeRecord);
+      committedEdgeIds = new Set([...committedEdgeIds, edgeId]);
+    }
+  }
+  if (artifacts.length === 0 && edges.length === 0) return;
+  await commitArtifacts(deps, ctx.workflowOperationId, currentAttemptId(ctx), artifacts, edges);
+}
+
 async function phaseVerify(
   ctx: PipelineContext,
   gates: readonly GateDefinition[],
@@ -2077,8 +2288,11 @@ async function phaseVerify(
   let summary: VerifyPhaseArtifact;
   if (stored !== undefined) {
     // Idempotent resume: the same bindings replay the committed verdict
-    // instead of re-running gates and duplicating evidence.
+    // instead of re-running gates and duplicating evidence. Evidence
+    // materialization still runs: tests scanned into the graph after the
+    // original gate run get their nodes and edges from the replayed verdict.
     summary = stored;
+    await commitEvidenceNodes(ctx, storedEvidenceMaterials(deps, gates, stored), bindings);
   } else {
     outcome = await runGateSuite(registry, {
       iterationId: ctx.iterationId,
@@ -2127,6 +2341,7 @@ async function phaseVerify(
         content: `${canonicalizeJson(summary)}\n`,
       },
     ]);
+    await commitEvidenceNodes(ctx, freshEvidenceMaterials(outcome), bindings);
   }
 
   if (!summary.completed_allowed) {
@@ -2196,14 +2411,16 @@ async function phaseVerify(
 const AUDIT_FINDING_NODE_DIRECTORY = "artifacts/finding-nodes";
 
 /**
- * Incremental documentation rescan (design 12.2 reuse). Adoption scans the
- * worktree once, but documents written afterwards never enter the graph, so
- * the design-artifact audit cannot see them. Before the post-iteration audit
- * runs, the completing snapshot re-scans the worktree with the same
- * deterministic scanner and commits CodeArtifact nodes (plus the Repository
- * CONTAINS edge) for documentation files that have no node yet. Node and edge
- * ids are content-derived from the locator, so re-runs are no-ops; changed or
- * deleted files are out of scope (their nodes keep their adopted revisions).
+ * Incremental worktree rescan (design 12.2 reuse). Adoption scans the
+ * worktree once, but files written afterwards never enter the graph, so the
+ * audit cannot see them. Before the post-iteration audit runs, the
+ * completing snapshot re-scans the worktree with the same deterministic
+ * scanner and commits nodes (plus the Repository CONTAINS edge) for
+ * documentation and test files that have no node yet -- docs feed the
+ * design-artifact audit, tests feed evidence materialization at the next
+ * verify. Node and edge ids are content-derived from the locator, so re-runs
+ * are no-ops; changed or deleted files are out of scope (their nodes keep
+ * their adopted revisions).
  */
 async function commitScannedDocumentation(ctx: PipelineContext): Promise<void> {
   const { deps } = ctx;
@@ -2243,11 +2460,11 @@ async function commitScannedDocumentation(ctx: PipelineContext): Promise<void> {
   const artifacts: { readonly path: string; readonly content: string }[] = [];
   const edges: EdgeRecord[] = [];
   for (const file of scan.files) {
-    if (file.classification !== "documentation") continue;
+    if (file.classification !== "documentation" && file.classification !== "test") continue;
     const locator = canonicalizeLocator(`repo://${manifest.repository_id}/${file.path}`);
     if (knownLocators.has(locator)) continue;
     const node = scannedNodeRecord(context, {
-      type: "CodeArtifact",
+      type: file.classification === "test" ? "Test" : "CodeArtifact",
       locator,
       extensions: {
         "harness.scan": {

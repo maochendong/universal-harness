@@ -282,10 +282,11 @@ describe("phase orchestrator", { timeout: 30000 }, () => {
     const blockingFindingIds = readdirSync(findingNodesRoot)
       .filter((entry) => !entry.startsWith("finding_audit-missing-design-artifact-"))
       .sort();
-    expect(blockingFindingIds.length).toBeGreaterThan(0);
-    // The plan phase now wires IMPLEMENTS edges: traceability_gap stays
-    // silent, wired tasks are no orphans, and fresh quality records keep
-    // task_stale silent.
+    // The plan phase wires IMPLEMENTS edges and the verify phase materializes
+    // evidence nodes with SUPPORTS edges: a fully wired iteration produces no
+    // blocking audit finding at all -- traceability_gap, task_orphan,
+    // task_stale and missing_verification all stay silent.
+    expect(blockingFindingIds).toEqual([]);
     const allFindingIds = readdirSync(findingNodesRoot);
     expect(allFindingIds.some((entry) => entry.startsWith("finding_audit-traceability-gap-"))).toBe(
       false,
@@ -296,24 +297,21 @@ describe("phase orchestrator", { timeout: 30000 }, () => {
     expect(allFindingIds.some((entry) => entry.startsWith("finding_audit-task-stale-"))).toBe(
       false,
     );
+    expect(
+      allFindingIds.some((entry) => entry.startsWith("finding_audit-missing-verification-")),
+    ).toBe(false);
 
-    // Non-blocking gaps surface as warnings, never as blockers; blocking gaps
-    // (traceability, verification) stay blockers without a manual audit.
+    // Non-blocking gaps surface as warnings, never as blockers.
     const status = collectProjectStatus(projectRoot);
+    expect(status.blockers).toEqual([]);
     for (const id of designFindingIds) {
-      expect(status.blockers).not.toContain(`blocking finding ${id}`);
       expect(status.warnings).toContain(`warning finding ${id}`);
     }
-    for (const id of blockingFindingIds) {
-      expect(status.blockers).toContain(`blocking finding ${id}`);
-    }
-    expect(status.next_action).toContain("repair blocker: blocking finding finding_audit-");
 
     // A second iteration re-runs the audit: the same gaps dedupe to the same
     // Finding ids (still revision 1, same feedback record) instead of
-    // duplicating, and each blocking finding binds the new iteration too.
+    // duplicating.
     const firstDesignId = designFindingIds[0] as string;
-    const firstBlockingId = blockingFindingIds[0] as string;
     const feedbackPath = join(
       projectRoot,
       ".harness",
@@ -351,12 +349,6 @@ describe("phase orchestrator", { timeout: 30000 }, () => {
       expect(
         edges.filter((edge) => edge.type === "BLOCKS" && edge.source_id === firstDesignId),
       ).toEqual([]);
-      const blocking = edges.filter(
-        (edge) => edge.type === "BLOCKS" && edge.source_id === firstBlockingId,
-      );
-      expect(blocking.map((edge) => edge.target_id).sort()).toEqual(
-        [first.iterationId, second.iterationId].sort(),
-      );
     } finally {
       database.close();
     }
@@ -993,6 +985,135 @@ describe("phase orchestrator", { timeout: 30000 }, () => {
       readBaseline: () => headOf(projectRoot),
     });
     expect(repository.replay().edges.filter((edge) => edge.type === "RESUMES")).toHaveLength(1);
+  });
+
+  it("materializes gate evidence as graph nodes and supersedes missing_verification once wired", async () => {
+    const newId = sequentialIds();
+    const parent = makeTempDir("harness-orch-evidence-");
+    const bootstrapped = await createNewProject(
+      { parentDirectory: parent, name: "orch-evidence", intent: INTENT },
+      { vcs: createGitVcsAdapter(), now: () => FIXED_NOW, newId: (kind) => newId(kind) },
+    );
+    if (!bootstrapped.ok) throw new Error(bootstrapped.error.message);
+    const projectRoot = bootstrapped.value.projectRoot;
+    const deps = makeDeps(projectRoot, newId, { execute: recordingExecutor().executor });
+
+    const driveToCompletion = async (
+      intent: string,
+      iterationId?: string,
+    ): Promise<OrchestrationOutcome> => {
+      let outcome = await runIteration(deps, {
+        intent,
+        ...(iterationId === undefined ? {} : { iterationId }),
+      });
+      while (outcome.status === "approval_required") {
+        outcome = await approveAndResume(deps, outcome);
+      }
+      return outcome;
+    };
+
+    const readGraph = (): { nodes: NodeRecord[]; edges: EdgeRecord[] } => {
+      const { database } = materializeLedger({ projectRoot, databasePath: ":memory:" });
+      try {
+        const nodes: NodeRecord[] = [];
+        let cursor: string | undefined;
+        do {
+          const page = pageNodes(database, {
+            limit: 500,
+            ...(cursor === undefined ? {} : { cursor }),
+          });
+          nodes.push(...page.items);
+          cursor = page.nextCursor;
+        } while (cursor !== undefined);
+        const edges: EdgeRecord[] = [];
+        let edgeCursor: string | undefined;
+        do {
+          const page = pageEdges(database, {
+            limit: 500,
+            ...(edgeCursor === undefined ? {} : { cursor: edgeCursor }),
+          });
+          edges.push(...page.items);
+          edgeCursor = page.nextCursor;
+        } while (edgeCursor !== undefined);
+        return { nodes, edges };
+      } finally {
+        database.close();
+      }
+    };
+
+    // Iteration 1: the baseline acceptance test is wired to the passing
+    // mandatory gate's evidence; no missing_verification finding exists.
+    const first = await driveToCompletion(INTENT, bootstrapped.value.iterationId);
+    expect(first.status).toBe("completed");
+    let graph = readGraph();
+    const evidenceNode = graph.nodes.find((node) => node.type === "Evidence");
+    expect(evidenceNode?.id).toBe("evidence_ledger_integrity");
+    expect(evidenceNode?.status).toBe("accepted");
+    const baselineTest = graph.nodes.find((node) => node.type === "Test");
+    expect(baselineTest).toBeDefined();
+    expect(
+      graph.edges.some(
+        (edge) =>
+          edge.type === "SUPPORTS" &&
+          edge.source_id === "evidence_ledger_integrity" &&
+          edge.target_id === baselineTest?.id,
+      ),
+    ).toBe(true);
+    expect(
+      auditGraph({ nodes: graph.nodes, edges: graph.edges }).findings.some(
+        (finding) => finding.kind === "missing_verification",
+      ),
+    ).toBe(false);
+
+    // A test file written after adoption enters the graph only at the next
+    // snapshot rescan, so iteration 2's audit flags it once.
+    mkdirSync(join(projectRoot, "src"), { recursive: true });
+    writeFileSync(
+      join(projectRoot, "src", "widget.test.js"),
+      'import test from "node:test";\ntest("widget", () => {});\n',
+    );
+    const second = await driveToCompletion("add the widget test");
+    expect(second.status).toBe("completed");
+    const findingsRoot = join(projectRoot, ".harness", "artifacts", "findings");
+    const missingVerificationFinding = readdirSync(findingsRoot)
+      .filter((entry) => entry.startsWith("finding_audit-missing-verification-"))
+      .map((entry) => ({
+        id: entry,
+        summary: (
+          JSON.parse(readFileSync(join(findingsRoot, entry, "proposed.json"), "utf8")) as {
+            summary: string;
+          }
+        ).summary,
+      }))
+      .find((entry) => entry.summary.includes("has no evidence verdict"));
+    expect(missingVerificationFinding).toBeDefined();
+    if (missingVerificationFinding === undefined) return;
+
+    // Iteration 3: verify wires the scanned test to the suite evidence and
+    // the audit supersedes the resolved finding.
+    const third = await driveToCompletion("wire the widget test evidence");
+    expect(third.status).toBe("completed");
+    const findingNodeDirectory = join(
+      projectRoot,
+      ".harness",
+      "artifacts",
+      "finding-nodes",
+      missingVerificationFinding.id,
+    );
+    expect(readdirSync(findingNodeDirectory).sort()).toEqual(["1.json", "2.json"]);
+    expect(
+      (
+        JSON.parse(readFileSync(join(findingNodeDirectory, "2.json"), "utf8")) as {
+          status: string;
+        }
+      ).status,
+    ).toBe("superseded");
+    graph = readGraph();
+    expect(
+      auditGraph({ nodes: graph.nodes, edges: graph.edges }).findings.some(
+        (finding) => finding.kind === "missing_verification",
+      ),
+    ).toBe(false);
   });
 
   it("aborts an open operation and closes its pending approval requests", async () => {
