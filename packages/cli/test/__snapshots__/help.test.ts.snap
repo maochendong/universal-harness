@@ -18,6 +18,7 @@ Automation and recovery:
   eval                            Drive the open operation through run evaluation
   snapshot                        Complete the open operation or show the latest snapshot
   approve <id> --decision <d>     Resolve one pending approval request
+  finding <action> <id>           Accept, close or supersede one finding
   impact [node-id]                Preview the ImpactSet for a change seed
   plan                            Show the latest committed ExecutionPlan
   audit                           Audit traceability, freshness and graph health
@@ -28,6 +29,7 @@ Inspection:
   graph sync                      Rebuild the SQLite graph cache from the ledger
   graph query [--type <type>]     Query materialized graph nodes
   graph check                     Verify ledger integrity and cache consistency
+  graph propose-edge|approve-edge Stage and commit human-reviewed graph edges
 
 Global options:
   --json                          Emit one canonical JSON record (machine readable)
@@ -54,6 +56,7 @@ Automation and recovery:
   eval                            Drive the open operation through run evaluation
   snapshot                        Complete the open operation or show the latest snapshot
   approve <id> --decision <d>     Resolve one pending approval request
+  finding <action> <id>           Accept, close or supersede one finding
   impact [node-id]                Preview the ImpactSet for a change seed
   plan                            Show the latest committed ExecutionPlan
   audit                           Audit traceability, freshness and graph health
@@ -64,6 +67,7 @@ Inspection:
   graph sync                      Rebuild the SQLite graph cache from the ledger
   graph query [--type <type>]     Query materialized graph nodes
   graph check                     Verify ledger integrity and cache consistency
+  graph propose-edge|approve-edge Stage and commit human-reviewed graph edges
 
 Global options:
   --json                          Emit one canonical JSON record (machine readable)
@@ -90,6 +94,7 @@ Automation and recovery:
   eval                            Drive the open operation through run evaluation
   snapshot                        Complete the open operation or show the latest snapshot
   approve <id> --decision <d>     Resolve one pending approval request
+  finding <action> <id>           Accept, close or supersede one finding
   impact [node-id]                Preview the ImpactSet for a change seed
   plan                            Show the latest committed ExecutionPlan
   audit                           Audit traceability, freshness and graph health
@@ -100,6 +105,7 @@ Inspection:
   graph sync                      Rebuild the SQLite graph cache from the ledger
   graph query [--type <type>]     Query materialized graph nodes
   graph check                     Verify ledger integrity and cache consistency
+  graph propose-edge|approve-edge Stage and commit human-reviewed graph edges
 
 Global options:
   --json                          Emit one canonical JSON record (machine readable)
@@ -162,6 +168,17 @@ audit history.
 `;
 
 exports[`harness CLI help and version > prints per-command help 7`] = `
+"Usage: harness finding <accept|close|supersede> <finding-id> [--evidence <id>] [--actor <id>] [--json]
+
+Drive one finding through its lifecycle. Accept marks it confirmed for
+repair routing; supersede retires it as no longer relevant; close marks it
+repaired and requires --evidence with a passing, non-provisional, still
+current evidence id. Resolutions are ledger-backed and keep the audit
+history.
+"
+`;
+
+exports[`harness CLI help and version > prints per-command help 8`] = `
 "Usage: harness impact [node-id] [--json]
 
 Preview the ImpactSet a change on the given (or latest) seed node would
@@ -169,7 +186,7 @@ produce over the current artifact graph. Read-only.
 "
 `;
 
-exports[`harness CLI help and version > prints per-command help 8`] = `
+exports[`harness CLI help and version > prints per-command help 9`] = `
 "Usage: harness plan [--json]
 
 Show the latest committed declarative ExecutionPlan: mode, bound impact set
@@ -177,7 +194,7 @@ and task specifications.
 "
 `;
 
-exports[`harness CLI help and version > prints per-command help 9`] = `
+exports[`harness CLI help and version > prints per-command help 10`] = `
 "Usage: harness run [--dry-run] [--json]
 
 Execute the open workflow operation's planned tasks through the configured
@@ -185,7 +202,7 @@ adapter. --dry-run renders the planned tasks without executing anything.
 "
 `;
 
-exports[`harness CLI help and version > prints per-command help 10`] = `
+exports[`harness CLI help and version > prints per-command help 11`] = `
 "Usage: harness verify [--json]
 
 Drive the open workflow operation through the three-layer gate suite,
@@ -193,7 +210,7 @@ producing bound Evidence and Findings for failed mandatory gates.
 "
 `;
 
-exports[`harness CLI help and version > prints per-command help 11`] = `
+exports[`harness CLI help and version > prints per-command help 12`] = `
 "Usage: harness eval [--json]
 
 Drive the open workflow operation through run evaluation (outcome, safety,
@@ -201,7 +218,7 @@ trajectory, correct failure, efficiency).
 "
 `;
 
-exports[`harness CLI help and version > prints per-command help 12`] = `
+exports[`harness CLI help and version > prints per-command help 13`] = `
 "Usage: harness snapshot [--json]
 
 Drive the open workflow operation to its terminal snapshot, or report the
@@ -209,7 +226,7 @@ latest committed snapshot when no operation is open.
 "
 `;
 
-exports[`harness CLI help and version > prints per-command help 13`] = `
+exports[`harness CLI help and version > prints per-command help 14`] = `
 "Usage: harness audit [--json]
 
 Audit the committed graph for traceability gaps, stale knowledge,
@@ -218,7 +235,7 @@ improvements.
 "
 `;
 
-exports[`harness CLI help and version > prints per-command help 14`] = `
+exports[`harness CLI help and version > prints per-command help 15`] = `
 "Usage: harness status [--json]
 
 Show the managed project identity, committed ledger operation count, graph
@@ -226,7 +243,7 @@ cache health and the last ledger operation for the current project.
 "
 `;
 
-exports[`harness CLI help and version > prints per-command help 15`] = `
+exports[`harness CLI help and version > prints per-command help 16`] = `
 "Usage: harness doctor [--json]
 
 Diagnose the runtime environment, Git availability, managed project layout
@@ -234,12 +251,14 @@ and graph cache health. Exits non-zero when any check fails.
 "
 `;
 
-exports[`harness CLI help and version > prints per-command help 16`] = `
-"Usage: harness graph <sync|query|check> [options]
+exports[`harness CLI help and version > prints per-command help 17`] = `
+"Usage: harness graph <sync|query|check|propose-edge|approve-edge> [options]
 
-  sync    Rebuild the disposable SQLite cache from the authoritative ledger
-  query   Query materialized graph nodes (--type, --limit, --cursor)
-  check   Verify ledger integrity invariants and cache consistency
+  sync          Rebuild the disposable SQLite cache from the authoritative ledger
+  query         Query materialized graph nodes (--type, --limit, --cursor)
+  check         Verify ledger integrity invariants and cache consistency
+  propose-edge  Stage a human-driven edge proposal (--type, --source, --target)
+  approve-edge  Commit a staged edge proposal (<edge-id> --digest <preview-digest>)
 "
 `;
 
@@ -254,7 +273,7 @@ exports[`harness CLI inspection commands > fails graph query before the first sy
 `;
 
 exports[`harness CLI inspection commands > rejects unknown graph subcommands and node types 1`] = `
-"error [usage_error]: unknown graph subcommand: explode; expected sync, query or check
+"error [usage_error]: unknown graph subcommand: explode; expected sync, query, check, propose-edge or approve-edge
 "
 `;
 

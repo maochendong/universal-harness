@@ -90,6 +90,7 @@ describe("harness CLI help and version", () => {
       "resume",
       "abort",
       "approve",
+      "finding",
       "impact",
       "plan",
       "run",

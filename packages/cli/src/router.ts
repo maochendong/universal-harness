@@ -27,6 +27,7 @@ import { runSnapshotCommand } from "./commands/snapshot.js";
 import { runStatusCommand } from "./commands/status.js";
 import { runVerifyCommand } from "./commands/verify.js";
 import { runGraphCheckCommand } from "./commands/graph/check.js";
+import { runGraphApproveEdgeCommand, runGraphProposeEdgeCommand } from "./commands/graph/edge.js";
 import { runGraphQueryCommand } from "./commands/graph/query.js";
 import { runGraphSyncCommand } from "./commands/graph/sync.js";
 
@@ -221,6 +222,7 @@ Inspection:
   graph sync                      Rebuild the SQLite graph cache from the ledger
   graph query [--type <type>]     Query materialized graph nodes
   graph check                     Verify ledger integrity and cache consistency
+  graph propose-edge|approve-edge Stage and commit human-reviewed graph edges
 
 Global options:
   --json                          Emit one canonical JSON record (machine readable)
@@ -318,11 +320,13 @@ cache health and the last ledger operation for the current project.
 Diagnose the runtime environment, Git availability, managed project layout
 and graph cache health. Exits non-zero when any check fails.
 `,
-  graph: `Usage: harness graph <sync|query|check> [options]
+  graph: `Usage: harness graph <sync|query|check|propose-edge|approve-edge> [options]
 
-  sync    Rebuild the disposable SQLite cache from the authoritative ledger
-  query   Query materialized graph nodes (--type, --limit, --cursor)
-  check   Verify ledger integrity invariants and cache consistency
+  sync          Rebuild the disposable SQLite cache from the authoritative ledger
+  query         Query materialized graph nodes (--type, --limit, --cursor)
+  check         Verify ledger integrity invariants and cache consistency
+  propose-edge  Stage a human-driven edge proposal (--type, --source, --target)
+  approve-edge  Commit a staged edge proposal (<edge-id> --digest <preview-digest>)
 `,
 };
 
@@ -405,9 +409,13 @@ async function dispatch(args: readonly string[], context: CommandContext): Promi
           return runGraphQueryCommand(subRest, context);
         case "check":
           return runGraphCheckCommand(subRest, context);
+        case "propose-edge":
+          return runGraphProposeEdgeCommand(subRest, context);
+        case "approve-edge":
+          return runGraphApproveEdgeCommand(subRest, context);
         default:
           throw usageError(
-            `unknown graph subcommand: ${subcommand ?? "none"}; expected sync, query or check`,
+            `unknown graph subcommand: ${subcommand ?? "none"}; expected sync, query, check, propose-edge or approve-edge`,
           );
       }
     }

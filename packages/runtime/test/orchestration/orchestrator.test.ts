@@ -11,6 +11,7 @@ import type { AgentRunResult, AgentTaskEnvelope } from "@universal-harness-inter
 import {
   OrchestrationError,
   abortIteration,
+  approveGraphEdge,
   assertLifecycleOrder,
   auditGraph,
   collectProjectStatus,
@@ -20,6 +21,7 @@ import {
   detectProjectionDrift,
   findOpenWorkflowOperation,
   normalizeGateDefinition,
+  proposeGraphEdge,
   readApprovalDecisions,
   readApprovalRequests,
   readLatestSnapshot,
@@ -1367,6 +1369,138 @@ describe("phase orchestrator", { timeout: 30000 }, () => {
     await expect(
       resolveFinding(deps, { findingId: "finding_nope", action: "accept", actor: "human:local" }),
     ).rejects.toThrow(/unknown finding/u);
+  });
+
+  it("stages and commits a human-proposed edge with digest-bound approval", async () => {
+    const newId = sequentialIds();
+    const parent = makeTempDir("harness-orch-edge-");
+    const bootstrapped = await createNewProject(
+      { parentDirectory: parent, name: "orch-edge", intent: INTENT },
+      { vcs: createGitVcsAdapter(), now: () => FIXED_NOW, newId: (kind) => newId(kind) },
+    );
+    if (!bootstrapped.ok) throw new Error(bootstrapped.error.message);
+    const projectRoot = bootstrapped.value.projectRoot;
+    const planTasks: PlanTasksPort = ({ impactPaths, gateIds }) => [
+      {
+        id: "task_unwired",
+        objective: "unwired work",
+        impact_paths: impactPaths.map((path) => [...path]),
+        expected_outputs: ["requirement_nonexistent"],
+        capabilities: [],
+        tools: [],
+        dependencies: [],
+        risk: "low",
+        budget: { steps: 30, tokens: 120000 },
+        acceptance: [{ description: "work done", verification: "mandatory gate suite passes" }],
+        required_gates: [...gateIds],
+      },
+    ];
+    const deps = makeDeps(projectRoot, newId, {
+      execute: recordingExecutor().executor,
+      planTasks,
+    });
+    let outcome = await runIteration(deps, {
+      intent: INTENT,
+      iterationId: bootstrapped.value.iterationId,
+    });
+    while (outcome.status === "approval_required") {
+      outcome = await approveAndResume(deps, outcome);
+    }
+    expect(outcome.status).toBe("completed");
+
+    const requirementId = `requirement_${sha256Hex(INTENT).slice(0, 16)}`;
+    const editDeps = { projectRoot, readBaseline: () => headOf(projectRoot) };
+
+    // Invalid relation and unknown endpoints are typed errors.
+    await expect(
+      proposeGraphEdge(editDeps, {
+        type: "IMPLEMENTS",
+        sourceId: requirementId,
+        targetId: "task_unwired",
+        actor: "human:local",
+      }),
+    ).rejects.toThrow(/not compatible/u);
+    await expect(
+      proposeGraphEdge(editDeps, {
+        type: "IMPLEMENTS",
+        sourceId: "task_unwired",
+        targetId: "requirement_nope",
+        actor: "human:local",
+      }),
+    ).rejects.toThrow(/unknown edge endpoint/u);
+
+    // Stage, then re-stage: same digest, single proposal artifact.
+    const staged = await proposeGraphEdge(editDeps, {
+      type: "IMPLEMENTS",
+      sourceId: "task_unwired",
+      targetId: requirementId,
+      actor: "human:local",
+    });
+    expect(staged.status).toBe("staged");
+    const restaged = await proposeGraphEdge(editDeps, {
+      type: "IMPLEMENTS",
+      sourceId: "task_unwired",
+      targetId: requirementId,
+      actor: "human:local",
+    });
+    expect(restaged.previewDigest).toBe(staged.previewDigest);
+
+    // Approval must bind the exact staged digest.
+    await expect(
+      approveGraphEdge(editDeps, {
+        edgeId: staged.edgeId,
+        previewDigest: "0".repeat(64),
+        actor: "human:local",
+      }),
+    ).rejects.toThrow(/does not bind/u);
+    const approved = await approveGraphEdge(editDeps, {
+      edgeId: staged.edgeId,
+      previewDigest: staged.previewDigest,
+      actor: "human:local",
+    });
+    expect(approved.status).toBe("committed");
+    const again = await approveGraphEdge(editDeps, {
+      edgeId: staged.edgeId,
+      previewDigest: staged.previewDigest,
+      actor: "human:local",
+    });
+    expect(again.status).toBe("already_present");
+
+    // The committed edge is active in the graph and clears the orphan gap.
+    const { database } = materializeLedger({ projectRoot, databasePath: ":memory:" });
+    try {
+      const nodes: NodeRecord[] = [];
+      let cursor: string | undefined;
+      do {
+        const page = pageNodes(database, {
+          limit: 500,
+          ...(cursor === undefined ? {} : { cursor }),
+        });
+        nodes.push(...page.items);
+        cursor = page.nextCursor;
+      } while (cursor !== undefined);
+      const edges: EdgeRecord[] = [];
+      let edgeCursor: string | undefined;
+      do {
+        const page = pageEdges(database, {
+          limit: 500,
+          ...(edgeCursor === undefined ? {} : { cursor: edgeCursor }),
+        });
+        edges.push(...page.items);
+        edgeCursor = page.nextCursor;
+      } while (edgeCursor !== undefined);
+      const edge = edges.find((candidate) => candidate.id === staged.edgeId);
+      expect(edge?.status).toBe("accepted");
+      expect(edge?.source).toBe("human");
+      const report = auditGraph({ nodes, edges });
+      expect(
+        report.findings.some(
+          (finding) => finding.kind === "task_orphan" && finding.subjects.includes("task_unwired"),
+        ),
+      ).toBe(false);
+    } finally {
+      database.close();
+    }
   });
 
   it("aborts an open operation and closes its pending approval requests", async () => {

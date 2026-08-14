@@ -641,6 +641,16 @@ export {
   type SnapshotTaskResult,
 } from "./snapshot/builder.js";
 export {
+  GRAPH_EDIT_ERROR_KINDS,
+  GraphEditError,
+  approveGraphEdge,
+  graphEdgeId,
+  proposeGraphEdge,
+  type ApprovedGraphEdge,
+  type GraphEditDependencies,
+  type ProposedGraphEdge,
+} from "./graph/edits.js";
+export {
   FINDING_ACTIONS,
   ORCHESTRATION_ERROR_KINDS,
   OrchestrationError,
