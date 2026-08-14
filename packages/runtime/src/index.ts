@@ -668,6 +668,7 @@ export {
   type OrchestrationExecutor,
   type OrchestrationOutcome,
   type OrchestratorDependencies,
+  type PlanTasksPort,
   type RunIterationInput,
 } from "./orchestration/orchestrator.js";
 export {

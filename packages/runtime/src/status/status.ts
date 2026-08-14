@@ -27,6 +27,13 @@ import type { BudgetUse } from "../workflow/working-state.js";
  * derivation is pure (`deriveProjectStatus`); the collector is the single
  * place that reads disk.
  */
+export interface TaskProgress {
+  readonly completed: number;
+  readonly total: number;
+  /** First unfinished task in dependency order, when any remains. */
+  readonly next_task_id?: string;
+}
+
 export interface ProjectStatus {
   readonly project_root: string;
   readonly name: string;
@@ -35,6 +42,7 @@ export interface ProjectStatus {
   readonly last_ledger_operation: string;
   readonly graph_cache: GraphCacheStatus;
   readonly iteration?: { readonly id: string; readonly state: string };
+  readonly task_progress?: TaskProgress;
   readonly control_level: ControlLevel | "none";
   readonly evaluation_coverage: { readonly evaluated: number; readonly total: number };
   readonly blockers: readonly string[];
@@ -65,6 +73,7 @@ export interface StatusDerivationInput {
 
 export interface DerivedStatus {
   readonly iteration?: { readonly id: string; readonly state: string };
+  readonly task_progress?: TaskProgress;
   readonly evaluation_coverage: { readonly evaluated: number; readonly total: number };
   readonly blockers: readonly string[];
   readonly warnings: readonly string[];
@@ -221,8 +230,70 @@ function deriveEvaluationCoverage(
   };
 }
 
+/**
+ * Task progress of the iteration's latest ExecutionPlan (card T2): tasks the
+ * execute phase marked accepted over the total, plus the first unfinished
+ * task in dependency order. Pure graph derivation -- the accepted revision
+ * is the only completion signal status trusts.
+ */
+function deriveTaskProgress(
+  nodes: readonly NodeRecord[],
+  edges: readonly EdgeRecord[],
+  iterationId: string | undefined,
+): TaskProgress | undefined {
+  if (iterationId === undefined) return undefined;
+  const nodeById = new Map(nodes.map((node) => [node.id, node]));
+  const plan = nodes
+    .filter((node) => node.type === "ExecutionPlan" && node.provenance.iteration_id === iterationId)
+    .sort((left, right) => byId(left.id, right.id))
+    .at(-1);
+  if (plan === undefined) return undefined;
+  const taskIds = edges
+    .filter((edge) => edge.type === "CONTAINS" && edge.source_id === plan.id)
+    .map((edge) => edge.target_id)
+    .filter((id) => nodeById.get(id)?.type === "Task");
+  if (taskIds.length === 0) return undefined;
+  const members = new Set(taskIds);
+  const indegree = new Map<string, number>(taskIds.map((id) => [id, 0]));
+  const dependents = new Map<string, string[]>();
+  for (const edge of edges) {
+    if (
+      edge.type !== "DEPENDS_ON" ||
+      !members.has(edge.source_id) ||
+      !members.has(edge.target_id)
+    ) {
+      continue;
+    }
+    indegree.set(edge.source_id, (indegree.get(edge.source_id) ?? 0) + 1);
+    dependents.set(edge.target_id, [...(dependents.get(edge.target_id) ?? []), edge.source_id]);
+  }
+  const ready = taskIds.filter((id) => (indegree.get(id) ?? 0) === 0).sort(byId);
+  const ordered: string[] = [];
+  while (ready.length > 0) {
+    const next = ready.shift() as string;
+    ordered.push(next);
+    for (const dependent of (dependents.get(next) ?? []).sort(byId)) {
+      const remaining = (indegree.get(dependent) ?? 0) - 1;
+      indegree.set(dependent, remaining);
+      if (remaining === 0) {
+        const insertAt = ready.findIndex((id) => id > dependent);
+        ready.splice(insertAt === -1 ? ready.length : insertAt, 0, dependent);
+      }
+    }
+  }
+  for (const id of taskIds.filter((id) => !ordered.includes(id)).sort(byId)) ordered.push(id);
+  const completed = taskIds.filter((id) => nodeById.get(id)?.status === "accepted").length;
+  const nextTaskId = ordered.find((id) => nodeById.get(id)?.status !== "accepted");
+  return {
+    completed,
+    total: taskIds.length,
+    ...(nextTaskId === undefined ? {} : { next_task_id: nextTaskId }),
+  };
+}
+
 function nextActionFor(status: {
   readonly iteration?: { readonly id: string; readonly state: string };
+  readonly taskProgress?: TaskProgress;
   readonly blockers: readonly string[];
   readonly staleEvidence: readonly string[];
   readonly pendingApprovals: readonly string[];
@@ -231,8 +302,15 @@ function nextActionFor(status: {
   if (status.pendingApprovals.length > 0) {
     return `resolve approval request ${status.pendingApprovals[0]}`;
   }
+  const progress = status.taskProgress;
+  const progressText =
+    progress !== undefined && progress.completed < progress.total
+      ? ` (task ${String(progress.completed)}/${String(progress.total)}${
+          progress.next_task_id === undefined ? "" : `: ${progress.next_task_id}`
+        })`
+      : undefined;
   if (status.blockers.length > 0) {
-    return `repair blocker: ${status.blockers[0]}`;
+    return `repair blocker: ${status.blockers[0]}${progressText ?? ""}`;
   }
   if (status.staleEvidence.length > 0) {
     return `re-run gates; stale evidence ${status.staleEvidence[0]} no longer reflects current state`;
@@ -244,9 +322,13 @@ function nextActionFor(status: {
       return `run iteration ${status.iteration.id}`;
     case "running":
     case "verifying":
-      return status.workingStateNextAction ?? `continue iteration ${status.iteration.id}`;
+      return progressText !== undefined
+        ? `continue iteration ${status.iteration.id}${progressText}`
+        : (status.workingStateNextAction ?? `continue iteration ${status.iteration.id}`);
     case "blocked":
-      return `resume iteration ${status.iteration.id} from its last checkpoint`;
+      return progressText !== undefined
+        ? `resume iteration ${status.iteration.id}${progressText}`
+        : `resume iteration ${status.iteration.id} from its last checkpoint`;
     case "completed":
     case "aborted":
       return "start the next iteration with harness iterate";
@@ -279,10 +361,12 @@ export function deriveProjectStatus(input: StatusDerivationInput): DerivedStatus
   const allWarnings = [...new Set([...warnings, ...deriveWarnings(nodes)])].sort(byId);
   const staleEvidence = deriveStaleEvidence(nodes, edges);
   const coverage = deriveEvaluationCoverage(nodes, edges);
+  const taskProgress = deriveTaskProgress(nodes, edges, iteration?.id);
   const nextAction = nextActionFor({
     ...(iteration === undefined
       ? {}
       : { iteration: { id: iteration.id, state: iteration.iteration_state ?? "draft" } }),
+    ...(taskProgress === undefined ? {} : { taskProgress }),
     blockers,
     staleEvidence,
     pendingApprovals,
@@ -294,6 +378,7 @@ export function deriveProjectStatus(input: StatusDerivationInput): DerivedStatus
     ...(iteration === undefined
       ? {}
       : { iteration: { id: iteration.id, state: iteration.iteration_state ?? "draft" } }),
+    ...(taskProgress === undefined ? {} : { task_progress: taskProgress }),
     evaluation_coverage: coverage,
     blockers,
     warnings: allWarnings,

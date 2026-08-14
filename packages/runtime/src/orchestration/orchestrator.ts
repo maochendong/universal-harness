@@ -251,6 +251,7 @@ export interface OrchestratorDependencies {
   readonly toolRegistry?: ToolRegistry;
   readonly evaluate?: EvaluationPort;
   readonly tasksProjection?: TasksProjectionPort;
+  readonly planTasks?: PlanTasksPort;
   readonly trajectoryVisibility?: AgentTrajectoryVisibility;
   readonly tokenBudget?: number;
 }
@@ -1424,29 +1425,105 @@ async function phaseImpact(ctx: PipelineContext): Promise<PhaseStep> {
   return { continue: true };
 }
 
-function taskSpecificationFor(
+/**
+ * Planner port (comparative design direction 3, card T2): turns the approved
+ * intent into the task decomposition of one ExecutionPlan. The port proposes;
+ * the harness still validates every specification through
+ * `validatePlanProposal` (declarative shape, approved-path coverage,
+ * acyclic DEPENDS_ON) before planning, so a bad decomposition is refused,
+ * never executed. Absent, the deterministic default decomposes one task per
+ * baseline requirement.
+ */
+export type PlanTasksPort = (input: {
+  readonly goal: string;
+  readonly requirements: readonly {
+    readonly id: string;
+    readonly statement: string;
+    readonly acceptance: readonly { readonly description: string; readonly verification: string }[];
+  }[];
+  readonly impactPaths: readonly (readonly string[])[];
+  readonly gateIds: readonly string[];
+}) => readonly TaskSpecification[];
+
+/**
+ * Deterministic default decomposition: one small task per requirement of the
+ * approved baseline, each independently verifiable through its own acceptance
+ * slice, every task bound to the full approved impact set (the binding check
+ * requires must-change coverage; path-level partitioning is the port's job).
+ * With a single requirement this degenerates to exactly the historical
+ * single-task plan, id and digest included.
+ */
+function taskSpecificationsFor(
   ctx: PipelineContext,
   impactSet: NodeRecord,
   gateIds: readonly string[],
-): TaskSpecification {
+): readonly TaskSpecification[] {
   const content = readImpactSetContent(impactSet);
-  const outputs = ctx.proposal.requirements.map((requirement) => requirement.id);
-  const specification: TaskSpecification = {
-    id: `task_${contentDigest({ goal: ctx.goal, outputs: [...outputs].sort() }).slice(0, 16)}`,
+  const impactPaths = content.entries.map((entry) => [...entry.path]);
+  const requirements = ctx.proposal.requirements.map((requirement) => ({
+    id: requirement.id,
+    statement: requirement.statement,
+    acceptance: requirement.acceptance.map((criterion) => ({ ...criterion })),
+  }));
+  if (ctx.deps.planTasks !== undefined) {
+    return ctx.deps.planTasks({
+      goal: ctx.goal,
+      requirements,
+      impactPaths,
+      gateIds: [...gateIds],
+    });
+  }
+  return requirements.map((requirement) => ({
+    id: `task_${contentDigest({ goal: ctx.goal, outputs: [requirement.id] }).slice(0, 16)}`,
     objective: ctx.goal,
-    impact_paths: content.entries.map((entry) => [...entry.path]),
-    expected_outputs: outputs,
+    impact_paths: impactPaths.map((path) => [...path]),
+    expected_outputs: [requirement.id],
     capabilities: [],
     tools: [],
     dependencies: [],
     risk: "low",
     budget: { steps: 30, tokens: 120000 },
-    acceptance: ctx.proposal.requirements.flatMap((requirement) =>
-      requirement.acceptance.map((criterion) => ({ ...criterion })),
-    ),
+    acceptance: requirement.acceptance.map((criterion) => ({ ...criterion })),
     required_gates: [...gateIds],
-  };
-  return specification;
+  }));
+}
+
+function byId(left: string, right: string): number {
+  return left < right ? -1 : left > right ? 1 : 0;
+}
+
+/**
+ * Topological order over plan task specifications (Kahn, smallest ready id
+ * first for determinism). `validatePlanProposal` already rejected cycles, so
+ * every task is always orderable.
+ */
+function orderedPlanTasks(tasks: readonly TaskSpecification[]): readonly TaskSpecification[] {
+  const byTaskId = new Map(tasks.map((task) => [task.id, task]));
+  const indegree = new Map<string, number>(tasks.map((task) => [task.id, 0]));
+  const dependents = new Map<string, string[]>();
+  for (const task of tasks) {
+    for (const dependency of task.dependencies) {
+      if (!byTaskId.has(dependency)) continue;
+      indegree.set(task.id, (indegree.get(task.id) ?? 0) + 1);
+      dependents.set(dependency, [...(dependents.get(dependency) ?? []), task.id]);
+    }
+  }
+  const ready = tasks.map((task) => task.id).filter((id) => (indegree.get(id) ?? 0) === 0);
+  ready.sort(byId);
+  const ordered: TaskSpecification[] = [];
+  while (ready.length > 0) {
+    const next = ready.shift() as string;
+    ordered.push(byTaskId.get(next) as TaskSpecification);
+    for (const dependent of (dependents.get(next) ?? []).sort(byId)) {
+      const remaining = (indegree.get(dependent) ?? 0) - 1;
+      indegree.set(dependent, remaining);
+      if (remaining === 0) {
+        const insertAt = ready.findIndex((id) => id > dependent);
+        ready.splice(insertAt === -1 ? ready.length : insertAt, 0, dependent);
+      }
+    }
+  }
+  return ordered;
 }
 
 async function phasePlan(ctx: PipelineContext, gateIds: readonly string[]): Promise<PhaseStep> {
@@ -1467,7 +1544,7 @@ async function phasePlan(ctx: PipelineContext, gateIds: readonly string[]): Prom
   }
   ctx.impactSet = impactSet;
   const approvedDigest = readImpactSetContent(impactSet).content_digest;
-  const specification = taskSpecificationFor(ctx, impactSet, gateIds);
+  const specifications = taskSpecificationsFor(ctx, impactSet, gateIds);
   const records = generateExecutionPlan(
     impactSet,
     approvedDigest,
@@ -1480,7 +1557,9 @@ async function phasePlan(ctx: PipelineContext, gateIds: readonly string[]): Prom
         requirement_baseline_digest: ctx.baselineDigest,
         policy_digest: ctx.workingState.policy_digest,
       },
-      proposal: [specification as unknown as Record<string, unknown>],
+      proposal: specifications.map(
+        (specification) => specification as unknown as Record<string, unknown>,
+      ),
       constraints: { allowedCapabilities: [], knownTools: [], knownGates: gateIds },
     },
     { iterationId: ctx.iterationId, actor: "workflow-engine", timestamp: nowOf(deps) },
@@ -1587,7 +1666,10 @@ async function phaseContext(ctx: PipelineContext): Promise<PhaseStep> {
   return { continue: true };
 }
 
-function buildEnvelope(ctx: PipelineContext): {
+function buildEnvelope(
+  ctx: PipelineContext,
+  task: TaskSpecification,
+): {
   readonly envelope: TaskEnvelope;
   readonly grantDigest: string;
 } {
@@ -1598,10 +1680,6 @@ function buildEnvelope(ctx: PipelineContext): {
       "binding_drift",
       "execute phase requires a plan and a context bundle",
     );
-  }
-  const task = plan.content.tasks[0];
-  if (task === undefined) {
-    throw new OrchestrationError("configuration", "execution plan carries no tasks");
   }
   const policy = effectivePolicy();
   const loopPolicy = resolveLoopPolicy(policy);
@@ -1627,7 +1705,7 @@ function buildEnvelope(ctx: PipelineContext): {
     objective: task.objective,
     expected_output: task.expected_outputs.join(", "),
     acceptance_criteria: task.acceptance.map((criterion) => criterion.description),
-    dependency_task_ids: [],
+    dependency_task_ids: [...task.dependencies],
     required_gate_ids: [...task.required_gates],
     input_node_revisions: { [ctx.proposal.intent.id]: 1 },
     context_bundle_id: bundle.context_bundle_id,
@@ -1648,6 +1726,53 @@ function buildEnvelope(ctx: PipelineContext): {
     stale_input_behavior: "recompile",
   });
   return { envelope, grantDigest: grant.digest };
+}
+
+/**
+ * Mark a finished task accepted (card T2): the task node gains a revision
+ * whose status is `accepted`, which is the graph-native signal status
+ * derivation uses for task progress. Called after a claimed run and on the
+ * re-entry skip path (a crash may have landed between the run and the
+ * marking); already-accepted tasks are a no-op.
+ */
+async function markTaskAccepted(ctx: PipelineContext, taskId: string): Promise<void> {
+  const { deps } = ctx;
+  const graph = materializeProjectGraph(deps.projectRoot);
+  let current: NodeRecord | undefined;
+  try {
+    current = graph.nodes
+      .filter((node) => node.id === taskId && node.type === "Task")
+      .sort((left, right) => left.revision - right.revision)
+      .at(-1);
+  } finally {
+    graph.close();
+  }
+  if (current === undefined || current.status === "accepted") return;
+  const revision = current.revision + 1;
+  const base: Record<string, unknown> = Object.fromEntries(
+    Object.entries(current).filter(([key]) => key !== "digest"),
+  );
+  base.revision = revision;
+  base.status = "accepted";
+  base.provenance = {
+    iteration_id: ctx.iterationId,
+    actor: "workflow-engine",
+    timestamp: nowOf(deps),
+  };
+  const node = { ...base, digest: contentDigest(base) };
+  const validation = validateSchema("node", node);
+  if (!validation.valid) {
+    throw new OrchestrationError(
+      "configuration",
+      `invalid accepted task node: ${validation.errors.map((issue) => issue.message).join("; ")}`,
+    );
+  }
+  await commitArtifacts(deps, ctx.workflowOperationId, currentAttemptId(ctx), [
+    {
+      path: `artifacts/tasks/${taskId}/${String(revision)}.json`,
+      content: `${canonicalizeJson(node)}\n`,
+    },
+  ]);
 }
 
 function mapRunFailure(
@@ -1677,105 +1802,117 @@ async function phaseExecute(ctx: PipelineContext): Promise<PhaseStep> {
   ctx.plan = plan;
   const storedBundle = ctx.bundle ?? loadBundleRecord(ctx);
   if (storedBundle !== undefined) ctx.bundle = storedBundle;
-  const task = plan.content.tasks[0];
-  if (task === undefined) throw new OrchestrationError("configuration", "plan carries no tasks");
+  const tasks = orderedPlanTasks(plan.content.tasks);
+  if (tasks.length === 0) throw new OrchestrationError("configuration", "plan carries no tasks");
 
-  const completed = loadCompletedRun(ctx, task.id);
-  if (completed !== undefined && completed.result.completion_claimed) {
-    // A claimed run whose committed evaluation failed must be re-executed
-    // (the evaluation phase blocked back into execute); any other claimed
-    // run is final and the phase is a no-op on re-entry.
-    const completedDigest = sha256Hex(canonicalizeJson(completed.result));
-    const failedEvaluation = loadEvaluateArtifacts(deps, ctx.iterationId).some(
-      (artifact) => artifact.run_digest === completedDigest && !artifact.result.passed,
-    );
-    if (!failedEvaluation) {
-      ctx.run = completed;
-      await ctx.engine.commitCheckpoint(ctx.workflowOperationId, {
-        boundary: PHASE_CHECKPOINT_BOUNDARY.execute,
-        proposal: { phase: "verify" },
-      });
-      refreshWorkingState(ctx);
-      return { continue: true };
-    }
-  }
-
+  // One run per task, in dependency order. A claimed run is final (unless its
+  // committed evaluation failed), so a resume re-executes only the tasks that
+  // never finished; the phase checkpoint lands once every task has one.
   const executor = deps.execute ?? createDirectExecutor();
-  const built = buildEnvelope(ctx);
-  const envelope = built.envelope;
-  ctx.envelope = envelope;
-  // A run left open by an interrupted process was reconciled by resume into
-  // exactly one successor run; attach to it instead of opening a duplicate.
-  const runId = loadOpenRunId(ctx, task.id);
-  let activeRunId: string;
-  if (runId !== undefined) {
-    activeRunId = runId;
-  } else {
-    const started = await ctx.engine.startRun(ctx.workflowOperationId, {
-      taskId: task.id,
-      contextBundleId: envelope.context_bundle_id,
-    });
-    activeRunId = started.run_id;
-    await commitRunNode(ctx, activeRunId);
-  }
-  // A throw here is a process-level crash: no terminal record is written and
-  // resume reconciles the open run. Typed failures come back as results.
-  const result = await executor(envelope as AgentTaskEnvelope);
-  await ctx.engine.terminateRun(ctx.workflowOperationId, {
-    runId: activeRunId,
-    outcome: result.outcome,
-    // `process_interruption` is reserved for harness-written RunInterrupted
-    // records; an adapter-reported reason always maps onto a terminal reason.
-    terminationReason:
-      result.termination_reason === "process_interruption"
-        ? "adapter_failure"
-        : result.termination_reason,
-  });
-  await commitArtifacts(deps, ctx.workflowOperationId, currentAttemptId(ctx), [
-    {
-      path: runResultArtifactPath(activeRunId),
-      content: `${canonicalizeJson(result)}\n`,
-    },
-  ]);
-  ctx.run = { runId: activeRunId, result };
-
-  if (!(result.outcome === "handoff" && result.completion_claimed)) {
-    const failure = mapRunFailure(result);
-    if ("abort" in failure) {
-      await ctx.engine.abort(ctx.workflowOperationId, {
-        reason: failure.abort,
-        detail: `task ${task.id} ended in correct_block: ${result.summary}`,
-      });
-      return {
-        continue: false,
-        outcome: {
-          status: "aborted",
-          workflowOperationId: ctx.workflowOperationId,
-          iterationId: ctx.iterationId,
-          reason: failure.abort,
-          detail: result.summary,
-        },
-      };
+  const grantDigests: string[] = [];
+  let lastRun: { readonly runId: string; readonly result: AgentRunResult } | undefined;
+  for (const task of tasks) {
+    const completed = loadCompletedRun(ctx, task.id);
+    if (completed !== undefined && completed.result.completion_claimed) {
+      // A claimed run whose committed evaluation failed must be re-executed
+      // (the evaluation phase blocked back into execute); any other claimed
+      // run is final and the task is a no-op on re-entry.
+      const completedDigest = sha256Hex(canonicalizeJson(completed.result));
+      const failedEvaluation = loadEvaluateArtifacts(deps, ctx.iterationId).some(
+        (artifact) => artifact.run_digest === completedDigest && !artifact.result.passed,
+      );
+      if (!failedEvaluation) {
+        await markTaskAccepted(ctx, task.id);
+        lastRun = completed;
+        continue;
+      }
     }
-    const outcome = await blockWithSnapshot(ctx, {
-      reason: failure.reason,
-      detail: `task ${task.id} did not complete: ${result.summary}`,
-      resumePhase: failure.resumePhase,
-      input: snapshotBaseInput(ctx, [
-        { task_id: task.id, required: true, outcome: result.outcome },
-      ]),
+
+    const built = buildEnvelope(ctx, task);
+    const envelope = built.envelope;
+    ctx.envelope = envelope;
+    grantDigests.push(built.grantDigest);
+    // A run left open by an interrupted process was reconciled by resume into
+    // exactly one successor run; attach to it instead of opening a duplicate.
+    const runId = loadOpenRunId(ctx, task.id);
+    let activeRunId: string;
+    if (runId !== undefined) {
+      activeRunId = runId;
+    } else {
+      const started = await ctx.engine.startRun(ctx.workflowOperationId, {
+        taskId: task.id,
+        contextBundleId: envelope.context_bundle_id,
+      });
+      activeRunId = started.run_id;
+      await commitRunNode(ctx, activeRunId);
+    }
+    // A throw here is a process-level crash: no terminal record is written and
+    // resume reconciles the open run. Typed failures come back as results.
+    const result = await executor(envelope as AgentTaskEnvelope);
+    await ctx.engine.terminateRun(ctx.workflowOperationId, {
+      runId: activeRunId,
+      outcome: result.outcome,
+      // `process_interruption` is reserved for harness-written RunInterrupted
+      // records; an adapter-reported reason always maps onto a terminal reason.
+      terminationReason:
+        result.termination_reason === "process_interruption"
+          ? "adapter_failure"
+          : result.termination_reason,
     });
-    return { continue: false, outcome };
+    await commitArtifacts(deps, ctx.workflowOperationId, currentAttemptId(ctx), [
+      {
+        path: runResultArtifactPath(activeRunId),
+        content: `${canonicalizeJson(result)}\n`,
+      },
+    ]);
+    lastRun = { runId: activeRunId, result };
+
+    if (!(result.outcome === "handoff" && result.completion_claimed)) {
+      const failure = mapRunFailure(result);
+      if ("abort" in failure) {
+        await ctx.engine.abort(ctx.workflowOperationId, {
+          reason: failure.abort,
+          detail: `task ${task.id} ended in correct_block: ${result.summary}`,
+        });
+        return {
+          continue: false,
+          outcome: {
+            status: "aborted",
+            workflowOperationId: ctx.workflowOperationId,
+            iterationId: ctx.iterationId,
+            reason: failure.abort,
+            detail: result.summary,
+          },
+        };
+      }
+      const outcome = await blockWithSnapshot(ctx, {
+        reason: failure.reason,
+        detail: `task ${task.id} did not complete: ${result.summary}`,
+        resumePhase: failure.resumePhase,
+        input: snapshotBaseInput(ctx, [
+          { task_id: task.id, required: true, outcome: result.outcome },
+        ]),
+      });
+      return { continue: false, outcome };
+    }
+    await markTaskAccepted(ctx, task.id);
   }
+  if (lastRun === undefined) {
+    throw new OrchestrationError("configuration", "execute phase produced no run");
+  }
+  ctx.run = lastRun;
 
   await ctx.engine.commitCheckpoint(ctx.workflowOperationId, {
     boundary: PHASE_CHECKPOINT_BOUNDARY.execute,
-    proposal: { phase: "verify", add_capability_grants: [built.grantDigest] },
+    proposal: {
+      phase: "verify",
+      ...(grantDigests.length > 0 ? { add_capability_grants: grantDigests } : {}),
+    },
     events: phaseLifecycleEvents({
       phase: "execute",
-      taskId: task.id,
-      runId: activeRunId,
-      outcome: result.outcome,
+      taskId: tasks.at(-1)?.id ?? "task_unknown",
+      runId: lastRun.runId,
+      outcome: lastRun.result.outcome,
     }),
   });
   refreshWorkingState(ctx);
@@ -2235,99 +2372,110 @@ async function phaseEvaluate(ctx: PipelineContext): Promise<PhaseStep> {
   if (plan === undefined)
     throw new OrchestrationError("binding_drift", "evaluate phase requires a plan");
   ctx.plan = plan;
-  const task = plan.content.tasks[0];
-  if (task === undefined) throw new OrchestrationError("configuration", "plan carries no tasks");
-  const run = ctx.run ?? loadCompletedRun(ctx, task.id);
-  if (run === undefined) {
-    throw new OrchestrationError("binding_drift", "evaluate phase requires a terminated run");
-  }
-  ctx.run = run;
-  const runDigest = sha256Hex(canonicalizeJson(run.result));
-  const stored = loadEvaluateArtifacts(deps, ctx.iterationId).find(
-    (artifact) => artifact.run_digest === runDigest,
-  );
-  let result: EvaluationPortResult;
-  if (stored !== undefined) {
-    // Same run, same verdict: replay the committed evaluation.
-    result = stored.result;
-  } else {
-    const port = deps.evaluate ?? createDefaultEvaluationPort();
-    result = await port({
-      taskId: task.id,
-      iterationId: ctx.iterationId,
-      run: run.result,
-      visibility: deps.trajectoryVisibility ?? "external-only",
-      budget: {
-        max_steps: ctx.envelope?.loop_policy.max_steps ?? 30,
-        max_tokens: ctx.envelope?.loop_policy.max_tokens ?? 120000,
-        max_duration_ms: ctx.envelope?.loop_policy.max_duration_ms ?? 2700000,
-      },
-      now: nowOf(deps),
-    });
-    await commitArtifacts(deps, ctx.workflowOperationId, currentAttemptId(ctx), [
-      {
-        path: `artifacts/evaluations/${result.evidenceId}/${String(result.record["digest"])}.json`,
-        content: `${canonicalizeJson(result.record)}\n`,
-      },
-      ...result.findings.map((finding) => {
-        const content = {
-          protocol_version: PROTOCOL_VERSION,
-          record_kind: "feedback",
-          id: finding.id,
-          type: "Finding",
-          iteration_id: ctx.iterationId,
-          status: "proposed",
-          summary: finding.summary,
-          created_at: nowOf(deps),
-        };
-        const record = { ...content, digest: contentDigest(content) };
-        const validation = validateSchema("feedback", record);
-        if (!validation.valid) {
-          throw new OrchestrationError(
-            "configuration",
-            `invalid evaluation finding record: ${validation.errors
-              .map((issue) => issue.message)
-              .join("; ")}`,
-          );
-        }
-        return {
-          path: `artifacts/findings/${finding.id}/proposed.json`,
-          content: `${canonicalizeJson(record)}\n`,
-        };
-      }),
-      {
-        path: evaluateArtifactPath(ctx.iterationId, runDigest),
-        content: `${canonicalizeJson({
-          record_kind: "orchestration_evaluate_result",
-          iteration_id: ctx.iterationId,
-          run_digest: runDigest,
-          result,
-        } satisfies EvaluatePhaseArtifact)}\n`,
-      },
-    ]);
-  }
-  ctx.evaluation = result;
+  const tasks = orderedPlanTasks(plan.content.tasks);
+  if (tasks.length === 0) throw new OrchestrationError("configuration", "plan carries no tasks");
+  // One evaluation per task run, in dependency order; a failed evaluation
+  // blocks the iteration back into execute for exactly that task.
+  const evaluations: EvaluationPortResult[] = [];
+  for (const task of tasks) {
+    const run = loadCompletedRun(ctx, task.id);
+    if (run === undefined) {
+      throw new OrchestrationError(
+        "binding_drift",
+        `evaluate phase requires a terminated run for task ${task.id}`,
+      );
+    }
+    const runDigest = sha256Hex(canonicalizeJson(run.result));
+    const stored = loadEvaluateArtifacts(deps, ctx.iterationId).find(
+      (artifact) => artifact.run_digest === runDigest,
+    );
+    let result: EvaluationPortResult;
+    if (stored !== undefined) {
+      // Same run, same verdict: replay the committed evaluation.
+      result = stored.result;
+    } else {
+      const port = deps.evaluate ?? createDefaultEvaluationPort();
+      result = await port({
+        taskId: task.id,
+        iterationId: ctx.iterationId,
+        run: run.result,
+        visibility: deps.trajectoryVisibility ?? "external-only",
+        budget: {
+          max_steps: ctx.envelope?.loop_policy.max_steps ?? 30,
+          max_tokens: ctx.envelope?.loop_policy.max_tokens ?? 120000,
+          max_duration_ms: ctx.envelope?.loop_policy.max_duration_ms ?? 2700000,
+        },
+        now: nowOf(deps),
+      });
+      await commitArtifacts(deps, ctx.workflowOperationId, currentAttemptId(ctx), [
+        {
+          path: `artifacts/evaluations/${result.evidenceId}/${String(result.record["digest"])}.json`,
+          content: `${canonicalizeJson(result.record)}\n`,
+        },
+        ...result.findings.map((finding) => {
+          const content = {
+            protocol_version: PROTOCOL_VERSION,
+            record_kind: "feedback",
+            id: finding.id,
+            type: "Finding",
+            iteration_id: ctx.iterationId,
+            status: "proposed",
+            summary: finding.summary,
+            created_at: nowOf(deps),
+          };
+          const record = { ...content, digest: contentDigest(content) };
+          const validation = validateSchema("feedback", record);
+          if (!validation.valid) {
+            throw new OrchestrationError(
+              "configuration",
+              `invalid evaluation finding record: ${validation.errors
+                .map((issue) => issue.message)
+                .join("; ")}`,
+            );
+          }
+          return {
+            path: `artifacts/findings/${finding.id}/proposed.json`,
+            content: `${canonicalizeJson(record)}\n`,
+          };
+        }),
+        {
+          path: evaluateArtifactPath(ctx.iterationId, runDigest),
+          content: `${canonicalizeJson({
+            record_kind: "orchestration_evaluate_result",
+            iteration_id: ctx.iterationId,
+            run_digest: runDigest,
+            result,
+          } satisfies EvaluatePhaseArtifact)}\n`,
+        },
+      ]);
+    }
+    ctx.evaluation = result;
+    evaluations.push(result);
 
-  if (!result.passed) {
-    const outcome = await blockWithSnapshot(ctx, {
-      reason: "repairable_gate_failure",
-      detail: `evaluation failed: ${result.summary}`,
-      resumePhase: "execute",
-      input: snapshotBaseInput(ctx, [
-        { task_id: task.id, required: true, outcome: run.result.outcome },
-      ]),
-    });
-    return { continue: false, outcome };
+    if (!result.passed) {
+      const outcome = await blockWithSnapshot(ctx, {
+        reason: "repairable_gate_failure",
+        detail: `evaluation failed for task ${task.id}: ${result.summary}`,
+        resumePhase: "execute",
+        input: snapshotBaseInput(ctx, [
+          { task_id: task.id, required: true, outcome: run.result.outcome },
+        ]),
+      });
+      return { continue: false, outcome };
+    }
   }
 
+  const lastEvaluation = evaluations.at(-1);
   await ctx.engine.commitCheckpoint(ctx.workflowOperationId, {
     boundary: PHASE_CHECKPOINT_BOUNDARY.evaluate,
     proposal: { phase: "snapshot" },
     events: phaseLifecycleEvents({
       phase: "evaluate",
-      caseId: result.evidenceId,
-      passed: result.passed,
-      findingIds: result.findings.map((finding) => finding.id),
+      caseId: lastEvaluation?.evidenceId ?? "case_none",
+      passed: evaluations.every((evaluation) => evaluation.passed),
+      findingIds: evaluations.flatMap((evaluation) =>
+        evaluation.findings.map((finding) => finding.id),
+      ),
     }),
   });
   refreshWorkingState(ctx);
@@ -2416,42 +2564,70 @@ async function phaseSnapshot(ctx: PipelineContext): Promise<PhaseStep> {
   if (plan === undefined)
     throw new OrchestrationError("binding_drift", "snapshot phase requires a plan");
   ctx.plan = plan;
-  const task = plan.content.tasks[0];
-  if (task === undefined) throw new OrchestrationError("configuration", "plan carries no tasks");
-  const run = ctx.run ?? loadCompletedRun(ctx, task.id);
-  if (run === undefined)
-    throw new OrchestrationError("binding_drift", "snapshot phase requires a run");
-  ctx.run = run;
+  const tasks = orderedPlanTasks(plan.content.tasks);
+  if (tasks.length === 0) throw new OrchestrationError("configuration", "plan carries no tasks");
+  // Every planned task needs its terminated run and its committed evaluation;
+  // the snapshot completes only when all of them succeeded.
+  const taskRuns: {
+    readonly taskId: string;
+    readonly runId: string;
+    readonly result: AgentRunResult;
+  }[] = [];
+  for (const task of tasks) {
+    const run = loadCompletedRun(ctx, task.id);
+    if (run === undefined) {
+      throw new OrchestrationError(
+        "binding_drift",
+        `snapshot phase requires a run for task ${task.id}`,
+      );
+    }
+    taskRuns.push({ taskId: task.id, runId: run.runId, result: run.result });
+  }
+  ctx.run = taskRuns.at(-1) as { readonly runId: string; readonly result: AgentRunResult };
   const gates = ctx.gateOutcome;
-  const evaluation = ctx.evaluation;
+  const evaluations = taskRuns.map(
+    (taskRun) =>
+      loadEvaluateArtifacts(deps, ctx.iterationId).find(
+        (artifact) => artifact.run_digest === sha256Hex(canonicalizeJson(taskRun.result)),
+      )?.result,
+  );
   const success =
-    run.result.completion_claimed &&
+    taskRuns.every((taskRun) => taskRun.result.completion_claimed) &&
     (gates === undefined || gates.completed_allowed) &&
-    (evaluation?.passed ?? false);
+    evaluations.every((evaluation) => evaluation?.passed === true);
 
   const verifyStored = loadVerifyArtifact(deps, ctx.iterationId, verifyBindings(ctx));
   const snapshot = buildSnapshot({
-    ...snapshotBaseInput(ctx, [
-      { task_id: task.id, required: true, outcome: success ? "success" : run.result.outcome },
-    ]),
+    ...snapshotBaseInput(
+      ctx,
+      taskRuns.map((taskRun) => ({
+        task_id: taskRun.taskId,
+        required: true,
+        outcome: success ? ("success" as const) : taskRun.result.outcome,
+      })),
+    ),
     snapshot_id: `snapshot_${sha256Hex(`${ctx.iterationId}:completed`).slice(0, 16)}`,
     final_commit: deps.readBaseline(),
     created_at: nowOf(deps),
-    ...(plan === undefined ? {} : { execution_plan_id: plan.node.id }),
-    runs: [
-      { run_id: run.runId, required: true, outcome: success ? "success" : run.result.outcome },
-    ],
+    execution_plan_id: plan.node.id,
+    runs: taskRuns.map((taskRun) => ({
+      run_id: taskRun.runId,
+      required: true,
+      outcome: success ? ("success" as const) : taskRun.result.outcome,
+    })),
     findings: [
       ...(verifyStored?.findings ?? []).map((finding) => ({
         finding_id: finding.id,
         blocking: true,
         status: "closed" as const,
       })),
-      ...(evaluation?.findings ?? []).map((finding) => ({
-        finding_id: finding.id,
-        blocking: true,
-        status: "proposed" as const,
-      })),
+      ...evaluations.flatMap((evaluation) =>
+        (evaluation?.findings ?? []).map((finding) => ({
+          finding_id: finding.id,
+          blocking: true,
+          status: "proposed" as const,
+        })),
+      ),
     ],
     evidence: [
       ...(verifyStored?.results ?? []).map((result) => ({
@@ -2461,17 +2637,19 @@ async function phaseSnapshot(ctx: PipelineContext): Promise<PhaseStep> {
         provisional: false,
         stale: false,
       })),
-      ...(evaluation === undefined
-        ? []
-        : [
-            {
-              evidence_id: evaluation.evidenceId,
-              mandatory: true,
-              passed: evaluation.passed,
-              provisional: false,
-              stale: false,
-            },
-          ]),
+      ...evaluations.flatMap((evaluation) =>
+        evaluation === undefined
+          ? []
+          : [
+              {
+                evidence_id: evaluation.evidenceId,
+                mandatory: true,
+                passed: evaluation.passed,
+                provisional: false,
+                stale: false,
+              },
+            ],
+      ),
     ],
   });
   if (snapshot.status !== "completed") {

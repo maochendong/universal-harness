@@ -33,7 +33,9 @@ import {
   type GateDefinition,
   type OrchestrationOutcome,
   type OrchestratorDependencies,
+  type PlanTasksPort,
   type SnapshotRecord,
+  type TaskSpecification,
 } from "../../src/index.js";
 import {
   harnessRootFor,
@@ -722,6 +724,258 @@ describe("phase orchestrator", { timeout: 30000 }, () => {
     };
     expect(fresh.verdict).toBe("passed");
     expect(fresh.assertions[0]?.passed).toBe(true);
+  });
+
+  it("plans, executes and tracks a three-task iteration with one approval", async () => {
+    const newId = sequentialIds();
+    const parent = makeTempDir("harness-orch-multitask-");
+    const bootstrapped = await createNewProject(
+      { parentDirectory: parent, name: "orch-multitask", intent: INTENT },
+      { vcs: createGitVcsAdapter(), now: () => FIXED_NOW, newId: (kind) => newId(kind) },
+    );
+    if (!bootstrapped.ok) throw new Error(bootstrapped.error.message);
+    const projectRoot = bootstrapped.value.projectRoot;
+    const fake = recordingExecutor();
+    const planTasks: PlanTasksPort = ({ requirements, impactPaths, gateIds }) => {
+      const requirementId = requirements[0]?.id ?? "requirement_none";
+      const spec = (
+        id: string,
+        objective: string,
+        dependencies: readonly string[],
+      ): TaskSpecification => ({
+        id,
+        objective,
+        impact_paths: impactPaths.map((path) => [...path]),
+        expected_outputs: [requirementId],
+        capabilities: [],
+        tools: [],
+        dependencies: [...dependencies],
+        risk: "low",
+        budget: { steps: 30, tokens: 120000 },
+        acceptance: [
+          { description: `${objective} done`, verification: "mandatory gate suite passes" },
+        ],
+        required_gates: [...gateIds],
+      });
+      return [
+        spec("task_alpha", "alpha", []),
+        spec("task_beta", "beta", ["task_alpha"]),
+        spec("task_gamma", "gamma", ["task_beta"]),
+      ];
+    };
+    const deps = makeDeps(projectRoot, newId, {
+      execute: fake.executor,
+      planTasks,
+      tasksProjection: renderTasksProjection,
+    });
+
+    let outcome = await runIteration(deps, {
+      intent: INTENT,
+      iterationId: bootstrapped.value.iterationId,
+    });
+    while (outcome.status === "approval_required") {
+      outcome = await approveAndResume(deps, outcome);
+    }
+    expect(outcome.status).toBe("completed");
+    if (outcome.status !== "completed") return;
+
+    // The whole plan was covered by exactly the baseline and impact set
+    // approvals -- no per-task approval requests.
+    expect(approvalRequestsFor(projectRoot, outcome.workflowOperationId)).toHaveLength(2);
+
+    // Envelopes went out in dependency order.
+    expect(fake.calls.map((envelope) => envelope.task_id)).toEqual([
+      "task_alpha",
+      "task_beta",
+      "task_gamma",
+    ]);
+
+    // The graph carries three Task nodes and two DEPENDS_ON edges, and the
+    // projection renders the numbered list with dependency annotations.
+    const { database } = materializeLedger({ projectRoot, databasePath: ":memory:" });
+    try {
+      const nodes: NodeRecord[] = [];
+      let cursor: string | undefined;
+      do {
+        const page = pageNodes(database, {
+          limit: 500,
+          ...(cursor === undefined ? {} : { cursor }),
+        });
+        nodes.push(...page.items);
+        cursor = page.nextCursor;
+      } while (cursor !== undefined);
+      const edges: EdgeRecord[] = [];
+      let edgeCursor: string | undefined;
+      do {
+        const page = pageEdges(database, {
+          limit: 500,
+          ...(edgeCursor === undefined ? {} : { cursor: edgeCursor }),
+        });
+        edges.push(...page.items);
+        edgeCursor = page.nextCursor;
+      } while (edgeCursor !== undefined);
+      expect(nodes.filter((node) => node.type === "Task")).toHaveLength(3);
+      expect(edges.filter((edge) => edge.type === "DEPENDS_ON")).toHaveLength(2);
+      // Every task ended marked accepted; progress is complete.
+      const status = collectProjectStatus(projectRoot);
+      expect(status.task_progress).toEqual({ completed: 3, total: 3 });
+    } finally {
+      database.close();
+    }
+
+    const tasksMarkdown = readFileSync(
+      join(projectRoot, ".harness", "projections", "views", "tasks.md"),
+      "utf8",
+    );
+    expect(tasksMarkdown).toContain("- [x] T001 alpha");
+    expect(tasksMarkdown).toContain("- [x] T002 beta (depends on T001)");
+    expect(tasksMarkdown).toContain("- [x] T003 gamma (depends on T002)");
+  });
+
+  it("reports 2/3 progress and resumes only the unfinished tasks", async () => {
+    const newId = sequentialIds();
+    const parent = makeTempDir("harness-orch-progress-");
+    const bootstrapped = await createNewProject(
+      { parentDirectory: parent, name: "orch-progress", intent: INTENT },
+      { vcs: createGitVcsAdapter(), now: () => FIXED_NOW, newId: (kind) => newId(kind) },
+    );
+    if (!bootstrapped.ok) throw new Error(bootstrapped.error.message);
+    const projectRoot = bootstrapped.value.projectRoot;
+    const calls: string[] = [];
+    let blockGamma = true;
+    const planTasks: PlanTasksPort = ({ requirements, impactPaths, gateIds }) => {
+      const requirementId = requirements[0]?.id ?? "requirement_none";
+      const spec = (id: string, dependencies: readonly string[]): TaskSpecification => ({
+        id,
+        objective: id,
+        impact_paths: impactPaths.map((path) => [...path]),
+        expected_outputs: [requirementId],
+        capabilities: [],
+        tools: [],
+        dependencies: [...dependencies],
+        risk: "low",
+        budget: { steps: 30, tokens: 120000 },
+        acceptance: [{ description: `${id} done`, verification: "mandatory gate suite passes" }],
+        required_gates: [...gateIds],
+      });
+      return [
+        spec("task_alpha", []),
+        spec("task_beta", ["task_alpha"]),
+        spec("task_gamma", ["task_beta"]),
+      ];
+    };
+    const deps = makeDeps(projectRoot, newId, {
+      planTasks,
+      execute: (envelope) => {
+        calls.push(envelope.task_id);
+        if (blockGamma && envelope.task_id === "task_gamma") {
+          const result = claimedResult(envelope, "gamma blocked");
+          return Promise.resolve({
+            ...result,
+            completion_claimed: false,
+            summary: "gamma needs human input",
+          });
+        }
+        return Promise.resolve(claimedResult(envelope, "ok"));
+      },
+    });
+
+    let outcome = await runIteration(deps, {
+      intent: INTENT,
+      iterationId: bootstrapped.value.iterationId,
+    });
+    outcome = await approveAndResume(deps, outcome);
+    outcome = await approveAndResume(deps, outcome);
+    expect(outcome.status).toBe("blocked");
+    expect(calls).toEqual(["task_alpha", "task_beta", "task_gamma"]);
+
+    // Two of three tasks are marked accepted: status reports 2/3 and points
+    // at the third task.
+    const blocked = collectProjectStatus(projectRoot);
+    expect(blocked.task_progress).toEqual({
+      completed: 2,
+      total: 3,
+      next_task_id: "task_gamma",
+    });
+    expect(blocked.next_action).toContain("2/3");
+    expect(blocked.next_action).toContain("task_gamma");
+
+    // Resume: the finished tasks are skipped, only the unfinished one runs.
+    blockGamma = false;
+    if (outcome.status !== "blocked") return;
+    outcome = await resumeIteration(deps, outcome.workflowOperationId, undefined);
+    expect(outcome.status).toBe("completed");
+    expect(calls).toEqual(["task_alpha", "task_beta", "task_gamma", "task_gamma"]);
+    expect(collectProjectStatus(projectRoot).task_progress).toEqual({ completed: 3, total: 3 });
+  });
+
+  it("reconciles a crash mid-task-list and re-executes only the crashed task onward", async () => {
+    const newId = sequentialIds();
+    const parent = makeTempDir("harness-orch-multicrash-");
+    const bootstrapped = await createNewProject(
+      { parentDirectory: parent, name: "orch-multicrash", intent: INTENT },
+      { vcs: createGitVcsAdapter(), now: () => FIXED_NOW, newId: (kind) => newId(kind) },
+    );
+    if (!bootstrapped.ok) throw new Error(bootstrapped.error.message);
+    const projectRoot = bootstrapped.value.projectRoot;
+    const calls: string[] = [];
+    const planTasks: PlanTasksPort = ({ requirements, impactPaths, gateIds }) => {
+      const requirementId = requirements[0]?.id ?? "requirement_none";
+      const spec = (id: string, dependencies: readonly string[]): TaskSpecification => ({
+        id,
+        objective: id,
+        impact_paths: impactPaths.map((path) => [...path]),
+        expected_outputs: [requirementId],
+        capabilities: [],
+        tools: [],
+        dependencies: [...dependencies],
+        risk: "low",
+        budget: { steps: 30, tokens: 120000 },
+        acceptance: [{ description: `${id} done`, verification: "mandatory gate suite passes" }],
+        required_gates: [...gateIds],
+      });
+      return [
+        spec("task_alpha", []),
+        spec("task_beta", ["task_alpha"]),
+        spec("task_gamma", ["task_beta"]),
+      ];
+    };
+    const deps = makeDeps(projectRoot, newId, {
+      planTasks,
+      execute: (envelope) => {
+        calls.push(envelope.task_id);
+        if (
+          envelope.task_id === "task_beta" &&
+          calls.filter((id) => id === "task_beta").length === 1
+        ) {
+          // Simulated process crash: no terminal record, no cleanup.
+          return Promise.reject(new Error("simulated process crash"));
+        }
+        return Promise.resolve(claimedResult(envelope, "ok"));
+      },
+    });
+
+    let outcome = await runIteration(deps, {
+      intent: INTENT,
+      iterationId: bootstrapped.value.iterationId,
+    });
+    outcome = await approveAndResume(deps, outcome);
+    if (outcome.status !== "approval_required") {
+      throw new Error(`expected pipeline to pause before execute, got ${outcome.status}`);
+    }
+    const workflowOperationId = outcome.required.workflow_operation_id;
+    await expect(approveAndResume(deps, outcome)).rejects.toThrow("simulated process crash");
+    expect(calls).toEqual(["task_alpha", "task_beta"]);
+
+    outcome = await resumeIteration(deps, workflowOperationId, undefined);
+    expect(outcome.status).toBe("completed");
+    // Alpha was never re-executed; beta got exactly one successor run.
+    expect(calls).toEqual(["task_alpha", "task_beta", "task_beta", "task_gamma"]);
+    const repository = new LedgerRepository({
+      projectRoot,
+      readBaseline: () => headOf(projectRoot),
+    });
+    expect(repository.replay().edges.filter((edge) => edge.type === "RESUMES")).toHaveLength(1);
   });
 
   it("aborts an open operation and closes its pending approval requests", async () => {
