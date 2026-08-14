@@ -1145,6 +1145,65 @@ describe("phase orchestrator", { timeout: 30000 }, () => {
     expect(outcome.status).toBe("input_required");
     if (outcome.status !== "input_required") return;
     expect(outcome.questions.length).toBeGreaterThan(0);
+    // The plain path never invents options.
+    for (const question of outcome.questions) {
+      expect(question.options).toBeUndefined();
+    }
+    expect(findOpenWorkflowOperation(projectRoot, () => headOf(projectRoot))).toBeUndefined();
+  });
+
+  it("surfaces optioned clarification questions from the interpreter, deterministically", async () => {
+    const newId = sequentialIds();
+    const projectRoot = await bootstrapProject("orch-clarify", newId);
+    const deps = makeDeps(projectRoot, newId, {
+      interpret: (intent) =>
+        intent.includes("ambiguous")
+          ? {
+              clarification: [
+                {
+                  subject: "intent" as const,
+                  question: "which delivery channel should the change target?",
+                  options: [" SSE push ", "polling", "other", "polling"],
+                },
+                {
+                  subject: "requirement" as const,
+                  question: "which data store backs the feature?",
+                  options: ["sqlite", "postgres"],
+                },
+              ],
+            }
+          : undefined,
+    });
+
+    const first = await runIteration(deps, { intent: "an ambiguous change" });
+    expect(first.status).toBe("input_required");
+    if (first.status !== "input_required") return;
+    expect(first.questions).toHaveLength(2);
+    for (const question of first.questions) {
+      expect(question.options?.length).toBeGreaterThanOrEqual(3);
+      expect(question.options?.length).toBeLessThanOrEqual(5);
+      expect(question.options?.at(-1)).toBe("other");
+    }
+    // Options are trimmed, de-duplicated and keep the interpreter's order.
+    expect(first.questions[0]?.options).toEqual(["SSE push", "polling", "other"]);
+    expect(first.questions[1]?.options).toEqual(["sqlite", "postgres", "other"]);
+
+    // Identical intent, byte-identical questions.
+    const second = await runIteration(deps, { intent: "an ambiguous change" });
+    expect(JSON.stringify(second)).toBe(JSON.stringify(first));
+
+    // A malformed offer is a port error, never silently completed.
+    const broken = makeDeps(projectRoot, newId, {
+      interpret: () => ({
+        clarification: [
+          { subject: "intent" as const, question: "pick one", options: ["only-choice"] },
+        ],
+      }),
+    });
+    await expect(runIteration(broken, { intent: "an ambiguous change" })).rejects.toThrow(
+      /2-4 options/u,
+    );
+
     expect(findOpenWorkflowOperation(projectRoot, () => headOf(projectRoot))).toBeUndefined();
   });
 

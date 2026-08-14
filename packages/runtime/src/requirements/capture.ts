@@ -42,6 +42,13 @@ export interface ClarificationQuestion {
   /** 0-based index into the input list the question refers to, when applicable. */
   readonly index?: number;
   readonly question: string;
+  /**
+   * Explicit choices offered for this question (comparative design direction
+   * 4): 2-4 options with `other` as the final escape entry. Absent for the
+   * plain free-text question form -- an absent options list must never be
+   * read as an implicit answer.
+   */
+  readonly options?: readonly string[];
 }
 
 export interface CapturedAcceptanceCriterion {

@@ -457,6 +457,8 @@ any nonterminal state → aborted（仅显式取消或不可恢复）
 
 Mode Selection 发生在 Requirement Capture 与 Baseline Approval 之后。只有 Intent 已满足结构化 Schema，或 Pack 能以确定性规则无损转换时，录入阶段才可进入 `direct`；需要语义解释、补全或澄清的自由文本 `--intent` 必须先通过受限 `single-loop` 完成需求录入，不能因为后续实现步骤确定性强而跳过该 Loop。
 
+澄清前置（SpecKit 对照设计方向 4）：Intent Interpreter 判定意图歧义时可返回结构化澄清请求——每个问题带 2–4 个显式选项，Harness 统一追加 `other` 逃逸项并拒绝畸形提议（选项缺失或数量不符）；Capture 相位以 `input_required` 挂起，不开工作流。无 Interpreter 或返回 `undefined` 时保持纯文本问题形态。回答通过新一轮 Intent Capture 重新进入，仍走自己的 Baseline 批准门，绝不绕过。
+
 Planner 输出声明式 Task Specification：objective、expected output、dependency、capability、risk、budget、acceptance criteria 和 required gate，不输出特权 Shell 命令或直接 Tool Invocation。Workflow Engine 在执行前校验、合并、拒绝、重排或暂停 Plan。
 
 ### 10.2 WorkingState 与 Context 生命周期

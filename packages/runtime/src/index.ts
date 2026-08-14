@@ -660,6 +660,7 @@ export {
   runIteration,
   type AbortIterationInput,
   type AbortedIteration,
+  type ClarificationOffer,
   type EvaluationPort,
   type EvaluationPortInput,
   type EvaluationPortResult,

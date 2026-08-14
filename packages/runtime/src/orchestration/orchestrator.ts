@@ -168,14 +168,30 @@ export interface InterpretedIntent {
 }
 
 /**
+ * Structured clarification offer (comparative design direction 4, card T4):
+ * an interpreter that judges the intent ambiguous returns the questions to
+ * ask, each carrying 2-4 explicit options; the harness appends the `other`
+ * escape and refuses malformed offers instead of silently completing
+ * anything.
+ */
+export interface ClarificationOffer {
+  readonly clarification: readonly ClarificationQuestion[];
+}
+
+/**
  * Restricted capture port (design 10.1): free-text intent enters the pipeline
  * only through semantic interpretation or a deterministic lossless Pack
  * conversion. Returning `undefined` means the intent cannot be captured and
- * the orchestrator pauses for mandatory input.
+ * the orchestrator pauses for mandatory input; returning a ClarificationOffer
+ * pauses with structured, optioned questions.
  */
 export type IntentInterpreter = (
   intent: string,
-) => Promise<InterpretedIntent | undefined> | InterpretedIntent | undefined;
+) =>
+  | Promise<InterpretedIntent | ClarificationOffer | undefined>
+  | InterpretedIntent
+  | ClarificationOffer
+  | undefined;
 
 /**
  * Executor port for the execute phase: one Task Envelope in, one structured
@@ -705,6 +721,42 @@ function captureIdMint(
   };
 }
 
+/** Escape entry appended to every optioned clarification question (card T4). */
+const CLARIFICATION_OTHER_OPTION = "other";
+
+/**
+ * Validate and normalize an interpreter's clarification offer: every offered
+ * question must carry 2-4 distinct non-blank options, and the harness
+ * appends the `other` escape itself. A malformed offer is a port error, never
+ * something to complete silently.
+ */
+function normalizeClarificationOffer(offer: ClarificationOffer): readonly ClarificationQuestion[] {
+  if (offer.clarification.length === 0) {
+    throw new OrchestrationError(
+      "configuration",
+      "clarification offer carries no questions; return undefined for the plain input form",
+    );
+  }
+  return offer.clarification.map((question) => {
+    const choices = [
+      ...new Set(
+        (question.options ?? [])
+          .map((option) => option.trim())
+          .filter((option) => option.length > 0 && option !== CLARIFICATION_OTHER_OPTION),
+      ),
+    ];
+    if (choices.length < 2 || choices.length > 4) {
+      throw new OrchestrationError(
+        "configuration",
+        `clarification question ${JSON.stringify(question.question)} must offer 2-4 options, got ${String(
+          (question.options ?? []).length,
+        )}`,
+      );
+    }
+    return { ...question, options: [...choices, CLARIFICATION_OTHER_OPTION] };
+  });
+}
+
 async function captureProposal(
   deps: OrchestratorDependencies,
   intent: string,
@@ -716,6 +768,14 @@ async function captureProposal(
     }
 > {
   const interpreted = deps.interpret === undefined ? undefined : await deps.interpret(intent);
+  if (typeof interpreted === "object" && interpreted !== null && "clarification" in interpreted) {
+    // The interpreter judged the intent ambiguous and offered structured,
+    // optioned questions; they surface verbatim (plus the `other` escape).
+    return {
+      status: "clarification_required",
+      questions: normalizeClarificationOffer(interpreted),
+    };
+  }
   const input: IntentInput = {
     text: intent,
     requirements: interpreted?.requirements ?? [],
