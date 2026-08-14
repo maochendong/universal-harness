@@ -643,6 +643,7 @@ export {
 export {
   ORCHESTRATION_ERROR_KINDS,
   OrchestrationError,
+  abortIteration,
   createDefaultEvaluationPort,
   createDefaultGateSuite,
   createDirectExecutor,
@@ -656,6 +657,8 @@ export {
   resolveApproval,
   resumeIteration,
   runIteration,
+  type AbortIterationInput,
+  type AbortedIteration,
   type EvaluationPort,
   type EvaluationPortInput,
   type EvaluationPortResult,

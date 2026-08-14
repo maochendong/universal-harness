@@ -9,6 +9,7 @@ import type { AgentRunResult, AgentTaskEnvelope } from "@universal-harness-inter
 
 import {
   OrchestrationError,
+  abortIteration,
   assertLifecycleOrder,
   auditGraph,
   collectProjectStatus,
@@ -17,12 +18,14 @@ import {
   createNewProject,
   findOpenWorkflowOperation,
   normalizeGateDefinition,
+  readApprovalDecisions,
   readApprovalRequests,
   readLatestSnapshot,
   resolveApproval,
   resumeIteration,
   runIteration,
   ToolRegistry,
+  WorkflowEngine,
   type ApprovalPrompter,
   type EvaluationPort,
   type GateDefinition,
@@ -440,6 +443,116 @@ describe("phase orchestrator", { timeout: 30000 }, () => {
     } finally {
       database.close();
     }
+  });
+
+  it("aborts an open operation and closes its pending approval requests", async () => {
+    const newId = sequentialIds();
+    const parent = makeTempDir("harness-orch-abort-");
+    const bootstrapped = await createNewProject(
+      { parentDirectory: parent, name: "orch-abort", intent: INTENT },
+      { vcs: createGitVcsAdapter(), now: () => FIXED_NOW, newId: (kind) => newId(kind) },
+    );
+    if (!bootstrapped.ok) throw new Error(bootstrapped.error.message);
+    const projectRoot = bootstrapped.value.projectRoot;
+    const deps = makeDeps(projectRoot, newId, { execute: recordingExecutor().executor });
+
+    const started = await runIteration(deps, {
+      intent: INTENT,
+      iterationId: bootstrapped.value.iterationId,
+    });
+    expect(started.status).toBe("approval_required");
+    if (started.status !== "approval_required") return;
+    const { request_id: requestId, workflow_operation_id: workflowOperationId } = started.required;
+
+    // The approval blocker is visible before the abort.
+    expect(collectProjectStatus(projectRoot).blockers).toContain(
+      `approval request ${requestId} awaiting a decision`,
+    );
+
+    const aborted = await abortIteration(deps, {
+      workflowOperationId,
+      actor: "human:local",
+    });
+    expect(aborted.rejectedRequests).toEqual([requestId]);
+
+    // Audit trail: an explicit reject decision by the aborting actor and a
+    // terminal aborted operation record.
+    const decisions = readApprovalDecisions(
+      harnessRootFor(projectRoot),
+      readCommittedOperations(harnessRootFor(projectRoot)),
+      workflowOperationId,
+    );
+    const rejection = decisions.find((decision) => decision.request_id === requestId);
+    expect(rejection?.decision).toBe("reject");
+    expect(rejection?.actor).toBe("human:local");
+    const engine = new WorkflowEngine({
+      projectRoot,
+      readBaseline: () => headOf(projectRoot),
+    });
+    expect(engine.getOperation(workflowOperationId)?.state).toBe("aborted");
+
+    // Status is clean: no phantom approval blocker, iteration marked aborted,
+    // and the project accepts a fresh iteration.
+    const status = collectProjectStatus(projectRoot);
+    expect(status.blockers).toEqual([]);
+    expect(status.iteration?.state).toBe("aborted");
+    expect(status.next_action).toContain("harness iterate");
+    expect(findOpenWorkflowOperation(projectRoot, () => headOf(projectRoot))).toBeUndefined();
+    const next = await runIteration(deps, { intent: "recover after the abort" });
+    expect(next.status).toBe("approval_required");
+  });
+
+  it("lets a reject through baseline drift and aborts the sealed operation", async () => {
+    const newId = sequentialIds();
+    const parent = makeTempDir("harness-orch-drift-");
+    const bootstrapped = await createNewProject(
+      { parentDirectory: parent, name: "orch-drift", intent: INTENT },
+      { vcs: createGitVcsAdapter(), now: () => FIXED_NOW, newId: (kind) => newId(kind) },
+    );
+    if (!bootstrapped.ok) throw new Error(bootstrapped.error.message);
+    const projectRoot = bootstrapped.value.projectRoot;
+    const deps = makeDeps(projectRoot, newId, { execute: recordingExecutor().executor });
+
+    const started = await runIteration(deps, {
+      intent: INTENT,
+      iterationId: bootstrapped.value.iterationId,
+    });
+    expect(started.status).toBe("approval_required");
+    if (started.status !== "approval_required") return;
+    const { request_id: requestId, workflow_operation_id: workflowOperationId } = started.required;
+
+    // The Git baseline advances after the checkpoint: resume and approve are
+    // sealed by the drift guard, exactly the dead end the dogfood hit.
+    git(projectRoot, "commit", "--allow-empty", "-m", "external commit");
+    await expect(resumeIteration(deps, workflowOperationId, undefined)).rejects.toThrow(
+      /baseline drifted/u,
+    );
+    await expect(
+      resolveApproval(deps, { requestId, decision: "approve", actor: "human:local" }),
+    ).rejects.toThrow(/baseline drifted/u);
+
+    // A reject applies nothing, so it passes the drift seal; the operation
+    // itself stays blocked until the explicit abort.
+    const rejected = await resolveApproval(deps, {
+      requestId,
+      decision: "reject",
+      actor: "human:local",
+    });
+    expect(rejected.decision).toBe("reject");
+    expect(findOpenWorkflowOperation(projectRoot, () => headOf(projectRoot))).toBe(
+      workflowOperationId,
+    );
+
+    const aborted = await abortIteration(deps, {
+      workflowOperationId,
+      actor: "human:local",
+      reason: "baseline drifted beyond recovery",
+    });
+    expect(aborted.rejectedRequests).toEqual([]);
+    expect(findOpenWorkflowOperation(projectRoot, () => headOf(projectRoot))).toBeUndefined();
+    expect(collectProjectStatus(projectRoot).blockers).toEqual([]);
+    const next = await runIteration(deps, { intent: "recover after the drift abort" });
+    expect(next.status).toBe("approval_required");
   });
 
   it("keeps a deferred interactive decision resumable and continues in the same session", async () => {

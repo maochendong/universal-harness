@@ -37,6 +37,7 @@ harness resume <workflow-operation-id>
 | 症状 | 恢复操作 |
 |---|---|
 | 进程中断后状态不明 | `harness status` 查看下一步；`harness resume <workflow-operation-id>` 从 Checkpoint 继续 |
+| Baseline 漂移封死 resume/approve（HEAD 在 Checkpoint 后前进） | `harness abort <workflow-operation-id>` 显式终止该编排（待批准请求一并 reject，审计留痕），再重新 `iterate`；reject 决定本身不受漂移限制 |
 | SQLite 缓存删除或损坏 | `harness graph sync` 从 Git Ledger 完整重建（SQLite 只是可丢弃投影） |
 | Ledger 与缓存不一致、分片冲突 | `harness graph check` 校验完整性；冲突（同 `ledger_operation_id` digest 不同、Revision 分叉、Baseline 不兼容）会被阻塞，要求显式解决 |
 | Git 仓库漂移（HEAD 与 Ledger Baseline 不一致） | `harness doctor` 诊断；按提示重新同步或显式解决后再迭代 |

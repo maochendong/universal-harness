@@ -10,6 +10,7 @@ import {
   type CommandResult,
 } from "./io.js";
 import { createOrchestratedRuntimeService } from "./runtime-service.js";
+import { runAbortCommand } from "./commands/abort.js";
 import { runAdoptCommand } from "./commands/adopt.js";
 import { runApproveCommand } from "./commands/approve.js";
 import { runAuditCommand } from "./commands/audit.js";
@@ -57,6 +58,12 @@ export interface ResumeRequest {
   readonly projectRoot: string;
 }
 
+export interface AbortRequest {
+  readonly workflowOperationId: string;
+  readonly projectRoot: string;
+  readonly actor?: string;
+}
+
 export interface ApproveRequest {
   readonly requestId: string;
   readonly decision: "approve" | "reject" | "defer";
@@ -83,6 +90,7 @@ export interface RuntimeService {
   adoptProject(request: AdoptProjectRequest): Promise<CommandResult>;
   iterate(request: IterateRequest): Promise<CommandResult>;
   resume(request: ResumeRequest): Promise<CommandResult>;
+  abort(request: AbortRequest): Promise<CommandResult>;
   approve(request: ApproveRequest): Promise<CommandResult>;
   impact(request: ImpactRequest): Promise<CommandResult>;
   plan(request: ProjectRequest): Promise<CommandResult>;
@@ -121,6 +129,8 @@ export function createStubRuntimeService(): RuntimeService {
       Promise.resolve(stageUnavailable("iterate", "orchestration.iterate", { ...request })),
     resume: (request) =>
       Promise.resolve(stageUnavailable("resume", "orchestration.resume", { ...request })),
+    abort: (request) =>
+      Promise.resolve(stageUnavailable("abort", "orchestration.abort", { ...request })),
     approve: (request) =>
       Promise.resolve(stageUnavailable("approve", "approval.resolve", { ...request })),
     impact: (request) =>
@@ -180,6 +190,7 @@ Orchestration:
   adopt [path] --intent <text>    Adopt an existing project and run an iteration
   iterate <text>                  Run a full iteration for a follow-up change
   resume <workflow-operation-id>  Resume a paused orchestration from its checkpoint
+  abort <workflow-operation-id>   Abort an open workflow operation
 
 Automation and recovery:
   run [--dry-run]                 Execute the open operation's planned tasks
@@ -227,6 +238,12 @@ snapshot) for a follow-up change inside the current managed project.
 
 Resume a paused orchestration from its last committed checkpoint. The
 workflow operation id is returned by earlier blocked or deferred runs.
+`,
+  abort: `Usage: harness abort <workflow-operation-id> [--actor <id>] [--json]
+
+Abort an open workflow operation, closing its pending approval requests with
+explicit reject decisions. This is the escape hatch when baseline drift seals
+every recovery path; the abort is ledger-backed and keeps the audit history.
 `,
   approve: `Usage: harness approve <request-id> --decision <approve|reject|defer> [--actor <id>] [--json]
 
@@ -334,6 +351,8 @@ async function dispatch(args: readonly string[], context: CommandContext): Promi
       return runIterateCommand(rest, context);
     case "resume":
       return runResumeCommand(rest, context);
+    case "abort":
+      return runAbortCommand(rest, context);
     case "approve":
       return runApproveCommand(rest, context);
     case "impact":

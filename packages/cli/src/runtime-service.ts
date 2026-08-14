@@ -6,6 +6,7 @@ import { createGitVcsAdapter } from "@universal-harness-internal/adapter-vcs-git
 import { defineEvaluationCase, evaluateRun } from "@universal-harness-internal/eval";
 import {
   OrchestrationError,
+  abortIteration,
   createDirectExecutor,
   createGenericInterpreter,
   createRuntimeService,
@@ -33,6 +34,7 @@ import type { GateDefinition, ToolRegistry } from "@universal-harness-internal/r
 
 import type { CliIo, CommandResult } from "./io.js";
 import type {
+  AbortRequest,
   AdoptProjectRequest,
   ApproveRequest,
   ImpactRequest,
@@ -269,6 +271,26 @@ export function createOrchestratedRuntimeService(
       return outcomeToResult("resume", outcome);
     });
 
+  const abortImpl = async (request: AbortRequest): Promise<CommandResult> =>
+    guard("abort", async () => {
+      const aborted = await abortIteration(orchestratorDeps(request.projectRoot), {
+        workflowOperationId: request.workflowOperationId,
+        actor: request.actor ?? actor,
+      });
+      return {
+        command: "abort",
+        status: "ok",
+        message:
+          `workflow operation ${aborted.workflowOperationId} aborted; ` +
+          `${String(aborted.rejectedRequests.length)} pending approval request(s) rejected`,
+        data: {
+          workflow_operation_id: aborted.workflowOperationId,
+          iteration_id: aborted.iterationId,
+          rejected_requests: [...aborted.rejectedRequests],
+        },
+      };
+    });
+
   const adoptCommitAndIterate = async (
     request: AdoptProjectRequest,
     stagingOperationId: string,
@@ -417,6 +439,7 @@ export function createOrchestratedRuntimeService(
 
     iterate: iterateImpl,
     resume: resumeImpl,
+    abort: abortImpl,
 
     approve: async (request: ApproveRequest): Promise<CommandResult> =>
       guard("approve", async () => {

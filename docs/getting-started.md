@@ -80,6 +80,7 @@ harness adopt /path/to/project --intent "Introduce the requested change"
 | `harness adopt [path] --intent <text>` | 接管现有项目并运行一次迭代 |
 | `harness iterate <text>` | 运行后续变更的完整闭环 |
 | `harness resume <workflow-operation-id>` | 从最近提交的 Checkpoint 恢复暂停的编排 |
+| `harness abort <workflow-operation-id>` | 终止一个打开的编排（baseline 漂移封死恢复路径时的逃生口；待批准请求一并显式 reject） |
 | `harness approve <request-id> --decision <approve\|reject\|defer>` | 解决一个待处理批准请求 |
 | `harness impact [node-id]` | 只读预览某变更的 ImpactSet |
 | `harness plan` | 查看最近提交的 ExecutionPlan |

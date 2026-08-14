@@ -34,7 +34,7 @@ M1 已完成：Task 1–28 全部落地，28 条验收标准均有通过证据�
 
 ## M1 已支持的能力
 
-- **完整迭代闭环**：`harness new` / `adopt` / `iterate` / `resume`，以及 `approve`、`impact`、`plan`、`run`、`verify`、`eval`、`snapshot`、`audit`、`status`、`doctor`、`graph` 等检查与编排命令；交互与非交互（`--json`）双模式，稳定退出码。
+- **完整迭代闭环**：`harness new` / `adopt` / `iterate` / `resume` / `abort`，以及 `approve`、`impact`、`plan`、`run`、`verify`、`eval`、`snapshot`、`audit`、`status`、`doctor`、`graph` 等检查与编排命令；交互与非交互（`--json`）双模式，稳定退出码。
 - **Stack Pack**：Generic、Node、Python、Java——栈检测、扫描、Stack 层 Gate 声明与 Pack 升级预览/批准。
 - **Agent Adapter**：Manual Adapter（人工交接）与通用 Command Adapter（包装现有 Coding Agent CLI），按 Control Profile 决定能否无人值守；无法计量或拦截的 Provider 只能监督运行。
 - **质量反馈**：universal / stack / project 三层 Gate、绑定漂移即失效的 Evidence Freshness、Run 五维评估（outcome / safety / trajectory / efficiency / correct failure）、Finding → 结构化 RCA → 归属上游 Phase 的修复路由、可评审 ImprovementCandidate。

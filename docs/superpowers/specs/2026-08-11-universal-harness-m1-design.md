@@ -494,6 +494,7 @@ Provider Chat History 是可选输入，不是 State。Context 编译在显式 T
 | `harness adopt [path] --intent <text>` | 扫描并批准 Baseline，然后录入、分析、规划、编译 Context、执行、验证、评估、修复并生成 Snapshot |
 | `harness iterate <text>` | 为后续变更运行相同完整闭环 |
 | `harness resume <workflow-operation-id>` | 从最后已提交 Checkpoint 恢复暂停编排 |
+| `harness abort <workflow-operation-id>` | 显式终止打开的编排（Baseline 漂移后的逃生口；待批准请求一并 reject，保留审计历史） |
 
 ### 11.2 高级命令
 

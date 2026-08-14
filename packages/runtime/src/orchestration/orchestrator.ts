@@ -48,6 +48,8 @@ import {
 import { scanWorktree } from "../bootstrap/scanner.js";
 import {
   approvalDecisionArtifact,
+  buildApprovalDecision,
+  proposedByOf,
   readApprovalDecisions,
   readApprovalRequests,
   type ApprovalDecision,
@@ -2667,11 +2669,58 @@ export async function resolveApproval(
       `unknown approval request: ${input.requestId}`,
     );
   }
+  const engine = new WorkflowEngine(workflowDeps(deps));
+  const current = engine.getOperation(request.workflow_operation_id);
+  if (input.decision === "reject") {
+    // A reject never applies the proposal, so baseline or binding drift must
+    // not block it (drift only matters for an approve that would bind stale
+    // digests). The decision commits directly, without reopening the paused
+    // operation -- this stays the escape hatch when resume can no longer run.
+    if (!request.allowed_decisions.includes("reject")) {
+      throw new OrchestrationError(
+        "invalid_phase",
+        `decision reject is not allowed for request ${request.request_id}`,
+      );
+    }
+    if (input.actor === proposedByOf(request)) {
+      throw new OrchestrationError(
+        "invalid_phase",
+        `actor ${input.actor} may not resolve its own approval request ${request.request_id}`,
+      );
+    }
+    const stillPending = approvalService(deps)
+      .pendingRequests(request.workflow_operation_id)
+      .some((candidate) => candidate.request_id === request.request_id);
+    if (!stillPending) {
+      throw new OrchestrationError(
+        "operation_not_found",
+        `approval request ${request.request_id} is already decided or superseded`,
+      );
+    }
+    const rejected = buildApprovalDecision({
+      approvalId: newIdOf(deps, "approval_decision"),
+      requestId: request.request_id,
+      actor: input.actor,
+      decision: "reject",
+      objectDigest: request.object_digest,
+      decidedAt: nowOf(deps),
+    });
+    await commitArtifacts(
+      deps,
+      request.workflow_operation_id,
+      current?.attempt_id ?? "attempt_abort",
+      [approvalDecisionArtifact(rejected)],
+    );
+    return {
+      requestId: rejected.request_id,
+      decision: rejected.decision,
+      approvalDigest: approvalDigestOf(rejected),
+      workflowOperationId: request.workflow_operation_id,
+    };
+  }
   // A paused operation cannot accept the decision checkpoint; reopen it
   // first (the resume protocol re-verifies every binding) and leave it live
   // for the follow-up `resume` that continues the pipeline.
-  const engine = new WorkflowEngine(workflowDeps(deps));
-  const current = engine.getOperation(request.workflow_operation_id);
   if (current !== undefined && current.state === "blocked") {
     await resumeWorkflowOperation(workflowDeps(deps), request.workflow_operation_id);
   }
@@ -2686,6 +2735,127 @@ export async function resolveApproval(
     decision: record.decision,
     approvalDigest: approvalDigestOf(record),
     workflowOperationId: request.workflow_operation_id,
+  };
+}
+
+export interface AbortIterationInput {
+  readonly workflowOperationId: string;
+  /** Actor recorded for the abort and its rejection decisions. */
+  readonly actor: string;
+  readonly reason?: string;
+}
+
+export interface AbortedIteration {
+  readonly workflowOperationId: string;
+  readonly iterationId: string;
+  /** Pending approval requests closed by the abort, in request order. */
+  readonly rejectedRequests: readonly string[];
+}
+
+/**
+ * Abort an open workflow operation (design 10: explicit cancellation is the
+ * only user-driven path to `aborted`). This is the escape hatch when every
+ * recovery path is sealed -- for example when the Git baseline drifted after
+ * the checkpoint, so resume and approve both refuse to run. The abort never
+ * re-verifies checkpoint bindings: it closes every pending approval request
+ * with an explicit reject decision by the aborting actor (a reject applies
+ * nothing, so drift cannot make it unsafe), commits the terminal `aborted`
+ * operation record with its OperationCompleted event, and marks a committed
+ * Iteration node aborted so status stops treating it as open. Everything is
+ * ledger-backed; nothing is deleted.
+ */
+export async function abortIteration(
+  deps: OrchestratorDependencies,
+  input: AbortIterationInput,
+): Promise<AbortedIteration> {
+  const engine = new WorkflowEngine(workflowDeps(deps));
+  const current = engine.getOperation(input.workflowOperationId);
+  if (current === undefined) {
+    throw new OrchestrationError(
+      "operation_not_found",
+      `unknown workflow operation: ${input.workflowOperationId}`,
+    );
+  }
+  if (current.state === "completed" || current.state === "aborted") {
+    throw new OrchestrationError(
+      "operation_not_found",
+      `workflow operation ${input.workflowOperationId} is terminal (${current.state}) and cannot abort`,
+    );
+  }
+
+  const pending = approvalService(deps).pendingRequests(input.workflowOperationId);
+  if (pending.length > 0) {
+    await commitArtifacts(
+      deps,
+      input.workflowOperationId,
+      current.attempt_id,
+      pending.map((request) => {
+        const record = buildApprovalDecision({
+          approvalId: newIdOf(deps, "approval_decision"),
+          requestId: request.request_id,
+          actor: input.actor,
+          decision: "reject",
+          objectDigest: request.object_digest,
+          decidedAt: nowOf(deps),
+        });
+        return approvalDecisionArtifact(record);
+      }),
+    );
+  }
+
+  await engine.abort(input.workflowOperationId, {
+    reason: "user_cancellation",
+    detail: input.reason ?? `aborted by ${input.actor}`,
+  });
+
+  const graph = materializeProjectGraph(deps.projectRoot);
+  let iterationNode: NodeRecord | undefined;
+  try {
+    iterationNode = graph.nodes
+      .filter((node) => node.id === current.iteration_id && node.type === "Iteration")
+      .sort((left, right) => left.revision - right.revision)
+      .at(-1);
+  } finally {
+    graph.close();
+  }
+  if (
+    iterationNode !== undefined &&
+    iterationNode.iteration_state !== "completed" &&
+    iterationNode.iteration_state !== "aborted"
+  ) {
+    const revision = iterationNode.revision + 1;
+    const base: Record<string, unknown> = Object.fromEntries(
+      Object.entries(iterationNode).filter(([key]) => key !== "digest"),
+    );
+    base.revision = revision;
+    base.iteration_state = "aborted";
+    base.provenance = {
+      iteration_id: current.iteration_id,
+      actor: input.actor,
+      timestamp: nowOf(deps),
+    };
+    const node = { ...base, digest: contentDigest(base) };
+    const validation = validateSchema("node", node);
+    if (!validation.valid) {
+      throw new OrchestrationError(
+        "configuration",
+        `invalid aborted iteration node: ${validation.errors
+          .map((issue) => issue.message)
+          .join("; ")}`,
+      );
+    }
+    await commitArtifacts(deps, input.workflowOperationId, current.attempt_id, [
+      {
+        path: `artifacts/iterations/${current.iteration_id}/${String(revision)}.json`,
+        content: `${canonicalizeJson(node)}\n`,
+      },
+    ]);
+  }
+
+  return {
+    workflowOperationId: input.workflowOperationId,
+    iterationId: current.iteration_id,
+    rejectedRequests: pending.map((request) => request.request_id),
   };
 }
 

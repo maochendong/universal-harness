@@ -10,6 +10,7 @@ Orchestration:
   adopt [path] --intent <text>    Adopt an existing project and run an iteration
   iterate <text>                  Run a full iteration for a follow-up change
   resume <workflow-operation-id>  Resume a paused orchestration from its checkpoint
+  abort <workflow-operation-id>   Abort an open workflow operation
 
 Automation and recovery:
   run [--dry-run]                 Execute the open operation's planned tasks
@@ -45,6 +46,7 @@ Orchestration:
   adopt [path] --intent <text>    Adopt an existing project and run an iteration
   iterate <text>                  Run a full iteration for a follow-up change
   resume <workflow-operation-id>  Resume a paused orchestration from its checkpoint
+  abort <workflow-operation-id>   Abort an open workflow operation
 
 Automation and recovery:
   run [--dry-run]                 Execute the open operation's planned tasks
@@ -80,6 +82,7 @@ Orchestration:
   adopt [path] --intent <text>    Adopt an existing project and run an iteration
   iterate <text>                  Run a full iteration for a follow-up change
   resume <workflow-operation-id>  Resume a paused orchestration from its checkpoint
+  abort <workflow-operation-id>   Abort an open workflow operation
 
 Automation and recovery:
   run [--dry-run]                 Execute the open operation's planned tasks
@@ -141,6 +144,15 @@ workflow operation id is returned by earlier blocked or deferred runs.
 `;
 
 exports[`harness CLI help and version > prints per-command help 5`] = `
+"Usage: harness abort <workflow-operation-id> [--actor <id>] [--json]
+
+Abort an open workflow operation, closing its pending approval requests with
+explicit reject decisions. This is the escape hatch when baseline drift seals
+every recovery path; the abort is ledger-backed and keeps the audit history.
+"
+`;
+
+exports[`harness CLI help and version > prints per-command help 6`] = `
 "Usage: harness approve <request-id> --decision <approve|reject|defer> [--actor <id>] [--json]
 
 Resolve exactly one pending approval request, bound to its recorded object
@@ -149,7 +161,7 @@ audit history.
 "
 `;
 
-exports[`harness CLI help and version > prints per-command help 6`] = `
+exports[`harness CLI help and version > prints per-command help 7`] = `
 "Usage: harness impact [node-id] [--json]
 
 Preview the ImpactSet a change on the given (or latest) seed node would
@@ -157,7 +169,7 @@ produce over the current artifact graph. Read-only.
 "
 `;
 
-exports[`harness CLI help and version > prints per-command help 7`] = `
+exports[`harness CLI help and version > prints per-command help 8`] = `
 "Usage: harness plan [--json]
 
 Show the latest committed declarative ExecutionPlan: mode, bound impact set
@@ -165,7 +177,7 @@ and task specifications.
 "
 `;
 
-exports[`harness CLI help and version > prints per-command help 8`] = `
+exports[`harness CLI help and version > prints per-command help 9`] = `
 "Usage: harness run [--dry-run] [--json]
 
 Execute the open workflow operation's planned tasks through the configured
@@ -173,7 +185,7 @@ adapter. --dry-run renders the planned tasks without executing anything.
 "
 `;
 
-exports[`harness CLI help and version > prints per-command help 9`] = `
+exports[`harness CLI help and version > prints per-command help 10`] = `
 "Usage: harness verify [--json]
 
 Drive the open workflow operation through the three-layer gate suite,
@@ -181,7 +193,7 @@ producing bound Evidence and Findings for failed mandatory gates.
 "
 `;
 
-exports[`harness CLI help and version > prints per-command help 10`] = `
+exports[`harness CLI help and version > prints per-command help 11`] = `
 "Usage: harness eval [--json]
 
 Drive the open workflow operation through run evaluation (outcome, safety,
@@ -189,7 +201,7 @@ trajectory, correct failure, efficiency).
 "
 `;
 
-exports[`harness CLI help and version > prints per-command help 11`] = `
+exports[`harness CLI help and version > prints per-command help 12`] = `
 "Usage: harness snapshot [--json]
 
 Drive the open workflow operation to its terminal snapshot, or report the
@@ -197,7 +209,7 @@ latest committed snapshot when no operation is open.
 "
 `;
 
-exports[`harness CLI help and version > prints per-command help 12`] = `
+exports[`harness CLI help and version > prints per-command help 13`] = `
 "Usage: harness audit [--json]
 
 Audit the committed graph for traceability gaps, stale knowledge,
@@ -206,7 +218,7 @@ improvements.
 "
 `;
 
-exports[`harness CLI help and version > prints per-command help 13`] = `
+exports[`harness CLI help and version > prints per-command help 14`] = `
 "Usage: harness status [--json]
 
 Show the managed project identity, committed ledger operation count, graph
@@ -214,7 +226,7 @@ cache health and the last ledger operation for the current project.
 "
 `;
 
-exports[`harness CLI help and version > prints per-command help 14`] = `
+exports[`harness CLI help and version > prints per-command help 15`] = `
 "Usage: harness doctor [--json]
 
 Diagnose the runtime environment, Git availability, managed project layout
@@ -222,7 +234,7 @@ and graph cache health. Exits non-zero when any check fails.
 "
 `;
 
-exports[`harness CLI help and version > prints per-command help 15`] = `
+exports[`harness CLI help and version > prints per-command help 16`] = `
 "Usage: harness graph <sync|query|check> [options]
 
   sync    Rebuild the disposable SQLite cache from the authoritative ledger
