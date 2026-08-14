@@ -16,6 +16,7 @@ import {
 } from "@universal-harness-internal/graph";
 
 import type { ControlLevel } from "../policy/action.js";
+import { readApprovalDecisions } from "../approval/request.js";
 import { latestValidCheckpoint } from "../workflow/checkpoint.js";
 import type { BudgetUse } from "../workflow/working-state.js";
 
@@ -47,6 +48,12 @@ export interface ProjectStatus {
 export interface StatusDerivationInput {
   readonly nodes: readonly NodeRecord[];
   readonly edges: readonly EdgeRecord[];
+  /**
+   * Approval request ids with a terminal (approve/reject) decision, read
+   * from ledger decision artifacts. Approval resolution is not materialized
+   * as graph edges, so callers must supply it explicitly.
+   */
+  readonly resolvedApprovalIds?: readonly string[];
   readonly workingState?: {
     readonly blockers: readonly string[];
     readonly budget: BudgetUse;
@@ -126,10 +133,8 @@ function deriveBlockers(
   edges: readonly EdgeRecord[],
   iterationId: string | undefined,
   workingStateBlockers: readonly string[],
+  resolvedApprovalIds: ReadonlySet<string>,
 ): string[] {
-  const resolvedApprovalIds = new Set(
-    edges.filter((edge) => edge.type === "RESOLVES").map((edge) => edge.target_id),
-  );
   const liveWorkingStateBlockers = workingStateBlockers.filter((blocker) => {
     const match = APPROVAL_BLOCKER_PATTERN.exec(blocker);
     return match === null || !resolvedApprovalIds.has(match[1] ?? "");
@@ -225,7 +230,17 @@ export function deriveProjectStatus(input: StatusDerivationInput): DerivedStatus
   const edges = input.edges.filter(isActive);
   const iteration = latestIteration(nodes);
   const pendingApprovals = derivePendingApprovals(nodes, edges);
-  const blockers = deriveBlockers(nodes, edges, iteration?.id, input.workingState?.blockers ?? []);
+  const resolvedApprovalIds = new Set([
+    ...edges.filter((edge) => edge.type === "RESOLVES").map((edge) => edge.target_id),
+    ...(input.resolvedApprovalIds ?? []),
+  ]);
+  const blockers = deriveBlockers(
+    nodes,
+    edges,
+    iteration?.id,
+    input.workingState?.blockers ?? [],
+    resolvedApprovalIds,
+  );
   const staleEvidence = deriveStaleEvidence(nodes, edges);
   const coverage = deriveEvaluationCoverage(nodes, edges);
   const nextAction = nextActionFor({
@@ -287,17 +302,27 @@ export function collectProjectStatus(projectRoot: string): ProjectStatus {
     } while (edgeCursor !== undefined);
     const edges = edgeRows;
     const lastOperation = operations.at(-1);
+    const workflowOperationId = lastOperation?.manifest.workflow_operation_id;
     const checkpoint =
-      lastOperation === undefined
+      lastOperation === undefined || workflowOperationId === undefined
         ? undefined
-        : latestValidCheckpoint(
-            harnessRoot,
-            operations,
-            lastOperation.manifest.workflow_operation_id,
-          );
+        : latestValidCheckpoint(harnessRoot, operations, workflowOperationId);
+    // Approval resolution lives in decision artifacts, not in materialized
+    // graph edges; without this, resolved requests linger as phantom blockers.
+    // Decisions may be committed under a different workflow operation than the
+    // latest one, so every operation's allowlist gets a chance to vouch.
+    const workflowOperationIds = [
+      ...new Set(operations.map((operation) => operation.manifest.workflow_operation_id)),
+    ];
+    const resolvedApprovalIds = workflowOperationIds.flatMap((operationId) =>
+      readApprovalDecisions(harnessRoot, operations, operationId)
+        .filter((decision) => decision.decision === "approve" || decision.decision === "reject")
+        .map((decision) => decision.request_id),
+    );
     const derived = deriveProjectStatus({
       nodes,
       edges,
+      resolvedApprovalIds,
       ...(checkpoint === undefined
         ? {}
         : {

@@ -175,22 +175,12 @@ describe("deriveProjectStatus", () => {
     ]);
     expect(resolved.next_action).toBe("resolve approval request approval-request_02");
 
+    // Real ledgers carry resolution in decision artifacts, not RESOLVES edges:
+    // the caller supplies resolvedApprovalIds read from the ledger instead.
     const allResolved = deriveProjectStatus({
       ...base,
-      edges: [
-        makeEdge({
-          id: "edge-approval-resolves_01",
-          type: "RESOLVES",
-          sourceId: "approval_01",
-          targetId: "approval-request_01",
-        }),
-        makeEdge({
-          id: "edge-approval-resolves_02",
-          type: "RESOLVES",
-          sourceId: "approval_01",
-          targetId: "approval-request_02",
-        }),
-      ],
+      edges: [],
+      resolvedApprovalIds: ["approval-request_01", "approval-request_02"],
     });
     expect(allResolved.blockers).toEqual(["waiting on the user"]);
     expect(allResolved.next_action).not.toContain("awaiting a decision");
