@@ -108,8 +108,13 @@ function latestIteration(nodes: readonly NodeRecord[]): NodeRecord | undefined {
   const open = iterations.filter(
     (node) => node.iteration_state !== "completed" && node.iteration_state !== "aborted",
   );
-  // Deterministic pick: open iterations first, then the highest id.
-  return (open.length > 0 ? open : iterations).at(-1);
+  // Deterministic pick: open iterations first. Within a pool the newest
+  // committed revision wins -- provenance timestamps are ledger time, while
+  // content-derived ids have no chronological order (dogfooded: an id-sorted
+  // pick bound status to a stale iteration). The id breaks exact ties.
+  const pool = open.length > 0 ? open : iterations;
+  const rank = (node: NodeRecord): string => `${node.provenance.timestamp}${node.id}`;
+  return pool.reduce((best, node) => (rank(node) > rank(best) ? node : best));
 }
 
 function derivePendingApprovals(

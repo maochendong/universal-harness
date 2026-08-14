@@ -13,6 +13,7 @@ interface NodeSpec {
   readonly type: NodeRecord["type"];
   readonly status?: NodeRecord["status"];
   readonly iterationState?: NodeRecord["iteration_state"];
+  readonly timestamp?: string;
   readonly extensions?: Record<string, unknown>;
 }
 
@@ -25,7 +26,11 @@ function makeNode(spec: NodeSpec): NodeRecord {
     revision: 1,
     status: spec.status ?? "accepted",
     source: "workflow",
-    provenance: { iteration_id: "iteration_01", actor: "status-test", timestamp: FIXED_NOW },
+    provenance: {
+      iteration_id: "iteration_01",
+      actor: "status-test",
+      timestamp: spec.timestamp ?? FIXED_NOW,
+    },
     confidence: 1,
   };
   if (spec.iterationState !== undefined) record.iteration_state = spec.iterationState;
@@ -90,6 +95,50 @@ describe("deriveProjectStatus", () => {
     });
     expect(status.iteration).toEqual({ id: "iteration_02", state: "draft" });
     expect(status.next_action).toContain("run iteration iteration_02");
+  });
+
+  it("tracks the chronologically latest iteration, not the id-sorted one", () => {
+    // Content-derived iteration ids have no chronological order: iteration_zz
+    // committed before iteration_aa, and status must follow the ledger time.
+    const status = deriveProjectStatus({
+      nodes: [
+        makeNode({
+          id: "iteration_zz",
+          type: "Iteration",
+          iterationState: "completed",
+          timestamp: "2026-08-12T00:00:00.000Z",
+        }),
+        makeNode({
+          id: "iteration_aa",
+          type: "Iteration",
+          iterationState: "completed",
+          timestamp: "2026-08-13T00:00:00.000Z",
+        }),
+      ],
+      edges: [],
+    });
+    expect(status.iteration?.id).toBe("iteration_aa");
+  });
+
+  it("still prefers an open iteration over a chronologically newer completed one", () => {
+    const status = deriveProjectStatus({
+      nodes: [
+        makeNode({
+          id: "iteration_01",
+          type: "Iteration",
+          iterationState: "draft",
+          timestamp: "2026-08-12T00:00:00.000Z",
+        }),
+        makeNode({
+          id: "iteration_02",
+          type: "Iteration",
+          iterationState: "completed",
+          timestamp: "2026-08-13T00:00:00.000Z",
+        }),
+      ],
+      edges: [],
+    });
+    expect(status.iteration?.id).toBe("iteration_01");
   });
 
   it("lists unresolved approval requests and routes the next action to them", () => {
