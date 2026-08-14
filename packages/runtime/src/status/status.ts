@@ -112,13 +112,29 @@ function derivePendingApprovals(
     .map((node) => node.id);
 }
 
+/**
+ * Working-state blocker strings created when an operation blocked on an
+ * approval request (`approval request <id> awaiting a decision`). Once the
+ * request is resolved the checkpoint's working state may still carry the
+ * string, so status derivation must drop it instead of reporting a phantom
+ * blocker next to an empty pending-approval list.
+ */
+const APPROVAL_BLOCKER_PATTERN = /^approval request (\S+) awaiting a decision$/;
+
 function deriveBlockers(
   nodes: readonly NodeRecord[],
   edges: readonly EdgeRecord[],
   iterationId: string | undefined,
   workingStateBlockers: readonly string[],
 ): string[] {
-  const blockers = new Set(workingStateBlockers);
+  const resolvedApprovalIds = new Set(
+    edges.filter((edge) => edge.type === "RESOLVES").map((edge) => edge.target_id),
+  );
+  const liveWorkingStateBlockers = workingStateBlockers.filter((blocker) => {
+    const match = APPROVAL_BLOCKER_PATTERN.exec(blocker);
+    return match === null || !resolvedApprovalIds.has(match[1] ?? "");
+  });
+  const blockers = new Set(liveWorkingStateBlockers);
   if (iterationId !== undefined) {
     const nodeById = new Map(nodes.map((node) => [node.id, node]));
     for (const edge of edges) {

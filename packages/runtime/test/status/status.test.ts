@@ -141,6 +141,61 @@ describe("deriveProjectStatus", () => {
     expect(status.next_action).toBe("repair blocker: blocking finding finding_01");
   });
 
+  it("drops working-state approval blockers once the request is resolved", () => {
+    const base = {
+      nodes: [
+        makeNode({ id: "iteration_01", type: "Iteration", iterationState: "completed" }),
+        makeNode({ id: "approval-request_01", type: "ApprovalRequest", status: "proposed" }),
+        makeNode({ id: "approval-request_02", type: "ApprovalRequest", status: "proposed" }),
+        makeNode({ id: "approval_01", type: "Approval" }),
+      ],
+      workingState: {
+        blockers: [
+          "approval request approval-request_01 awaiting a decision",
+          "approval request approval-request_02 awaiting a decision",
+          "waiting on the user",
+        ],
+        budget: { used_steps: 0, used_tokens: 0, ceiling_steps: 1, ceiling_tokens: 1 },
+      },
+    };
+    const resolved = deriveProjectStatus({
+      ...base,
+      edges: [
+        makeEdge({
+          id: "edge-approval-resolves_01",
+          type: "RESOLVES",
+          sourceId: "approval_01",
+          targetId: "approval-request_01",
+        }),
+      ],
+    });
+    expect(resolved.blockers).toEqual([
+      "approval request approval-request_02 awaiting a decision",
+      "waiting on the user",
+    ]);
+    expect(resolved.next_action).toBe("resolve approval request approval-request_02");
+
+    const allResolved = deriveProjectStatus({
+      ...base,
+      edges: [
+        makeEdge({
+          id: "edge-approval-resolves_01",
+          type: "RESOLVES",
+          sourceId: "approval_01",
+          targetId: "approval-request_01",
+        }),
+        makeEdge({
+          id: "edge-approval-resolves_02",
+          type: "RESOLVES",
+          sourceId: "approval_01",
+          targetId: "approval-request_02",
+        }),
+      ],
+    });
+    expect(allResolved.blockers).toEqual(["waiting on the user"]);
+    expect(allResolved.next_action).not.toContain("awaiting a decision");
+  });
+
   it("reports superseded evidence still referenced by verdict edges as stale", () => {
     const status = deriveProjectStatus({
       nodes: [
