@@ -34,7 +34,7 @@ M1 已完成：Task 1–28 全部落地，28 条验收标准均有通过证据�
 
 ## M1 已支持的能力
 
-- **完整迭代闭环**：`harness new` / `adopt` / `iterate` / `resume` / `abort`，以及 `approve`、`impact`、`plan`、`run`、`verify`、`eval`、`snapshot`、`audit`、`status`、`doctor`、`graph` 等检查与编排命令；交互与非交互（`--json`）双模式，稳定退出码。意图歧义时录入相位产出带显式选项（含 `other` 逃逸）的澄清请求，回答经新一轮需求录入与批准门进入。
+- **完整迭代闭环**：`harness new` / `adopt` / `iterate` / `resume` / `abort`，以及 `approve`、`finding`、`impact`、`plan`、`run`、`verify`、`eval`、`snapshot`、`audit`、`status`、`doctor`、`graph`（含 `propose-edge`/`approve-edge` 人工补边）等检查与编排命令；交互与非交互（`--json`）双模式，稳定退出码。意图歧义时录入相位产出带显式选项（含 `other` 逃逸）的澄清请求，回答经新一轮需求录入与批准门进入。
 - **多任务计划与进度**：ExecutionPlan 可将一次迭代分解为多个带依赖的小任务（整个计划一次批准），逐任务执行与评估，崩溃恢复只重跑未完成任务；`harness status` 报告 `2/3` 式任务进度。
 - **Stack Pack**：Generic、Node、Python、Java——栈检测、扫描、Stack 层 Gate 声明与 Pack 升级预览/批准。
 - **Agent Adapter**：Manual Adapter（人工交接）与通用 Command Adapter（包装现有 Coding Agent CLI），按 Control Profile 决定能否无人值守；无法计量或拦截的 Provider 只能监督运行。

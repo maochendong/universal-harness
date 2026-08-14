@@ -44,6 +44,7 @@ harness resume <workflow-operation-id>
 | 批准过期或被级联失效 | 重新走批准点：旧请求保持终态，新 digest 生成新请求 |
 | 预算耗尽（step/token/duration/retry/repeat-action 上限） | Run 以类型化原因终止并生成 Finding；调整 Policy（受 Hard Ceiling 约束）或缩小 Task 后 `iterate` |
 | 部分 Gate 失败 | 失败的 Mandatory Gate 生成 Finding 与 RCA，修复证据 fresh 后 Finding 关闭，迭代继续 |
+| 审计 Finding 需要人工处置 | `harness finding accept\|close\|supersede <id>`（close 需 `--evidence` 绑定当前通过的修复证据）；历史欠账的关系缺口用 `harness graph propose-edge` + `approve-edge` 正规补边 |
 | 外部动作结果不确定 | Resume 对账（reconcile）该动作的 intent 记录，幂等续跑，不产生重复副作用 |
 
 ## 4. M1 限制

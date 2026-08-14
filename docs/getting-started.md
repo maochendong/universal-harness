@@ -92,6 +92,7 @@ harness adopt /path/to/project --intent "Introduce the requested change"
 | `harness resume <workflow-operation-id>` | 从最近提交的 Checkpoint 恢复暂停的编排 |
 | `harness abort <workflow-operation-id>` | 终止一个打开的编排（baseline 漂移封死恢复路径时的逃生口；待批准请求一并显式 reject） |
 | `harness approve <request-id> --decision <approve\|reject\|defer>` | 解决一个待处理批准请求 |
+| `harness finding <accept\|close\|supersede> <id>` | 处置一条 Finding（close 需 `--evidence` 提供当前通过的修复证据） |
 | `harness impact [node-id]` | 只读预览某变更的 ImpactSet |
 | `harness plan` | 查看最近提交的 ExecutionPlan |
 | `harness run [--dry-run]` | 推进执行阶段（dry-run 只渲染计划任务） |
@@ -99,6 +100,7 @@ harness adopt /path/to/project --intent "Introduce the requested change"
 | `harness audit` | 审计可追溯性、freshness、图健康与文档/覆盖度缺口 |
 | `harness status` / `harness doctor` | 状态总览 / 环境诊断 |
 | `harness graph sync\|query\|check` | 重建 SQLite 缓存 / 查询图 / 校验 Ledger 完整性 |
+| `harness graph propose-edge` / `approve-edge` | 人工补边：提议（带 digest）→ 批准落账 |
 
 所有命令接受 `--json` 输出一条规范化 JSON 记录，便于脚本化。退出码契约：`0` 成功、`1` 操作失败、`2` 用法错误、`3` 未找到项目、`10` 阶段不可用、`11` 需要批准、`12` 阻塞待恢复。
 
