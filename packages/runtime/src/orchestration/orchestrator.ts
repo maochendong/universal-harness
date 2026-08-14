@@ -3072,12 +3072,27 @@ async function phaseSnapshot(ctx: PipelineContext): Promise<PhaseStep> {
     },
   ]);
   await commitIterationNode(ctx, "completed");
-  // Pick up documents written since adoption so the audit sees them, then run
-  // the post-verify/evaluate audit at the completing snapshot: the Iteration
-  // node exists only now, so blocking findings can bind it. Committed gaps
-  // surface in `harness status` without a manual `harness audit`; idempotent
-  // re-runs dedupe by finding id.
+  // Pick up documents and tests written since adoption so the audit sees
+  // them, then run the post-verify/evaluate audit at the completing snapshot:
+  // the Iteration node exists only now, so blocking findings can bind it.
+  // Committed gaps surface in `harness status` without a manual `harness
+  // audit`; idempotent re-runs dedupe by finding id.
   await commitScannedDocumentation(ctx);
+  // Wire evidence for tests the rescan just brought into the graph, replaying
+  // the stored verify verdict -- the gates ran over a worktree that already
+  // contained those files, so the suite evidence vouches for them. Without
+  // this, a test added between iterations would be flagged by
+  // missing_verification for one full iteration until the next verify ran.
+  const suiteGates = ctx.deps.gates ?? createDefaultGateSuite(deps.projectRoot).gates;
+  const bindings = verifyBindings(ctx);
+  const storedVerify = loadVerifyArtifact(deps, ctx.iterationId, bindings);
+  if (storedVerify !== undefined) {
+    await commitEvidenceNodes(
+      ctx,
+      storedEvidenceMaterials(deps, suiteGates, storedVerify),
+      bindings,
+    );
+  }
   await commitAuditFindings(ctx);
   await regenerateTasksProjection(ctx);
   await ctx.engine.advance(ctx.workflowOperationId, "completed");

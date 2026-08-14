@@ -1068,8 +1068,10 @@ describe("phase orchestrator", { timeout: 30000 }, () => {
       ),
     ).toBe(false);
 
-    // A test file written after adoption enters the graph only at the next
-    // snapshot rescan, so iteration 2's audit flags it once.
+    // A test file written after adoption enters the graph at the completing
+    // snapshot's rescan -- and the same snapshot wires it to the suite
+    // evidence before the audit runs, so no missing_verification finding is
+    // ever committed for it.
     mkdirSync(join(projectRoot, "src"), { recursive: true });
     writeFileSync(
       join(projectRoot, "src", "widget.test.js"),
@@ -1077,44 +1079,28 @@ describe("phase orchestrator", { timeout: 30000 }, () => {
     );
     const second = await driveToCompletion("add the widget test");
     expect(second.status).toBe("completed");
-    const findingsRoot = join(projectRoot, ".harness", "artifacts", "findings");
-    const missingVerificationFinding = readdirSync(findingsRoot)
-      .filter((entry) => entry.startsWith("finding_audit-missing-verification-"))
-      .map((entry) => ({
-        id: entry,
-        summary: (
-          JSON.parse(readFileSync(join(findingsRoot, entry, "proposed.json"), "utf8")) as {
-            summary: string;
-          }
-        ).summary,
-      }))
-      .find((entry) => entry.summary.includes("has no evidence verdict"));
-    expect(missingVerificationFinding).toBeDefined();
-    if (missingVerificationFinding === undefined) return;
-
-    // Iteration 3: verify wires the scanned test to the suite evidence and
-    // the audit supersedes the resolved finding.
-    const third = await driveToCompletion("wire the widget test evidence");
-    expect(third.status).toBe("completed");
-    const findingNodeDirectory = join(
-      projectRoot,
-      ".harness",
-      "artifacts",
-      "finding-nodes",
-      missingVerificationFinding.id,
-    );
-    expect(readdirSync(findingNodeDirectory).sort()).toEqual(["1.json", "2.json"]);
-    expect(
-      (
-        JSON.parse(readFileSync(join(findingNodeDirectory, "2.json"), "utf8")) as {
-          status: string;
-        }
-      ).status,
-    ).toBe("superseded");
     graph = readGraph();
+    const scannedTest = graph.nodes.find(
+      (node) => node.type === "Test" && node.locator?.endsWith("src/widget.test.js"),
+    );
+    expect(scannedTest).toBeDefined();
+    expect(
+      graph.edges.some(
+        (edge) =>
+          edge.type === "SUPPORTS" &&
+          edge.source_id === "evidence_ledger_integrity" &&
+          edge.target_id === scannedTest?.id,
+      ),
+    ).toBe(true);
     expect(
       auditGraph({ nodes: graph.nodes, edges: graph.edges }).findings.some(
         (finding) => finding.kind === "missing_verification",
+      ),
+    ).toBe(false);
+    const findingsRoot = join(projectRoot, ".harness", "artifacts", "findings");
+    expect(
+      readdirSync(findingsRoot).some((entry) =>
+        entry.startsWith("finding_audit-missing-verification-"),
       ),
     ).toBe(false);
   });
