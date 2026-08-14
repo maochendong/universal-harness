@@ -56,6 +56,7 @@ M1 已完成：Task 1–28 全部落地，28 条验收标准均有通过证据�
 - [已批准的 M1 设计](docs/superpowers/specs/2026-08-11-universal-harness-m1-design.md)
 - [已批准的 M1 实施计划](docs/superpowers/plans/2026-08-11-universal-harness-m1-implementation-plan.md)
 - [SpecKit 对照设计与任务卡](docs/speckit-comparative-design.md)
+- [dsh 执行后端对照设计与任务卡](docs/dsh-execution-backend.md)
 
 ## 许可证
 
