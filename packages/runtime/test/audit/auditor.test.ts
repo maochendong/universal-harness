@@ -65,6 +65,7 @@ function healthyGraph(): AuditGraph {
       makeNode({ id: "task_01", type: "Task" }),
       makeNode({ id: "test_01", type: "Test" }),
       makeNode({ id: "evidence_01", type: "Evidence" }),
+      makeNode({ id: "evaluation-case_01", type: "EvaluationCase" }),
     ],
     edges: [
       makeEdge({
@@ -91,6 +92,12 @@ function healthyGraph(): AuditGraph {
         sourceId: "evidence_01",
         targetId: "test_01",
       }),
+      makeEdge({
+        id: "edge-case-evaluates_01",
+        type: "EVALUATES",
+        sourceId: "evaluation-case_01",
+        targetId: "task_01",
+      }),
     ],
   };
 }
@@ -99,8 +106,8 @@ describe("auditGraph", () => {
   it("reports no findings on a fully traced graph", () => {
     const report = auditGraph(healthyGraph());
     expect(report.findings).toEqual([]);
-    expect(report.checked_nodes).toBe(5);
-    expect(report.checked_edges).toBe(4);
+    expect(report.checked_nodes).toBe(6);
+    expect(report.checked_edges).toBe(5);
   });
 
   it("flags an accepted requirement with a traceability gap as blocking", () => {
@@ -336,6 +343,155 @@ describe("auditGraph", () => {
       });
       expect(findings.some((finding) => finding.summary.includes("domain: frontend-design"))).toBe(
         true,
+      );
+    });
+  });
+
+  describe("task_orphan", () => {
+    it("flags a task that implements no requirement as blocking", () => {
+      const report = auditGraph({
+        nodes: [makeNode({ id: "task_01", type: "Task" })],
+        edges: [],
+      });
+      const finding = report.findings.find((entry) => entry.kind === "task_orphan");
+      expect(finding).toBeDefined();
+      expect(finding?.subjects).toEqual(["task_01"]);
+      expect(finding?.blocking).toBe(true);
+    });
+
+    it("does not fire when the gap is Requirement-side only", () => {
+      const report = auditGraph({
+        nodes: [makeNode({ id: "requirement_01", type: "Requirement" })],
+        edges: [],
+      });
+      expect(report.findings.some((entry) => entry.kind === "traceability_gap")).toBe(true);
+      expect(report.findings.some((entry) => entry.kind === "task_orphan")).toBe(false);
+    });
+
+    it("stays silent for a wired task", () => {
+      const report = auditGraph(healthyGraph());
+      expect(report.findings.some((entry) => entry.kind === "task_orphan")).toBe(false);
+    });
+  });
+
+  describe("api_contract_coverage", () => {
+    const plannedNode = makeNode({ id: "plan_01", type: "ExecutionPlan", status: "proposed" });
+    const contractNode = makeNode({
+      id: "doc_contract",
+      type: "CodeArtifact",
+      locator: "repo://repo_01/docs/api-contract.md",
+      extensions: {
+        "harness.scan": {
+          classification: "documentation",
+          api_entries: ["DELETE /sessions", "GET /sessions", "POST /sessions"],
+        },
+      },
+    });
+
+    function taskWithObjective(id: string, objective: string): NodeRecord {
+      return makeNode({
+        id,
+        type: "Task",
+        extensions: { "harness.plan": { id, objective, expected_outputs: [] } },
+      });
+    }
+
+    it("flags uncovered contract entries as warnings, one per entry", () => {
+      const report = auditGraph({
+        nodes: [
+          plannedNode,
+          contractNode,
+          taskWithObjective("task_01", "implement GET /sessions"),
+          taskWithObjective("task_02", "implement POST /sessions"),
+        ],
+        edges: [],
+      });
+      const findings = report.findings.filter((entry) => entry.kind === "api_contract_coverage");
+      expect(findings).toHaveLength(1);
+      expect(findings[0]?.summary).toContain("DELETE /sessions");
+      expect(findings[0]?.subjects).toEqual(["doc_contract"]);
+      expect(findings[0]?.blocking).toBe(false);
+    });
+
+    it("stays silent when no contract document exists", () => {
+      const report = auditGraph({ nodes: [plannedNode], edges: [] });
+      expect(report.findings.some((entry) => entry.kind === "api_contract_coverage")).toBe(false);
+      // The existence check belongs to missing_design_artifact alone.
+      expect(report.findings.some((entry) => entry.kind === "missing_design_artifact")).toBe(true);
+    });
+
+    it("stays silent for contract documents without extracted entries", () => {
+      const report = auditGraph({
+        nodes: [
+          plannedNode,
+          makeNode({
+            id: "doc_legacy",
+            type: "CodeArtifact",
+            locator: "repo://repo_01/docs/api-contract.md",
+            extensions: { "harness.scan": { classification: "documentation" } },
+          }),
+        ],
+        edges: [],
+      });
+      expect(report.findings.some((entry) => entry.kind === "api_contract_coverage")).toBe(false);
+    });
+  });
+
+  describe("task_stale", () => {
+    it("flags an accepted task with no current verdict as blocking", () => {
+      const report = auditGraph({
+        nodes: [makeNode({ id: "task_01", type: "Task" })],
+        edges: [],
+      });
+      const finding = report.findings.find((entry) => entry.kind === "task_stale");
+      expect(finding).toBeDefined();
+      expect(finding?.subjects).toEqual(["task_01"]);
+      expect(finding?.blocking).toBe(true);
+    });
+
+    it("stays silent for a task with a fresh quality record (audit context)", () => {
+      const graph = { nodes: [makeNode({ id: "task_01", type: "Task" })], edges: [] };
+      expect(auditGraph(graph).findings.some((entry) => entry.kind === "task_stale")).toBe(true);
+      expect(
+        auditGraph(graph, { provenTaskIds: ["task_01"] }).findings.some(
+          (entry) => entry.kind === "task_stale",
+        ),
+      ).toBe(false);
+    });
+
+    it("stays silent for a proposed task or an evaluated one", () => {
+      const report = auditGraph({
+        nodes: [
+          makeNode({ id: "task_01", type: "Task", status: "proposed" }),
+          makeNode({ id: "task_02", type: "Task" }),
+          makeNode({ id: "evaluation-case_01", type: "EvaluationCase" }),
+        ],
+        edges: [
+          makeEdge({
+            id: "edge-case-evaluates_01",
+            type: "EVALUATES",
+            sourceId: "evaluation-case_01",
+            targetId: "task_02",
+          }),
+        ],
+      });
+      expect(report.findings.some((entry) => entry.kind === "task_stale")).toBe(false);
+    });
+
+    it("never shares a subject with missing_verification", () => {
+      const report = auditGraph({
+        nodes: [
+          makeNode({ id: "task_01", type: "Task" }),
+          makeNode({ id: "test_01", type: "Test" }),
+        ],
+        edges: [],
+      });
+      const stale = report.findings.find((entry) => entry.kind === "task_stale");
+      const missing = report.findings.find((entry) => entry.kind === "missing_verification");
+      expect(stale?.subjects).toEqual(["task_01"]);
+      expect(missing?.subjects).toEqual(["test_01"]);
+      expect(report.findings.filter((entry) => entry.kind === "missing_verification")).toHaveLength(
+        1,
       );
     });
   });

@@ -283,6 +283,19 @@ describe("phase orchestrator", { timeout: 30000 }, () => {
       .filter((entry) => !entry.startsWith("finding_audit-missing-design-artifact-"))
       .sort();
     expect(blockingFindingIds.length).toBeGreaterThan(0);
+    // The plan phase now wires IMPLEMENTS edges: traceability_gap stays
+    // silent, wired tasks are no orphans, and fresh quality records keep
+    // task_stale silent.
+    const allFindingIds = readdirSync(findingNodesRoot);
+    expect(allFindingIds.some((entry) => entry.startsWith("finding_audit-traceability-gap-"))).toBe(
+      false,
+    );
+    expect(allFindingIds.some((entry) => entry.startsWith("finding_audit-task-orphan-"))).toBe(
+      false,
+    );
+    expect(allFindingIds.some((entry) => entry.startsWith("finding_audit-task-stale-"))).toBe(
+      false,
+    );
 
     // Non-blocking gaps surface as warnings, never as blockers; blocking gaps
     // (traceability, verification) stay blockers without a manual audit.
@@ -397,7 +410,10 @@ describe("phase orchestrator", { timeout: 30000 }, () => {
     // The user writes the document between iterations; the next completing
     // snapshot rescans it into the graph and the resolved gap is superseded.
     mkdirSync(join(projectRoot, "docs"), { recursive: true });
-    writeFileSync(join(projectRoot, "docs", "api-contract.md"), "# API Contract\n");
+    writeFileSync(
+      join(projectRoot, "docs", "api-contract.md"),
+      "# API Contract\n\n- POST /retrieve -- retrieval endpoint\n",
+    );
     const second = await driveToCompletion("add the second capability");
     expect(second.status).toBe("completed");
 
@@ -428,6 +444,7 @@ describe("phase orchestrator", { timeout: 30000 }, () => {
       expect(doc).toBeDefined();
       expect(doc?.extensions?.["harness.scan"]).toMatchObject({
         classification: "documentation",
+        api_entries: ["API Contract", "POST /retrieve"],
       });
       const edges: EdgeRecord[] = [];
       let edgeCursor: string | undefined;

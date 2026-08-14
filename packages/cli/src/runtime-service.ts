@@ -14,6 +14,7 @@ import {
   driveOpenOperation,
   parseApprovalDecision,
   previewImpactSet,
+  provenQualityTaskIds,
   readLatestExecutionPlan,
   readLatestSnapshot,
   readStagedAdoptionPreview,
@@ -610,7 +611,10 @@ export function createOrchestratedRuntimeService(
             edges.push(...page.items);
             edgeCursor = page.nextCursor;
           } while (edgeCursor !== undefined);
-          const report = auditGraph({ nodes, edges });
+          const report = auditGraph(
+            { nodes, edges },
+            { provenTaskIds: provenQualityTaskIds(request.projectRoot) },
+          );
           return {
             command: "audit",
             status: report.findings.some((finding) => finding.blocking) ? "failed" : "ok",

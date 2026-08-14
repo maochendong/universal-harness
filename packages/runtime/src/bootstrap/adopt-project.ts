@@ -482,6 +482,7 @@ export async function commitAdoption(
           sha256: file.sha256,
           size: file.size,
           ...(file.language === undefined ? {} : { language: file.language }),
+          ...(file.apiEntries === undefined ? {} : { api_entries: [...file.apiEntries] }),
         },
       },
     });

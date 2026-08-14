@@ -1526,6 +1526,69 @@ function orderedPlanTasks(tasks: readonly TaskSpecification[]): readonly TaskSpe
   return ordered;
 }
 
+/**
+ * IMPLEMENTS edges wiring each planned task to the requirements it delivers
+ * (card T2/T3): the graph-native traceability link `traceability_gap` and
+ * `task_orphan` audit against. Expected outputs that name no current
+ * Requirement node are skipped (a dangling edge would fail integrity); the
+ * task_orphan rule reports those tasks instead.
+ */
+function implementsEdgesFor(
+  ctx: PipelineContext,
+  specifications: readonly TaskSpecification[],
+  tasks: readonly NodeRecord[],
+): EdgeRecord[] {
+  const graph = materializeProjectGraph(ctx.deps.projectRoot);
+  let requirementIds: ReadonlySet<string>;
+  try {
+    const latest = new Map<string, NodeRecord>();
+    for (const node of graph.nodes) {
+      const current = latest.get(node.id);
+      if (current === undefined || node.revision > current.revision) latest.set(node.id, node);
+    }
+    requirementIds = new Set(
+      [...latest.values()]
+        .filter((node) => node.type === "Requirement" && node.status !== "tombstoned")
+        .map((node) => node.id),
+    );
+  } finally {
+    graph.close();
+  }
+  const edges: EdgeRecord[] = [];
+  for (const task of tasks) {
+    const specification = specifications.find((candidate) => candidate.id === task.id);
+    for (const output of [...(specification?.expected_outputs ?? [])].sort()) {
+      if (!requirementIds.has(output)) continue;
+      const content: Record<string, unknown> = {
+        protocol_version: PROTOCOL_VERSION,
+        record_kind: "edge",
+        id: `edge_${contentDigest({ type: "IMPLEMENTS", source: task.id, target: output }).slice(0, 16)}`,
+        type: "IMPLEMENTS",
+        source_id: task.id,
+        target_id: output,
+        status: "proposed",
+        source: "workflow",
+        provenance: {
+          iteration_id: ctx.iterationId,
+          actor: "workflow-engine",
+          timestamp: nowOf(ctx.deps),
+        },
+        confidence: 1,
+      };
+      const edge = { ...content, digest: contentDigest(content) };
+      const validation = validateSchema("edge", edge);
+      if (!validation.valid) {
+        throw new OrchestrationError(
+          "configuration",
+          `invalid IMPLEMENTS edge: ${validation.errors.map((issue) => issue.message).join("; ")}`,
+        );
+      }
+      edges.push(edge as unknown as EdgeRecord);
+    }
+  }
+  return edges;
+}
+
 async function phasePlan(ctx: PipelineContext, gateIds: readonly string[]): Promise<PhaseStep> {
   const { deps } = ctx;
   const existing = loadPlan(ctx);
@@ -1578,7 +1641,7 @@ async function phasePlan(ctx: PipelineContext, gateIds: readonly string[]): Prom
         content: `${canonicalizeJson(task)}\n`,
       })),
     ],
-    [...records.edges],
+    [...records.edges, ...implementsEdgesFor(ctx, specifications, records.tasks)],
   );
   ctx.plan = { node: records.plan, content: readExecutionPlanContent(records.plan) };
   await ctx.engine.commitCheckpoint(ctx.workflowOperationId, {
@@ -2131,6 +2194,7 @@ async function commitScannedDocumentation(ctx: PipelineContext): Promise<void> {
           classification: file.classification,
           sha256: file.sha256,
           size: file.size,
+          ...(file.apiEntries === undefined ? {} : { api_entries: [...file.apiEntries] }),
         },
       },
     });
@@ -2264,6 +2328,44 @@ function buildAuditFindingArtifacts(
 }
 
 /**
+ * Task ids whose task-level quality record (card T5) is fresh and passing
+ * (card T3): a record is fresh when its bound code digest still matches the
+ * current worktree. The iterate audit hook and `harness audit` both feed
+ * this set to the auditor, so `task_stale` never fires for a task whose
+ * proof is current.
+ */
+export function provenQualityTaskIds(projectRoot: string): string[] {
+  const root = resolveHarnessPath(harnessRootFor(projectRoot), "artifacts/quality");
+  if (!existsSync(root)) return [];
+  const codeHash = hashWorktreeCode(projectRoot);
+  const proven = new Set<string>();
+  const walk = (directory: string): void => {
+    for (const entry of readdirSync(directory, { withFileTypes: true }).sort((left, right) =>
+      left.name < right.name ? -1 : left.name > right.name ? 1 : 0,
+    )) {
+      const absolute = join(directory, entry.name);
+      if (entry.isDirectory()) {
+        walk(absolute);
+        continue;
+      }
+      if (!entry.isFile() || !entry.name.endsWith(".json")) continue;
+      const record = JSON.parse(readFileSync(absolute, "utf8")) as {
+        task_id?: unknown;
+        verdict?: unknown;
+        bindings?: { code_digests?: unknown };
+      };
+      if (record.verdict !== "passed" || typeof record.task_id !== "string") continue;
+      const codeDigests = record.bindings?.code_digests;
+      if (Array.isArray(codeDigests) && codeDigests.includes(codeHash)) {
+        proven.add(record.task_id);
+      }
+    }
+  };
+  walk(root);
+  return [...proven].sort();
+}
+
+/**
  * Post-verify/evaluate graph audit (design 8.7 wired into the pipeline). The
  * completing snapshot re-runs the deterministic audit -- the same checks
  * `harness audit` reports -- and commits every gap as a proposed Finding
@@ -2281,7 +2383,10 @@ async function commitAuditFindings(ctx: PipelineContext): Promise<void> {
   let openAuditFindings: NodeRecord[];
   let committedEdgeIds: ReadonlySet<string>;
   try {
-    report = auditGraph({ nodes: graph.nodes, edges: graph.edges });
+    report = auditGraph(
+      { nodes: graph.nodes, edges: graph.edges },
+      { provenTaskIds: provenQualityTaskIds(deps.projectRoot) },
+    );
     const latestFinding = new Map<string, NodeRecord>();
     for (const node of graph.nodes) {
       if (node.type !== "Finding" || node.source !== "audit") continue;

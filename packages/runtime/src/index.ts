@@ -652,6 +652,7 @@ export {
   findOpenWorkflowOperation,
   hashWorktreeCode,
   previewImpactSet,
+  provenQualityTaskIds,
   readLatestExecutionPlan,
   readLatestSnapshot,
   resolveApproval,

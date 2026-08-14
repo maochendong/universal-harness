@@ -16,6 +16,9 @@ export const AUDIT_FINDING_KINDS = [
   "unpromoted_high_risk_improvement",
   "unhealthy_context_source",
   "missing_design_artifact",
+  "task_orphan",
+  "api_contract_coverage",
+  "task_stale",
 ] as const;
 
 export type AuditFindingKind = (typeof AUDIT_FINDING_KINDS)[number];
@@ -370,14 +373,169 @@ function auditDesignArtifactCoverage(nodes: ReadonlyMap<string, NodeRecord>): Au
 }
 
 /**
+ * Optional audit context (comparative design direction 2, card T3). The
+ * auditor itself stays pure: callers that can see the ledger supply the task
+ * ids whose task-level quality record (card T5) is fresh and passing, so
+ * `task_stale` never fires for a task whose proof is current.
+ */
+export interface AuditContext {
+  readonly provenTaskIds?: readonly string[];
+}
+
+/**
+ * Task linkage (card T3): a planned task must implement at least one
+ * requirement. This is the inverse direction of `traceability_gap` -- that
+ * rule flags an accepted Requirement no Task implements; this one flags the
+ * Task side, so a Requirement-side-only gap never double-fires.
+ */
+function auditTaskOrphans(
+  nodes: ReadonlyMap<string, NodeRecord>,
+  edges: readonly EdgeRecord[],
+): AuditFinding[] {
+  const findings: AuditFinding[] = [];
+  for (const node of [...nodes.values()].sort((left, right) => byId(left.id, right.id))) {
+    if (node.type !== "Task") continue;
+    if (node.status !== "proposed" && node.status !== "accepted") continue;
+    const implementsRequirement = edges.some(
+      (edge) =>
+        edge.type === "IMPLEMENTS" &&
+        edge.source_id === node.id &&
+        nodes.get(edge.target_id)?.type === "Requirement",
+    );
+    if (implementsRequirement) continue;
+    findings.push({
+      kind: "task_orphan",
+      origin: "audit",
+      summary: `task ${node.id} implements no requirement; wire an IMPLEMENTS edge or retire the task`,
+      subjects: [node.id],
+      blocking: true,
+    });
+  }
+  return findings;
+}
+
+/** Accepted contract documentation nodes, with their extracted entries. */
+function contractDocumentsOf(
+  nodes: ReadonlyMap<string, NodeRecord>,
+): { readonly id: string; readonly entries: readonly string[] }[] {
+  const contracts: { readonly id: string; readonly entries: readonly string[] }[] = [];
+  for (const node of nodes.values()) {
+    const text = documentationTextOf(node);
+    if (text === undefined) continue;
+    if (!CONTRACT_DOMAIN_KEYWORDS.some((keyword) => keyword.test(text))) continue;
+    const scan = node.extensions?.["harness.scan"];
+    const entries =
+      typeof scan === "object" && scan !== null
+        ? (scan as Record<string, unknown>).api_entries
+        : undefined;
+    if (!Array.isArray(entries)) continue;
+    contracts.push({
+      id: node.id,
+      entries: entries.filter((entry): entry is string => typeof entry === "string"),
+    });
+  }
+  return contracts.sort((left, right) => byId(left.id, right.id));
+}
+
+const CONTRACT_DOMAIN_KEYWORDS: readonly RegExp[] = [
+  /\bapi\b/u,
+  /\bcontract\b/u,
+  /\bopenapi\b/u,
+  /\bproto\b/u,
+];
+
+/**
+ * API contract coverage (card T3): every extracted entry of an accepted
+ * contract document should be referenced by at least one planned task
+ * (matched against the task id, objective and expected outputs). The rule
+ * extends `missing_design_artifact` -- that rule speaks when no contract
+ * document exists; this one stays silent in that case, and also when the
+ * document predates entry extraction (no `api_entries` extension).
+ */
+function auditApiContractCoverage(nodes: ReadonlyMap<string, NodeRecord>): AuditFinding[] {
+  const planned = [...nodes.values()].some(
+    (node) =>
+      node.type === "ExecutionPlan" && (node.status === "proposed" || node.status === "accepted"),
+  );
+  if (!planned) return [];
+  const taskTexts = [...nodes.values()]
+    .filter(
+      (node) => node.type === "Task" && (node.status === "proposed" || node.status === "accepted"),
+    )
+    .map((node) => {
+      const extension = node.extensions?.["harness.plan"];
+      const content =
+        typeof extension === "object" && extension !== null
+          ? (extension as Record<string, unknown>)
+          : {};
+      const objective = typeof content.objective === "string" ? content.objective : "";
+      const outputs = Array.isArray(content.expected_outputs)
+        ? content.expected_outputs.filter((entry): entry is string => typeof entry === "string")
+        : [];
+      return `${node.id} ${objective} ${outputs.join(" ")}`.toLowerCase();
+    });
+  const findings: AuditFinding[] = [];
+  for (const contract of contractDocumentsOf(nodes)) {
+    for (const entry of contract.entries) {
+      if (taskTexts.some((text) => text.includes(entry.toLowerCase()))) continue;
+      findings.push({
+        kind: "api_contract_coverage",
+        origin: "audit",
+        summary: `contract ${contract.id} entry ${JSON.stringify(entry)} is not referenced by any task; plan work against it or mark it out of scope`,
+        subjects: [contract.id],
+        blocking: false,
+      });
+    }
+  }
+  return findings;
+}
+
+/**
+ * Task staleness (card T3): an accepted (executed) Task must carry a current
+ * verdict -- either an accepted EvaluationCase EVALUATES it (the graph-native
+ * verdict chain) or the caller vouches for a fresh passing quality record.
+ * Disjoint from `missing_verification` by construction: that rule targets
+ * accepted Test nodes along the Evidence SUPPORTS chain, this one targets
+ * Task nodes along the EVALUATES chain, so the two never share a subject.
+ */
+function auditTaskStaleness(
+  nodes: ReadonlyMap<string, NodeRecord>,
+  edges: readonly EdgeRecord[],
+  provenTaskIds: ReadonlySet<string>,
+): AuditFinding[] {
+  const findings: AuditFinding[] = [];
+  for (const node of [...nodes.values()].sort((left, right) => byId(left.id, right.id))) {
+    if (node.type !== "Task" || node.status !== "accepted") continue;
+    if (provenTaskIds.has(node.id)) continue;
+    const evaluated = edges.some(
+      (edge) =>
+        edge.type === "EVALUATES" &&
+        edge.target_id === node.id &&
+        nodes.get(edge.source_id)?.type === "EvaluationCase" &&
+        nodes.get(edge.source_id)?.status === "accepted",
+    );
+    if (evaluated) continue;
+    findings.push({
+      kind: "task_stale",
+      origin: "audit",
+      summary: `accepted task ${node.id} has no current passing verdict; re-run its quality gate before relying on it`,
+      subjects: [node.id],
+      blocking: true,
+    });
+  }
+  return findings;
+}
+
+/**
  * Run every audit check over the current graph state. Only active
  * (proposed/accepted) edges participate; rejected or superseded edges are
  * history. Findings come back in kind-declaration order, each internally
  * sorted, so reports diff cleanly in golden tests.
  */
-export function auditGraph(graph: AuditGraph): AuditReport {
+export function auditGraph(graph: AuditGraph, context?: AuditContext): AuditReport {
   const nodes = currentNodes(graph.nodes);
   const edges = graph.edges.filter(isActive).sort((left, right) => byId(left.id, right.id));
+  const provenTaskIds = new Set(context?.provenTaskIds ?? []);
   const findings = [
     ...auditTraceability(nodes, edges),
     ...auditStaleKnowledge(graph, nodes, edges),
@@ -387,6 +545,9 @@ export function auditGraph(graph: AuditGraph): AuditReport {
     ...auditUnpromotedImprovements(nodes),
     ...auditContextHealth(nodes, edges),
     ...auditDesignArtifactCoverage(nodes),
+    ...auditTaskOrphans(nodes, edges),
+    ...auditApiContractCoverage(nodes),
+    ...auditTaskStaleness(nodes, edges, provenTaskIds),
   ];
   return { findings, checked_nodes: nodes.size, checked_edges: edges.length };
 }

@@ -3,6 +3,8 @@ import { join } from "node:path";
 
 import { LocatorError, normalizeLocatorPath, sha256Hex } from "@universal-harness-internal/core";
 
+import { extractApiEntries } from "../audit/contract-entries.js";
+
 /**
  * Deterministic worktree scanner (design section 12.2). The scan is pure
  * file-system observation: it never writes, never follows symlinks, and never
@@ -27,6 +29,11 @@ export interface ScannedFile {
   readonly language?: string;
   /** Import specifiers extracted deterministically; semantic edge proposal input. */
   readonly references: readonly string[];
+  /**
+   * Contract entries (endpoints/headings) of a contract-named documentation
+   * file; consumed by the api_contract_coverage audit rule.
+   */
+  readonly apiEntries?: readonly string[];
 }
 
 export interface ScannedComponent {
@@ -280,6 +287,10 @@ export function scanWorktree(root: string): ScanResult {
       continue;
     }
     const content = entry.content.toString("utf8");
+    const apiEntries =
+      classified.classification === "documentation"
+        ? extractApiEntries(canonicalPath, content)
+        : undefined;
     files.push({
       path: canonicalPath,
       sha256: sha256Hex(content),
@@ -288,6 +299,7 @@ export function scanWorktree(root: string): ScanResult {
       ...(classified.language === undefined ? {} : { language: classified.language }),
       references:
         classified.language === undefined ? [] : extractReferences(classified.language, content),
+      ...(apiEntries === undefined ? {} : { apiEntries }),
     });
   }
 
