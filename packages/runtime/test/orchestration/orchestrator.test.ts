@@ -623,7 +623,11 @@ describe("phase orchestrator", { timeout: 30000 }, () => {
     const { request_id: requestId, workflow_operation_id: workflowOperationId } = started.required;
 
     // The Git baseline advances after the checkpoint: resume and approve are
-    // sealed by the drift guard, exactly the dead end the dogfood hit.
+    // sealed by the drift guard, exactly the dead end the dogfood hit. The
+    // external commit needs a repo-local identity: CI runners have no global
+    // git user.name/user.email (same strings as the fixture repo helper).
+    git(projectRoot, "config", "user.name", "Harness Test");
+    git(projectRoot, "config", "user.email", "harness-test@example.com");
     git(projectRoot, "commit", "--allow-empty", "-m", "external commit");
     await expect(resumeIteration(deps, workflowOperationId, undefined)).rejects.toThrow(
       /baseline drifted/u,
