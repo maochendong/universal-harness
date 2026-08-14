@@ -199,6 +199,9 @@ importers:
         specifier: workspace:*
         version: link:../plugin-sdk
     devDependencies:
+      '@universal-harness-internal/adapter-projection-markdown':
+        specifier: workspace:*
+        version: link:../../adapters/projection-markdown
       '@universal-harness-internal/adapter-vcs-git':
         specifier: workspace:*
         version: link:../../adapters/vcs-git

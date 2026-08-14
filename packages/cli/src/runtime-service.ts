@@ -3,6 +3,7 @@ import { createInterface } from "node:readline";
 import { resolve } from "node:path";
 
 import { createGitVcsAdapter } from "@universal-harness-internal/adapter-vcs-git";
+import { renderTasksProjection } from "@universal-harness-internal/adapter-projection-markdown";
 import { defineEvaluationCase, evaluateRun } from "@universal-harness-internal/eval";
 import {
   OrchestrationError,
@@ -225,6 +226,7 @@ export function createOrchestratedRuntimeService(
     execute: options.execute ?? createDirectExecutor(),
     evaluate:
       options.evaluate ?? createEvalPackagePort(options.now ?? (() => new Date().toISOString())),
+    tasksProjection: renderTasksProjection,
     ...(options.now === undefined ? {} : { now: options.now }),
     ...(options.newId === undefined ? {} : { newId: options.newId }),
     ...(options.gates === undefined ? {} : { gates: options.gates }),

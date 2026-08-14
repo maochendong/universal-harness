@@ -22,6 +22,7 @@
     "@universal-harness-internal/plugin-sdk": "workspace:*"
   },
   "devDependencies": {
+    "@universal-harness-internal/adapter-projection-markdown": "workspace:*",
     "@universal-harness-internal/adapter-vcs-git": "workspace:*"
   }
 }

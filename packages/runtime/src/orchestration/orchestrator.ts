@@ -73,6 +73,7 @@ import {
 import { normalizeGateDefinition, type GateDefinition } from "../gates/provider.js";
 import { findingClosableBy, type CurrentEvidenceState } from "../gates/freshness.js";
 import { runGateSuite, type GateSuiteOutcome } from "../gates/runner.js";
+import { ProjectionError, writeManagedOutput } from "../projection/managed-output.js";
 import { issueGrant } from "../policy/capability-grant.js";
 import { mergePolicyLayers } from "../policy/evaluator.js";
 import type { EffectivePolicy } from "../policy/decision.js";
@@ -212,6 +213,18 @@ export type EvaluationPort = (
   input: EvaluationPortInput,
 ) => Promise<EvaluationPortResult> | EvaluationPortResult;
 
+/**
+ * Tasks projection port (design 13.7; comparative design direction 1):
+ * renders the SpecKit-style task list from the authoritative graph at the
+ * completing snapshot. The runtime cannot depend on projection adapters, so
+ * the CLI wires the Markdown renderer and tests inject fakes; absent means
+ * the snapshot skips regeneration.
+ */
+export type TasksProjectionPort = (
+  graph: { readonly nodes: readonly NodeRecord[]; readonly edges: readonly EdgeRecord[] },
+  options: { readonly completedTasks: readonly string[] },
+) => { readonly markdown: string };
+
 export interface OrchestratorDependencies {
   readonly projectRoot: string;
   /** Current Git baseline (HEAD) the next ledger commit must build on. */
@@ -237,6 +250,7 @@ export interface OrchestratorDependencies {
   readonly gates?: readonly GateDefinition[];
   readonly toolRegistry?: ToolRegistry;
   readonly evaluate?: EvaluationPort;
+  readonly tasksProjection?: TasksProjectionPort;
   readonly trajectoryVisibility?: AgentTrajectoryVisibility;
   readonly tokenBudget?: number;
 }
@@ -2231,6 +2245,55 @@ function snapshotBaseInput(
   };
 }
 
+const TASKS_PROJECTION_OUTPUT = "views/tasks.md";
+
+/** Task ids proven complete by any committed snapshot, sorted for determinism. */
+function completedTaskIds(deps: OrchestratorDependencies): string[] {
+  const directory = resolveHarnessPath(harnessRoot(deps), "artifacts/snapshots");
+  if (!existsSync(directory)) return [];
+  const completed = new Set<string>();
+  for (const name of readdirSync(directory)
+    .filter((entry) => entry.endsWith(".json"))
+    .sort()) {
+    const record = readJsonArtifact<SnapshotRecord>(deps, `artifacts/snapshots/${name}`);
+    if (record === undefined) continue;
+    for (const outcome of record.run_outcomes) {
+      if (outcome.outcome === "success" && outcome.id.startsWith("task_")) {
+        completed.add(outcome.id);
+      }
+    }
+  }
+  return [...completed].sort();
+}
+
+/**
+ * Regenerate the tasks.md projection at the completing snapshot (comparative
+ * design direction 1). The graph is the only source of truth and the file a
+ * disposable view: a hand edit is drift, so a refused managed write leaves
+ * the user's bytes untouched -- the stale projection stays visible through
+ * drift detection instead of breaking the iteration.
+ */
+async function regenerateTasksProjection(ctx: PipelineContext): Promise<void> {
+  const { deps } = ctx;
+  if (deps.tasksProjection === undefined) return;
+  const graph = materializeProjectGraph(deps.projectRoot);
+  let markdown: string;
+  try {
+    markdown = deps.tasksProjection(
+      { nodes: graph.nodes, edges: graph.edges },
+      { completedTasks: completedTaskIds(deps) },
+    ).markdown;
+  } finally {
+    graph.close();
+  }
+  try {
+    writeManagedOutput(harnessRoot(deps), { name: TASKS_PROJECTION_OUTPUT, content: markdown });
+  } catch (error) {
+    if (error instanceof ProjectionError && error.kind === "unapproved_overwrite") return;
+    throw error;
+  }
+}
+
 async function phaseSnapshot(ctx: PipelineContext): Promise<PhaseStep> {
   const { deps } = ctx;
   const plan = ctx.plan ?? loadPlan(ctx);
@@ -2315,6 +2378,7 @@ async function phaseSnapshot(ctx: PipelineContext): Promise<PhaseStep> {
   // re-runs dedupe by finding id.
   await commitScannedDocumentation(ctx);
   await commitAuditFindings(ctx);
+  await regenerateTasksProjection(ctx);
   await ctx.engine.advance(ctx.workflowOperationId, "completed");
   let finalCommit = deps.readBaseline();
   if (deps.vcs !== undefined) {

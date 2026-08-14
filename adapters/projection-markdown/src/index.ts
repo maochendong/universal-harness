@@ -156,6 +156,7 @@ export { renderArchitectureProjection } from "./architecture.js";
 export { renderSpecificationProjection } from "./spec.js";
 export { renderPlanProjection } from "./plan.js";
 export { renderSnapshotProjection, type SnapshotViewInput } from "./snapshot.js";
+export { renderTasksProjection, type TasksProjectionOptions } from "./tasks.js";
 
 export const workspacePackageName =
   "@universal-harness-internal/adapter-projection-markdown" as const;
