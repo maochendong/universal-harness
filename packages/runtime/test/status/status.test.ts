@@ -13,6 +13,7 @@ interface NodeSpec {
   readonly type: NodeRecord["type"];
   readonly status?: NodeRecord["status"];
   readonly iterationState?: NodeRecord["iteration_state"];
+  readonly extensions?: Record<string, unknown>;
 }
 
 function makeNode(spec: NodeSpec): NodeRecord {
@@ -28,6 +29,7 @@ function makeNode(spec: NodeSpec): NodeRecord {
     confidence: 1,
   };
   if (spec.iterationState !== undefined) record.iteration_state = spec.iterationState;
+  if (spec.extensions !== undefined) record.extensions = spec.extensions;
   return { ...record, digest: contentDigest(record) } as unknown as NodeRecord;
 }
 
@@ -138,6 +140,40 @@ describe("deriveProjectStatus", () => {
       },
     });
     expect(status.blockers).toEqual(["blocking finding finding_01", "waiting on the user"]);
+    expect(status.next_action).toBe("repair blocker: blocking finding finding_01");
+  });
+
+  it("demotes explicitly non-blocking findings to warnings", () => {
+    const status = deriveProjectStatus({
+      nodes: [
+        makeNode({ id: "iteration_01", type: "Iteration", iterationState: "running" }),
+        makeNode({ id: "finding_01", type: "Finding", status: "accepted" }),
+        makeNode({
+          id: "finding_02",
+          type: "Finding",
+          status: "proposed",
+          extensions: {
+            "harness.finding": { origin: "audit", blocking: false, blocks: ["iteration_01"] },
+          },
+        }),
+      ],
+      edges: [
+        makeEdge({
+          id: "edge-finding-blocks_01",
+          type: "BLOCKS",
+          sourceId: "finding_01",
+          targetId: "iteration_01",
+        }),
+        makeEdge({
+          id: "edge-finding-blocks_02",
+          type: "BLOCKS",
+          sourceId: "finding_02",
+          targetId: "iteration_01",
+        }),
+      ],
+    });
+    expect(status.blockers).toEqual(["blocking finding finding_01"]);
+    expect(status.warnings).toEqual(["warning finding finding_02"]);
     expect(status.next_action).toBe("repair blocker: blocking finding finding_01");
   });
 

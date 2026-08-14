@@ -1,15 +1,16 @@
-import { existsSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { afterEach, describe, expect, it } from "vitest";
 
 import { createGitVcsAdapter } from "@universal-harness-internal/adapter-vcs-git";
-import { materializeLedger, pageEdges } from "@universal-harness-internal/graph";
+import { materializeLedger, pageEdges, pageNodes } from "@universal-harness-internal/graph";
 import type { AgentRunResult, AgentTaskEnvelope } from "@universal-harness-internal/plugin-sdk";
 
 import {
   OrchestrationError,
   assertLifecycleOrder,
+  auditGraph,
   collectProjectStatus,
   createDefaultEvaluationPort,
   createGenericInterpreter,
@@ -33,6 +34,7 @@ import {
   LedgerRepository,
   readCommittedOperations,
   type EdgeRecord,
+  type NodeRecord,
 } from "../../../core/src/index.js";
 import {
   FIXED_NOW,
@@ -267,24 +269,34 @@ describe("phase orchestrator", { timeout: 30000 }, () => {
     for (const id of designFindingIds) {
       expect(readdirSync(join(findingNodesRoot, id))).toEqual(["1.json"]);
     }
+    const blockingFindingIds = readdirSync(findingNodesRoot)
+      .filter((entry) => !entry.startsWith("finding_audit-missing-design-artifact-"))
+      .sort();
+    expect(blockingFindingIds.length).toBeGreaterThan(0);
 
-    // The gaps surface in project status as blockers without a manual audit.
+    // Non-blocking gaps surface as warnings, never as blockers; blocking gaps
+    // (traceability, verification) stay blockers without a manual audit.
     const status = collectProjectStatus(projectRoot);
     for (const id of designFindingIds) {
+      expect(status.blockers).not.toContain(`blocking finding ${id}`);
+      expect(status.warnings).toContain(`warning finding ${id}`);
+    }
+    for (const id of blockingFindingIds) {
       expect(status.blockers).toContain(`blocking finding ${id}`);
     }
     expect(status.next_action).toContain("repair blocker: blocking finding finding_audit-");
 
     // A second iteration re-runs the audit: the same gaps dedupe to the same
     // Finding ids (still revision 1, same feedback record) instead of
-    // duplicating, and the new iteration gets its own BLOCKS edge.
-    const firstFindingId = designFindingIds[0] as string;
+    // duplicating, and each blocking finding binds the new iteration too.
+    const firstDesignId = designFindingIds[0] as string;
+    const firstBlockingId = blockingFindingIds[0] as string;
     const feedbackPath = join(
       projectRoot,
       ".harness",
       "artifacts",
       "findings",
-      firstFindingId,
+      firstDesignId,
       "proposed.json",
     );
     const feedbackBefore = readFileSync(feedbackPath, "utf8");
@@ -312,12 +324,119 @@ describe("phase orchestrator", { timeout: 30000 }, () => {
         edges.push(...page.items);
         cursor = page.nextCursor;
       } while (cursor !== undefined);
+      // A non-blocking finding never gets a BLOCKS edge.
+      expect(
+        edges.filter((edge) => edge.type === "BLOCKS" && edge.source_id === firstDesignId),
+      ).toEqual([]);
       const blocking = edges.filter(
-        (edge) => edge.type === "BLOCKS" && edge.source_id === firstFindingId,
+        (edge) => edge.type === "BLOCKS" && edge.source_id === firstBlockingId,
       );
       expect(blocking.map((edge) => edge.target_id).sort()).toEqual(
         [first.iterationId, second.iterationId].sort(),
       );
+    } finally {
+      database.close();
+    }
+  });
+
+  it("rescans worktree documentation into the graph and supersedes resolved findings", async () => {
+    const newId = sequentialIds();
+    const parent = makeTempDir("harness-orch-rescan-");
+    const bootstrapped = await createNewProject(
+      { parentDirectory: parent, name: "orch-rescan", intent: INTENT },
+      { vcs: createGitVcsAdapter(), now: () => FIXED_NOW, newId: (kind) => newId(kind) },
+    );
+    if (!bootstrapped.ok) throw new Error(bootstrapped.error.message);
+    const projectRoot = bootstrapped.value.projectRoot;
+    const deps = makeDeps(projectRoot, newId, { execute: recordingExecutor().executor });
+
+    const driveToCompletion = async (
+      intent: string,
+      iterationId?: string,
+    ): Promise<OrchestrationOutcome> => {
+      let outcome = await runIteration(deps, {
+        intent,
+        ...(iterationId === undefined ? {} : { iterationId }),
+      });
+      while (outcome.status === "approval_required") {
+        outcome = await approveAndResume(deps, outcome);
+      }
+      return outcome;
+    };
+
+    const findingNodesRoot = join(projectRoot, ".harness", "artifacts", "finding-nodes");
+    const apiContractFindingId = (): string | undefined => {
+      const findingsRoot = join(projectRoot, ".harness", "artifacts", "findings");
+      for (const entry of readdirSync(findingsRoot).sort()) {
+        if (!entry.startsWith("finding_audit-missing-design-artifact-")) continue;
+        const proposed = JSON.parse(
+          readFileSync(join(findingsRoot, entry, "proposed.json"), "utf8"),
+        ) as { summary?: string };
+        if (proposed.summary?.includes("domain: api-contract") === true) return entry;
+      }
+      return undefined;
+    };
+
+    // First iteration without an API contract: the gap is committed.
+    const first = await driveToCompletion(INTENT, bootstrapped.value.iterationId);
+    expect(first.status).toBe("completed");
+    const findingId = apiContractFindingId();
+    expect(findingId).toBeDefined();
+    if (findingId === undefined) return;
+
+    // The user writes the document between iterations; the next completing
+    // snapshot rescans it into the graph and the resolved gap is superseded.
+    mkdirSync(join(projectRoot, "docs"), { recursive: true });
+    writeFileSync(join(projectRoot, "docs", "api-contract.md"), "# API Contract\n");
+    const second = await driveToCompletion("add the second capability");
+    expect(second.status).toBe("completed");
+
+    const revisions = readdirSync(join(findingNodesRoot, findingId)).sort();
+    expect(revisions).toEqual(["1.json", "2.json"]);
+    const superseded = JSON.parse(
+      readFileSync(join(findingNodesRoot, findingId, "2.json"), "utf8"),
+    ) as { status?: string };
+    expect(superseded.status).toBe("superseded");
+
+    // The scanned document is a graph CodeArtifact and the audit agrees the
+    // domain is covered; no new finding replaces the superseded one.
+    const { database } = materializeLedger({ projectRoot, databasePath: ":memory:" });
+    try {
+      const nodes: NodeRecord[] = [];
+      let cursor: string | undefined;
+      do {
+        const page = pageNodes(database, {
+          limit: 500,
+          ...(cursor === undefined ? {} : { cursor }),
+        });
+        nodes.push(...page.items);
+        cursor = page.nextCursor;
+      } while (cursor !== undefined);
+      const doc = nodes.find(
+        (node) => node.type === "CodeArtifact" && node.locator?.endsWith("docs/api-contract.md"),
+      );
+      expect(doc).toBeDefined();
+      expect(doc?.extensions?.["harness.scan"]).toMatchObject({
+        classification: "documentation",
+      });
+      const edges: EdgeRecord[] = [];
+      let edgeCursor: string | undefined;
+      do {
+        const page = pageEdges(database, {
+          limit: 500,
+          ...(edgeCursor === undefined ? {} : { cursor: edgeCursor }),
+        });
+        edges.push(...page.items);
+        edgeCursor = page.nextCursor;
+      } while (edgeCursor !== undefined);
+      const report = auditGraph({ nodes, edges });
+      expect(
+        report.findings.some(
+          (finding) =>
+            finding.kind === "missing_design_artifact" &&
+            finding.summary.includes("domain: api-contract"),
+        ),
+      ).toBe(false);
     } finally {
       database.close();
     }

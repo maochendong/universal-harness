@@ -5,6 +5,7 @@ import {
   LedgerRepository,
   PROTOCOL_VERSION,
   canonicalizeJson,
+  canonicalizeLocator,
   contentDigest,
   harnessRootFor,
   readCommittedOperations,
@@ -37,6 +38,14 @@ import type {
 
 import { ApprovalService, type ApprovalIdKind } from "../approval/service.js";
 import { auditGraph, type AuditFinding, type AuditReport } from "../audit/auditor.js";
+import {
+  artifactContentForNode,
+  artifactPathForNode,
+  edgeRecord,
+  scannedNodeRecord,
+  type RecordContext,
+} from "../bootstrap/records.js";
+import { scanWorktree } from "../bootstrap/scanner.js";
 import {
   approvalDecisionArtifact,
   readApprovalDecisions,
@@ -1795,6 +1804,84 @@ async function phaseVerify(
 const AUDIT_FINDING_NODE_DIRECTORY = "artifacts/finding-nodes";
 
 /**
+ * Incremental documentation rescan (design 12.2 reuse). Adoption scans the
+ * worktree once, but documents written afterwards never enter the graph, so
+ * the design-artifact audit cannot see them. Before the post-iteration audit
+ * runs, the completing snapshot re-scans the worktree with the same
+ * deterministic scanner and commits CodeArtifact nodes (plus the Repository
+ * CONTAINS edge) for documentation files that have no node yet. Node and edge
+ * ids are content-derived from the locator, so re-runs are no-ops; changed or
+ * deleted files are out of scope (their nodes keep their adopted revisions).
+ */
+async function commitScannedDocumentation(ctx: PipelineContext): Promise<void> {
+  const { deps } = ctx;
+  const graph = materializeProjectGraph(deps.projectRoot);
+  let repository: NodeRecord | undefined;
+  let knownLocators: ReadonlySet<string>;
+  try {
+    const latest = new Map<string, NodeRecord>();
+    for (const node of graph.nodes) {
+      const current = latest.get(node.id);
+      if (current === undefined || node.revision > current.revision) latest.set(node.id, node);
+    }
+    repository = [...latest.values()].find(
+      (node) => node.type === "Repository" && node.status === "accepted",
+    );
+    knownLocators = new Set(
+      [...latest.values()]
+        .filter(
+          (node) =>
+            (node.type === "CodeArtifact" || node.type === "Test") && node.locator !== undefined,
+        )
+        .map((node) => node.locator as string),
+    );
+  } finally {
+    graph.close();
+  }
+  if (repository === undefined) return;
+  const scan = scanWorktree(deps.projectRoot);
+  const manifest = readManagedManifest(deps.projectRoot);
+  const context: RecordContext = {
+    projectId: `project_${manifest.name}`,
+    repositoryId: manifest.repository_id,
+    iterationId: ctx.iterationId,
+    actor: "harness-scanner",
+    timestamp: nowOf(deps),
+  };
+  const artifacts: { readonly path: string; readonly content: string }[] = [];
+  const edges: EdgeRecord[] = [];
+  for (const file of scan.files) {
+    if (file.classification !== "documentation") continue;
+    const locator = canonicalizeLocator(`repo://${manifest.repository_id}/${file.path}`);
+    if (knownLocators.has(locator)) continue;
+    const node = scannedNodeRecord(context, {
+      type: "CodeArtifact",
+      locator,
+      extensions: {
+        "harness.scan": {
+          classification: file.classification,
+          sha256: file.sha256,
+          size: file.size,
+        },
+      },
+    });
+    const path = artifactPathForNode(node);
+    if (artifactExists(deps, path)) continue;
+    artifacts.push({ path, content: artifactContentForNode(node) });
+    edges.push(
+      edgeRecord(context, {
+        type: "CONTAINS",
+        sourceId: repository.id,
+        targetId: node.id,
+        source: "scanner",
+      }),
+    );
+  }
+  if (artifacts.length === 0 && edges.length === 0) return;
+  await commitArtifacts(deps, ctx.workflowOperationId, currentAttemptId(ctx), artifacts, edges);
+}
+
+/**
  * Deterministic Finding identity for audit gaps: rule kind plus the summary
  * text (which carries the rule's target key, e.g. the subject node id or the
  * missing document domain). The same gap always derives the same id, so an
@@ -1839,6 +1926,8 @@ function buildAuditFindingArtifacts(
   const { deps } = ctx;
   const feedbackPath = `artifacts/findings/${id}/proposed.json`;
   const auditExtension = { kind: finding.kind, subjects: [...finding.subjects] };
+  // A non-blocking finding blocks nothing: no BLOCKS edge, empty subject.
+  const blocks = finding.blocking ? [ctx.iterationId] : [];
   // The committed feedback record wins: a later iteration must reuse its
   // digest instead of resealing the same gap under a new timestamp.
   const committed = readJsonArtifact<Record<string, unknown>>(deps, feedbackPath);
@@ -1858,7 +1947,7 @@ function buildAuditFindingArtifacts(
           origin: "audit",
           blocking: finding.blocking,
           violates: [],
-          blocks: [ctx.iterationId],
+          blocks,
           evidence: [],
         },
         "harness.audit": auditExtension,
@@ -1888,7 +1977,7 @@ function buildAuditFindingArtifacts(
         origin: "audit",
         blocking: finding.blocking,
         violates: [],
-        blocks: [ctx.iterationId],
+        blocks,
         evidence: [],
       },
       "harness.audit": auditExtension,
@@ -1908,12 +1997,13 @@ function buildAuditFindingArtifacts(
 /**
  * Post-verify/evaluate graph audit (design 8.7 wired into the pipeline). The
  * completing snapshot re-runs the deterministic audit -- the same checks
- * `harness audit` reports -- and commits every gap as a proposed Finding node
- * with a BLOCKS edge to the just-completed Iteration node, so the gap shows
- * up in `harness status` blockers and next_action without a manual audit.
- * Finding ids are content-derived (rule kind plus summary), so re-runs
- * dedupe instead of duplicating; a gap that no longer reproduces supersedes
- * its committed Finding instead of lingering as a phantom blocker.
+ * `harness audit` reports -- and commits every gap as a proposed Finding
+ * node; blocking gaps also get a BLOCKS edge to the just-completed Iteration
+ * node, so they show up in `harness status` blockers and next_action without
+ * a manual audit (non-blocking gaps surface as warnings). Finding ids are
+ * content-derived (rule kind plus summary), so re-runs dedupe instead of
+ * duplicating; a gap that no longer reproduces supersedes its committed
+ * Finding instead of lingering as a phantom blocker.
  */
 async function commitAuditFindings(ctx: PipelineContext): Promise<void> {
   const { deps } = ctx;
@@ -1955,6 +2045,7 @@ async function commitAuditFindings(ctx: PipelineContext): Promise<void> {
     if (!artifactExists(deps, built.nodePath)) {
       artifacts.push({ path: built.nodePath, content: `${canonicalizeJson(built.node)}\n` });
     }
+    if (!finding.blocking) continue;
     const edgeId = `edge_${sha256Hex(`BLOCKS:${id}:${ctx.iterationId}`).slice(0, 16)}`;
     if (committedEdgeIds.has(edgeId)) continue;
     const edgeContent: Record<string, unknown> = {
@@ -2215,10 +2306,12 @@ async function phaseSnapshot(ctx: PipelineContext): Promise<PhaseStep> {
     },
   ]);
   await commitIterationNode(ctx, "completed");
-  // Post-verify/evaluate audit, run at the completing snapshot: the Iteration
-  // node exists only now, so the audit's BLOCKS edges can bind it. Committed
-  // gaps surface in `harness status` without a manual `harness audit`;
-  // idempotent re-runs dedupe by finding id.
+  // Pick up documents written since adoption so the audit sees them, then run
+  // the post-verify/evaluate audit at the completing snapshot: the Iteration
+  // node exists only now, so blocking findings can bind it. Committed gaps
+  // surface in `harness status` without a manual `harness audit`; idempotent
+  // re-runs dedupe by finding id.
+  await commitScannedDocumentation(ctx);
   await commitAuditFindings(ctx);
   await ctx.engine.advance(ctx.workflowOperationId, "completed");
   let finalCommit = deps.readBaseline();

@@ -38,6 +38,8 @@ export interface ProjectStatus {
   readonly control_level: ControlLevel | "none";
   readonly evaluation_coverage: { readonly evaluated: number; readonly total: number };
   readonly blockers: readonly string[];
+  /** Non-blocking findings the iteration should surface but not be held by. */
+  readonly warnings: readonly string[];
   readonly stale_evidence: readonly string[];
   readonly pending_approvals: readonly string[];
   readonly budget?: BudgetUse;
@@ -65,6 +67,7 @@ export interface DerivedStatus {
   readonly iteration?: { readonly id: string; readonly state: string };
   readonly evaluation_coverage: { readonly evaluated: number; readonly total: number };
   readonly blockers: readonly string[];
+  readonly warnings: readonly string[];
   readonly stale_evidence: readonly string[];
   readonly pending_approvals: readonly string[];
   readonly budget?: BudgetUse;
@@ -128,18 +131,32 @@ function derivePendingApprovals(
  */
 const APPROVAL_BLOCKER_PATTERN = /^approval request (\S+) awaiting a decision$/;
 
+/**
+ * A Finding only holds its iteration when its bound subject says so. Gate and
+ * cascade findings predate the flag, so a missing `harness.finding` extension
+ * (or a missing flag) defaults to blocking; only an explicit
+ * `blocking: false` -- the shape audit warnings carry -- demotes the finding
+ * to a warning.
+ */
+function findingIsBlocking(node: NodeRecord): boolean {
+  const extension = node.extensions?.["harness.finding"];
+  if (typeof extension !== "object" || extension === null) return true;
+  return (extension as Record<string, unknown>).blocking !== false;
+}
+
 function deriveBlockers(
   nodes: readonly NodeRecord[],
   edges: readonly EdgeRecord[],
   iterationId: string | undefined,
   workingStateBlockers: readonly string[],
   resolvedApprovalIds: ReadonlySet<string>,
-): string[] {
+): { readonly blockers: string[]; readonly warnings: string[] } {
   const liveWorkingStateBlockers = workingStateBlockers.filter((blocker) => {
     const match = APPROVAL_BLOCKER_PATTERN.exec(blocker);
     return match === null || !resolvedApprovalIds.has(match[1] ?? "");
   });
   const blockers = new Set(liveWorkingStateBlockers);
+  const warnings = new Set<string>();
   if (iterationId !== undefined) {
     const nodeById = new Map(nodes.map((node) => [node.id, node]));
     for (const edge of edges) {
@@ -147,11 +164,29 @@ function deriveBlockers(
       const finding = nodeById.get(edge.source_id);
       if (finding === undefined) continue;
       if (finding.status === "proposed" || finding.status === "accepted") {
-        blockers.add(`blocking finding ${finding.id}`);
+        if (findingIsBlocking(finding)) blockers.add(`blocking finding ${finding.id}`);
+        else warnings.add(`warning finding ${finding.id}`);
       }
     }
   }
-  return [...blockers].sort(byId);
+  return { blockers: [...blockers].sort(byId), warnings: [...warnings].sort(byId) };
+}
+
+/**
+ * Open non-blocking findings are project-level warnings: they stay visible in
+ * status until the finding is resolved, regardless of which iteration raised
+ * them (a non-blocking finding carries no BLOCKS edge by definition).
+ */
+function deriveWarnings(nodes: readonly NodeRecord[]): string[] {
+  return nodes
+    .filter(
+      (node) =>
+        node.type === "Finding" &&
+        (node.status === "proposed" || node.status === "accepted") &&
+        !findingIsBlocking(node),
+    )
+    .map((node) => `warning finding ${node.id}`)
+    .sort(byId);
 }
 
 function deriveStaleEvidence(nodes: readonly NodeRecord[], edges: readonly EdgeRecord[]): string[] {
@@ -234,13 +269,14 @@ export function deriveProjectStatus(input: StatusDerivationInput): DerivedStatus
     ...edges.filter((edge) => edge.type === "RESOLVES").map((edge) => edge.target_id),
     ...(input.resolvedApprovalIds ?? []),
   ]);
-  const blockers = deriveBlockers(
+  const { blockers, warnings } = deriveBlockers(
     nodes,
     edges,
     iteration?.id,
     input.workingState?.blockers ?? [],
     resolvedApprovalIds,
   );
+  const allWarnings = [...new Set([...warnings, ...deriveWarnings(nodes)])].sort(byId);
   const staleEvidence = deriveStaleEvidence(nodes, edges);
   const coverage = deriveEvaluationCoverage(nodes, edges);
   const nextAction = nextActionFor({
@@ -260,6 +296,7 @@ export function deriveProjectStatus(input: StatusDerivationInput): DerivedStatus
       : { iteration: { id: iteration.id, state: iteration.iteration_state ?? "draft" } }),
     evaluation_coverage: coverage,
     blockers,
+    warnings: allWarnings,
     stale_evidence: staleEvidence,
     pending_approvals: pendingApprovals,
     ...(input.workingState === undefined ? {} : { budget: input.workingState.budget }),
