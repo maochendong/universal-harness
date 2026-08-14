@@ -1030,6 +1030,119 @@ function bindingsEqual(
   );
 }
 
+/**
+ * Task-level quality record (comparative design direction 5, card T5): one
+ * digest-sealed ledger artifact per (iteration, task, bindings), holding the
+ * gate-suite verdict plus one machine-checkable row per acceptance assertion
+ * of the task. The record binds exactly the digests gate evidence binds, so
+ * it goes stale under the same freshness semantics -- a changed worktree
+ * produces a new record at a new digest-versioned path instead of reusing
+ * the stale one.
+ */
+interface TaskQualityAssertion {
+  readonly description: string;
+  readonly verification: string;
+  readonly passed: boolean;
+  readonly evidence_ids: readonly string[];
+}
+
+interface TaskQualityRecord {
+  readonly protocol_version: string;
+  readonly record_kind: "task_quality_record";
+  readonly iteration_id: string;
+  readonly task_id: string;
+  readonly bindings: VerifyPhaseArtifact["bindings"];
+  readonly verdict: "passed" | "failed";
+  readonly metrics: {
+    readonly gates_total: number;
+    readonly gates_passed: number;
+    readonly mandatory_gates_failed: number;
+    readonly coverage: number | null;
+    readonly lint_passed: boolean | null;
+  };
+  readonly gates: readonly {
+    readonly gate_id: string;
+    readonly mandatory: boolean;
+    readonly passed: boolean;
+    readonly evidence_id: string;
+    readonly summary: string;
+  }[];
+  readonly assertions: readonly TaskQualityAssertion[];
+  readonly created_at: string;
+  readonly digest: string;
+}
+
+function qualityRecordPath(
+  iterationId: string,
+  taskId: string,
+  bindings: VerifyPhaseArtifact["bindings"],
+): string {
+  return `artifacts/quality/${iterationId}/${taskId}/${sha256Hex(canonicalizeJson(bindings))}.json`;
+}
+
+/**
+ * Build one quality record per planned task. An assertion whose verification
+ * text names a gate binds to that gate; every other assertion binds to the
+ * whole mandatory suite. A row passes only when every bound gate passed with
+ * non-provisional evidence. Thresholds stay a Pack/Policy concern (the gate
+ * `mandatory` flag); M1 packs expose no coverage or lint tool, so those
+ * fields are explicit nulls instead of fabricated numbers.
+ */
+function buildTaskQualityRecords(
+  ctx: PipelineContext,
+  outcome: GateSuiteOutcome,
+  bindings: VerifyPhaseArtifact["bindings"],
+): { readonly path: string; readonly content: string }[] {
+  const plan = ctx.plan;
+  if (plan === undefined) return [];
+  const mandatoryResults = outcome.results.filter((result) => result.gate.mandatory);
+  return plan.content.tasks.map((task) => {
+    const assertions: TaskQualityAssertion[] = task.acceptance.map((criterion) => {
+      const named = outcome.results.filter((result) =>
+        criterion.verification.includes(result.gate.gate_id),
+      );
+      const bound = named.length > 0 ? named : mandatoryResults;
+      return {
+        description: criterion.description,
+        verification: criterion.verification,
+        passed: bound.every((result) => result.outcome.passed && !result.evidence.provisional),
+        evidence_ids: bound.map((result) => result.evidence.evidence_id),
+      };
+    });
+    const content: Omit<TaskQualityRecord, "digest"> = {
+      protocol_version: PROTOCOL_VERSION,
+      record_kind: "task_quality_record",
+      iteration_id: ctx.iterationId,
+      task_id: task.id,
+      bindings,
+      verdict: outcome.completed_allowed ? "passed" : "failed",
+      metrics: {
+        gates_total: outcome.results.length,
+        gates_passed: outcome.results.filter((result) => result.outcome.passed).length,
+        mandatory_gates_failed: mandatoryResults.filter(
+          (result) => !result.outcome.passed || result.evidence.provisional,
+        ).length,
+        coverage: null,
+        lint_passed: null,
+      },
+      gates: outcome.results.map((result) => ({
+        gate_id: result.gate.gate_id,
+        mandatory: result.gate.mandatory,
+        passed: result.outcome.passed,
+        evidence_id: result.evidence.evidence_id,
+        summary: result.outcome.summary,
+      })),
+      assertions,
+      created_at: nowOf(ctx.deps),
+    };
+    const record: TaskQualityRecord = { ...content, digest: contentDigest(content) };
+    return {
+      path: qualityRecordPath(ctx.iterationId, task.id, bindings),
+      content: `${canonicalizeJson(record)}\n`,
+    };
+  });
+}
+
 interface EvaluatePhaseArtifact {
   readonly record_kind: "orchestration_evaluate_result";
   readonly iteration_id: string;
@@ -1737,6 +1850,8 @@ async function phaseVerify(
     };
     // Ledger artifacts are immutable files: evidence and verdicts land in
     // digest-versioned paths so a re-run after a repair never overwrites.
+    // The per-task quality records commit alongside, passed or failed, so a
+    // human always reviews exactly what was verified (card T5).
     await commitArtifacts(deps, ctx.workflowOperationId, currentAttemptId(ctx), [
       ...outcome.results.map((result) => ({
         path: `artifacts/evidence/${result.evidence.evidence_id}/${result.evidence.digest}.json`,
@@ -1746,6 +1861,7 @@ async function phaseVerify(
         path: `artifacts/findings/${finding.id}/proposed.json`,
         content: `${canonicalizeJson(finding)}\n`,
       })),
+      ...buildTaskQualityRecords(ctx, outcome, bindings),
       {
         path: verifyArtifactPath(ctx.iterationId, bindings),
         content: `${canonicalizeJson(summary)}\n`,

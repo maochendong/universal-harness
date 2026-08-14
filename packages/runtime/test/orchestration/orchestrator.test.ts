@@ -38,6 +38,7 @@ import {
 import {
   harnessRootFor,
   LedgerRepository,
+  contentDigest,
   readCommittedOperations,
   sha256Hex,
   type EdgeRecord,
@@ -544,6 +545,183 @@ describe("phase orchestrator", { timeout: 30000 }, () => {
       expectedDigest: sha256Hex(expectedRender()),
     });
     expect(drift.status).toBe("drifted");
+  });
+
+  it("commits a structured quality record per task at verify", async () => {
+    const newId = sequentialIds();
+    const parent = makeTempDir("harness-orch-quality-");
+    const bootstrapped = await createNewProject(
+      { parentDirectory: parent, name: "orch-quality", intent: INTENT },
+      { vcs: createGitVcsAdapter(), now: () => FIXED_NOW, newId: (kind) => newId(kind) },
+    );
+    if (!bootstrapped.ok) throw new Error(bootstrapped.error.message);
+    const projectRoot = bootstrapped.value.projectRoot;
+    const deps = makeDeps(projectRoot, newId, { execute: recordingExecutor().executor });
+
+    let outcome = await runIteration(deps, {
+      intent: INTENT,
+      iterationId: bootstrapped.value.iterationId,
+    });
+    while (outcome.status === "approval_required") {
+      outcome = await approveAndResume(deps, outcome);
+    }
+    expect(outcome.status).toBe("completed");
+    if (outcome.status !== "completed") return;
+
+    const qualityRoot = join(projectRoot, ".harness", "artifacts", "quality", outcome.iterationId);
+    const taskDirs = readdirSync(qualityRoot);
+    expect(taskDirs).toHaveLength(1);
+    const taskId = taskDirs[0] as string;
+    const files = readdirSync(join(qualityRoot, taskId));
+    expect(files).toHaveLength(1);
+    const record = JSON.parse(
+      readFileSync(join(qualityRoot, taskId, files[0] as string), "utf8"),
+    ) as Record<string, unknown> & {
+      assertions: {
+        description: string;
+        verification: string;
+        passed: boolean;
+        evidence_ids: string[];
+      }[];
+    };
+    expect(record.record_kind).toBe("task_quality_record");
+    expect(record.task_id).toBe(taskId);
+    expect(record.iteration_id).toBe(outcome.iterationId);
+    expect(record.verdict).toBe("passed");
+    expect(record.metrics).toEqual({
+      gates_total: 1,
+      gates_passed: 1,
+      mandatory_gates_failed: 0,
+      coverage: null,
+      lint_passed: null,
+    });
+
+    // One machine-checkable row per acceptance assertion of the task, bound
+    // to the mandatory suite's evidence.
+    const taskNode = JSON.parse(
+      readFileSync(join(projectRoot, ".harness", "artifacts", "tasks", `${taskId}.json`), "utf8"),
+    ) as { extensions: { "harness.plan": { acceptance: { description: string }[] } } };
+    const acceptance = taskNode.extensions["harness.plan"].acceptance;
+    expect(record.assertions).toHaveLength(acceptance.length);
+    expect(record.assertions[0]?.description).toBe(acceptance[0]?.description);
+    expect(record.assertions[0]?.passed).toBe(true);
+    expect(record.assertions[0]?.evidence_ids).toEqual(["evidence_ledger_integrity"]);
+
+    // The digest seals the content.
+    const { digest, ...content } = record;
+    expect(digest).toBe(contentDigest(content));
+  });
+
+  it("records failed quality rows at a blocked verify and refreshes them after repair", async () => {
+    const newId = sequentialIds();
+    const projectRoot = await bootstrapProject("orch-quality-fail", newId);
+    writeFileSync(join(projectRoot, "BROKEN"), "marker", "utf8");
+
+    const gateCalls: number[] = [];
+    const registry = new ToolRegistry();
+    registry.register(
+      {
+        name: "check_marker",
+        version: "1.0.0",
+        description: "fail while the BROKEN marker file exists",
+        input_schema: { type: "object", properties: {}, additionalProperties: false },
+        output_schema: {
+          type: "object",
+          properties: {
+            exit_code: { type: "integer" },
+            summary: { type: "string" },
+            log_summary: { type: "string" },
+            artifacts: { type: "object", additionalProperties: { type: "string" } },
+          },
+          required: ["exit_code"],
+          additionalProperties: false,
+        },
+        allowed_phases: ["verification"],
+        resource_patterns: [],
+        risk: "low",
+        side_effect_class: "none",
+        requires_approval: false,
+        timeout_ms: 50,
+        retry_class: "none",
+        max_retries: 0,
+        max_invocations_per_run: 10,
+        idempotent: true,
+        reconciliation: "provider",
+      },
+      () => {
+        gateCalls.push(1);
+        const broken = existsSync(join(projectRoot, "BROKEN"));
+        return {
+          exit_code: broken ? 1 : 0,
+          summary: broken ? "marker file BROKEN still present" : "marker file removed",
+          log_summary: "marker check",
+          artifacts: {},
+        };
+      },
+    );
+    const gates: readonly GateDefinition[] = [
+      normalizeGateDefinition({
+        gate_id: "gate_marker",
+        layer: "project",
+        name: "marker gate",
+        mandatory: true,
+        subject_id: "project_marker",
+        tool: "check_marker",
+      }),
+    ];
+    const deps = makeDeps(projectRoot, newId, {
+      execute: recordingExecutor().executor,
+      gates,
+      toolRegistry: registry,
+    });
+
+    let outcome = await runIteration(deps, { intent: INTENT, intentShape: "pack-converted" });
+    outcome = await approveAndResume(deps, outcome);
+    outcome = await approveAndResume(deps, outcome);
+    expect(outcome.status).toBe("blocked");
+    if (outcome.status !== "blocked") return;
+
+    // The failed gate still produced a quality record, rows marked as failed.
+    const qualityRoot = join(projectRoot, ".harness", "artifacts", "quality", outcome.iterationId);
+    const taskDirs = readdirSync(qualityRoot);
+    expect(taskDirs).toHaveLength(1);
+    const taskId = taskDirs[0] as string;
+    const failedFiles = readdirSync(join(qualityRoot, taskId));
+    expect(failedFiles).toHaveLength(1);
+    const failed = JSON.parse(
+      readFileSync(join(qualityRoot, taskId, failedFiles[0] as string), "utf8"),
+    ) as {
+      verdict: string;
+      metrics: { mandatory_gates_failed: number };
+      assertions: { passed: boolean; evidence_ids: string[] }[];
+    };
+    expect(failed.verdict).toBe("failed");
+    expect(failed.metrics.mandatory_gates_failed).toBe(1);
+    expect(failed.assertions[0]?.passed).toBe(false);
+    expect(failed.assertions[0]?.evidence_ids).toEqual(["evidence_marker"]);
+
+    // Resume without a repair replays the stored verdict: no duplicate record.
+    outcome = await resumeIteration(deps, outcome.workflowOperationId, undefined);
+    expect(outcome.status).toBe("blocked");
+    expect(readdirSync(join(qualityRoot, taskId))).toEqual(failedFiles);
+    expect(gateCalls).toHaveLength(1);
+
+    // Repair: the worktree digest changes, the record goes stale with its
+    // bindings and a fresh passed record lands at a new digest-versioned
+    // path; the failed one stays as history.
+    rmSync(join(projectRoot, "BROKEN"));
+    outcome = await resumeIteration(deps, outcome.workflowOperationId, undefined);
+    expect(outcome.status).toBe("completed");
+    expect(gateCalls).toHaveLength(2);
+    const refreshedFiles = readdirSync(join(qualityRoot, taskId)).sort();
+    expect(refreshedFiles).toHaveLength(2);
+    const freshName = refreshedFiles.find((name) => name !== failedFiles[0]) as string;
+    const fresh = JSON.parse(readFileSync(join(qualityRoot, taskId, freshName), "utf8")) as {
+      verdict: string;
+      assertions: { passed: boolean }[];
+    };
+    expect(fresh.verdict).toBe("passed");
+    expect(fresh.assertions[0]?.passed).toBe(true);
   });
 
   it("aborts an open operation and closes its pending approval requests", async () => {
