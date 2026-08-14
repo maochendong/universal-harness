@@ -2659,6 +2659,7 @@ async function commitAuditFindings(ctx: PipelineContext): Promise<void> {
   let report: AuditReport;
   let openAuditFindings: NodeRecord[];
   let committedEdgeIds: ReadonlySet<string>;
+  let activeBlocksEdges: readonly EdgeRecord[];
   try {
     report = auditGraph(
       { nodes: graph.nodes, edges: graph.edges },
@@ -2676,6 +2677,10 @@ async function commitAuditFindings(ctx: PipelineContext): Promise<void> {
       (node) => node.status === "proposed" || node.status === "accepted",
     );
     committedEdgeIds = new Set(graph.edges.map((edge) => edge.id));
+    activeBlocksEdges = graph.edges.filter(
+      (edge) =>
+        edge.type === "BLOCKS" && (edge.status === "proposed" || edge.status === "accepted"),
+    );
   } finally {
     graph.close();
   }
@@ -2722,7 +2727,9 @@ async function commitAuditFindings(ctx: PipelineContext): Promise<void> {
   }
 
   // A gap that no longer reproduces supersedes its committed Finding: the
-  // deterministic re-check is the repair verdict for audit findings.
+  // deterministic re-check is the repair verdict for audit findings. The
+  // finding's active BLOCKS edges retire with it -- a superseded node held by
+  // a live edge is exactly what the stale_knowledge rule (correctly) flags.
   for (const existing of openAuditFindings) {
     if (liveFindingIds.has(existing.id)) continue;
     const revision = existing.revision + 1;
@@ -2742,6 +2749,24 @@ async function commitAuditFindings(ctx: PipelineContext): Promise<void> {
     const validation = validateSchema("node", node);
     if (!validation.valid) throw invalidAuditRecord("finding node", existing.id, validation.errors);
     artifacts.push({ path, content: `${canonicalizeJson(node)}\n` });
+    for (const active of activeBlocksEdges) {
+      if (active.source_id !== existing.id) continue;
+      const retiredContent: Record<string, unknown> = Object.fromEntries(
+        Object.entries(active).filter(([key]) => key !== "digest"),
+      );
+      retiredContent.status = "superseded";
+      retiredContent.provenance = {
+        iteration_id: ctx.iterationId,
+        actor: "workflow-engine",
+        timestamp: nowOf(deps),
+      };
+      const retired = { ...retiredContent, digest: contentDigest(retiredContent) };
+      const edgeValidation = validateSchema("edge", retired);
+      if (!edgeValidation.valid) {
+        throw invalidAuditRecord("edge", active.id, edgeValidation.errors);
+      }
+      edges.push(retired as unknown as EdgeRecord);
+    }
   }
 
   if (artifacts.length === 0 && edges.length === 0) return;

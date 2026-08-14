@@ -1116,6 +1116,127 @@ describe("phase orchestrator", { timeout: 30000 }, () => {
     ).toBe(false);
   });
 
+  it("retires a resolved finding's BLOCKS edges when the audit supersedes it", async () => {
+    const newId = sequentialIds();
+    const parent = makeTempDir("harness-orch-edgeretire-");
+    const bootstrapped = await createNewProject(
+      { parentDirectory: parent, name: "orch-edgeretire", intent: INTENT },
+      { vcs: createGitVcsAdapter(), now: () => FIXED_NOW, newId: (kind) => newId(kind) },
+    );
+    if (!bootstrapped.ok) throw new Error(bootstrapped.error.message);
+    const projectRoot = bootstrapped.value.projectRoot;
+    // Iteration 1 plans a task that implements nothing the graph knows, so
+    // its requirement keeps a traceability gap; iteration 2 wires it.
+    const requirementIds: string[] = [];
+    const planTasks: PlanTasksPort = ({ requirements, impactPaths, gateIds }) => {
+      const requirementId = requirements[0]?.id ?? "requirement_none";
+      requirementIds.push(requirementId);
+      const first = requirementIds.length === 1;
+      return [
+        {
+          id: first ? "task_unwired" : "task_wiring",
+          objective: first ? "unwired work" : "wire the legacy requirement",
+          impact_paths: impactPaths.map((path) => [...path]),
+          expected_outputs: first
+            ? ["requirement_nonexistent"]
+            : [requirementId, ...requirementIds.slice(0, -1)],
+          capabilities: [],
+          tools: [],
+          dependencies: [],
+          risk: "low",
+          budget: { steps: 30, tokens: 120000 },
+          acceptance: [{ description: "work done", verification: "mandatory gate suite passes" }],
+          required_gates: [...gateIds],
+        },
+      ];
+    };
+    const deps = makeDeps(projectRoot, newId, {
+      execute: recordingExecutor().executor,
+      planTasks,
+    });
+
+    const driveToCompletion = async (
+      intent: string,
+      iterationId?: string,
+    ): Promise<OrchestrationOutcome> => {
+      let outcome = await runIteration(deps, {
+        intent,
+        ...(iterationId === undefined ? {} : { iterationId }),
+      });
+      while (outcome.status === "approval_required") {
+        outcome = await approveAndResume(deps, outcome);
+      }
+      return outcome;
+    };
+
+    const first = await driveToCompletion(INTENT, bootstrapped.value.iterationId);
+    expect(first.status).toBe("completed");
+    if (first.status !== "completed") return;
+    const findingsRoot = join(projectRoot, ".harness", "artifacts", "findings");
+    const gapFinding = readdirSync(findingsRoot)
+      .filter((entry) => entry.startsWith("finding_audit-traceability-gap-"))
+      .at(-1);
+    expect(gapFinding).toBeDefined();
+    if (gapFinding === undefined) return;
+    const blocksEdgeId = `edge_${sha256Hex(`BLOCKS:${gapFinding}:${first.iterationId}`).slice(0, 16)}`;
+
+    const second = await driveToCompletion("wire the legacy requirement");
+    expect(second.status).toBe("completed");
+
+    // The finding is superseded and its BLOCKS edge retired with it.
+    const findingNodeDirectory = join(
+      projectRoot,
+      ".harness",
+      "artifacts",
+      "finding-nodes",
+      gapFinding,
+    );
+    expect(readdirSync(findingNodeDirectory).sort()).toEqual(["1.json", "2.json"]);
+    const { database } = materializeLedger({ projectRoot, databasePath: ":memory:" });
+    try {
+      const nodes: NodeRecord[] = [];
+      let cursor: string | undefined;
+      do {
+        const page = pageNodes(database, {
+          limit: 500,
+          ...(cursor === undefined ? {} : { cursor }),
+        });
+        nodes.push(...page.items);
+        cursor = page.nextCursor;
+      } while (cursor !== undefined);
+      const edges: EdgeRecord[] = [];
+      let edgeCursor: string | undefined;
+      do {
+        const page = pageEdges(database, {
+          limit: 500,
+          ...(edgeCursor === undefined ? {} : { cursor: edgeCursor }),
+        });
+        edges.push(...page.items);
+        edgeCursor = page.nextCursor;
+      } while (edgeCursor !== undefined);
+      const retired = edges.find((edge) => edge.id === blocksEdgeId);
+      expect(retired?.status).toBe("superseded");
+      // The retired edge participates in nothing: no traceability gap, no
+      // stale-knowledge flag for it, no status blocker.
+      const report = auditGraph({ nodes, edges });
+      expect(report.findings.some((finding) => finding.kind === "traceability_gap")).toBe(false);
+      expect(
+        report.findings.some(
+          (finding) =>
+            finding.kind === "stale_knowledge" && finding.subjects.includes(blocksEdgeId),
+        ),
+      ).toBe(false);
+    } finally {
+      database.close();
+    }
+    // The resolved traceability finding no longer blocks; the deliberately
+    // unwired task from iteration 1 remains an orphan, as it should.
+    const blockers = collectProjectStatus(projectRoot).blockers;
+    expect(blockers.some((blocker) => blocker.includes("traceability-gap"))).toBe(false);
+    expect(blockers).toHaveLength(1);
+    expect(blockers[0]).toContain("finding_audit-task-orphan-");
+  });
+
   it("aborts an open operation and closes its pending approval requests", async () => {
     const newId = sequentialIds();
     const parent = makeTempDir("harness-orch-abort-");
