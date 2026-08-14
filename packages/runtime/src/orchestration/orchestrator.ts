@@ -36,6 +36,7 @@ import type {
 } from "@universal-harness-internal/plugin-sdk";
 
 import { ApprovalService, type ApprovalIdKind } from "../approval/service.js";
+import { auditGraph, type AuditFinding, type AuditReport } from "../audit/auditor.js";
 import {
   approvalDecisionArtifact,
   readApprovalDecisions,
@@ -1791,6 +1792,220 @@ async function phaseVerify(
   return { continue: true };
 }
 
+const AUDIT_FINDING_NODE_DIRECTORY = "artifacts/finding-nodes";
+
+/**
+ * Deterministic Finding identity for audit gaps: rule kind plus the summary
+ * text (which carries the rule's target key, e.g. the subject node id or the
+ * missing document domain). The same gap always derives the same id, so an
+ * iterate re-run dedupes against the committed record instead of duplicating
+ * it.
+ */
+function auditFindingId(finding: AuditFinding): string {
+  const key = sha256Hex(`${finding.kind}\n${finding.summary}`).slice(0, 16);
+  return `finding_audit-${finding.kind.replaceAll("_", "-")}-${key}`;
+}
+
+function invalidAuditRecord(
+  kind: string,
+  record: string,
+  errors: readonly { message?: string }[],
+): OrchestrationError {
+  return new OrchestrationError(
+    "configuration",
+    `invalid audit ${kind} record ${record}: ${errors.map((issue) => issue.message ?? "?").join("; ")}`,
+  );
+}
+
+interface AuditFindingArtifacts {
+  readonly feedbackPath: string;
+  readonly feedback: Record<string, unknown>;
+  readonly nodePath: string;
+  readonly node: Record<string, unknown>;
+}
+
+/**
+ * Build the feedback record and Finding node for one audit gap. Both follow
+ * the shared Finding/ImpactSet feedback protocol shapes (design 9.1), so the
+ * gap enters the same cascade as gate and evaluation findings and ends as a
+ * human-reviewed ImprovementCandidate -- the harness never writes the missing
+ * document on its own authority.
+ */
+function buildAuditFindingArtifacts(
+  ctx: PipelineContext,
+  finding: AuditFinding,
+  id: string,
+): AuditFindingArtifacts {
+  const { deps } = ctx;
+  const feedbackPath = `artifacts/findings/${id}/proposed.json`;
+  const auditExtension = { kind: finding.kind, subjects: [...finding.subjects] };
+  // The committed feedback record wins: a later iteration must reuse its
+  // digest instead of resealing the same gap under a new timestamp.
+  const committed = readJsonArtifact<Record<string, unknown>>(deps, feedbackPath);
+  let feedback = committed;
+  if (feedback === undefined) {
+    const content: Record<string, unknown> = {
+      protocol_version: PROTOCOL_VERSION,
+      record_kind: "feedback",
+      id,
+      type: "Finding",
+      iteration_id: ctx.iterationId,
+      status: "proposed",
+      summary: finding.summary,
+      created_at: nowOf(deps),
+      extensions: {
+        "harness.finding": {
+          origin: "audit",
+          blocking: finding.blocking,
+          violates: [],
+          blocks: [ctx.iterationId],
+          evidence: [],
+        },
+        "harness.audit": auditExtension,
+      },
+    };
+    feedback = { ...content, digest: contentDigest(content) };
+    const validation = validateSchema("feedback", feedback);
+    if (!validation.valid) throw invalidAuditRecord("feedback", id, validation.errors);
+  }
+  const nodeContent: Record<string, unknown> = {
+    protocol_version: PROTOCOL_VERSION,
+    record_kind: "node",
+    id,
+    type: "Finding",
+    revision: 1,
+    status: "proposed",
+    source: "audit",
+    provenance: {
+      iteration_id: ctx.iterationId,
+      actor: "workflow-engine",
+      timestamp: nowOf(deps),
+    },
+    confidence: 1,
+    extensions: {
+      "harness.finding": {
+        feedback_digest: feedback["digest"],
+        origin: "audit",
+        blocking: finding.blocking,
+        violates: [],
+        blocks: [ctx.iterationId],
+        evidence: [],
+      },
+      "harness.audit": auditExtension,
+    },
+  };
+  const node = { ...nodeContent, digest: contentDigest(nodeContent) };
+  const validation = validateSchema("node", node);
+  if (!validation.valid) throw invalidAuditRecord("finding node", id, validation.errors);
+  return {
+    feedbackPath,
+    feedback,
+    nodePath: `${AUDIT_FINDING_NODE_DIRECTORY}/${id}/1.json`,
+    node,
+  };
+}
+
+/**
+ * Post-verify/evaluate graph audit (design 8.7 wired into the pipeline). The
+ * completing snapshot re-runs the deterministic audit -- the same checks
+ * `harness audit` reports -- and commits every gap as a proposed Finding node
+ * with a BLOCKS edge to the just-completed Iteration node, so the gap shows
+ * up in `harness status` blockers and next_action without a manual audit.
+ * Finding ids are content-derived (rule kind plus summary), so re-runs
+ * dedupe instead of duplicating; a gap that no longer reproduces supersedes
+ * its committed Finding instead of lingering as a phantom blocker.
+ */
+async function commitAuditFindings(ctx: PipelineContext): Promise<void> {
+  const { deps } = ctx;
+  const graph = materializeProjectGraph(deps.projectRoot);
+  let report: AuditReport;
+  let openAuditFindings: NodeRecord[];
+  let committedEdgeIds: ReadonlySet<string>;
+  try {
+    report = auditGraph({ nodes: graph.nodes, edges: graph.edges });
+    const latestFinding = new Map<string, NodeRecord>();
+    for (const node of graph.nodes) {
+      if (node.type !== "Finding" || node.source !== "audit") continue;
+      const current = latestFinding.get(node.id);
+      if (current === undefined || node.revision > current.revision) {
+        latestFinding.set(node.id, node);
+      }
+    }
+    openAuditFindings = [...latestFinding.values()].filter(
+      (node) => node.status === "proposed" || node.status === "accepted",
+    );
+    committedEdgeIds = new Set(graph.edges.map((edge) => edge.id));
+  } finally {
+    graph.close();
+  }
+
+  const artifacts: { readonly path: string; readonly content: string }[] = [];
+  const edges: EdgeRecord[] = [];
+  const liveFindingIds = new Set<string>();
+  for (const finding of report.findings) {
+    const id = auditFindingId(finding);
+    liveFindingIds.add(id);
+    const built = buildAuditFindingArtifacts(ctx, finding, id);
+    if (!artifactExists(deps, built.feedbackPath)) {
+      artifacts.push({
+        path: built.feedbackPath,
+        content: `${canonicalizeJson(built.feedback)}\n`,
+      });
+    }
+    if (!artifactExists(deps, built.nodePath)) {
+      artifacts.push({ path: built.nodePath, content: `${canonicalizeJson(built.node)}\n` });
+    }
+    const edgeId = `edge_${sha256Hex(`BLOCKS:${id}:${ctx.iterationId}`).slice(0, 16)}`;
+    if (committedEdgeIds.has(edgeId)) continue;
+    const edgeContent: Record<string, unknown> = {
+      protocol_version: PROTOCOL_VERSION,
+      record_kind: "edge",
+      id: edgeId,
+      type: "BLOCKS",
+      source_id: id,
+      target_id: ctx.iterationId,
+      status: "accepted",
+      source: "audit",
+      provenance: {
+        iteration_id: ctx.iterationId,
+        actor: "workflow-engine",
+        timestamp: nowOf(deps),
+      },
+      confidence: 1,
+    };
+    const edge = { ...edgeContent, digest: contentDigest(edgeContent) };
+    const validation = validateSchema("edge", edge);
+    if (!validation.valid) throw invalidAuditRecord("edge", edgeId, validation.errors);
+    edges.push(edge as unknown as EdgeRecord);
+  }
+
+  // A gap that no longer reproduces supersedes its committed Finding: the
+  // deterministic re-check is the repair verdict for audit findings.
+  for (const existing of openAuditFindings) {
+    if (liveFindingIds.has(existing.id)) continue;
+    const revision = existing.revision + 1;
+    const path = `${AUDIT_FINDING_NODE_DIRECTORY}/${existing.id}/${String(revision)}.json`;
+    if (artifactExists(deps, path)) continue;
+    const base: Record<string, unknown> = Object.fromEntries(
+      Object.entries(existing).filter(([key]) => key !== "digest"),
+    );
+    base.revision = revision;
+    base.status = "superseded";
+    base.provenance = {
+      iteration_id: ctx.iterationId,
+      actor: "workflow-engine",
+      timestamp: nowOf(deps),
+    };
+    const node = { ...base, digest: contentDigest(base) };
+    const validation = validateSchema("node", node);
+    if (!validation.valid) throw invalidAuditRecord("finding node", existing.id, validation.errors);
+    artifacts.push({ path, content: `${canonicalizeJson(node)}\n` });
+  }
+
+  if (artifacts.length === 0 && edges.length === 0) return;
+  await commitArtifacts(deps, ctx.workflowOperationId, currentAttemptId(ctx), artifacts, edges);
+}
+
 async function phaseEvaluate(ctx: PipelineContext): Promise<PhaseStep> {
   const { deps } = ctx;
   const plan = ctx.plan ?? loadPlan(ctx);
@@ -2000,6 +2215,11 @@ async function phaseSnapshot(ctx: PipelineContext): Promise<PhaseStep> {
     },
   ]);
   await commitIterationNode(ctx, "completed");
+  // Post-verify/evaluate audit, run at the completing snapshot: the Iteration
+  // node exists only now, so the audit's BLOCKS edges can bind it. Committed
+  // gaps surface in `harness status` without a manual `harness audit`;
+  // idempotent re-runs dedupe by finding id.
+  await commitAuditFindings(ctx);
   await ctx.engine.advance(ctx.workflowOperationId, "completed");
   let finalCommit = deps.readBaseline();
   if (deps.vcs !== undefined) {

@@ -338,7 +338,7 @@ M1 不创建平行 Knowledge Store。现有 Node 具有用于 Context Selection 
 | L4 implementation | CodeArtifact、Test 和生成示例 |
 | L5 experience | Finding、Evidence、RootCauseAnalysis 和已批准 ImprovementCandidate 的结果 |
 
-`harness audit` 检查 traceability coverage、stale knowledge、互相冲突的已接受 Constraint、orphan Node、missing verification、未提升的高风险 Improvement 和 ContextBundle source health。Audit Finding 进入与 Test/Review Failure 相同的 Finding/ImpactSet 流程。
+`harness audit` 检查 traceability coverage、stale knowledge、互相冲突的已接受 Constraint、orphan Node、missing verification、未提升的高风险 Improvement、ContextBundle source health，以及关键设计/决策文档覆盖度（`missing_design_artifact`：存在 ExecutionPlan 后，design、API contract、data design、frontend design（仅有前端信号时）和 decision record 五类领域必须有已接受的文档或 Decision 节点，缺失为 warning）。Audit Finding 进入与 Test/Review Failure 相同的 Finding/ImpactSet 流程。迭代完成快照时编排器自动重跑同一套审计，把缺口按内容派生 id 幂等地提交为 Finding 节点与 BLOCKS 边，使其出现在 `harness status` 的 blockers / next_action 中，无需手动 `harness audit`；缺口消失时对应 Finding 被 supersede。
 
 ## 9. 影响分析
 

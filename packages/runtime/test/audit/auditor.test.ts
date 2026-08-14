@@ -11,6 +11,7 @@ interface NodeSpec {
   readonly type: NodeRecord["type"];
   readonly revision?: number;
   readonly status?: NodeRecord["status"];
+  readonly locator?: string;
   readonly extensions?: Record<string, unknown>;
 }
 
@@ -26,6 +27,7 @@ function makeNode(spec: NodeSpec): NodeRecord {
     provenance: { iteration_id: "iteration_01", actor: "audit-test", timestamp: FIXED_NOW },
     confidence: 1,
   };
+  if (spec.locator !== undefined) record.locator = spec.locator;
   if (spec.extensions !== undefined) record.extensions = spec.extensions;
   return { ...record, digest: contentDigest(record) } as unknown as NodeRecord;
 }
@@ -242,5 +244,99 @@ describe("auditGraph", () => {
   it("is deterministic: identical input produces identical findings", () => {
     const graph = healthyGraph();
     expect(auditGraph(graph)).toEqual(auditGraph(graph));
+  });
+
+  describe("missing_design_artifact", () => {
+    const plannedNode = makeNode({ id: "plan_01", type: "ExecutionPlan", status: "proposed" });
+
+    function designFindings(graph: AuditGraph) {
+      return auditGraph(graph).findings.filter((entry) => entry.kind === "missing_design_artifact");
+    }
+
+    it("stays silent without an execution plan, even on a traced graph", () => {
+      // The healthy graph carries a Task but no plan: a fresh project must
+      // never be nagged about design documents it has not planned yet.
+      expect(designFindings(healthyGraph())).toEqual([]);
+    });
+
+    it("flags every uncovered domain once an execution plan exists", () => {
+      const findings = designFindings({ nodes: [plannedNode], edges: [] });
+      expect(findings.map((finding) => finding.summary)).toEqual([
+        expect.stringContaining("domain: design"),
+        expect.stringContaining("domain: api-contract"),
+        expect.stringContaining("domain: data-design"),
+        expect.stringContaining("domain: decision"),
+      ]);
+      for (const finding of findings) {
+        expect(finding.blocking).toBe(false);
+        expect(finding.subjects).toEqual([]);
+      }
+    });
+
+    it("accepts keyword-matching documentation and Decision nodes as coverage", () => {
+      const findings = designFindings({
+        nodes: [
+          plannedNode,
+          makeNode({
+            id: "doc_design",
+            type: "CodeArtifact",
+            locator: "repo://repo_01/docs/design.md",
+          }),
+          makeNode({
+            id: "doc_api",
+            type: "CodeArtifact",
+            locator: "repo://repo_01/docs/api-contract.md",
+            extensions: { "harness.scan": { classification: "documentation" } },
+          }),
+          makeNode({
+            id: "doc_data",
+            type: "CodeArtifact",
+            status: "proposed",
+            locator: "repo://repo_01/docs/data-design.md",
+          }),
+          makeNode({ id: "decision_01", type: "Decision" }),
+        ],
+        edges: [],
+      });
+      // The proposed data design doc does not count; only it remains flagged.
+      expect(findings.map((finding) => finding.summary)).toEqual([
+        expect.stringContaining("domain: data-design"),
+      ]);
+    });
+
+    it("requires a frontend design doc only when the graph shows a frontend signal", () => {
+      const backendOnly = designFindings({ nodes: [plannedNode], edges: [] });
+      expect(
+        backendOnly.some((finding) => finding.summary.includes("domain: frontend-design")),
+      ).toBe(false);
+      const withFrontend = designFindings({
+        nodes: [
+          plannedNode,
+          makeNode({ id: "code_app", type: "CodeArtifact", locator: "repo://repo_01/src/App.tsx" }),
+        ],
+        edges: [],
+      });
+      expect(
+        withFrontend.some((finding) => finding.summary.includes("domain: frontend-design")),
+      ).toBe(true);
+    });
+
+    it("does not treat a guide as a frontend (ui) document", () => {
+      const findings = designFindings({
+        nodes: [
+          plannedNode,
+          makeNode({ id: "code_app", type: "CodeArtifact", locator: "repo://repo_01/src/App.tsx" }),
+          makeNode({
+            id: "doc_guide",
+            type: "CodeArtifact",
+            locator: "repo://repo_01/docs/guide.md",
+          }),
+        ],
+        edges: [],
+      });
+      expect(findings.some((finding) => finding.summary.includes("domain: frontend-design"))).toBe(
+        true,
+      );
+    });
   });
 });

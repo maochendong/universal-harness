@@ -4,11 +4,13 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { createGitVcsAdapter } from "@universal-harness-internal/adapter-vcs-git";
+import { materializeLedger, pageEdges } from "@universal-harness-internal/graph";
 import type { AgentRunResult, AgentTaskEnvelope } from "@universal-harness-internal/plugin-sdk";
 
 import {
   OrchestrationError,
   assertLifecycleOrder,
+  collectProjectStatus,
   createDefaultEvaluationPort,
   createGenericInterpreter,
   createNewProject,
@@ -30,6 +32,7 @@ import {
   harnessRootFor,
   LedgerRepository,
   readCommittedOperations,
+  type EdgeRecord,
 } from "../../../core/src/index.js";
 import {
   FIXED_NOW,
@@ -222,6 +225,102 @@ describe("phase orchestrator", { timeout: 30000 }, () => {
     // Terminal state leaves a clean worktree: the ledger landed in Git.
     expect(git(projectRoot, "status", "--porcelain").trim()).toBe("");
     expect(findOpenWorkflowOperation(projectRoot, () => headOf(projectRoot))).toBeUndefined();
+  });
+
+  it("commits deduped audit findings after evaluation and surfaces them in status", async () => {
+    const newId = sequentialIds();
+    const parent = makeTempDir("harness-orch-audit-");
+    const bootstrapped = await createNewProject(
+      { parentDirectory: parent, name: "orch-audit", intent: INTENT },
+      { vcs: createGitVcsAdapter(), now: () => FIXED_NOW, newId: (kind) => newId(kind) },
+    );
+    if (!bootstrapped.ok) throw new Error(bootstrapped.error.message);
+    const projectRoot = bootstrapped.value.projectRoot;
+    const deps = makeDeps(projectRoot, newId, { execute: recordingExecutor().executor });
+
+    const driveToCompletion = async (
+      intent: string,
+      iterationId?: string,
+    ): Promise<OrchestrationOutcome> => {
+      let outcome = await runIteration(deps, {
+        intent,
+        ...(iterationId === undefined ? {} : { iterationId }),
+      });
+      while (outcome.status === "approval_required") {
+        outcome = await approveAndResume(deps, outcome);
+      }
+      return outcome;
+    };
+
+    // Like the CLI, the first iteration reuses the bootstrap iteration node.
+    const first = await driveToCompletion(INTENT, bootstrapped.value.iterationId);
+    expect(first.status).toBe("completed");
+    if (first.status !== "completed") return;
+
+    // A fresh project has no design documents: the post-evaluation audit
+    // commits one proposed Finding node per missing domain.
+    const findingNodesRoot = join(projectRoot, ".harness", "artifacts", "finding-nodes");
+    const designFindingIds = readdirSync(findingNodesRoot)
+      .filter((entry) => entry.startsWith("finding_audit-missing-design-artifact-"))
+      .sort();
+    expect(designFindingIds.length).toBeGreaterThan(0);
+    for (const id of designFindingIds) {
+      expect(readdirSync(join(findingNodesRoot, id))).toEqual(["1.json"]);
+    }
+
+    // The gaps surface in project status as blockers without a manual audit.
+    const status = collectProjectStatus(projectRoot);
+    for (const id of designFindingIds) {
+      expect(status.blockers).toContain(`blocking finding ${id}`);
+    }
+    expect(status.next_action).toContain("repair blocker: blocking finding finding_audit-");
+
+    // A second iteration re-runs the audit: the same gaps dedupe to the same
+    // Finding ids (still revision 1, same feedback record) instead of
+    // duplicating, and the new iteration gets its own BLOCKS edge.
+    const firstFindingId = designFindingIds[0] as string;
+    const feedbackPath = join(
+      projectRoot,
+      ".harness",
+      "artifacts",
+      "findings",
+      firstFindingId,
+      "proposed.json",
+    );
+    const feedbackBefore = readFileSync(feedbackPath, "utf8");
+    const second = await driveToCompletion("add the second capability");
+    expect(second.status).toBe("completed");
+    if (second.status !== "completed") return;
+    const designFindingIdsAfter = readdirSync(findingNodesRoot)
+      .filter((entry) => entry.startsWith("finding_audit-missing-design-artifact-"))
+      .sort();
+    expect(designFindingIdsAfter).toEqual(designFindingIds);
+    for (const id of designFindingIdsAfter) {
+      expect(readdirSync(join(findingNodesRoot, id))).toEqual(["1.json"]);
+    }
+    expect(readFileSync(feedbackPath, "utf8")).toBe(feedbackBefore);
+
+    const { database } = materializeLedger({ projectRoot, databasePath: ":memory:" });
+    try {
+      const edges: EdgeRecord[] = [];
+      let cursor: string | undefined;
+      do {
+        const page = pageEdges(database, {
+          limit: 500,
+          ...(cursor === undefined ? {} : { cursor }),
+        });
+        edges.push(...page.items);
+        cursor = page.nextCursor;
+      } while (cursor !== undefined);
+      const blocking = edges.filter(
+        (edge) => edge.type === "BLOCKS" && edge.source_id === firstFindingId,
+      );
+      expect(blocking.map((edge) => edge.target_id).sort()).toEqual(
+        [first.iterationId, second.iterationId].sort(),
+      );
+    } finally {
+      database.close();
+    }
   });
 
   it("keeps a deferred interactive decision resumable and continues in the same session", async () => {
