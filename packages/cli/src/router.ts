@@ -16,6 +16,7 @@ import { runApproveCommand } from "./commands/approve.js";
 import { runAuditCommand } from "./commands/audit.js";
 import { runDoctorCommand } from "./commands/doctor.js";
 import { runEvalCommand } from "./commands/eval.js";
+import { runFindingCommand } from "./commands/finding.js";
 import { runImpactCommand } from "./commands/impact.js";
 import { runIterateCommand } from "./commands/iterate.js";
 import { runNewCommand } from "./commands/new.js";
@@ -71,6 +72,14 @@ export interface ApproveRequest {
   readonly actor?: string;
 }
 
+export interface FindingRequest {
+  readonly action: "accept" | "close" | "supersede";
+  readonly findingId: string;
+  readonly projectRoot: string;
+  readonly evidenceId?: string;
+  readonly actor?: string;
+}
+
 export interface ImpactRequest {
   readonly projectRoot: string;
   readonly target?: string;
@@ -92,6 +101,7 @@ export interface RuntimeService {
   resume(request: ResumeRequest): Promise<CommandResult>;
   abort(request: AbortRequest): Promise<CommandResult>;
   approve(request: ApproveRequest): Promise<CommandResult>;
+  finding(request: FindingRequest): Promise<CommandResult>;
   impact(request: ImpactRequest): Promise<CommandResult>;
   plan(request: ProjectRequest): Promise<CommandResult>;
   run(request: RunRequest): Promise<CommandResult>;
@@ -133,6 +143,8 @@ export function createStubRuntimeService(): RuntimeService {
       Promise.resolve(stageUnavailable("abort", "orchestration.abort", { ...request })),
     approve: (request) =>
       Promise.resolve(stageUnavailable("approve", "approval.resolve", { ...request })),
+    finding: (request) =>
+      Promise.resolve(stageUnavailable("finding", "feedback.resolve", { ...request })),
     impact: (request) =>
       Promise.resolve(stageUnavailable("impact", "impact.preview", { ...request })),
     plan: (request) => Promise.resolve(stageUnavailable("plan", "plan.read", { ...request })),
@@ -198,6 +210,7 @@ Automation and recovery:
   eval                            Drive the open operation through run evaluation
   snapshot                        Complete the open operation or show the latest snapshot
   approve <id> --decision <d>     Resolve one pending approval request
+  finding <action> <id>           Accept, close or supersede one finding
   impact [node-id]                Preview the ImpactSet for a change seed
   plan                            Show the latest committed ExecutionPlan
   audit                           Audit traceability, freshness and graph health
@@ -250,6 +263,14 @@ every recovery path; the abort is ledger-backed and keeps the audit history.
 Resolve exactly one pending approval request, bound to its recorded object
 digest. Defer keeps the proposal resumable; reject closes it but keeps the
 audit history.
+`,
+  finding: `Usage: harness finding <accept|close|supersede> <finding-id> [--evidence <id>] [--actor <id>] [--json]
+
+Drive one finding through its lifecycle. Accept marks it confirmed for
+repair routing; supersede retires it as no longer relevant; close marks it
+repaired and requires --evidence with a passing, non-provisional, still
+current evidence id. Resolutions are ledger-backed and keep the audit
+history.
 `,
   impact: `Usage: harness impact [node-id] [--json]
 
@@ -355,6 +376,8 @@ async function dispatch(args: readonly string[], context: CommandContext): Promi
       return runAbortCommand(rest, context);
     case "approve":
       return runApproveCommand(rest, context);
+    case "finding":
+      return runFindingCommand(rest, context);
     case "impact":
       return runImpactCommand(rest, context);
     case "plan":

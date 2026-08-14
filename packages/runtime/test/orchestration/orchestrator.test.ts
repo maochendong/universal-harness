@@ -24,6 +24,7 @@ import {
   readApprovalRequests,
   readLatestSnapshot,
   resolveApproval,
+  resolveFinding,
   resumeIteration,
   runIteration,
   ToolRegistry,
@@ -1235,6 +1236,137 @@ describe("phase orchestrator", { timeout: 30000 }, () => {
     expect(blockers.some((blocker) => blocker.includes("traceability-gap"))).toBe(false);
     expect(blockers).toHaveLength(1);
     expect(blockers[0]).toContain("finding_audit-task-orphan-");
+  });
+
+  it("drives findings through accept, supersede and close with ledger-backed transitions", async () => {
+    const newId = sequentialIds();
+    const parent = makeTempDir("harness-orch-finding-");
+    const bootstrapped = await createNewProject(
+      { parentDirectory: parent, name: "orch-finding", intent: INTENT },
+      { vcs: createGitVcsAdapter(), now: () => FIXED_NOW, newId: (kind) => newId(kind) },
+    );
+    if (!bootstrapped.ok) throw new Error(bootstrapped.error.message);
+    const projectRoot = bootstrapped.value.projectRoot;
+    const planTasks: PlanTasksPort = ({ impactPaths, gateIds }) => [
+      {
+        id: "task_unwired",
+        objective: "unwired work",
+        impact_paths: impactPaths.map((path) => [...path]),
+        expected_outputs: ["requirement_nonexistent"],
+        capabilities: [],
+        tools: [],
+        dependencies: [],
+        risk: "low",
+        budget: { steps: 30, tokens: 120000 },
+        acceptance: [{ description: "work done", verification: "mandatory gate suite passes" }],
+        required_gates: [...gateIds],
+      },
+    ];
+    const deps = makeDeps(projectRoot, newId, {
+      execute: recordingExecutor().executor,
+      planTasks,
+    });
+
+    let outcome = await runIteration(deps, {
+      intent: INTENT,
+      iterationId: bootstrapped.value.iterationId,
+    });
+    while (outcome.status === "approval_required") {
+      outcome = await approveAndResume(deps, outcome);
+    }
+    expect(outcome.status).toBe("completed");
+
+    const findingsRoot = join(projectRoot, ".harness", "artifacts", "findings");
+    const designFinding = readdirSync(findingsRoot).find((entry) =>
+      entry.startsWith("finding_audit-missing-design-artifact-"),
+    ) as string;
+    const orphanFinding = readdirSync(findingsRoot).find((entry) =>
+      entry.startsWith("finding_audit-task-orphan-"),
+    ) as string;
+    expect(designFinding).toBeDefined();
+    expect(orphanFinding).toBeDefined();
+    const statusBefore = collectProjectStatus(projectRoot);
+    expect(statusBefore.warnings).toContain(`warning finding ${designFinding}`);
+    expect(statusBefore.blockers).toContain(`blocking finding ${orphanFinding}`);
+
+    // accept: feedback resealed accepted, node revision accepted, warning stays.
+    const accepted = await resolveFinding(deps, {
+      findingId: designFinding,
+      action: "accept",
+      actor: "human:local",
+    });
+    expect(accepted.status).toBe("accepted");
+    expect(existsSync(join(findingsRoot, designFinding, "accepted.json"))).toBe(true);
+    expect(collectProjectStatus(projectRoot).warnings).toContain(
+      `warning finding ${designFinding}`,
+    );
+
+    // supersede: node superseded, warning drops out.
+    const superseded = await resolveFinding(deps, {
+      findingId: designFinding,
+      action: "supersede",
+      actor: "human:local",
+    });
+    expect(superseded.status).toBe("superseded");
+    expect(collectProjectStatus(projectRoot).warnings).not.toContain(
+      `warning finding ${designFinding}`,
+    );
+
+    // close requires current passing repair evidence and retires the BLOCKS edge.
+    await expect(
+      resolveFinding(deps, { findingId: orphanFinding, action: "close", actor: "human:local" }),
+    ).rejects.toThrow(/requires --evidence/u);
+    await expect(
+      resolveFinding(deps, {
+        findingId: orphanFinding,
+        action: "close",
+        actor: "human:local",
+        evidenceId: "evidence_nonexistent",
+      }),
+    ).rejects.toThrow(/unknown or unusable repair evidence/u);
+    const closed = await resolveFinding(deps, {
+      findingId: orphanFinding,
+      action: "close",
+      actor: "human:local",
+      evidenceId: "evidence_ledger_integrity",
+    });
+    expect(closed.status).toBe("closed");
+    const closedRecord = JSON.parse(
+      readFileSync(join(findingsRoot, orphanFinding, "closed.json"), "utf8"),
+    ) as { status: string; extensions: { "harness.closure": { evidence_id: string } } };
+    expect(closedRecord.extensions["harness.closure"].evidence_id).toBe(
+      "evidence_ledger_integrity",
+    );
+    const statusAfter = collectProjectStatus(projectRoot);
+    expect(statusAfter.blockers).not.toContain(`blocking finding ${orphanFinding}`);
+    const { database } = materializeLedger({ projectRoot, databasePath: ":memory:" });
+    try {
+      const edges: EdgeRecord[] = [];
+      let cursor: string | undefined;
+      do {
+        const page = pageEdges(database, {
+          limit: 500,
+          ...(cursor === undefined ? {} : { cursor }),
+        });
+        edges.push(...page.items);
+        cursor = page.nextCursor;
+      } while (cursor !== undefined);
+      const blocks = edges.filter(
+        (edge) => edge.type === "BLOCKS" && edge.source_id === orphanFinding,
+      );
+      expect(blocks.length).toBeGreaterThan(0);
+      expect(blocks.every((edge) => edge.status === "superseded")).toBe(true);
+    } finally {
+      database.close();
+    }
+
+    // Resolved findings refuse further transitions.
+    await expect(
+      resolveFinding(deps, { findingId: orphanFinding, action: "accept", actor: "human:local" }),
+    ).rejects.toThrow(/already resolved/u);
+    await expect(
+      resolveFinding(deps, { findingId: "finding_nope", action: "accept", actor: "human:local" }),
+    ).rejects.toThrow(/unknown finding/u);
   });
 
   it("aborts an open operation and closes its pending approval requests", async () => {

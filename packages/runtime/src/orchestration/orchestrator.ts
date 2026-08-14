@@ -3510,6 +3510,222 @@ export interface AbortIterationInput {
   readonly reason?: string;
 }
 
+export const FINDING_ACTIONS = ["accept", "close", "supersede"] as const;
+
+export type FindingAction = (typeof FINDING_ACTIONS)[number];
+
+export interface ResolveFindingInput {
+  readonly findingId: string;
+  readonly action: FindingAction;
+  readonly actor: string;
+  /** Required for close: the repair evidence vouching for the fix. */
+  readonly evidenceId?: string;
+}
+
+export interface ResolvedFinding {
+  readonly findingId: string;
+  readonly action: FindingAction;
+  /** Feedback status after the transition. */
+  readonly status: "accepted" | "closed" | "superseded";
+}
+
+/**
+ * Drive one Finding through its lifecycle (design 9.1). The transition
+ * reseals the feedback record at `<action-status>.json` and, when the
+ * finding has a graph node, commits the matching revision; closing or
+ * superseding also retires the finding's active BLOCKS edges so resolved
+ * findings drop out of status blockers and warnings. Close requires repair
+ * evidence that exists, passed, is non-provisional and is still bound to the
+ * current worktree -- the full digest-binding check stays with the phase
+ * machinery. The graph vocabulary has no `closed` node status, so a closed
+ * finding's node reads `superseded`; the exact resolution (including the
+ * evidence id) lives in the feedback record.
+ */
+export async function resolveFinding(
+  deps: OrchestratorDependencies,
+  input: ResolveFindingInput,
+): Promise<ResolvedFinding> {
+  const feedbackPath = `artifacts/findings/${input.findingId}/proposed.json`;
+  const feedback = readJsonArtifact<Record<string, unknown>>(deps, feedbackPath);
+  if (feedback === undefined) {
+    throw new OrchestrationError("operation_not_found", `unknown finding: ${input.findingId}`);
+  }
+  const existing = (status: string): boolean =>
+    artifactExists(deps, `artifacts/findings/${input.findingId}/${status}.json`);
+  if (existing("superseded") || existing("closed")) {
+    throw new OrchestrationError(
+      "operation_not_found",
+      `finding ${input.findingId} is already resolved`,
+    );
+  }
+
+  const targetStatus =
+    input.action === "accept" ? "accepted" : input.action === "close" ? "closed" : "superseded";
+  if (input.action === "close") {
+    if (input.evidenceId === undefined) {
+      throw new OrchestrationError(
+        "configuration",
+        `closing finding ${input.findingId} requires --evidence <evidence-id>`,
+      );
+    }
+    const evidence = readEvidenceArtifact(deps, input.evidenceId);
+    if (evidence === undefined) {
+      throw new OrchestrationError(
+        "operation_not_found",
+        `unknown or unusable repair evidence: ${input.evidenceId}`,
+      );
+    }
+  }
+
+  const content: Record<string, unknown> = { ...feedback, status: targetStatus };
+  delete content["digest"];
+  if (input.action === "close") {
+    content.extensions = {
+      ...(typeof feedback.extensions === "object" && feedback.extensions !== null
+        ? (feedback.extensions as Record<string, unknown>)
+        : {}),
+      "harness.closure": {
+        evidence_id: input.evidenceId,
+        actor: input.actor,
+        closed_at: nowOf(deps),
+      },
+    };
+  }
+  const record = { ...content, digest: contentDigest(content) };
+  const validation = validateSchema("feedback", record);
+  if (!validation.valid) {
+    throw new OrchestrationError(
+      "configuration",
+      `invalid finding transition record: ${validation.errors
+        .map((issue) => issue.message)
+        .join("; ")}`,
+    );
+  }
+
+  const operations = readCommittedOperations(harnessRoot(deps));
+  const lastOperation = operations.at(-1);
+  if (lastOperation === undefined) {
+    throw new OrchestrationError("operation_not_found", "no committed ledger operation");
+  }
+  const commitContext = {
+    workflowOperationId: lastOperation.manifest.workflow_operation_id,
+    attemptId: lastOperation.manifest.attempt_id,
+  };
+
+  const artifacts: { readonly path: string; readonly content: string }[] = [
+    {
+      path: `artifacts/findings/${input.findingId}/${targetStatus}.json`,
+      content: `${canonicalizeJson(record)}\n`,
+    },
+  ];
+  const edges: EdgeRecord[] = [];
+
+  const graph = materializeProjectGraph(deps.projectRoot);
+  let findingNode: NodeRecord | undefined;
+  let activeBlocksEdges: readonly EdgeRecord[];
+  try {
+    findingNode = graph.nodes
+      .filter((node) => node.id === input.findingId && node.type === "Finding")
+      .sort((left, right) => left.revision - right.revision)
+      .at(-1);
+    activeBlocksEdges = graph.edges.filter(
+      (edge) =>
+        edge.type === "BLOCKS" &&
+        edge.source_id === input.findingId &&
+        (edge.status === "proposed" || edge.status === "accepted"),
+    );
+  } finally {
+    graph.close();
+  }
+  if (findingNode !== undefined) {
+    const nodeStatus = input.action === "accept" ? "accepted" : "superseded";
+    if (findingNode.status !== nodeStatus) {
+      const revision = findingNode.revision + 1;
+      const base: Record<string, unknown> = Object.fromEntries(
+        Object.entries(findingNode).filter(([key]) => key !== "digest"),
+      );
+      base.revision = revision;
+      base.status = nodeStatus;
+      base.provenance = {
+        iteration_id: findingNode.provenance.iteration_id,
+        actor: input.actor,
+        timestamp: nowOf(deps),
+      };
+      const node = { ...base, digest: contentDigest(base) };
+      const nodeValidation = validateSchema("node", node);
+      if (!nodeValidation.valid) {
+        throw new OrchestrationError(
+          "configuration",
+          `invalid finding node revision: ${nodeValidation.errors
+            .map((issue) => issue.message)
+            .join("; ")}`,
+        );
+      }
+      artifacts.push({
+        path: `artifacts/finding-nodes/${input.findingId}/${String(revision)}.json`,
+        content: `${canonicalizeJson(node)}\n`,
+      });
+    }
+  }
+  if (input.action !== "accept") {
+    for (const edge of activeBlocksEdges) {
+      const retiredContent: Record<string, unknown> = Object.fromEntries(
+        Object.entries(edge).filter(([key]) => key !== "digest"),
+      );
+      retiredContent.status = "superseded";
+      retiredContent.provenance = {
+        iteration_id: edge.provenance.iteration_id,
+        actor: input.actor,
+        timestamp: nowOf(deps),
+      };
+      const retired = { ...retiredContent, digest: contentDigest(retiredContent) };
+      const edgeValidation = validateSchema("edge", retired);
+      if (!edgeValidation.valid) {
+        throw new OrchestrationError(
+          "configuration",
+          `invalid retired edge: ${edgeValidation.errors.map((issue) => issue.message).join("; ")}`,
+        );
+      }
+      edges.push(retired as unknown as EdgeRecord);
+    }
+  }
+  await commitArtifacts(
+    deps,
+    commitContext.workflowOperationId,
+    commitContext.attemptId,
+    artifacts,
+    edges,
+  );
+  return { findingId: input.findingId, action: input.action, status: targetStatus };
+}
+
+/** Passed, non-provisional evidence bound to the current worktree, if any. */
+function readEvidenceArtifact(
+  deps: OrchestratorDependencies,
+  evidenceId: string,
+): GateEvidenceRecord | undefined {
+  const directory = resolveHarnessPath(harnessRoot(deps), `artifacts/evidence/${evidenceId}`);
+  if (!existsSync(directory)) return undefined;
+  const codeHash = hashWorktreeCode(deps.projectRoot);
+  for (const name of readdirSync(directory)
+    .filter((entry) => entry.endsWith(".json"))
+    .sort()) {
+    const record = readJsonArtifact<GateEvidenceRecord>(
+      deps,
+      `artifacts/evidence/${evidenceId}/${name}`,
+    );
+    if (record === undefined || record.provisional) continue;
+    const extension = record.extensions?.["harness.gate"];
+    if (typeof extension !== "object" || extension === null) continue;
+    const passed = (extension as Record<string, unknown>).passed === true;
+    const bindings = evidenceBindingsOf(record);
+    if (!passed || bindings === undefined) continue;
+    if (!bindings.code_digests.includes(codeHash)) continue;
+    return record;
+  }
+  return undefined;
+}
+
 export interface AbortedIteration {
   readonly workflowOperationId: string;
   readonly iterationId: string;

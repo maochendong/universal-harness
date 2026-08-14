@@ -19,6 +19,7 @@ import {
   readLatestSnapshot,
   readStagedAdoptionPreview,
   resolveApproval,
+  resolveFinding,
   resumeIteration,
   runIteration,
   auditGraph,
@@ -39,6 +40,7 @@ import type {
   AbortRequest,
   AdoptProjectRequest,
   ApproveRequest,
+  FindingRequest,
   ImpactRequest,
   IterateRequest,
   NewProjectRequest,
@@ -443,6 +445,25 @@ export function createOrchestratedRuntimeService(
     iterate: iterateImpl,
     resume: resumeImpl,
     abort: abortImpl,
+    finding: async (request: FindingRequest): Promise<CommandResult> =>
+      guard("finding", async () => {
+        const resolved = await resolveFinding(orchestratorDeps(request.projectRoot), {
+          findingId: request.findingId,
+          action: request.action,
+          actor: request.actor ?? actor,
+          ...(request.evidenceId === undefined ? {} : { evidenceId: request.evidenceId }),
+        });
+        return {
+          command: "finding",
+          status: "ok",
+          message: `finding ${resolved.findingId} is now ${resolved.status}`,
+          data: {
+            finding_id: resolved.findingId,
+            action: resolved.action,
+            status: resolved.status,
+          },
+        };
+      }),
 
     approve: async (request: ApproveRequest): Promise<CommandResult> =>
       guard("approve", async () => {

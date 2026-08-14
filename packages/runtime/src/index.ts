@@ -641,6 +641,7 @@ export {
   type SnapshotTaskResult,
 } from "./snapshot/builder.js";
 export {
+  FINDING_ACTIONS,
   ORCHESTRATION_ERROR_KINDS,
   OrchestrationError,
   abortIteration,
@@ -656,6 +657,7 @@ export {
   readLatestExecutionPlan,
   readLatestSnapshot,
   resolveApproval,
+  resolveFinding,
   resumeIteration,
   runIteration,
   type AbortIterationInput,
@@ -664,6 +666,7 @@ export {
   type EvaluationPort,
   type EvaluationPortInput,
   type EvaluationPortResult,
+  type FindingAction,
   type IntentInterpreter,
   type InterpretedIntent,
   type OrchestrationErrorKind,
@@ -671,6 +674,8 @@ export {
   type OrchestrationOutcome,
   type OrchestratorDependencies,
   type PlanTasksPort,
+  type ResolveFindingInput,
+  type ResolvedFinding,
   type RunIterationInput,
 } from "./orchestration/orchestrator.js";
 export {
