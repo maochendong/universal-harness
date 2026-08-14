@@ -56,13 +56,23 @@ harness status            # 项目状态、缓存健康与下一步动作
 
 交互式终端中不需要手动执行 `approve`/`resume`：Harness 会在同一命令会话内展示预览并询问 decision（`approve`/`reject`/`defer`），`defer` 保留可恢复的提案。
 
+## 迭代完成后你会看到什么
+
+一次完成的迭代除了快照，还会在项目和 `.harness/` 里留下这些可读产物：
+
+- **`harness status`**：除迭代状态与下一步动作外，还报告任务进度（`task_progress`，如 `2/3`）、blockers（需要修复的阻塞型 Finding）与 warnings（非阻塞缺口，如缺失的设计文档——不会卡住迭代，但保持可见）。
+- **tasks.md 投影**：`.harness/projections/views/tasks.md`——从图 Task 节点生成的任务清单（T001 编号、复选框、依赖注记、`[P]` 并行标记），每次完成快照自动重生成；图是唯一事实源，手改会被识别为漂移并拒绝覆盖。
+- **任务级质量记录**：`.harness/artifacts/quality/` 下每个 Task 一份结构化记录（门禁 verdict、每条验收断言的布尔判定与证明它的 evidence id）；门禁失败的行如实保留供人审核，且该迭代不会产出完成快照。
+- **自动审计**：每次完成快照自动重跑图审计（无需手动 `harness audit`），缺口按 Finding → 人审核级联进入 status 的 blockers/warnings；工作区文档在每次迭代自动增量重扫入图，adopt 之后手写的文档同样能被审计看到。
+- **卡死逃生口**：baseline 漂移等原因封死恢复路径时，`harness abort <workflow-operation-id>` 显式终止打开的编排并清理其待批准请求（详见 [运维与恢复](operations-and-recovery.md)）。
+
 ## 后续迭代：`harness iterate`
 
 ```bash
 harness iterate "Implement the next change"
 ```
 
-`iterate` 在同一个受管项目内运行与 `new` 完全相同的闭环（录入 → 影响分析 → 规划 → 编译 Context → 执行 → 门禁 → 评估 → 修复 → 快照），批准点与暂停规则一致。
+`iterate` 在同一个受管项目内运行与 `new` 完全相同的闭环（录入 → 影响分析 → 规划 → 编译 Context → 执行 → 门禁 → 评估 → 修复 → 快照），批准点与暂停规则一致。意图歧义时，迭代会在录入阶段以 `input_required` 挂起并返回带显式选项（含 `other` 逃逸项）的澄清问题；用更明确的意图重新发起即可，回答仍走需求基线批准门。较大的变更会被分解为多个带依赖的小任务（整个计划一次批准），逐任务执行与评估，中断恢复只重跑未完成的任务。
 
 ## 接管已有项目
 
@@ -86,7 +96,7 @@ harness adopt /path/to/project --intent "Introduce the requested change"
 | `harness plan` | 查看最近提交的 ExecutionPlan |
 | `harness run [--dry-run]` | 推进执行阶段（dry-run 只渲染计划任务） |
 | `harness verify` / `harness eval` / `harness snapshot` | 分别推进门禁、评估与快照阶段 |
-| `harness audit` | 审计可追溯性、freshness 与图健康 |
+| `harness audit` | 审计可追溯性、freshness、图健康与文档/覆盖度缺口 |
 | `harness status` / `harness doctor` | 状态总览 / 环境诊断 |
 | `harness graph sync\|query\|check` | 重建 SQLite 缓存 / 查询图 / 校验 Ledger 完整性 |
 
