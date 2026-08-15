@@ -345,6 +345,29 @@ describe("reconcileProjectGraph", () => {
       materialized.close();
     }
 
+    // Legacy ledgers can contain an active edge written after the Finding was
+    // already superseded. Reconcile must retire that residue without needing
+    // to supersede the Finding again.
+    const afterFirst = readCommittedOperations(harnessRoot).at(-1);
+    if (afterFirst === undefined) throw new Error("first reconcile operation missing");
+    await new LedgerRepository({ projectRoot, readBaseline: () => headOf(projectRoot) }).commit({
+      ledger_operation_id: "ledger_reconcile_late_finding_edge",
+      workflow_operation_id: afterFirst.manifest.workflow_operation_id,
+      attempt_id: afterFirst.manifest.attempt_id,
+      expected_baseline: headOf(projectRoot),
+      artifacts: [],
+      edges: [
+        edge({
+          id: "edge_late_finding_reference",
+          type: "CONTAINS",
+          sourceId: iterationId,
+          targetId: findingId,
+          iterationId,
+        }),
+      ],
+      events: [],
+    });
+
     const second = await reconcileProjectGraph({
       projectRoot,
       readBaseline: () => headOf(projectRoot),
@@ -353,10 +376,27 @@ describe("reconcileProjectGraph", () => {
     expect(second).toMatchObject({
       nodes: 0,
       edges: 0,
+      revisions: 1,
+      evaluations: 0,
+      evidence_links: 0,
+      findings_superseded: 0,
+      finding_edges_retired: 1,
+      skipped: [],
+    });
+
+    const third = await reconcileProjectGraph({
+      projectRoot,
+      readBaseline: () => headOf(projectRoot),
+      now: () => FIXED_NOW,
+    });
+    expect(third).toMatchObject({
+      nodes: 0,
+      edges: 0,
       revisions: 0,
       evaluations: 0,
       evidence_links: 0,
       findings_superseded: 0,
+      finding_edges_retired: 0,
       skipped: [],
     });
     expect(checkGraphCache(resolveHarnessPath(harnessRoot, GRAPH_DATABASE_RELATIVE_PATH))).toEqual({

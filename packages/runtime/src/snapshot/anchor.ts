@@ -215,16 +215,25 @@ export function explainCodeDigestMismatch(projectRoot: string, commit: string): 
   return `worktree-only=${worktreeOnly ?? "none"}; commit-only=${commitOnly ?? "none"}`;
 }
 
-function latestEvidenceNode(projectRoot: string, evidenceId: string): NodeRecord | undefined {
+function committedEvidenceNodes(projectRoot: string, evidenceId: string): NodeRecord[] {
   const directory = resolveHarnessPath(
     harnessRootFor(projectRoot),
     `artifacts/evidence-nodes/${evidenceId}`,
   );
-  if (!existsSync(directory)) return undefined;
+  if (!existsSync(directory)) return [];
+  const committedDigests = new Set(
+    readCommittedOperations(harnessRootFor(projectRoot)).flatMap(
+      (operation) => operation.manifest.artifact_digests,
+    ),
+  );
   return readdirSync(directory, { withFileTypes: true })
     .filter((entry) => entry.isFile() && entry.name.endsWith(".json"))
-    .map((entry) => readJson<NodeRecord>(join(directory, entry.name)))
-    .sort((left, right) => right.revision - left.revision)[0];
+    .flatMap((entry) => {
+      const path = join(directory, entry.name);
+      const bytes = readFileSync(path, "utf8");
+      return committedDigests.has(sha256Hex(bytes)) ? [JSON.parse(bytes) as NodeRecord] : [];
+    })
+    .sort((left, right) => right.revision - left.revision);
 }
 
 function evidenceProvesCodeDigest(
@@ -233,22 +242,24 @@ function evidenceProvesCodeDigest(
   codeDigest: string,
 ): boolean {
   return snapshot.evidence.some((evidenceId) => {
-    const evidence = latestEvidenceNode(projectRoot, evidenceId);
-    if (
-      evidence?.type !== "Evidence" ||
-      evidence.status !== "accepted" ||
-      evidence.source !== "gate"
-    ) {
-      return false;
-    }
-    const extension = evidence.extensions?.["harness.evidence"];
-    if (typeof extension !== "object" || extension === null) return false;
-    const payload = extension as Record<string, unknown>;
-    if (payload.passed !== true) return false;
-    const bindings = payload.bindings;
-    if (typeof bindings !== "object" || bindings === null) return false;
-    const codeDigests = (bindings as Record<string, unknown>).code_digests;
-    return Array.isArray(codeDigests) && codeDigests.includes(codeDigest);
+    return committedEvidenceNodes(projectRoot, evidenceId).some((evidence) => {
+      if (
+        evidence.type !== "Evidence" ||
+        evidence.status !== "accepted" ||
+        evidence.source !== "gate" ||
+        evidence.provenance.iteration_id !== snapshot.iteration_id
+      ) {
+        return false;
+      }
+      const extension = evidence.extensions?.["harness.evidence"];
+      if (typeof extension !== "object" || extension === null) return false;
+      const payload = extension as Record<string, unknown>;
+      if (payload.passed !== true) return false;
+      const bindings = payload.bindings;
+      if (typeof bindings !== "object" || bindings === null) return false;
+      const codeDigests = (bindings as Record<string, unknown>).code_digests;
+      return Array.isArray(codeDigests) && codeDigests.includes(codeDigest);
+    });
   });
 }
 

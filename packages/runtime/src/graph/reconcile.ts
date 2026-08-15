@@ -273,6 +273,39 @@ export async function reconcileProjectGraph(
     return true;
   };
 
+  const retireActiveFindingEdges = (findingId: string): void => {
+    for (const active of [...activeEdges.values()]) {
+      if (active.source_id !== findingId && active.target_id !== findingId) continue;
+      const retiredContent: Record<string, unknown> = Object.fromEntries(
+        Object.entries(active).filter(([key]) => key !== "digest"),
+      );
+      retiredContent["status"] = "superseded";
+      retiredContent["source"] = "migration";
+      retiredContent["provenance"] = {
+        iteration_id: active.provenance.iteration_id,
+        actor: "harness-graph-reconcile",
+        timestamp: now,
+      };
+      committedEdges.push(assertEdge({ ...retiredContent, digest: contentDigest(retiredContent) }));
+      activeEdges.delete(active.id);
+      if (active.type === "BLOCKS" && active.source_id === findingId) blockEdgesRetired += 1;
+      findingEdgesRetired += 1;
+      revisions += 1;
+    }
+  };
+
+  // Historical versions could supersede a Finding without retiring every
+  // edge attached to it. Remove that residue before auditing, otherwise the
+  // dangling edge itself creates a new stale_knowledge Finding.
+  for (const finding of currentNodes.values()) {
+    if (
+      finding.type === "Finding" &&
+      (finding.status === "superseded" || finding.status === "tombstoned")
+    ) {
+      retireActiveFindingEdges(finding.id);
+    }
+  }
+
   const evaluatedRuns = new Set(
     [...activeEdges.values()]
       .filter(
@@ -643,24 +676,7 @@ export async function reconcileProjectGraph(
     currentNodes.set(finding.id, superseded);
     findingsSuperseded += 1;
     revisions += 1;
-    for (const active of [...activeEdges.values()]) {
-      if (active.source_id !== finding.id && active.target_id !== finding.id) continue;
-      const retiredContent: Record<string, unknown> = Object.fromEntries(
-        Object.entries(active).filter(([key]) => key !== "digest"),
-      );
-      retiredContent["status"] = "superseded";
-      retiredContent["source"] = "migration";
-      retiredContent["provenance"] = {
-        iteration_id: active.provenance.iteration_id,
-        actor: "harness-graph-reconcile",
-        timestamp: now,
-      };
-      committedEdges.push(assertEdge({ ...retiredContent, digest: contentDigest(retiredContent) }));
-      activeEdges.delete(active.id);
-      if (active.type === "BLOCKS" && active.source_id === finding.id) blockEdgesRetired += 1;
-      findingEdgesRetired += 1;
-      revisions += 1;
-    }
+    retireActiveFindingEdges(finding.id);
   }
 
   if (artifacts.length > 0 || committedEdges.length > 0) {

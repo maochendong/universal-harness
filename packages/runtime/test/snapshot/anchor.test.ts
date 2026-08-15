@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 
 import {
+  LedgerRepository,
   PROTOCOL_VERSION,
   canonicalizeJson,
   contentDigest,
@@ -117,9 +118,51 @@ describe("snapshot source anchors", () => {
         },
       ],
     });
-    writeTree(projectRoot, {
-      [`.harness/artifacts/evidence-nodes/${evidenceId}/1.json`]: `${canonicalizeJson(evidence)}\n`,
-      [`.harness/artifacts/snapshots/${snapshotId}.json`]: `${canonicalizeJson(snapshot)}\n`,
+    writeTree(projectRoot, { "src/example.ts": "export const answer = 43;\n" });
+    git(projectRoot, "add", "src/example.ts");
+    git(projectRoot, "commit", "-m", "feat: add later source revision");
+    const laterEvidenceContent: Record<string, unknown> = {
+      ...evidenceContent,
+      revision: 2,
+      provenance: {
+        iteration_id: "iteration_later",
+        actor: "test-fixture",
+        timestamp: FIXED_NOW,
+      },
+      extensions: {
+        "harness.evidence": {
+          artifact_digest: "b".repeat(64),
+          gate_id: "gate_snapshot_anchor",
+          passed: true,
+          bindings: { code_digests: [hashWorktreeCode(projectRoot)] },
+        },
+      },
+    };
+    const laterEvidence = {
+      ...laterEvidenceContent,
+      digest: contentDigest(laterEvidenceContent),
+    } as unknown as NodeRecord;
+    await new LedgerRepository({ projectRoot, readBaseline: () => headOf(projectRoot) }).commit({
+      ledger_operation_id: "ledger_snapshot_anchor_fixture",
+      workflow_operation_id: operation.workflow_operation_id,
+      attempt_id: operation.attempt_id,
+      expected_baseline: headOf(projectRoot),
+      artifacts: [
+        {
+          path: `artifacts/evidence-nodes/${evidenceId}/1.json`,
+          content: `${canonicalizeJson(evidence)}\n`,
+        },
+        {
+          path: `artifacts/evidence-nodes/${evidenceId}/2.json`,
+          content: `${canonicalizeJson(laterEvidence)}\n`,
+        },
+        {
+          path: `artifacts/snapshots/${snapshotId}.json`,
+          content: `${canonicalizeJson(snapshot)}\n`,
+        },
+      ],
+      edges: [],
+      events: [],
     });
 
     const first = await anchorSnapshot({
