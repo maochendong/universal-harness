@@ -52,6 +52,7 @@ interface RunMetadata {
   readonly iterationId: string;
   readonly timestamp: string;
   readonly terminal: boolean;
+  readonly interrupted: boolean;
 }
 
 function filesBelow(root: string): string[] {
@@ -115,10 +116,12 @@ function readRunMetadata(
       (path) => JSON.parse(readFileSync(path, "utf8")) as Record<string, unknown>,
     );
     const started = records.find((record) => record["record_kind"] === "run_started");
-    const terminal = records.some(
+    const terminalRecord = records.find(
       (record) =>
         record["record_kind"] === "run_terminated" || record["record_kind"] === "run_interrupted",
     );
+    const terminal = terminalRecord !== undefined;
+    const interrupted = terminalRecord?.["record_kind"] === "run_interrupted";
     const taskId = started?.["task_id"];
     const timestamp = started?.["timestamp"];
     const iterationId = currentNodes.get(entry.name)?.provenance.iteration_id;
@@ -129,7 +132,7 @@ function readRunMetadata(
     ) {
       continue;
     }
-    runs.push({ runId: entry.name, taskId, iterationId, timestamp, terminal });
+    runs.push({ runId: entry.name, taskId, iterationId, timestamp, terminal, interrupted });
   }
   return runs;
 }
@@ -285,11 +288,39 @@ export async function reconcileProjectGraph(
     }
     if (evaluatedRuns.has(run.runId)) continue;
     const resultPath = resolveHarnessPath(harnessRoot, `artifacts/run-results/${run.runId}.json`);
-    if (!existsSync(resultPath)) {
+    let result: Record<string, unknown>;
+    if (existsSync(resultPath)) {
+      result = JSON.parse(readFileSync(resultPath, "utf8")) as Record<string, unknown>;
+    } else if (run.interrupted) {
+      // An interrupted Run never wrote a result artifact. Synthesize the
+      // deterministic evaluation input view (never a success claim) so the
+      // Run still gets its EvaluationCase instead of staying unassessed.
+      result = {
+        run_id: run.runId,
+        task_id: run.taskId,
+        completion_claimed: false,
+        outcome: "failed",
+        termination_reason: "process_interruption",
+        interrupted: true,
+        summary: "terminal Run interrupted before producing a result artifact",
+        state_proposal: null,
+        dropped_proposal_fields: [],
+        change_summary: { files_changed: 0, insertions: 0, deletions: 0, paths: [] },
+        tool_activity: { total_calls: 0, governed_calls: 0, by_tool: {} },
+        usage: {
+          input_tokens: null,
+          output_tokens: null,
+          total_tokens: null,
+          duration_ms: 0,
+          metering: "unmetered",
+        },
+        evidence: [],
+        undeclared_writes: [],
+      };
+    } else {
       skipped.add(`${run.runId}: terminal Run has no result artifact`);
       continue;
     }
-    const result = JSON.parse(readFileSync(resultPath, "utf8")) as Record<string, unknown>;
     const violations: string[] = [];
     if (result["completion_claimed"] !== true) violations.push("run did not claim completion");
     if (result["outcome"] === "failed") violations.push("run outcome is failed");

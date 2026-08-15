@@ -1,9 +1,13 @@
 import { afterEach, describe, expect, it } from "vitest";
 
+import { existsSync, readFileSync } from "node:fs";
+import { join } from "node:path";
+
 import {
   LedgerRepository,
   PROTOCOL_VERSION,
   canonicalizeJson,
+  harnessRootFor,
   sha256Hex,
   validateRunRecordStream,
 } from "@universal-harness-internal/core";
@@ -118,6 +122,23 @@ describe("workflow resume", () => {
       sequence: 2,
     });
     expect(validateRunRecordStream(oldStream?.records ?? []).valid).toBe(true);
+
+    // The interrupted Run also received its result artifact so evaluation
+    // (reconcile/backfill) can close the loop instead of leaving a permanent
+    // unassessed-Run blocker.
+    const interruptedResultPath = join(
+      harnessRootFor(projectRoot),
+      "artifacts/run-results",
+      `${runId}.json`,
+    );
+    expect(existsSync(interruptedResultPath)).toBe(true);
+    expect(JSON.parse(readFileSync(interruptedResultPath, "utf8"))).toMatchObject({
+      run_id: runId,
+      completion_claimed: false,
+      outcome: "failed",
+      termination_reason: "process_interruption",
+      interrupted: true,
+    });
 
     // Exactly one successor run, linked RESUMES -> old run.
     const successorStream = streams.find((stream) => stream.runId === resumed?.successorRunId);

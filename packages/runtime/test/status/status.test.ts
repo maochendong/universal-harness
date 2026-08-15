@@ -287,6 +287,33 @@ describe("deriveProjectStatus", () => {
     expect(allResolved.next_action).not.toContain("awaiting a decision");
   });
 
+  it("drops the transient recovery blocker once the iteration is terminal", () => {
+    const base = {
+      nodes: [makeNode({ id: "iteration_01", type: "Iteration", iterationState: "completed" })],
+      edges: [],
+      workingState: {
+        blockers: [
+          "recovered from an interrupted process; resuming from the last committed checkpoint",
+          "waiting on the user",
+        ],
+        budget: { used_steps: 0, used_tokens: 0, ceiling_steps: 1, ceiling_tokens: 1 },
+      },
+    };
+    const status = deriveProjectStatus(base);
+    // The recovery note is a phantom: the iteration reached a terminal state
+    // through gates, audit, and evaluation after the resume completed.
+    expect(status.blockers).toEqual(["waiting on the user"]);
+
+    // While the iteration is still live the recovery note stays actionable.
+    const live = deriveProjectStatus({
+      ...base,
+      nodes: [makeNode({ id: "iteration_01", type: "Iteration", iterationState: "blocked" })],
+    });
+    expect(live.blockers).toContain(
+      "recovered from an interrupted process; resuming from the last committed checkpoint",
+    );
+  });
+
   it("reports superseded evidence still referenced by verdict edges as stale", () => {
     const status = deriveProjectStatus({
       nodes: [

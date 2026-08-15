@@ -145,6 +145,7 @@ function derivePendingApprovals(
  */
 const APPROVAL_BLOCKER_PATTERN = /^approval request (\S+) awaiting a decision$/;
 const TASK_RUN_FAILURE_BLOCKER_PATTERN = /^task (\S+) did not complete:/;
+const TRANSIENT_RECOVERY_BLOCKER_PATTERN = /^recovered from an interrupted process/;
 
 /**
  * A Finding only holds its iteration when its bound subject says so. Gate and
@@ -165,13 +166,24 @@ function deriveBlockers(
   iterationId: string | undefined,
   workingStateBlockers: readonly string[],
   resolvedApprovalIds: ReadonlySet<string>,
+  iterationState: string | undefined,
 ): { readonly blockers: string[]; readonly warnings: string[] } {
   const acceptedTaskIds = new Set(
     nodes
       .filter((node) => node.type === "Task" && node.status === "accepted")
       .map((node) => node.id),
   );
+  // A terminal iteration passed its gates, audit, and evaluation before the
+  // snapshot was allowed to complete, so the transient process-recovery
+  // blocker string its working state may still carry is a phantom left by a
+  // since-resumed block, never a live blocker.
   const liveWorkingStateBlockers = workingStateBlockers.filter((blocker) => {
+    if (
+      (iterationState === "completed" || iterationState === "aborted") &&
+      TRANSIENT_RECOVERY_BLOCKER_PATTERN.test(blocker)
+    ) {
+      return false;
+    }
     const approvalMatch = APPROVAL_BLOCKER_PATTERN.exec(blocker);
     if (approvalMatch !== null && resolvedApprovalIds.has(approvalMatch[1] ?? "")) return false;
     const taskMatch = TASK_RUN_FAILURE_BLOCKER_PATTERN.exec(blocker);
@@ -370,6 +382,7 @@ export function deriveProjectStatus(input: StatusDerivationInput): DerivedStatus
     iteration?.id,
     input.workingState?.blockers ?? [],
     resolvedApprovalIds,
+    iteration?.iteration_state,
   );
   const allWarnings = [...new Set([...warnings, ...deriveWarnings(nodes)])].sort(byId);
   const staleEvidence = deriveStaleEvidence(nodes, edges);

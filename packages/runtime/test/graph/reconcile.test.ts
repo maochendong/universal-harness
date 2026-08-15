@@ -336,4 +336,161 @@ describe("reconcileProjectGraph", () => {
       status: "ok",
     });
   });
+
+  it("evaluates an interrupted terminal Run that never wrote a result artifact", async () => {
+    const created = await createNewProject(
+      {
+        parentDirectory: makeTempDir("harness-reconcile-"),
+        name: "interrupted-project",
+        intent: "close the interrupted run loop",
+      },
+      {
+        vcs: (await import("@universal-harness-internal/adapter-vcs-git")).createGitVcsAdapter(),
+        now: () => FIXED_NOW,
+        newId: sequentialIds(),
+      },
+    );
+    if (!created.ok) throw new Error(created.error.message);
+    const projectRoot = created.value.projectRoot;
+    const iterationId = created.value.iterationId;
+    const harnessRoot = harnessRootFor(projectRoot);
+    const operations = readCommittedOperations(harnessRoot);
+    const latest = operations.at(-1);
+    if (latest === undefined) throw new Error("bootstrap operation missing");
+
+    const { database } = materializeLedger({ projectRoot, databasePath: ":memory:" });
+    let repositoryId = "";
+    try {
+      let cursor: string | undefined;
+      do {
+        const page = pageNodes(database, {
+          limit: 100,
+          ...(cursor === undefined ? {} : { cursor }),
+        });
+        repositoryId ||= page.items.find((item) => item.type === "Repository")?.id ?? "";
+        cursor = page.nextCursor;
+      } while (cursor !== undefined);
+    } finally {
+      database.close();
+    }
+    if (repositoryId === "") throw new Error("bootstrap graph incomplete");
+
+    const taskId = "task_interrupted";
+    const runId = "run_interrupted_legacy";
+    const caseId = `case_run_${runId.slice("run_".length)}`;
+    const records = [
+      node({ id: "requirement_interrupted", type: "Requirement", iterationId }),
+      node({ id: taskId, type: "Task", iterationId }),
+      node({ id: runId, type: "Run", iterationId }),
+    ];
+    const fixtureTransaction = {
+      ledger_operation_id: "ledger_reconcile_interrupted_fixture",
+      workflow_operation_id: latest.manifest.workflow_operation_id,
+      attempt_id: latest.manifest.attempt_id,
+      expected_baseline: headOf(projectRoot),
+      artifacts: [
+        ...records.map((record) => ({
+          path:
+            record.type === "Requirement"
+              ? `artifacts/requirements/${record.id}.json`
+              : record.type === "Task"
+                ? `artifacts/tasks/${record.id}.json`
+                : `artifacts/run-nodes/${record.id}.json`,
+          content: `${canonicalizeJson(record)}\n`,
+        })),
+        {
+          path: `artifacts/runs/${runId}/0001-run_started.json`,
+          content: `${canonicalizeJson({
+            protocol_version: PROTOCOL_VERSION,
+            record_kind: "run_started",
+            run_id: runId,
+            task_id: taskId,
+            workflow_operation_id: latest.manifest.workflow_operation_id,
+            attempt_id: latest.manifest.attempt_id,
+            sequence: 1,
+            timestamp: FIXED_NOW,
+            context_bundle_id: "context_bundle_fixture",
+          })}\n`,
+        },
+        {
+          // Terminal record exists, but no artifacts/run-results/<runId>.json:
+          // exactly the state a process interruption leaves behind.
+          path: `artifacts/runs/${runId}/0002-run_interrupted.json`,
+          content: `${canonicalizeJson({
+            protocol_version: PROTOCOL_VERSION,
+            record_kind: "run_interrupted",
+            run_id: runId,
+            task_id: taskId,
+            workflow_operation_id: latest.manifest.workflow_operation_id,
+            attempt_id: latest.manifest.attempt_id,
+            sequence: 2,
+            timestamp: FIXED_NOW,
+            outcome: "failed",
+            termination_reason: "process_interruption",
+            partial_evidence_ids: [],
+          })}\n`,
+        },
+      ],
+      edges: [],
+      events: [],
+    };
+    await new LedgerRepository({ projectRoot, readBaseline: () => headOf(projectRoot) }).commit(
+      fixtureTransaction,
+    );
+
+    const first = await reconcileProjectGraph({
+      projectRoot,
+      readBaseline: () => headOf(projectRoot),
+      now: () => FIXED_NOW,
+    });
+    // The interrupted Run is evaluated (failed), not skipped.
+    expect(first).toMatchObject({ evaluations: 1, runs_linked: 1, skipped: [] });
+    expect(first.skipped.some((entry) => entry.includes(runId))).toBe(false);
+
+    const materialized = materializeLedger({ projectRoot, databasePath: ":memory:" }).database;
+    try {
+      const nodes: NodeRecord[] = [];
+      const edges: EdgeRecord[] = [];
+      let nodeCursor: string | undefined;
+      do {
+        const page = pageNodes(materialized, {
+          limit: 100,
+          ...(nodeCursor === undefined ? {} : { cursor: nodeCursor }),
+        });
+        nodes.push(...page.items);
+        nodeCursor = page.nextCursor;
+      } while (nodeCursor !== undefined);
+      let edgeCursor: string | undefined;
+      do {
+        const page = pageEdges(materialized, {
+          limit: 100,
+          ...(edgeCursor === undefined ? {} : { cursor: edgeCursor }),
+        });
+        edges.push(...page.items);
+        edgeCursor = page.nextCursor;
+      } while (edgeCursor !== undefined);
+      expect(
+        edges.some((item) => item.type === "EVALUATES" && item.target_id === runId),
+      ).toBe(true);
+      const evaluationCase = nodes.find((item) => item.id === caseId);
+      expect(evaluationCase?.type).toBe("EvaluationCase");
+      expect((evaluationCase?.extensions?.["harness.evaluation"] as Record<string, unknown>)?.[
+        "passed"
+      ]).toBe(false);
+    } finally {
+      materialized.close();
+    }
+
+    // Idempotent: the second reconcile changes nothing.
+    const second = await reconcileProjectGraph({
+      projectRoot,
+      readBaseline: () => headOf(projectRoot),
+      now: () => FIXED_NOW,
+    });
+    expect(second).toMatchObject({
+      evaluations: 0,
+      runs_linked: 0,
+      skipped: [],
+    });
+  });
 });

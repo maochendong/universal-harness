@@ -225,6 +225,40 @@ export async function resumeWorkflowOperation(
       content: `${canonicalizeJson(interruptedRecord)}\n`,
     });
 
+    // Close the evidence loop for the interrupted Run itself: without a
+    // result artifact it could never be evaluated, leaving a permanent
+    // unassessed-Run blocker. The artifact records the honest outcome
+    // (interrupted, completion not claimed), never a success.
+    const interruptedResult: Record<string, unknown> = {
+      run_id: stream.runId,
+      task_id: started.task_id,
+      workflow_operation_id: workflowOperationId,
+      attempt_id: started.attempt_id,
+      completion_claimed: false,
+      outcome: partialEvidenceIds.length > 0 ? "partial" : "failed",
+      termination_reason: "process_interruption",
+      interrupted: true,
+      partial_evidence_ids: [...new Set(partialEvidenceIds)],
+      summary: "run interrupted before producing a result artifact; resume appended this record",
+      state_proposal: null,
+      dropped_proposal_fields: [],
+      change_summary: { files_changed: 0, insertions: 0, deletions: 0, paths: [] },
+      tool_activity: { total_calls: 0, governed_calls: 0, by_tool: {} },
+      usage: {
+        input_tokens: null,
+        output_tokens: null,
+        total_tokens: null,
+        duration_ms: 0,
+        metering: "unmetered",
+      },
+      evidence: [],
+      undeclared_writes: [],
+    };
+    artifacts.push({
+      path: `artifacts/run-results/${stream.runId}.json`,
+      content: `${canonicalizeJson(interruptedResult)}\n`,
+    });
+
     const successorRunId = newId("run");
     const successor = buildRunStartedRecord({
       runId: successorRunId,
