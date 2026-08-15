@@ -29,6 +29,7 @@ import {
   type OrchestrationExecutor,
   type OrchestrationOutcome,
   type OrchestratorDependencies,
+  type PhaseProgressEvent,
 } from "@universal-harness-internal/runtime";
 import { materializeLedger, pageEdges, pageNodes } from "@universal-harness-internal/graph";
 import type { EdgeRecord, NodeRecord } from "@universal-harness-internal/core";
@@ -78,6 +79,12 @@ export interface OrchestratedServiceOptions {
    */
   readonly gates?: readonly GateDefinition[];
   readonly toolRegistry?: ToolRegistry;
+  /**
+   * Streams incremental phase progress (see PhaseProgressEvent) so long-
+   * running commands can surface stage transitions instead of buffering all
+   * output until the final result.
+   */
+  readonly onPhaseProgress?: (event: PhaseProgressEvent) => void;
 }
 
 /** Interactive stdin prompt; only constructed when the CLI runs on a TTY. */
@@ -270,6 +277,9 @@ export function createOrchestratedRuntimeService(
           : { toolRegistry: configuredGateSuite.registry }
         : { toolRegistry: options.toolRegistry }),
       ...(prompter === undefined ? {} : { prompter }),
+      ...(options.onPhaseProgress === undefined
+        ? {}
+        : { onPhaseProgress: options.onPhaseProgress }),
       decisionActor: actor,
     };
   };

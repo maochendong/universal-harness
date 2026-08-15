@@ -1,5 +1,8 @@
 import { execFileSync } from "node:child_process";
 
+import { canonicalizeJson } from "@universal-harness-internal/core";
+import type { PhaseProgressEvent } from "@universal-harness-internal/runtime";
+
 import { EXIT_CODES, asCliError, usageError } from "./errors.js";
 import {
   exitCodeForStatus,
@@ -169,8 +172,24 @@ export function createStubRuntimeService(): RuntimeService {
  * for mandatory approvals in the same process; non-interactive callers get
  * structured ApprovalRequired outcomes with a resumable workflow operation.
  */
-export function createDefaultRuntimeService(cwd: string, io: CliIo): RuntimeService {
-  return createOrchestratedRuntimeService({ cwd, io });
+export function createDefaultRuntimeService(
+  cwd: string,
+  io: CliIo,
+  json = false,
+): RuntimeService {
+  // Stream phase transitions on stderr while long pipelines run so callers
+  // (and `harness watch` later) see progress instead of a silent buffer:
+  // NDJSON lines in --json mode, plain text lines otherwise. stdout keeps
+  // only the final rendered CommandResult.
+  const onPhaseProgress = (event: PhaseProgressEvent): void => {
+    if (json) {
+      io.writeStderr(`${canonicalizeJson(event)}\n`);
+      return;
+    }
+    const suffix = event.paused_status === undefined ? "" : ` (${event.paused_status})`;
+    io.writeStderr(`${event.type} ${event.phase}${suffix}\n`);
+  };
+  return createOrchestratedRuntimeService({ cwd, io, onPhaseProgress });
 }
 
 export interface CommandContext {
@@ -462,7 +481,7 @@ export async function runCli(
     io,
     cwd: dependencies.cwd,
     json: flags.json,
-    runtime: dependencies.runtime ?? createDefaultRuntimeService(dependencies.cwd, io),
+    runtime: dependencies.runtime ?? createDefaultRuntimeService(dependencies.cwd, io, flags.json),
     gitVersion: dependencies.gitVersion ?? defaultGitVersion,
   };
   try {

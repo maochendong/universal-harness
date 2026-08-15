@@ -249,6 +249,23 @@ export type TaskEnvelopeScopePort = (task: TaskSpecification) => {
   readonly proposed_write_paths: readonly string[];
 };
 
+/**
+ * Incremental phase progress streamed to observers while a pipeline runs.
+ * Pure side-channel: never written to the ledger; lets long-running hosts
+ * (e.g. the CLI) surface progress on stderr instead of buffering everything
+ * until the final outcome.
+ */
+export interface PhaseProgressEvent {
+  readonly type: "phase_started" | "phase_completed" | "phase_paused";
+  readonly workflow_operation_id: string;
+  readonly iteration_id: string;
+  readonly phase: OrchestrationPhase;
+  /** ISO 8601 timestamp from the orchestrator clock. */
+  readonly timestamp: string;
+  /** `phase_paused` only: outcome status that paused the pipeline. */
+  readonly paused_status?: string;
+}
+
 export interface OrchestratorDependencies {
   readonly projectRoot: string;
   /** Current Git baseline (HEAD) the next ledger commit must build on. */
@@ -279,6 +296,11 @@ export interface OrchestratorDependencies {
   readonly taskEnvelopeScope?: TaskEnvelopeScopePort;
   readonly trajectoryVisibility?: AgentTrajectoryVisibility;
   readonly tokenBudget?: number;
+  /**
+   * Optional side-channel observer invoked at each phase boundary so hosts
+   * can stream progress for long-running pipelines (never affects outcomes).
+   */
+  readonly onPhaseProgress?: (event: PhaseProgressEvent) => void;
 }
 
 export type OrchestrationOutcome =
@@ -3431,6 +3453,7 @@ async function drivePipeline(
       };
     }
     await advanceIntoPhase(ctx, phase);
+    emitPhaseProgress(ctx, { type: "phase_started", phase });
     let step: PhaseStep;
     switch (phase) {
       case "capture":
@@ -3461,10 +3484,38 @@ async function drivePipeline(
         step = await phaseSnapshot(ctx);
         break;
     }
-    if (!step.continue) return step.outcome;
+    if (!step.continue) {
+      // A terminal outcome that completes the pipeline (e.g. snapshot) still
+      // settles as phase_completed; only genuine pauses emit phase_paused.
+      const completedByStep = step.outcome.status === "completed";
+      emitPhaseProgress(ctx, {
+        type: completedByStep ? "phase_completed" : "phase_paused",
+        phase,
+        ...(completedByStep ? {} : { paused_status: step.outcome.status }),
+      });
+      return step.outcome;
+    }
     completedPhase = phase;
+    emitPhaseProgress(ctx, { type: "phase_completed", phase });
   }
   throw new OrchestrationError("configuration", "pipeline ended without a snapshot");
+}
+
+function emitPhaseProgress(
+  ctx: PipelineContext,
+  event: Omit<
+    PhaseProgressEvent,
+    "workflow_operation_id" | "iteration_id" | "timestamp"
+  >,
+): void {
+  const observer = ctx.deps.onPhaseProgress;
+  if (observer === undefined) return;
+  observer({
+    ...event,
+    workflow_operation_id: ctx.workflowOperationId,
+    iteration_id: ctx.iterationId,
+    timestamp: ctx.deps.now?.() ?? new Date().toISOString(),
+  });
 }
 
 async function buildPipelineContext(

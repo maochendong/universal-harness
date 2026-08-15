@@ -40,11 +40,13 @@ import {
   runIteration,
   ToolRegistry,
   WorkflowEngine,
+  ORCHESTRATION_PHASES,
   type ApprovalPrompter,
   type EvaluationPort,
   type GateDefinition,
   type OrchestrationOutcome,
   type OrchestratorDependencies,
+  type PhaseProgressEvent,
   type PlanTasksPort,
   type SnapshotRecord,
   type TaskSpecification,
@@ -2148,5 +2150,40 @@ describe("phase orchestrator", { timeout: 30000 }, () => {
     outcome = await approveAndResume(deps, outcome);
     outcome = await approveAndResume(deps, outcome);
     expect(outcome.status).toBe("completed");
+  });
+
+  it("streams phase progress through the onPhaseProgress observer without touching the ledger", async () => {
+    const newId = sequentialIds();
+    const projectRoot = await bootstrapProject("orch-phase-progress", newId);
+    const events: PhaseProgressEvent[] = [];
+    const deps = makeDeps(projectRoot, newId, {
+      onPhaseProgress: (event) => events.push(event),
+    });
+
+    let outcome = await runIteration(deps, { intent: INTENT, intentShape: "pack-converted" });
+    expect(outcome.status).toBe("approval_required");
+    const firstPause = events.find((event) => event.type === "phase_paused");
+    expect(firstPause?.paused_status).toBe("approval_required");
+
+    outcome = await approveAndResume(deps, outcome);
+    outcome = await approveAndResume(deps, outcome);
+    if (outcome.status !== "completed") throw new Error("expected completion");
+
+    const timeline = events.map((event) => `${event.type}:${event.phase}`);
+    for (const phase of ORCHESTRATION_PHASES) {
+      expect(timeline).toContain(`phase_started:${phase}`);
+      expect(timeline).toContain(`phase_completed:${phase}`);
+    }
+    expect(timeline.at(-1)).toBe("phase_completed:snapshot");
+    // Structural invariant: every started phase settles (completed or paused)
+    // before the next one starts.
+    const started = events.filter((event) => event.type === "phase_started");
+    const settled = events.filter((event) => event.type !== "phase_started");
+    expect(started).toHaveLength(settled.length);
+    for (const event of events) {
+      expect(event.workflow_operation_id).toBe(outcome.workflowOperationId);
+      expect(event.iteration_id).toBe(outcome.iterationId);
+      expect(event.timestamp).toBe(FIXED_NOW);
+    }
   });
 });

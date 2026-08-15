@@ -693,6 +693,7 @@ export {
   type OrchestrationExecutor,
   type OrchestrationOutcome,
   type OrchestratorDependencies,
+  type PhaseProgressEvent,
   type PlanTasksPort,
   type ResolveFindingInput,
   type ResolvedFinding,
