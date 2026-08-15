@@ -61,6 +61,7 @@ export function fixtureEnvelope(overrides: Partial<AgentTaskEnvelope> = {}): Age
     objective: "Implement the greeting module",
     expected_output: "A greeting module with tests",
     acceptance_criteria: ["greeting module exists", "tests pass"],
+    required_gate_ids: [],
     allowed_read_paths: ["src", "docs"],
     proposed_write_paths: ["src"],
     state_proposal_fields: ["summary", "open_questions"],

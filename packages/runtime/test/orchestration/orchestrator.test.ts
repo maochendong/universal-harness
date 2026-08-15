@@ -844,6 +844,29 @@ describe("phase orchestrator", { timeout: 30000 }, () => {
     expect(tasksMarkdown).toContain("- [x] T003 gamma (depends on T002)");
   });
 
+  it("binds configured repository paths into the governed task envelope", async () => {
+    const newId = sequentialIds();
+    const projectRoot = await bootstrapProject("orch-task-scope", newId);
+    const fake = recordingExecutor();
+    const deps = makeDeps(projectRoot, newId, {
+      execute: fake.executor,
+      taskEnvelopeScope: () => ({
+        allowed_read_paths: ["docs", "src"],
+        proposed_write_paths: ["scripts", "src"],
+      }),
+    });
+
+    let outcome = await runIteration(deps, { intent: INTENT, intentShape: "pack-converted" });
+    while (outcome.status === "approval_required") {
+      outcome = await approveAndResume(deps, outcome);
+    }
+
+    expect(outcome.status).toBe("completed");
+    expect(fake.calls).toHaveLength(1);
+    expect(fake.calls[0]?.allowed_read_paths).toEqual(["docs", "src"]);
+    expect(fake.calls[0]?.proposed_write_paths).toEqual(["scripts", "src"]);
+  });
+
   it("reports 2/3 progress and resumes only the unfinished tasks", async () => {
     const newId = sequentialIds();
     const parent = makeTempDir("harness-orch-progress-");

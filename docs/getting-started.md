@@ -74,6 +74,39 @@ harness iterate "Implement the next change"
 
 `iterate` 在同一个受管项目内运行与 `new` 完全相同的闭环（录入 → 影响分析 → 规划 → 编译 Context → 执行 → 门禁 → 评估 → 修复 → 快照），批准点与暂停规则一致。意图歧义时，迭代会在录入阶段以 `input_required` 挂起并返回带显式选项（含 `other` 逃逸项）的澄清问题；用更明确的意图重新发起即可，回答仍走需求基线批准门。较大的变更会被分解为多个带依赖的小任务（整个计划一次批准），逐任务执行与评估，中断恢复只重跑未完成的任务。
 
+## 配置真实 Agent 与项目门禁
+
+受管项目可以提交 `.harness/runtime.json`，把真实 Agent 后端、可读写边界和项目自己的测试命令绑定到同一条迭代链。下面的配置使用经版本探针校验的 dsh headless，并把一个仓库内脚本注册为强制项目门禁：
+
+```json
+{
+  "runtime_config_version": 1,
+  "agent": {
+    "provider": "dsh",
+    "expected_version": "0.1.0-rc.6",
+    "allowed_read_paths": ["docs", "src", "tests"],
+    "proposed_write_paths": ["src", "tests"]
+  },
+  "gates": [
+    {
+      "gate_id": "gate_project_test",
+      "name": "Project tests",
+      "mandatory": true,
+      "subject_id": "test_project",
+      "executable": "scripts/harness/project-test",
+      "args": [],
+      "timeout_ms": 120000
+    }
+  ]
+}
+```
+
+- Agent 和 Gate 进程都以参数数组启动，不经过 shell；Gate 可执行文件必须是仓库内相对路径。
+- `proposed_write_paths` 不能包含 `.git` 或 `.harness`；每个任务的 Capability Grant 只会进一步收窄该范围。
+- dsh 凭据从显式环境变量白名单注入，不写入配置或 Ledger。当前默认需要 `DEEPSEEK_API_KEY`。
+- 每次验证都会保存项目门禁日志的摘要和 SHA-256 Evidence；Agent transcript 与前后仓库摘要保存在 `.harness/raw-traces/`，不作为权威状态提交。
+- dsh 版本、退出码和失败映射的实测契约见 [dsh headless 本机契约](dsh-headless-contract.md)。
+
 ## 接管已有项目
 
 ```bash

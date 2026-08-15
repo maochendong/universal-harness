@@ -242,6 +242,12 @@ export type TasksProjectionPort = (
   options: { readonly completedTasks: readonly string[] },
 ) => { readonly markdown: string };
 
+/** Project-approved repository path scope compiled into each task envelope. */
+export type TaskEnvelopeScopePort = (task: TaskSpecification) => {
+  readonly allowed_read_paths: readonly string[];
+  readonly proposed_write_paths: readonly string[];
+};
+
 export interface OrchestratorDependencies {
   readonly projectRoot: string;
   /** Current Git baseline (HEAD) the next ledger commit must build on. */
@@ -269,6 +275,7 @@ export interface OrchestratorDependencies {
   readonly evaluate?: EvaluationPort;
   readonly tasksProjection?: TasksProjectionPort;
   readonly planTasks?: PlanTasksPort;
+  readonly taskEnvelopeScope?: TaskEnvelopeScopePort;
   readonly trajectoryVisibility?: AgentTrajectoryVisibility;
   readonly tokenBudget?: number;
 }
@@ -1807,13 +1814,17 @@ function buildEnvelope(
   }
   const policy = effectivePolicy();
   const loopPolicy = resolveLoopPolicy(policy);
+  const scope = ctx.deps.taskEnvelopeScope?.(task) ?? {
+    allowed_read_paths: [],
+    proposed_write_paths: [],
+  };
   const grant = issueGrant(
     {
       grant_id: `grant_${contentDigest({ task: task.id, iteration: ctx.iterationId }).slice(0, 16)}`,
       task_id: task.id,
       capabilities: [],
-      read_paths: [],
-      write_paths: [],
+      read_paths: scope.allowed_read_paths,
+      write_paths: scope.proposed_write_paths,
       phase: "execute",
       budget: { steps: loopPolicy.max_steps, tokens: loopPolicy.max_tokens },
       approval_digests: ctx.workingState.approval_digests,
@@ -1835,8 +1846,8 @@ function buildEnvelope(
     context_bundle_id: bundle.context_bundle_id,
     context_bundle_digest: bundle.digest,
     protected_context_fields: [],
-    allowed_read_paths: [],
-    proposed_write_paths: [],
+    allowed_read_paths: grant.read_paths,
+    proposed_write_paths: grant.write_paths,
     state_read_fields: [],
     state_proposal_fields: [],
     tools: [],

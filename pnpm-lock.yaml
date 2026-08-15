@@ -54,6 +54,18 @@ importers:
         specifier: workspace:*
         version: link:../../packages/plugin-sdk
 
+  adapters/agent-dsh:
+    dependencies:
+      '@universal-harness-internal/adapter-agent-command':
+        specifier: workspace:*
+        version: link:../agent-command
+      '@universal-harness-internal/core':
+        specifier: workspace:*
+        version: link:../../packages/core
+      '@universal-harness-internal/plugin-sdk':
+        specifier: workspace:*
+        version: link:../../packages/plugin-sdk
+
   adapters/agent-manual:
     dependencies:
       '@universal-harness-internal/core':
@@ -86,6 +98,9 @@ importers:
       '@universal-harness-internal/adapter-agent-command':
         specifier: workspace:*
         version: link:../../adapters/agent-command
+      '@universal-harness-internal/adapter-agent-dsh':
+        specifier: workspace:*
+        version: link:../../adapters/agent-dsh
       '@universal-harness-internal/adapter-agent-manual':
         specifier: workspace:*
         version: link:../../adapters/agent-manual

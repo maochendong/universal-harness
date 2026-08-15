@@ -49,6 +49,9 @@ import type {
   RunRequest,
   RuntimeService,
 } from "./router.js";
+import { createConfiguredAgentExecutor } from "./project-agent.js";
+import { createConfiguredGateSuite } from "./project-gates.js";
+import { ProjectRuntimeConfigError, readProjectRuntimeConfig } from "./project-runtime-config.js";
 
 /**
  * Default runtime wiring for the CLI (design 11.1/11.2, plan Task 23): every
@@ -221,22 +224,55 @@ export function createOrchestratedRuntimeService(
     options.prompter ?? (options.io.isInteractive ? createReadlinePrompter(options.io) : undefined);
   const actor = options.decisionActor ?? "human:local";
 
-  const orchestratorDeps = (projectRoot: string): OrchestratorDependencies => ({
-    projectRoot,
-    readBaseline: () => gitHead(projectRoot),
-    vcs,
-    interpret: options.interpret ?? createGenericInterpreter(),
-    execute: options.execute ?? createDirectExecutor(),
-    evaluate:
-      options.evaluate ?? createEvalPackagePort(options.now ?? (() => new Date().toISOString())),
-    tasksProjection: renderTasksProjection,
-    ...(options.now === undefined ? {} : { now: options.now }),
-    ...(options.newId === undefined ? {} : { newId: options.newId }),
-    ...(options.gates === undefined ? {} : { gates: options.gates }),
-    ...(options.toolRegistry === undefined ? {} : { toolRegistry: options.toolRegistry }),
-    ...(prompter === undefined ? {} : { prompter }),
-    decisionActor: actor,
-  });
+  const orchestratorDeps = (projectRoot: string): OrchestratorDependencies => {
+    let runtimeConfig;
+    try {
+      runtimeConfig = readProjectRuntimeConfig(projectRoot);
+    } catch (error) {
+      if (error instanceof ProjectRuntimeConfigError) {
+        throw new OrchestrationError("configuration", error.message);
+      }
+      throw error;
+    }
+    const configuredAgent =
+      options.execute === undefined && runtimeConfig.agent !== undefined
+        ? createConfiguredAgentExecutor(projectRoot, runtimeConfig.agent)
+        : undefined;
+    const configuredGateSuite =
+      options.gates === undefined && options.toolRegistry === undefined
+        ? createConfiguredGateSuite(projectRoot, runtimeConfig)
+        : undefined;
+    return {
+      projectRoot,
+      readBaseline: () => gitHead(projectRoot),
+      vcs,
+      interpret: options.interpret ?? createGenericInterpreter(),
+      execute: options.execute ?? configuredAgent?.execute ?? createDirectExecutor(),
+      evaluate:
+        options.evaluate ?? createEvalPackagePort(options.now ?? (() => new Date().toISOString())),
+      tasksProjection: renderTasksProjection,
+      ...(configuredAgent === undefined
+        ? {}
+        : {
+            taskEnvelopeScope: () => configuredAgent.scope,
+            trajectoryVisibility: configuredAgent.trajectoryVisibility,
+          }),
+      ...(options.now === undefined ? {} : { now: options.now }),
+      ...(options.newId === undefined ? {} : { newId: options.newId }),
+      ...(options.gates === undefined
+        ? configuredGateSuite === undefined
+          ? {}
+          : { gates: configuredGateSuite.gates }
+        : { gates: options.gates }),
+      ...(options.toolRegistry === undefined
+        ? configuredGateSuite === undefined
+          ? {}
+          : { toolRegistry: configuredGateSuite.registry }
+        : { toolRegistry: options.toolRegistry }),
+      ...(prompter === undefined ? {} : { prompter }),
+      decisionActor: actor,
+    };
+  };
 
   const guard = async (
     command: string,

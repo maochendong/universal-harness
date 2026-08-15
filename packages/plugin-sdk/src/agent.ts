@@ -68,6 +68,7 @@ export interface AgentTaskEnvelope {
   readonly objective: string;
   readonly expected_output: string;
   readonly acceptance_criteria: readonly string[];
+  readonly required_gate_ids: readonly string[];
   readonly allowed_read_paths: readonly string[];
   readonly proposed_write_paths: readonly string[];
   readonly state_proposal_fields: readonly string[];

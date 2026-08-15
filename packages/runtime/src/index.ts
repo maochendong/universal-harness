@@ -687,6 +687,7 @@ export {
   type ResolveFindingInput,
   type ResolvedFinding,
   type RunIterationInput,
+  type TaskEnvelopeScopePort,
 } from "./orchestration/orchestrator.js";
 export {
   ORCHESTRATION_PHASES,

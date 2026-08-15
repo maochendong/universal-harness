@@ -9,6 +9,7 @@
     { "path": "../eval" },
     { "path": "../../adapters/agent-manual" },
     { "path": "../../adapters/agent-command" },
+    { "path": "../../adapters/agent-dsh" },
     { "path": "../../adapters/vcs-git" },
     { "path": "../../adapters/projection-markdown" }
   ]

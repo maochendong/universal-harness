@@ -56,6 +56,7 @@ export function fixtureAgentEnvelope(
     objective: "Echo the fixture objective",
     expected_output: "A structured run result",
     acceptance_criteria: ["the run reports a structured result"],
+    required_gate_ids: ["gate_fixture"],
     allowed_read_paths: ["src"],
     proposed_write_paths: ["src"],
     state_proposal_fields: ["summary"],
