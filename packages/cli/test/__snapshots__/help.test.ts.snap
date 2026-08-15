@@ -25,6 +25,7 @@ Automation and recovery:
 
 Inspection:
   status                          Show project state, cache health and next action
+  watch                           Stream lifecycle events live (add --follow to tail)
   doctor                          Diagnose environment, Git, layout and cache issues
   graph sync                      Rebuild the SQLite graph cache from the ledger
   graph query [--type <type>]     Query materialized graph nodes
@@ -66,6 +67,7 @@ Automation and recovery:
 
 Inspection:
   status                          Show project state, cache health and next action
+  watch                           Stream lifecycle events live (add --follow to tail)
   doctor                          Diagnose environment, Git, layout and cache issues
   graph sync                      Rebuild the SQLite graph cache from the ledger
   graph query [--type <type>]     Query materialized graph nodes
@@ -107,6 +109,7 @@ Automation and recovery:
 
 Inspection:
   status                          Show project state, cache health and next action
+  watch                           Stream lifecycle events live (add --follow to tail)
   doctor                          Diagnose environment, Git, layout and cache issues
   graph sync                      Rebuild the SQLite graph cache from the ledger
   graph query [--type <type>]     Query materialized graph nodes

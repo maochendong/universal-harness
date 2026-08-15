@@ -29,6 +29,7 @@ import { runRunCommand } from "./commands/run.js";
 import { runSnapshotCommand } from "./commands/snapshot.js";
 import { runStatusCommand } from "./commands/status.js";
 import { runVerifyCommand } from "./commands/verify.js";
+import { runWatchCommand } from "./commands/watch.js";
 import { runGraphCheckCommand } from "./commands/graph/check.js";
 import { runGraphBackfillEvaluationsCommand } from "./commands/graph/backfill-evaluations.js";
 import { runGraphApproveEdgeCommand, runGraphProposeEdgeCommand } from "./commands/graph/edge.js";
@@ -240,6 +241,7 @@ Automation and recovery:
 
 Inspection:
   status                          Show project state, cache health and next action
+  watch                           Stream lifecycle events live (add --follow to tail)
   doctor                          Diagnose environment, Git, layout and cache issues
   graph sync                      Rebuild the SQLite graph cache from the ledger
   graph query [--type <type>]     Query materialized graph nodes
@@ -340,6 +342,14 @@ improvements.
 Show the managed project identity, committed ledger operation count, graph
 cache health and the last ledger operation for the current project.
 `,
+  watch: `Usage: harness watch [--json] [--lines <n>] [--follow]
+
+Stream the project lifecycle event stream (.harness/events) as human-
+readable lines: operation starts/completes, approvals, gates, evaluations
+and findings. Renders the newest events first; --follow keeps tailing for
+events committed by other harness processes (Ctrl+C stops). Event lines go
+to stderr; stdout keeps only the final summary result.
+`,
   doctor: `Usage: harness doctor [--json]
 
 Diagnose the runtime environment, Git availability, managed project layout
@@ -426,6 +436,8 @@ async function dispatch(args: readonly string[], context: CommandContext): Promi
       return runAuditCommand(rest, context);
     case "status":
       return runStatusCommand(rest, context);
+    case "watch":
+      return runWatchCommand(rest, context);
     case "doctor":
       return runDoctorCommand(rest, context);
     case "graph": {
