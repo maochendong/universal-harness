@@ -73,18 +73,24 @@ function describePayload(event: LifecycleEvent): string {
     case "OperationStarted":
       return first("phase") === undefined ? "" : `phase=${first("phase")}`;
     case "OperationCompleted":
-      return [first("phase") === undefined ? undefined : `phase=${first("phase")}`,
-        first("outcome") === undefined ? undefined : `outcome=${first("outcome")}`]
+      return [
+        first("phase") === undefined ? undefined : `phase=${first("phase")}`,
+        first("outcome") === undefined ? undefined : `outcome=${first("outcome")}`,
+      ]
         .filter((part) => part !== undefined)
         .join(" ");
     case "ApprovalRequired":
-      return [first("kind") === undefined ? undefined : `kind=${first("kind")}`,
-        first("object_type") === undefined ? undefined : `object=${first("object_type")}`]
+      return [
+        first("kind") === undefined ? undefined : `kind=${first("kind")}`,
+        first("object_type") === undefined ? undefined : `object=${first("object_type")}`,
+      ]
         .filter((part) => part !== undefined)
         .join(" ");
     case "PlanAccepted":
-      return [first("mode") === undefined ? undefined : `mode=${first("mode")}`,
-        first("tasks") === undefined ? undefined : `tasks=${first("tasks")}`]
+      return [
+        first("mode") === undefined ? undefined : `mode=${first("mode")}`,
+        first("tasks") === undefined ? undefined : `tasks=${first("tasks")}`,
+      ]
         .filter((part) => part !== undefined)
         .join(" ");
     case "ContextCompiled":
@@ -122,7 +128,7 @@ export function formatEventLine(event: LifecycleEvent, options: { color: boolean
   const failed =
     (event.event_type === "GateCompleted" || event.event_type === "EvaluationCompleted") &&
     event.payload["passed"] === false;
-  const color = failed ? RED : style?.color ?? GRAY;
+  const color = failed ? RED : (style?.color ?? GRAY);
   const icon = style?.icon ?? "·";
   const detail = describePayload(event);
   const body = detail === "" ? event.event_type : `${event.event_type} ${detail}`;
@@ -266,7 +272,10 @@ export async function runWatchCommand(
   };
   if (follow) {
     process.once("SIGINT", onInterrupt);
-    const deadline = resolved.maxDurationMs === undefined ? Number.POSITIVE_INFINITY : Date.now() + resolved.maxDurationMs;
+    const deadline =
+      resolved.maxDurationMs === undefined
+        ? Number.POSITIVE_INFINITY
+        : Date.now() + resolved.maxDurationMs;
     try {
       while (!stopped && Date.now() < deadline) {
         await sleep(resolved.pollIntervalMs);

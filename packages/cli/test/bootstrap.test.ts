@@ -80,7 +80,10 @@ describe("harness new route", () => {
     expect(exitCode).toBe(EXIT_CODES.approvalRequired);
     // stderr now carries the streamed phase-progress lines; every line must
     // be a valid PhaseProgressEvent NDJSON record (no stray noise allowed).
-    const progressLines = captured.stderr().split("\n").filter((line) => line !== "");
+    const progressLines = captured
+      .stderr()
+      .split("\n")
+      .filter((line) => line !== "");
     expect(progressLines.length).toBeGreaterThan(0);
     for (const line of progressLines) {
       const event = JSON.parse(line) as Record<string, unknown>;
@@ -89,7 +92,7 @@ describe("harness new route", () => {
       expect(["phase_started", "phase_completed", "phase_paused"]).toContain(event["type"]);
       expect(event["phase"]).toBeTypeOf("string");
     }
-    expect(progressLines.at(-1)).toContain("\"phase_paused\"");
+    expect(progressLines.at(-1)).toContain('"phase_paused"');
     expect(progressLines.at(-1)).toContain("approval_required");
     const result = JSON.parse(captured.stdout()) as Record<string, unknown>;
     expect(result["status"]).toBe("approval_required");

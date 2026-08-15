@@ -44,6 +44,7 @@ export async function runGraphReconcileCommand(
         findings_created: result.findings_created,
         findings_superseded: result.findings_superseded,
         block_edges_retired: result.block_edges_retired,
+        finding_edges_retired: result.finding_edges_retired,
         skipped: [...result.skipped],
       },
     };

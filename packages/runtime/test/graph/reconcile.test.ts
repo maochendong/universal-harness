@@ -199,6 +199,20 @@ describe("reconcileProjectGraph", () => {
         targetId: iterationId,
         iterationId,
       }),
+      edge({
+        id: "edge_iteration_finding",
+        type: "CONTAINS",
+        sourceId: iterationId,
+        targetId: findingId,
+        iterationId,
+      }),
+      edge({
+        id: "edge_finding_requirement",
+        type: "VIOLATES",
+        sourceId: findingId,
+        targetId: requirementId,
+        iterationId,
+      }),
     ];
     const fixtureTransaction = {
       ledger_operation_id: "ledger_reconcile_fixture",
@@ -272,7 +286,13 @@ describe("reconcileProjectGraph", () => {
       readBaseline: () => headOf(projectRoot),
       now: () => FIXED_NOW,
     });
-    expect(first).toMatchObject({ evaluations: 1, findings_superseded: 1, skipped: [] });
+    expect(first).toMatchObject({
+      evaluations: 1,
+      findings_superseded: 1,
+      block_edges_retired: 1,
+      finding_edges_retired: 3,
+      skipped: [],
+    });
 
     const materialized = materializeLedger({ projectRoot, databasePath: ":memory:" }).database;
     try {
@@ -314,6 +334,13 @@ describe("reconcileProjectGraph", () => {
       expect(
         nodes.some((item) => item.type === "EvaluationCase" && item.status === "accepted"),
       ).toBe(true);
+      for (const id of [
+        "edge_finding_iteration",
+        "edge_iteration_finding",
+        "edge_finding_requirement",
+      ]) {
+        expect(edges.find((item) => item.id === id)?.status).toBe("superseded");
+      }
     } finally {
       materialized.close();
     }
@@ -469,14 +496,14 @@ describe("reconcileProjectGraph", () => {
         edges.push(...page.items);
         edgeCursor = page.nextCursor;
       } while (edgeCursor !== undefined);
-      expect(
-        edges.some((item) => item.type === "EVALUATES" && item.target_id === runId),
-      ).toBe(true);
+      expect(edges.some((item) => item.type === "EVALUATES" && item.target_id === runId)).toBe(
+        true,
+      );
       const evaluationCase = nodes.find((item) => item.id === caseId);
       expect(evaluationCase?.type).toBe("EvaluationCase");
-      expect((evaluationCase?.extensions?.["harness.evaluation"] as Record<string, unknown>)?.[
-        "passed"
-      ]).toBe(false);
+      expect(
+        (evaluationCase?.extensions?.["harness.evaluation"] as Record<string, unknown>)?.["passed"],
+      ).toBe(false);
     } finally {
       materialized.close();
     }

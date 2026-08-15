@@ -4,7 +4,11 @@ import { join } from "node:path";
 import { renderTasksProjection } from "@universal-harness-internal/adapter-projection-markdown";
 import { harnessRootFor, type EdgeRecord, type NodeRecord } from "@universal-harness-internal/core";
 import { materializeLedger, pageEdges, pageNodes } from "@universal-harness-internal/graph";
-import { planManagedWrite, writeManagedOutput } from "@universal-harness-internal/runtime";
+import {
+  isVerifiedHarnessProjection,
+  planManagedWrite,
+  writeManagedOutput,
+} from "@universal-harness-internal/runtime";
 
 import { commandFailed, usageError } from "../../errors.js";
 import { parseCommandArgs, requireProjectRoot, type CommandResult } from "../../io.js";
@@ -79,15 +83,20 @@ export function runGraphProjectTasksCommand(
     { completedTasks: completedTaskIds(projectRoot) },
   );
   const output = { name: "views/tasks.md", content: projection.markdown };
-  const plan = planManagedWrite(harnessRootFor(projectRoot), output);
-  if (plan.action === "rewrite" && values["approve-overwrite"] !== true) {
+  const harnessRoot = harnessRootFor(projectRoot);
+  const plan = planManagedWrite(harnessRoot, output);
+  const existingPath = join(harnessRoot, "projections", output.name);
+  const verifiedExisting =
+    existsSync(existingPath) && isVerifiedHarnessProjection(readFileSync(existingPath, "utf8"));
+  if (plan.action === "rewrite" && !verifiedExisting && values["approve-overwrite"] !== true) {
     throw commandFailed(
       `projection rewrite requires --approve-overwrite; existing digest ${plan.existing_digest ?? "unknown"}, generated digest ${plan.digest}`,
       { plan },
     );
   }
-  const written = writeManagedOutput(harnessRootFor(projectRoot), output, {
+  const written = writeManagedOutput(harnessRoot, output, {
     overwriteApproved: values["approve-overwrite"] === true,
+    rewriteVerifiedProjection: true,
   });
   return {
     command: "graph project-tasks",

@@ -17,6 +17,7 @@ import {
   provenQualityTaskIds,
   readLatestExecutionPlan,
   readLatestSnapshot,
+  resolveSnapshotSourceCommit,
   readStagedAdoptionPreview,
   resolveApproval,
   resolveFinding,
@@ -30,6 +31,7 @@ import {
   type OrchestrationOutcome,
   type OrchestratorDependencies,
   type PhaseProgressEvent,
+  type TaskEnvelopeScopePort,
 } from "@universal-harness-internal/runtime";
 import { materializeLedger, pageEdges, pageNodes } from "@universal-harness-internal/graph";
 import type { EdgeRecord, NodeRecord } from "@universal-harness-internal/core";
@@ -69,6 +71,8 @@ export interface OrchestratedServiceOptions {
   readonly newId?: (kind: string) => string;
   readonly interpret?: IntentInterpreter;
   readonly execute?: OrchestrationExecutor;
+  /** Explicit task path scope for injected executors and hermetic hosts. */
+  readonly taskEnvelopeScope?: TaskEnvelopeScopePort;
   readonly evaluate?: EvaluationPort;
   readonly prompter?: ApprovalPrompter;
   readonly decisionActor?: string;
@@ -156,6 +160,7 @@ function outcomeToResult(
           workflow_operation_id: outcome.workflowOperationId,
           iteration_id: outcome.iterationId,
           snapshot_id: outcome.snapshotId,
+          source_commit: outcome.sourceCommit,
           final_commit: outcome.finalCommit,
         },
       };
@@ -258,12 +263,14 @@ export function createOrchestratedRuntimeService(
       evaluate:
         options.evaluate ?? createEvalPackagePort(options.now ?? (() => new Date().toISOString())),
       tasksProjection: renderTasksProjection,
+      ...(options.taskEnvelopeScope === undefined
+        ? configuredAgent === undefined
+          ? {}
+          : { taskEnvelopeScope: () => configuredAgent.scope }
+        : { taskEnvelopeScope: options.taskEnvelopeScope }),
       ...(configuredAgent === undefined
         ? {}
-        : {
-            taskEnvelopeScope: () => configuredAgent.scope,
-            trajectoryVisibility: configuredAgent.trajectoryVisibility,
-          }),
+        : { trajectoryVisibility: configuredAgent.trajectoryVisibility }),
       ...(options.now === undefined ? {} : { now: options.now }),
       ...(options.newId === undefined ? {} : { newId: options.newId }),
       ...(options.gates === undefined
@@ -640,6 +647,7 @@ export function createOrchestratedRuntimeService(
                   status: snapshot.status,
                   iteration_id: snapshot.iteration_id,
                   workflow_operation_id: snapshot.workflow_operation_id,
+                  source_commit: resolveSnapshotSourceCommit(request.projectRoot, snapshot),
                   final_commit: snapshot.final_commit,
                   evidence: [...snapshot.evidence],
                   closed_findings: [...snapshot.closed_findings],

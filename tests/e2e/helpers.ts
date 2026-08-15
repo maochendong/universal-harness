@@ -86,7 +86,7 @@ export interface E2eHarness {
 }
 
 /** Deterministic fake executor: claims completion, records every envelope. */
-export function makeExecutor(): {
+export function makeExecutor(reportedSourcePaths: readonly string[] = []): {
   readonly calls: AgentTaskEnvelope[];
   readonly executor: (envelope: AgentTaskEnvelope) => Promise<AgentRunResult>;
 } {
@@ -102,7 +102,12 @@ export function makeExecutor(): {
         summary: `fake executor completed ${envelope.task_id} (call ${String(calls.length)})`,
         state_proposal: null,
         dropped_proposal_fields: [],
-        change_summary: { files_changed: 0, insertions: 0, deletions: 0, paths: [] },
+        change_summary: {
+          files_changed: reportedSourcePaths.length,
+          insertions: reportedSourcePaths.length,
+          deletions: 0,
+          paths: [...reportedSourcePaths],
+        },
         tool_activity: { total_calls: 0, governed_calls: 0, by_tool: {} },
         usage: {
           input_tokens: null,
@@ -131,15 +136,25 @@ export function makeHarness(
   injection?: {
     readonly gates?: readonly GateDefinition[];
     readonly toolRegistry?: ToolRegistry;
+    /** Source paths the deterministic Agent run reports as changed. */
+    readonly reportedSourcePaths?: readonly string[];
   },
 ): E2eHarness {
-  const executor = makeExecutor();
+  const executor = makeExecutor(injection?.reportedSourcePaths);
   const runtime = createOrchestratedRuntimeService({
     cwd,
     io: captureIo().io,
     now: () => FIXED_NOW,
     newId,
     execute: executor.executor,
+    ...(injection?.reportedSourcePaths === undefined
+      ? {}
+      : {
+          taskEnvelopeScope: () => ({
+            allowed_read_paths: [],
+            proposed_write_paths: [...injection.reportedSourcePaths],
+          }),
+        }),
     ...(injection?.gates === undefined ? {} : { gates: injection.gates }),
     ...(injection?.toolRegistry === undefined ? {} : { toolRegistry: injection.toolRegistry }),
   });

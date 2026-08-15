@@ -507,6 +507,8 @@ describe("phase orchestrator", { timeout: 30000 }, () => {
       join(projectRoot, "docs", "api-contract.md"),
       "# API Contract\n\n- POST /retrieve -- retrieval endpoint\n",
     );
+    git(projectRoot, "add", "docs/api-contract.md");
+    git(projectRoot, "commit", "-m", "docs: add API contract baseline");
     const second = await driveToCompletion("add the second capability");
     expect(second.status).toBe("completed");
 
@@ -945,7 +947,19 @@ describe("phase orchestrator", { timeout: 30000 }, () => {
   it("binds configured repository paths into the governed task envelope", async () => {
     const newId = sequentialIds();
     const projectRoot = await bootstrapProject("orch-task-scope", newId);
-    const fake = recordingExecutor();
+    const fake = recordingExecutor((envelope) => {
+      mkdirSync(join(projectRoot, "src"), { recursive: true });
+      writeFileSync(join(projectRoot, "src", "generated.ts"), "export const generated = true;\n");
+      return {
+        ...claimedResult(envelope, "wrote governed source"),
+        change_summary: {
+          files_changed: 1,
+          insertions: 1,
+          deletions: 0,
+          paths: ["src/generated.ts"],
+        },
+      };
+    });
     const deps = makeDeps(projectRoot, newId, {
       execute: fake.executor,
       taskEnvelopeScope: () => ({
@@ -963,6 +977,14 @@ describe("phase orchestrator", { timeout: 30000 }, () => {
     expect(fake.calls).toHaveLength(1);
     expect(fake.calls[0]?.allowed_read_paths).toEqual(["docs", "src"]);
     expect(fake.calls[0]?.proposed_write_paths).toEqual(["scripts", "src"]);
+    if (outcome.status !== "completed") return;
+    const snapshot = readLatestSnapshot(projectRoot);
+    expect(snapshot?.final_commit).toBe(outcome.sourceCommit);
+    expect(outcome.sourceCommit).not.toBe(outcome.finalCommit);
+    expect(git(projectRoot, "show", `${outcome.sourceCommit}:src/generated.ts`)).toContain(
+      "generated = true",
+    );
+    expect(git(projectRoot, "status", "--porcelain").trim()).toBe("");
   });
 
   it("reports 2/3 progress and resumes only the unfinished tasks", async () => {
@@ -1198,6 +1220,8 @@ describe("phase orchestrator", { timeout: 30000 }, () => {
       join(projectRoot, "src", "widget.test.js"),
       'import test from "node:test";\ntest("widget", () => {});\n',
     );
+    git(projectRoot, "add", "src/widget.test.js");
+    git(projectRoot, "commit", "-m", "test: add widget baseline");
     const second = await driveToCompletion("add the widget test");
     expect(second.status).toBe("completed");
     graph = readGraph();

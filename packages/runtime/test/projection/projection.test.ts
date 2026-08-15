@@ -4,7 +4,7 @@ import { join } from "node:path";
 
 import { afterEach, describe, expect, it } from "vitest";
 
-import { sha256Hex } from "@universal-harness-internal/core";
+import { contentDigest, sha256Hex } from "@universal-harness-internal/core";
 
 import {
   ProjectionError,
@@ -35,6 +35,25 @@ function makeHarnessRoot(): string {
 
 const ENVELOPE_DIGEST = "a".repeat(64);
 const BUNDLE_DIGEST = "b".repeat(64);
+
+function harnessProjection(
+  body: string,
+  sources: readonly { readonly id: string; readonly revision: number }[],
+): string {
+  const view = "tasks";
+  const generationDigest = contentDigest({ view, sources, body });
+  return [
+    "<!-- harness:projection",
+    `view: ${view}`,
+    `generation_digest: ${generationDigest}`,
+    "sources:",
+    ...sources.map((source) => `- ${source.id} r${String(source.revision)}`),
+    "-->",
+    "",
+    body,
+    "",
+  ].join("\n");
+}
 
 describe("managed projection output", () => {
   it("accepts nested relative names and stays under the managed root", () => {
@@ -74,6 +93,50 @@ describe("managed projection output", () => {
     const approved = writeManagedOutput(harnessRoot, output, { overwriteApproved: true });
     expect(approved.action).toBe("rewrite");
     expect(readFileSync(join(harnessRoot, "projections/views/prd.md"), "utf8")).toBe("# PRD\n");
+  });
+
+  it("rewrites a previous self-verifying Harness projection without broad overwrite approval", () => {
+    const harnessRoot = makeHarnessRoot();
+    const oldContent = harnessProjection("# Tasks\n\n- [x] T001 first", [
+      { id: "plan_01", revision: 1 },
+    ]);
+    const nextContent = harnessProjection("# Tasks\n\n- [x] T001 first\n- [x] T002 second", [
+      { id: "plan_01", revision: 1 },
+      { id: "plan_02", revision: 1 },
+    ]);
+    const output = { name: "views/tasks.md", content: oldContent };
+    writeManagedOutput(harnessRoot, output);
+
+    const rewritten = writeManagedOutput(
+      harnessRoot,
+      { ...output, content: nextContent },
+      { rewriteVerifiedProjection: true },
+    );
+
+    expect(rewritten.action).toBe("rewrite");
+    expect(readFileSync(join(harnessRoot, "projections/views/tasks.md"), "utf8")).toBe(nextContent);
+  });
+
+  it("refuses automatic rewrite when a Harness projection body was hand edited", () => {
+    const harnessRoot = makeHarnessRoot();
+    const generated = harnessProjection("# Tasks\n\n- [x] T001 first", [
+      { id: "plan_01", revision: 1 },
+    ]);
+    const output = { name: "views/tasks.md", content: generated };
+    writeManagedOutput(harnessRoot, output);
+    writeFileSync(
+      join(harnessRoot, "projections/views/tasks.md"),
+      generated.replace("T001 first", "T001 hand edit"),
+      "utf8",
+    );
+
+    expect(() =>
+      writeManagedOutput(
+        harnessRoot,
+        { ...output, content: harnessProjection("# Tasks\n\n- [x] T001 next", []) },
+        { rewriteVerifiedProjection: true },
+      ),
+    ).toThrowError(ProjectionError);
   });
 
   it("never writes outside the managed projection directory", () => {

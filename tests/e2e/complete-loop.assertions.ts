@@ -579,21 +579,14 @@ const REPAIR_TARGETS: Readonly<
 /**
  * A deterministic in-band repair: one uncommitted comment line changes the
  * worktree code digest, so the verify phase re-runs instead of replaying the
- * failed verdict. The repair must stay uncommitted until the blocked
- * operation has resumed: resume re-verifies the checkpoint baseline against
- * HEAD, and the harness only ever commits the managed `.harness` tree, so the
- * human repair lands as a normal user commit once the loop has completed.
+ * failed verdict. The repair stays uncommitted until the blocked operation
+ * resumes; after the gates pass, Harness anchors the Agent-declared source
+ * path in the completed iteration's source commit.
  */
 export function repairFixtureSource(spec: StackSpec, projectRoot: string, tag: string): void {
   const target = REPAIR_TARGETS[spec.stack];
   const absolute = join(projectRoot, ...target.path.split("/"));
   appendFileSync(absolute, `${target.prefix} repair ${tag}\n`, "utf8");
-}
-
-/** Land an earlier worktree repair as an ordinary user commit. */
-export function commitRepair(spec: StackSpec, projectRoot: string, tag: string): void {
-  git(projectRoot, "add", REPAIR_TARGETS[spec.stack].path);
-  git(projectRoot, "commit", "-m", `repair: ${tag}`);
 }
 
 async function runBlockedResumeScenario(
@@ -608,6 +601,7 @@ async function runBlockedResumeScenario(
   const harness = makeHarness(projectRoot, newId, {
     gates: suite.gates,
     toolRegistry: suite.toolRegistry,
+    reportedSourcePaths: [REPAIR_TARGETS[spec.stack].path],
   });
   const session: Session = { cwd: projectRoot, runtime: harness.runtime };
 
@@ -645,16 +639,21 @@ async function runBlockedResumeScenario(
   expect(blockedSnapshot["resume_phase"]).toBe("verify");
 
   // Repair, then resume: the gate re-runs against the new code binding, the
-  // finding closes with current evidence and the iteration completes. The
-  // repair itself is committed afterwards as an ordinary user commit.
+  // finding closes with current evidence, and the declared repair path lands
+  // in the source commit before the completed Snapshot is written.
   repairFixtureSource(spec, projectRoot, tag);
   repair();
   const resumed = await runJson(["resume", workflowOperationId], session);
-  expect(resumed.json["status"]).toBe("ok");
-  expect(typeof data(resumed)["snapshot_id"]).toBe("string");
+  expect(resumed.json["status"], JSON.stringify(resumed.json)).toBe("ok");
+  const resumedData = data(resumed);
+  expect(typeof resumedData["snapshot_id"]).toBe("string");
+  const sourceCommit = resumedData["source_commit"] as string;
+  expect(sourceCommit).toMatch(/^[a-f0-9]{40,64}$/u);
+  expect(git(projectRoot, "show", `${sourceCommit}:${REPAIR_TARGETS[spec.stack].path}`)).toContain(
+    `repair ${tag}`,
+  );
   const closed = readJsonFile(join(findingDirectory, "closed.json"));
   expect(closed["status"]).toBe("closed");
-  commitRepair(spec, projectRoot, tag);
 }
 
 /**

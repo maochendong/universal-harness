@@ -1,5 +1,4 @@
-import { execFileSync } from "node:child_process";
-import { existsSync, lstatSync, readlinkSync, readdirSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
 import {
@@ -78,6 +77,8 @@ import { runGateSuite, type GateSuiteOutcome } from "../gates/runner.js";
 import { ProjectionError, writeManagedOutput } from "../projection/managed-output.js";
 import { issueGrant } from "../policy/capability-grant.js";
 import { mergePolicyLayers } from "../policy/evaluator.js";
+import { isPathWithinScopes, normalizeRepoRelativePath } from "../policy/path-boundary.js";
+import { explainCodeDigestMismatch, hashCommitCode, hashWorktreeCode } from "../snapshot/anchor.js";
 import type { EffectivePolicy } from "../policy/decision.js";
 import { buildTaskEnvelope, type TaskEnvelope } from "../loop/task-envelope.js";
 import { resolveLoopPolicy } from "../loop/policy.js";
@@ -309,6 +310,9 @@ export type OrchestrationOutcome =
       readonly workflowOperationId: string;
       readonly iterationId: string;
       readonly snapshotId: string;
+      /** Commit containing the exact source tree proved by gate evidence. */
+      readonly sourceCommit: string;
+      /** Commit containing the completed Harness ledger and projections. */
       readonly finalCommit: string;
     }
   | { readonly status: "approval_required"; readonly required: ApprovalRequiredOutcome }
@@ -613,45 +617,79 @@ function materializeProjectGraph(projectRoot: string): ProjectGraph {
   }
 }
 
-/**
- * Digest of the project code the gates ran against (design 15.3 evidence
- * binding): sorted path/type/content digests of every Git-visible worktree
- * file outside the Harness control plane. Ignored build and test outputs do
- * not invalidate evidence; tracked or untracked source repairs do.
- */
-export function hashWorktreeCode(projectRoot: string): string {
-  const listed = execFileSync(
-    "git",
-    ["-c", "core.quotepath=false", "ls-files", "--cached", "--others", "--exclude-standard", "-z"],
-    { cwd: projectRoot, encoding: "utf8" },
-  );
-  const paths = listed
-    .split("\0")
-    .filter((path) => path !== "" && path !== ".harness" && !path.startsWith(".harness/"))
-    .sort();
-  const entries = paths.map((relative) => {
-    const absolute = join(projectRoot, relative);
-    try {
-      const stat = lstatSync(absolute);
-      if (stat.isSymbolicLink()) {
-        return `${relative}:symlink:${sha256Hex(readlinkSync(absolute))}`;
-      }
-      if (stat.isFile()) {
-        const mode = (stat.mode & 0o111) === 0 ? "100644" : "100755";
-        return `${relative}:file:${mode}:${sha256Hex(readFileSync(absolute).toString("base64"))}`;
-      }
-      return `${relative}:other`;
-    } catch (error) {
-      const code = (error as NodeJS.ErrnoException).code;
-      if (code === "ENOENT") return `${relative}:missing`;
-      throw error;
-    }
-  });
-  return sha256Hex(entries.join("\n"));
-}
-
 function artifactExists(deps: OrchestratorDependencies, ledgerRelativePath: string): boolean {
   return existsSync(resolveHarnessPath(harnessRoot(deps), ledgerRelativePath));
+}
+
+async function commitVerifiedSourceTree(
+  ctx: PipelineContext,
+  plan: ExecutionPlanContent,
+  taskRuns: readonly {
+    readonly taskId: string;
+    readonly result: AgentRunResult;
+  }[],
+): Promise<string> {
+  const taskById = new Map(plan.tasks.map((task) => [task.id, task]));
+  const paths = new Set<string>();
+  for (const taskRun of taskRuns) {
+    const task = taskById.get(taskRun.taskId);
+    if (task === undefined) {
+      throw new OrchestrationError(
+        "binding_drift",
+        `run result references task ${taskRun.taskId}, which is absent from the accepted plan`,
+      );
+    }
+    const declaredScope = buildEnvelope(ctx, task).envelope.proposed_write_paths;
+    for (const candidate of taskRun.result.change_summary.paths) {
+      const path = normalizeRepoRelativePath(candidate);
+      if (
+        path === ".harness" ||
+        path.startsWith(".harness/") ||
+        !isPathWithinScopes(declaredScope, path)
+      ) {
+        throw new OrchestrationError(
+          "binding_drift",
+          `task ${task.id} reported source path ${path} outside its governed write scope`,
+        );
+      }
+      paths.add(path);
+    }
+  }
+
+  let sourceCommit = ctx.deps.readBaseline();
+  if (paths.size > 0) {
+    if (ctx.deps.vcs === undefined) {
+      throw new OrchestrationError(
+        "configuration",
+        "source changes passed verification but no VCS adapter is configured to anchor them",
+      );
+    }
+    const committed = await ctx.deps.vcs.commit(ctx.deps.projectRoot, {
+      message: `harness: apply iteration ${ctx.iterationId}`,
+      paths: [...paths].sort(),
+      identity: HARNESS_COMMIT_IDENTITY,
+    });
+    if (committed.ok) {
+      sourceCommit = committed.value;
+    } else if (committed.error.kind !== "nothing_to_commit") {
+      throw new OrchestrationError(
+        "binding_drift",
+        `could not commit verified source paths: ${committed.error.message}`,
+      );
+    } else {
+      sourceCommit = ctx.deps.readBaseline();
+    }
+  }
+
+  const worktreeDigest = hashWorktreeCode(ctx.deps.projectRoot);
+  const commitDigest = hashCommitCode(ctx.deps.projectRoot, sourceCommit);
+  if (worktreeDigest !== commitDigest) {
+    throw new OrchestrationError(
+      "binding_drift",
+      `the verified worktree contains source changes that are not present in the source commit: ${explainCodeDigestMismatch(ctx.deps.projectRoot, sourceCommit)}`,
+    );
+  }
+  return sourceCommit;
 }
 
 function readJsonArtifact<T>(
@@ -2718,7 +2756,7 @@ async function commitAuditFindings(ctx: PipelineContext): Promise<AuditCommitOut
   let report: AuditReport;
   let openAuditFindings: NodeRecord[];
   let committedEdgeIds: ReadonlySet<string>;
-  let activeBlocksEdges: readonly EdgeRecord[];
+  let activeFindingEdges: readonly EdgeRecord[];
   try {
     report = auditGraph(
       { nodes: graph.nodes, edges: graph.edges },
@@ -2736,9 +2774,11 @@ async function commitAuditFindings(ctx: PipelineContext): Promise<AuditCommitOut
       (node) => node.status === "proposed" || node.status === "accepted",
     );
     committedEdgeIds = new Set(graph.edges.map((edge) => edge.id));
-    activeBlocksEdges = graph.edges.filter(
+    const openFindingIds = new Set(openAuditFindings.map((finding) => finding.id));
+    activeFindingEdges = graph.edges.filter(
       (edge) =>
-        edge.type === "BLOCKS" && (edge.status === "proposed" || edge.status === "accepted"),
+        (edge.status === "proposed" || edge.status === "accepted") &&
+        (openFindingIds.has(edge.source_id) || openFindingIds.has(edge.target_id)),
     );
   } finally {
     graph.close();
@@ -2808,8 +2848,8 @@ async function commitAuditFindings(ctx: PipelineContext): Promise<AuditCommitOut
     const validation = validateSchema("node", node);
     if (!validation.valid) throw invalidAuditRecord("finding node", existing.id, validation.errors);
     artifacts.push({ path, content: `${canonicalizeJson(node)}\n` });
-    for (const active of activeBlocksEdges) {
-      if (active.source_id !== existing.id) continue;
+    for (const active of activeFindingEdges) {
+      if (active.source_id !== existing.id && active.target_id !== existing.id) continue;
       const retiredContent: Record<string, unknown> = Object.fromEntries(
         Object.entries(active).filter(([key]) => key !== "digest"),
       );
@@ -3213,7 +3253,11 @@ async function regenerateTasksProjection(ctx: PipelineContext): Promise<void> {
     graph.close();
   }
   try {
-    writeManagedOutput(harnessRoot(deps), { name: TASKS_PROJECTION_OUTPUT, content: markdown });
+    writeManagedOutput(
+      harnessRoot(deps),
+      { name: TASKS_PROJECTION_OUTPUT, content: markdown },
+      { rewriteVerifiedProjection: true },
+    );
   } catch (error) {
     if (error instanceof ProjectionError && error.kind === "unapproved_overwrite") return;
     throw error;
@@ -3302,6 +3346,7 @@ async function phaseSnapshot(ctx: PipelineContext): Promise<PhaseStep> {
     refreshWorkingState(ctx);
   }
 
+  const sourceCommit = await commitVerifiedSourceTree(ctx, plan.content, taskRuns);
   const snapshot = buildSnapshot({
     ...snapshotBaseInput(
       ctx,
@@ -3312,7 +3357,7 @@ async function phaseSnapshot(ctx: PipelineContext): Promise<PhaseStep> {
       })),
     ),
     snapshot_id: `snapshot_${sha256Hex(`${ctx.iterationId}:completed`).slice(0, 16)}`,
-    final_commit: deps.readBaseline(),
+    final_commit: sourceCommit,
     created_at: nowOf(deps),
     execution_plan_id: plan.node.id,
     runs: taskRuns.map((taskRun) => ({
@@ -3388,6 +3433,7 @@ async function phaseSnapshot(ctx: PipelineContext): Promise<PhaseStep> {
       workflowOperationId: ctx.workflowOperationId,
       iterationId: ctx.iterationId,
       snapshotId: snapshot.snapshot_id,
+      sourceCommit,
       finalCommit,
     },
   };
@@ -3503,10 +3549,7 @@ async function drivePipeline(
 
 function emitPhaseProgress(
   ctx: PipelineContext,
-  event: Omit<
-    PhaseProgressEvent,
-    "workflow_operation_id" | "iteration_id" | "timestamp"
-  >,
+  event: Omit<PhaseProgressEvent, "workflow_operation_id" | "iteration_id" | "timestamp">,
 ): void {
   const observer = ctx.deps.onPhaseProgress;
   if (observer === undefined) return;

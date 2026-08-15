@@ -173,11 +173,7 @@ export function createStubRuntimeService(): RuntimeService {
  * for mandatory approvals in the same process; non-interactive callers get
  * structured ApprovalRequired outcomes with a resumable workflow operation.
  */
-export function createDefaultRuntimeService(
-  cwd: string,
-  io: CliIo,
-  json = false,
-): RuntimeService {
+export function createDefaultRuntimeService(cwd: string, io: CliIo, json = false): RuntimeService {
   // Stream phase transitions on stderr while long pipelines run so callers
   // (and `harness watch` later) see progress instead of a silent buffer:
   // NDJSON lines in --json mode, plain text lines otherwise. stdout keeps
@@ -232,7 +228,7 @@ Automation and recovery:
   run [--dry-run]                 Execute the open operation's planned tasks
   verify                          Drive the open operation through the gate suite
   eval                            Drive the open operation through run evaluation
-  snapshot                        Complete the open operation or show the latest snapshot
+  snapshot                        Complete/show a snapshot; anchor repairs a legacy source commit
   approve <id> --decision <d>     Resolve one pending approval request
   finding <action> <id>           Accept, close or supersede one finding
   impact [node-id]                Preview the ImpactSet for a change seed
@@ -326,10 +322,11 @@ producing bound Evidence and Findings for failed mandatory gates.
 Drive the open workflow operation through run evaluation (outcome, safety,
 trajectory, correct failure, efficiency).
 `,
-  snapshot: `Usage: harness snapshot [--json]
+  snapshot: `Usage: harness snapshot [anchor <snapshot-id> --source-commit <sha> --reason <text>] [--json]
 
-Drive the open workflow operation to its terminal snapshot, or report the
-latest committed snapshot when no operation is open.
+Complete the open operation or show the latest Snapshot. The anchor form
+appends an evidence-verified source-commit correction for a legacy completed
+Snapshot without rewriting the historical record.
 `,
   audit: `Usage: harness audit [--json]
 
@@ -362,7 +359,7 @@ and graph cache health. Exits non-zero when any check fails.
   check         Verify ledger integrity invariants and cache consistency
   reconcile     Repair historical Run, Evaluation, Evidence and Finding closure
   backfill-evaluations  Materialize missing historical evaluation nodes and edges
-  project-tasks  Rebuild views/tasks.md (--approve-overwrite for an existing view)
+  project-tasks  Rebuild views/tasks.md (verified Harness views update automatically)
   propose-edge  Stage a human-driven edge proposal (--type, --source, --target)
   approve-edge  Commit a staged edge proposal (<edge-id> --digest <preview-digest>)
 `,

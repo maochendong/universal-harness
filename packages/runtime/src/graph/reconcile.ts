@@ -25,7 +25,8 @@ import {
 } from "@universal-harness-internal/graph";
 
 import { auditGraph, type AuditFinding } from "../audit/auditor.js";
-import { hashWorktreeCode } from "../orchestration/orchestrator.js";
+import { hashWorktreeCode, resolveSnapshotSourceCommit } from "../snapshot/anchor.js";
+import type { SnapshotRecord } from "../snapshot/builder.js";
 
 export interface GraphReconcileDependencies {
   readonly projectRoot: string;
@@ -43,6 +44,7 @@ export interface GraphReconcileResult {
   readonly findings_created: number;
   readonly findings_superseded: number;
   readonly block_edges_retired: number;
+  readonly finding_edges_retired: number;
   readonly skipped: readonly string[];
 }
 
@@ -137,14 +139,17 @@ function readRunMetadata(
   return runs;
 }
 
-function completedSnapshotCommits(harnessRoot: string): ReadonlyMap<string, readonly string[]> {
+function completedSnapshotCommits(
+  projectRoot: string,
+  harnessRoot: string,
+): ReadonlyMap<string, readonly string[]> {
   const byIteration = new Map<string, string[]>();
   for (const path of filesBelow(resolveHarnessPath(harnessRoot, "artifacts/snapshots"))) {
-    const snapshot = JSON.parse(readFileSync(path, "utf8")) as Record<string, unknown>;
+    const snapshot = JSON.parse(readFileSync(path, "utf8")) as SnapshotRecord;
     const iterationId = snapshot["iteration_id"];
-    const finalCommit = snapshot["final_commit"];
+    const finalCommit = resolveSnapshotSourceCommit(projectRoot, snapshot);
     if (
-      snapshot["status"] !== "completed" ||
+      snapshot.status !== "completed" ||
       typeof iterationId !== "string" ||
       typeof finalCommit !== "string"
     ) {
@@ -237,6 +242,7 @@ export async function reconcileProjectGraph(
   let findingsCreated = 0;
   let findingsSuperseded = 0;
   let blockEdgesRetired = 0;
+  let findingEdgesRetired = 0;
 
   const appendEdge = (
     type: EdgeRecord["type"],
@@ -452,7 +458,7 @@ export async function reconcileProjectGraph(
   }
 
   const currentCodeHash = hashWorktreeCode(deps.projectRoot);
-  const snapshots = completedSnapshotCommits(harnessRoot);
+  const snapshots = completedSnapshotCommits(deps.projectRoot, harnessRoot);
   const freshGateEvidence = [...currentNodes.values()].filter((node) => {
     if (node.type !== "Evidence" || node.status !== "accepted" || node.source !== "gate")
       return false;
@@ -638,7 +644,7 @@ export async function reconcileProjectGraph(
     findingsSuperseded += 1;
     revisions += 1;
     for (const active of [...activeEdges.values()]) {
-      if (active.type !== "BLOCKS" || active.source_id !== finding.id) continue;
+      if (active.source_id !== finding.id && active.target_id !== finding.id) continue;
       const retiredContent: Record<string, unknown> = Object.fromEntries(
         Object.entries(active).filter(([key]) => key !== "digest"),
       );
@@ -651,7 +657,8 @@ export async function reconcileProjectGraph(
       };
       committedEdges.push(assertEdge({ ...retiredContent, digest: contentDigest(retiredContent) }));
       activeEdges.delete(active.id);
-      blockEdgesRetired += 1;
+      if (active.type === "BLOCKS" && active.source_id === finding.id) blockEdgesRetired += 1;
+      findingEdgesRetired += 1;
       revisions += 1;
     }
   }
@@ -687,6 +694,7 @@ export async function reconcileProjectGraph(
     findings_created: findingsCreated,
     findings_superseded: findingsSuperseded,
     block_edges_retired: blockEdgesRetired,
+    finding_edges_retired: findingEdgesRetired,
     skipped: [...skipped].sort(),
   };
 }

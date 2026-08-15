@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 
-import { resolveHarnessPath, sha256Hex } from "@universal-harness-internal/core";
+import { contentDigest, resolveHarnessPath, sha256Hex } from "@universal-harness-internal/core";
 
 /**
  * Managed projection output (design 13.7, plan Task 22). Every projection the
@@ -93,6 +93,65 @@ export interface ManagedWriteResult {
   readonly digest: string;
 }
 
+export interface ManagedWriteOptions {
+  readonly overwriteApproved?: boolean;
+  /**
+   * Permit replacing a Markdown Projection only when its embedded source
+   * manifest and generation digest prove that the existing bytes are exactly
+   * a previous Harness render. This is deliberately narrower than broad
+   * overwrite approval and does not apply to provider mirrors or arbitrary
+   * files under the managed directory.
+   */
+  readonly rewriteVerifiedProjection?: boolean;
+}
+
+const PROJECTION_START = "<!-- harness:projection\n";
+const PROJECTION_HEADER_END = "\n-->\n\n";
+const PROJECTION_VIEW = /^view: ([A-Za-z0-9][A-Za-z0-9._-]*)$/u;
+const PROJECTION_DIGEST = /^generation_digest: ([a-f0-9]{64})$/u;
+const PROJECTION_SOURCE = /^- ([A-Za-z0-9][A-Za-z0-9._:-]*) r([1-9][0-9]*)$/u;
+
+/**
+ * Verify the self-describing header emitted by the Markdown Projection
+ * adapter. A hand edit changes the independently recomputed generation
+ * digest, while a previous untouched render remains safe to replace with a
+ * newer graph-derived view.
+ */
+export function isVerifiedHarnessProjection(content: string): boolean {
+  if (!content.startsWith(PROJECTION_START) || !content.endsWith("\n")) return false;
+  const headerEnd = content.indexOf(PROJECTION_HEADER_END, PROJECTION_START.length);
+  if (headerEnd < 0) return false;
+  const header = content.slice(PROJECTION_START.length, headerEnd).split("\n");
+  if (header.length < 3 || header[2] !== "sources:") return false;
+  const viewMatch = PROJECTION_VIEW.exec(header[0] ?? "");
+  const digestMatch = PROJECTION_DIGEST.exec(header[1] ?? "");
+  if (viewMatch === null || digestMatch === null) return false;
+  const sources: { id: string; revision: number }[] = [];
+  for (const line of header.slice(3)) {
+    const source = PROJECTION_SOURCE.exec(line);
+    if (source === null) return false;
+    sources.push({ id: source[1] as string, revision: Number(source[2]) });
+  }
+  const ordered = [...sources].sort((left, right) =>
+    left.id < right.id ? -1 : left.id > right.id ? 1 : 0,
+  );
+  if (
+    ordered.some(
+      (source, index) =>
+        source.id !== sources[index]?.id ||
+        source.revision !== sources[index]?.revision ||
+        (index > 0 && source.id === ordered[index - 1]?.id),
+    )
+  ) {
+    return false;
+  }
+  const bodyStart = headerEnd + PROJECTION_HEADER_END.length;
+  const body = content.slice(bodyStart, -1);
+  return (
+    contentDigest({ view: viewMatch[1] as string, sources, body }) === (digestMatch[1] as string)
+  );
+}
+
 /**
  * Execute a managed write. A `rewrite` over bytes that differ from the new
  * content requires `overwriteApproved: true`; without the approval the write
@@ -102,10 +161,20 @@ export interface ManagedWriteResult {
 export function writeManagedOutput(
   harnessRoot: string,
   output: ManagedOutput,
-  options?: { readonly overwriteApproved?: boolean },
+  options?: ManagedWriteOptions,
 ): ManagedWriteResult {
   const plan = planManagedWrite(harnessRoot, output);
-  if (plan.action === "rewrite" && options?.overwriteApproved !== true) {
+  const verifiedProjectionRewrite =
+    plan.action === "rewrite" &&
+    options?.rewriteVerifiedProjection === true &&
+    isVerifiedHarnessProjection(
+      readFileSync(resolveHarnessPath(harnessRoot, plan.relativePath), "utf8"),
+    );
+  if (
+    plan.action === "rewrite" &&
+    options?.overwriteApproved !== true &&
+    !verifiedProjectionRewrite
+  ) {
     throw new ProjectionError(
       "unapproved_overwrite",
       `refusing to overwrite ${plan.relativePath}: existing bytes (digest ${plan.existing_digest ?? "unknown"}) differ from the generated projection; approve the preview first`,

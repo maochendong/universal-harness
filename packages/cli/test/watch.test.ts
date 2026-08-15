@@ -57,7 +57,11 @@ function makeEvent(overrides: Partial<LifecycleEvent>): LifecycleEvent {
   } as LifecycleEvent;
 }
 
-function writeEvents(projectRoot: string, fileName: string, events: readonly LifecycleEvent[]): void {
+function writeEvents(
+  projectRoot: string,
+  fileName: string,
+  events: readonly LifecycleEvent[],
+): void {
   const body = events.map((event) => `${JSON.stringify(event)}\n`).join("");
   writeFileSync(join(projectRoot, ".harness", "events", "2026-08", fileName), body);
 }
@@ -77,7 +81,8 @@ function makeContext(captured: Captured, json: boolean, cwd: string): CommandCon
 afterEach(() => {
   while (createdRoots.length > 0) {
     const root = createdRoots.pop();
-    if (root !== undefined) rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+    if (root !== undefined)
+      rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
   }
 });
 
@@ -131,7 +136,10 @@ describe("harness watch", () => {
     expect(result.status).toBe("ok");
     expect(result.data["events"]).toBe(2);
     expect(result.data["operations"]).toBe(1);
-    const lines = captured.stderr().split("\n").filter((line) => line !== "");
+    const lines = captured
+      .stderr()
+      .split("\n")
+      .filter((line) => line !== "");
     expect(lines).toHaveLength(2);
     expect(lines[0]).toContain("▶ OperationStarted phase=capture");
     expect(lines[1]).toContain("✔ OperationCompleted phase=capture outcome=baseline_committed");
@@ -153,7 +161,10 @@ describe("harness watch", () => {
     const captured = captureIo();
     const result = await runWatchCommand([], makeContext(captured, true, root));
     expect(result.status).toBe("ok");
-    const lines = captured.stderr().split("\n").filter((line) => line !== "");
+    const lines = captured
+      .stderr()
+      .split("\n")
+      .filter((line) => line !== "");
     expect(lines).toHaveLength(2);
     for (const line of lines) {
       const event = JSON.parse(line) as Record<string, unknown>;
@@ -175,7 +186,10 @@ describe("harness watch", () => {
     const captured = captureIo();
     const result = await runWatchCommand(["--lines", "1"], makeContext(captured, false, root));
     expect(result.data["events"]).toBe(1);
-    const lines = captured.stderr().split("\n").filter((line) => line !== "");
+    const lines = captured
+      .stderr()
+      .split("\n")
+      .filter((line) => line !== "");
     expect(lines).toHaveLength(1);
     expect(lines[0]).toContain("OperationStarted");
   });
@@ -204,7 +218,10 @@ describe("harness watch", () => {
       });
       expect(result.data["followed"]).toBe(true);
       expect(result.data["ticks"]).toBeGreaterThan(0);
-      const lines = captured.stderr().split("\n").filter((line) => line !== "");
+      const lines = captured
+        .stderr()
+        .split("\n")
+        .filter((line) => line !== "");
       expect(lines).toHaveLength(2);
       expect(lines[0]).toContain("▶ OperationStarted");
       expect(lines[1]).toContain("● GateCompleted gate=gate.maven passed=true");
