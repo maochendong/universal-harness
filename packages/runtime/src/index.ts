@@ -651,6 +651,11 @@ export {
   type ProposedGraphEdge,
 } from "./graph/edits.js";
 export {
+  backfillEvaluationGraph,
+  type EvaluationBackfillDependencies,
+  type EvaluationBackfillResult,
+} from "./evaluation/backfill.js";
+export {
   FINDING_ACTIONS,
   ORCHESTRATION_ERROR_KINDS,
   OrchestrationError,

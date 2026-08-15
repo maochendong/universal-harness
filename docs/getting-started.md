@@ -134,6 +134,8 @@ harness adopt /path/to/project --intent "Introduce the requested change"
 | `harness status` / `harness doctor` | 状态总览 / 环境诊断 |
 | `harness graph sync\|query\|check` | 重建 SQLite 缓存 / 查询图 / 校验 Ledger 完整性 |
 | `harness graph propose-edge` / `approve-edge` | 人工补边：提议（带 digest）→ 批准落账 |
+| `harness graph backfill-evaluations` | 将旧版本已提交的评估报告迁移为 EvaluationCase / Evidence 节点及完整 verdict 边链 |
+| `harness graph project-tasks [--approve-overwrite]` | 从权威图重新生成 `views/tasks.md`；覆盖既有视图需要显式批准 |
 
 所有命令接受 `--json` 输出一条规范化 JSON 记录，便于脚本化。退出码契约：`0` 成功、`1` 操作失败、`2` 用法错误、`3` 未找到项目、`10` 阶段不可用、`11` 需要批准、`12` 阻塞待恢复。
 

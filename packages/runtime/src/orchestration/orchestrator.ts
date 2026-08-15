@@ -2784,6 +2784,183 @@ async function commitAuditFindings(ctx: PipelineContext): Promise<void> {
   await commitArtifacts(deps, ctx.workflowOperationId, currentAttemptId(ctx), artifacts, edges);
 }
 
+/**
+ * Promote a committed evaluation report into the graph-native verdict chain:
+ * Run EXECUTES Task, Run PRODUCES Evidence, Evidence SUPPORTS EvaluationCase,
+ * and the accepted EvaluationCase EVALUATES both the Task and concrete Run.
+ * The report remains the immutable detail record; nodes bind its digest.
+ */
+async function commitEvaluationGraph(
+  ctx: PipelineContext,
+  taskId: string,
+  runId: string,
+  result: EvaluationPortResult,
+): Promise<void> {
+  const record = result.record;
+  const extensionValue =
+    typeof record["extensions"] === "object" && record["extensions"] !== null
+      ? (record["extensions"] as Record<string, unknown>)["harness.evaluation"]
+      : undefined;
+  const extension =
+    typeof extensionValue === "object" && extensionValue !== null
+      ? (extensionValue as Record<string, unknown>)
+      : {};
+  const caseId = extension["case_id"];
+  const evidenceId = record["evidence_id"];
+  const evidenceDigest = record["digest"];
+  const provisional = record["provisional"];
+  const createdAt = record["created_at"];
+  if (
+    typeof caseId !== "string" ||
+    typeof evidenceId !== "string" ||
+    typeof evidenceDigest !== "string" ||
+    typeof provisional !== "boolean" ||
+    typeof createdAt !== "string"
+  ) {
+    throw new OrchestrationError(
+      "configuration",
+      `evaluation ${result.evidenceId} lacks graph materialization fields`,
+    );
+  }
+
+  const graph = materializeProjectGraph(ctx.deps.projectRoot);
+  const currentNodes = new Map<string, NodeRecord>();
+  let activeEdgeIds: Set<string>;
+  try {
+    for (const node of graph.nodes) {
+      const current = currentNodes.get(node.id);
+      if (current === undefined || node.revision > current.revision)
+        currentNodes.set(node.id, node);
+    }
+    activeEdgeIds = new Set(
+      graph.edges
+        .filter((edge) => edge.status === "proposed" || edge.status === "accepted")
+        .map((edge) => edge.id),
+    );
+  } finally {
+    graph.close();
+  }
+
+  const artifacts: { readonly path: string; readonly content: string }[] = [];
+  const edges: EdgeRecord[] = [];
+  const appendNode = (
+    id: string,
+    type: "Evidence" | "EvaluationCase",
+    status: "proposed" | "accepted",
+    nodeExtension: Record<string, unknown>,
+    directory: string,
+  ): void => {
+    const current = currentNodes.get(id);
+    const currentEvaluation = current?.extensions?.["harness.evaluation"];
+    const sameBinding =
+      current?.status === status &&
+      typeof currentEvaluation === "object" &&
+      currentEvaluation !== null &&
+      (currentEvaluation as Record<string, unknown>)["evidence_digest"] === evidenceDigest;
+    if (sameBinding) return;
+    const revision = (current?.revision ?? 0) + 1;
+    const content: Record<string, unknown> = {
+      protocol_version: PROTOCOL_VERSION,
+      record_kind: "node",
+      id,
+      type,
+      revision,
+      status,
+      source: "evaluation",
+      provenance: {
+        iteration_id: ctx.iterationId,
+        run_id: runId,
+        actor: "workflow-engine",
+        timestamp: createdAt,
+      },
+      confidence: 1,
+      extensions: { "harness.evaluation": nodeExtension },
+    };
+    const node = { ...content, digest: contentDigest(content) };
+    const validation = validateSchema("node", node);
+    if (!validation.valid) {
+      throw new OrchestrationError(
+        "configuration",
+        `invalid ${type} evaluation node: ${validation.errors.map((issue) => issue.message).join("; ")}`,
+      );
+    }
+    artifacts.push({
+      path: `artifacts/${directory}/${id}/${String(revision)}.json`,
+      content: `${canonicalizeJson(node)}\n`,
+    });
+    currentNodes.set(id, node as unknown as NodeRecord);
+  };
+
+  const graphStatus = result.passed && !provisional ? "accepted" : "proposed";
+  appendNode(
+    evidenceId,
+    "Evidence",
+    graphStatus,
+    {
+      evidence_digest: evidenceDigest,
+      ...(record["evidence_type"] === undefined ? {} : { evidence_type: record["evidence_type"] }),
+      subject_id: taskId,
+      provisional,
+      passed: result.passed,
+    },
+    "evaluation-evidence-nodes",
+  );
+  appendNode(
+    caseId,
+    "EvaluationCase",
+    graphStatus,
+    {
+      evidence_id: evidenceId,
+      evidence_digest: evidenceDigest,
+      ...(extension["case_digest"] === undefined ? {} : { case_digest: extension["case_digest"] }),
+      subject_id: taskId,
+      ...(extension["visibility"] === undefined ? {} : { visibility: extension["visibility"] }),
+      passed: result.passed,
+    },
+    "evaluation-case-nodes",
+  );
+
+  const appendEdge = (type: EdgeRecord["type"], sourceId: string, targetId: string): void => {
+    const id = `edge_${contentDigest({ type, source: sourceId, target: targetId }).slice(0, 16)}`;
+    if (activeEdgeIds.has(id)) return;
+    const content: Record<string, unknown> = {
+      protocol_version: PROTOCOL_VERSION,
+      record_kind: "edge",
+      id,
+      type,
+      source_id: sourceId,
+      target_id: targetId,
+      status: "accepted",
+      source: "evaluation",
+      provenance: {
+        iteration_id: ctx.iterationId,
+        run_id: runId,
+        actor: "workflow-engine",
+        timestamp: createdAt,
+      },
+      confidence: 1,
+    };
+    const edge = { ...content, digest: contentDigest(content) };
+    const validation = validateSchema("edge", edge);
+    if (!validation.valid) {
+      throw new OrchestrationError(
+        "configuration",
+        `invalid evaluation ${type} edge: ${validation.errors.map((issue) => issue.message).join("; ")}`,
+      );
+    }
+    edges.push(edge as unknown as EdgeRecord);
+    activeEdgeIds.add(id);
+  };
+
+  appendEdge("EXECUTES", runId, taskId);
+  appendEdge("PRODUCES", runId, evidenceId);
+  appendEdge("SUPPORTS", evidenceId, caseId);
+  appendEdge("EVALUATES", caseId, taskId);
+  appendEdge("EVALUATES", caseId, runId);
+  if (artifacts.length === 0 && edges.length === 0) return;
+  await commitArtifacts(ctx.deps, ctx.workflowOperationId, currentAttemptId(ctx), artifacts, edges);
+}
+
 async function phaseEvaluate(ctx: PipelineContext): Promise<PhaseStep> {
   const { deps } = ctx;
   const plan = ctx.plan ?? loadPlan(ctx);
@@ -2867,6 +3044,7 @@ async function phaseEvaluate(ctx: PipelineContext): Promise<PhaseStep> {
         },
       ]);
     }
+    await commitEvaluationGraph(ctx, task.id, run.runId, result);
     ctx.evaluation = result;
     evaluations.push(result);
 

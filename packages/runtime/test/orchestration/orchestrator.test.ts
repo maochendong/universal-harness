@@ -237,6 +237,29 @@ describe("phase orchestrator", { timeout: 30000 }, () => {
       eventTypes.indexOf("ContextCompiled"),
     );
 
+    // Evaluation evidence is graph-native: the accepted case evaluates both
+    // the Task and its concrete Run, so status coverage and task freshness are
+    // derived from explicit edges instead of an out-of-band artifact.
+    const status = collectProjectStatus(projectRoot);
+    expect(status.evaluation_coverage).toEqual({ evaluated: 1, total: 1 });
+    const { database } = materializeLedger({ projectRoot, databasePath: ":memory:" });
+    try {
+      const nodes = pageNodes(database, { type: "EvaluationCase", limit: 10 }).items;
+      expect(nodes).toHaveLength(1);
+      expect(nodes[0]).toMatchObject({ status: "accepted", source: "evaluation" });
+      const edges = pageEdges(database, { limit: 100 }).items;
+      expect(
+        edges.filter((edge) => edge.type === "EVALUATES" && edge.source_id === nodes[0]?.id),
+      ).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ target_id: fake.calls[0]?.task_id }),
+          expect.objectContaining({ target_id: expect.stringMatching(/^run_/u) }),
+        ]),
+      );
+    } finally {
+      database.close();
+    }
+
     // Terminal state leaves a clean worktree: the ledger landed in Git.
     expect(git(projectRoot, "status", "--porcelain").trim()).toBe("");
     expect(findOpenWorkflowOperation(projectRoot, () => headOf(projectRoot))).toBeUndefined();
@@ -1072,7 +1095,7 @@ describe("phase orchestrator", { timeout: 30000 }, () => {
     const first = await driveToCompletion(INTENT, bootstrapped.value.iterationId);
     expect(first.status).toBe("completed");
     let graph = readGraph();
-    const evidenceNode = graph.nodes.find((node) => node.type === "Evidence");
+    const evidenceNode = graph.nodes.find((node) => node.id === "evidence_ledger_integrity");
     expect(evidenceNode?.id).toBe("evidence_ledger_integrity");
     expect(evidenceNode?.status).toBe("accepted");
     const baselineTest = graph.nodes.find((node) => node.type === "Test");
