@@ -49,17 +49,18 @@ M1 设计第 4 节对 M2–M4 只有一句话定义。基于 M1 完成后的机�
 - 与 M1 约束的关系：M1 否决“Vector Database / 自动写入”指的是自动权威写入与未经评审的自我改进；本项为建议性种子 + 显式人审，合规。相似度索引必须可从 Git 权威状态确定性重建（缓存地位等同 SQLite）。
 - Provider-neutral：相似度计算经版本化插件端口暴露，core 不绑定特定向量库或 embedding 服务。
 
-### M2-D 实时可观测性（提案，待批准）
+### M2-D 实时可观测性（已批准，2026-08-15）
 
 问题：迭代执行期间（plan→context→execute→verify→evaluate→snapshot 可持续数分钟到数十分钟）外部无可用观察手段——`--json` 整段缓冲至结束才输出、账本按相位原子提交导致正在执行的相位对读者不可见、门禁只有完成事件。T6 dogfood 实测只能靠进程存活探测与 `git status` 间接信号推断相位。
 
 范围：
 
-- **`harness watch` CLI 跟随模式**：实时打印当前迭代的相位进入/退出、门禁启动/完成、Run 与预算事件；复用 `EventStreamPort`，无 Web 依赖，优先落地。
+- **`harness watch` CLI 跟随模式**：实时打印当前迭代的相位进入/退出、门禁启动/完成、Run 与预算事件；复用 `EventStreamPort`，无 Web 依赖，优先落地。**已落地**（`e011096`：快照/NDJSON/`--follow` 轮询/SIGINT 优雅退出；配套 `26f31e6`：`--json` 模式相位事件经 stderr NDJSON 流式输出）。
 - **事件粒度补齐**：新增 `PhaseStarted`、`GateStarted` 及受管子进程（dsh/Gate）的周期心跳或输出 tail 摘要事件；事件仍为有序、版本化、脱敏，不改变权威状态与相位原子提交语义。
-- **Dashboard live 视图**（M2 原范围的增强项）：Web View 订阅 `EventStreamPort` 渲染当前迭代流水线的实时状态。
+- **Dashboard live 视图**（原 M2 增强项，本轮正式排入 M2 范围）：`harness serve` 起本地 HTTP 服务，`/events` 端点以 SSE（text/event-stream）转发 `EventStreamPort` 事件；静态单页 `dashboard.html` 经 EventSource 订阅，渲染当前迭代流水线实时状态（相位泳道、门禁结果、Run/预算）。完全复用既有事件流，无需改动 runtime。
+- **批准点 UI 事件**（本轮新增，正式排入 M2 范围）：`phase_paused` / `ApprovalRequired` 事件在 live 视图中渲染为显式 UI 事件卡片，附批准/拒绝操作；批准动作 POST 至 `harness serve` 端点，走既有批准门落账（digest 绑定、actor 记录），不新增旁路写入路径。CLI 层等价物（`phase_paused` 事件 + stderr 流）已随 `26f31e6`/`e011096` 落地，本项补齐 Web 层。
 
-兼容约束：事件流是进程内观测信号，不是权威状态；不得为实时性提前落账或拆分相位原子提交。
+兼容约束：事件流是进程内观测信号，不是权威状态；不得为实时性提前落账或拆分相位原子提交。Web 层批准入口必须复用既有批准门命令路径（同一校验、同一落账），SSE 仅转发不持久化。
 
 ## M3 范围（明确后）
 
