@@ -1,4 +1,5 @@
-import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { existsSync, lstatSync, readlinkSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
 import {
@@ -592,28 +593,38 @@ function materializeProjectGraph(projectRoot: string): ProjectGraph {
 
 /**
  * Digest of the project code the gates ran against (design 15.3 evidence
- * binding): sorted path/content digests of every worktree file outside the
- * control plane, dependency directories and Git internals. Any human repair
- * changes this digest, which makes prior gate evidence stale and re-runs the
- * verify phase instead of replaying a cached verdict.
+ * binding): sorted path/type/content digests of every Git-visible worktree
+ * file outside the Harness control plane. Ignored build and test outputs do
+ * not invalidate evidence; tracked or untracked source repairs do.
  */
 export function hashWorktreeCode(projectRoot: string): string {
-  const SKIPPED = new Set([".git", ".harness", "node_modules"]);
-  const entries: string[] = [];
-  const walk = (directory: string, prefix: string): void => {
-    for (const entry of readdirSync(directory, { withFileTypes: true }).sort((a, b) =>
-      a.name < b.name ? -1 : a.name > b.name ? 1 : 0,
-    )) {
-      if (prefix === "" && SKIPPED.has(entry.name)) continue;
-      const relative = prefix === "" ? entry.name : `${prefix}/${entry.name}`;
-      const absolute = join(directory, entry.name);
-      if (entry.isDirectory()) walk(absolute, relative);
-      else if (entry.isFile()) {
-        entries.push(`${relative}:${sha256Hex(readFileSync(absolute, "utf8"))}`);
+  const listed = execFileSync(
+    "git",
+    ["-c", "core.quotepath=false", "ls-files", "--cached", "--others", "--exclude-standard", "-z"],
+    { cwd: projectRoot, encoding: "utf8" },
+  );
+  const paths = listed
+    .split("\0")
+    .filter((path) => path !== "" && path !== ".harness" && !path.startsWith(".harness/"))
+    .sort();
+  const entries = paths.map((relative) => {
+    const absolute = join(projectRoot, relative);
+    try {
+      const stat = lstatSync(absolute);
+      if (stat.isSymbolicLink()) {
+        return `${relative}:symlink:${sha256Hex(readlinkSync(absolute))}`;
       }
+      if (stat.isFile()) {
+        const mode = (stat.mode & 0o111) === 0 ? "100644" : "100755";
+        return `${relative}:file:${mode}:${sha256Hex(readFileSync(absolute).toString("base64"))}`;
+      }
+      return `${relative}:other`;
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      if (code === "ENOENT") return `${relative}:missing`;
+      throw error;
     }
-  };
-  walk(projectRoot, "");
+  });
   return sha256Hex(entries.join("\n"));
 }
 
@@ -1253,7 +1264,7 @@ function effectivePolicy(): EffectivePolicy {
 
 async function commitIterationNode(
   ctx: PipelineContext,
-  iterationState: "completed" | "blocked" | "aborted",
+  iterationState: "running" | "completed" | "blocked" | "aborted",
 ): Promise<void> {
   const graph = materializeProjectGraph(ctx.deps.projectRoot);
   let existing: NodeRecord | undefined;
@@ -1945,6 +1956,13 @@ async function phaseExecute(ctx: PipelineContext): Promise<PhaseStep> {
   // never finished; the phase checkpoint lands once every task has one.
   const executor = deps.execute ?? createDirectExecutor();
   const grantDigests: string[] = [];
+  const taskBlockersToClear = new Set<string>();
+  const rememberTaskBlockers = (taskId: string): void => {
+    const prefix = `task ${taskId} did not complete:`;
+    for (const blocker of ctx.workingState.blockers) {
+      if (blocker.startsWith(prefix)) taskBlockersToClear.add(blocker);
+    }
+  };
   let lastRun: { readonly runId: string; readonly result: AgentRunResult } | undefined;
   for (const task of tasks) {
     const completed = loadCompletedRun(ctx, task.id);
@@ -1958,6 +1976,7 @@ async function phaseExecute(ctx: PipelineContext): Promise<PhaseStep> {
       );
       if (!failedEvaluation) {
         await markTaskAccepted(ctx, task.id);
+        rememberTaskBlockers(task.id);
         lastRun = completed;
         continue;
       }
@@ -2003,6 +2022,7 @@ async function phaseExecute(ctx: PipelineContext): Promise<PhaseStep> {
     lastRun = { runId: activeRunId, result };
 
     if (!(result.outcome === "handoff" && result.completion_claimed)) {
+      await evaluateTaskRun(ctx, task.id, { runId: activeRunId, result });
       const failure = mapRunFailure(result);
       if ("abort" in failure) {
         await ctx.engine.abort(ctx.workflowOperationId, {
@@ -2031,6 +2051,7 @@ async function phaseExecute(ctx: PipelineContext): Promise<PhaseStep> {
       return { continue: false, outcome };
     }
     await markTaskAccepted(ctx, task.id);
+    rememberTaskBlockers(task.id);
   }
   if (lastRun === undefined) {
     throw new OrchestrationError("configuration", "execute phase produced no run");
@@ -2042,6 +2063,7 @@ async function phaseExecute(ctx: PipelineContext): Promise<PhaseStep> {
     proposal: {
       phase: "verify",
       ...(grantDigests.length > 0 ? { add_capability_grants: grantDigests } : {}),
+      ...(taskBlockersToClear.size > 0 ? { clear_blockers: [...taskBlockersToClear].sort() } : {}),
     },
     events: phaseLifecycleEvents({
       phase: "execute",
@@ -2664,7 +2686,11 @@ export function provenQualityTaskIds(projectRoot: string): string[] {
  * duplicating; a gap that no longer reproduces supersedes its committed
  * Finding instead of lingering as a phantom blocker.
  */
-async function commitAuditFindings(ctx: PipelineContext): Promise<void> {
+interface AuditCommitOutcome {
+  readonly blockingFindingIds: readonly string[];
+}
+
+async function commitAuditFindings(ctx: PipelineContext): Promise<AuditCommitOutcome> {
   const { deps } = ctx;
   const graph = materializeProjectGraph(deps.projectRoot);
   let report: AuditReport;
@@ -2780,8 +2806,15 @@ async function commitAuditFindings(ctx: PipelineContext): Promise<void> {
     }
   }
 
-  if (artifacts.length === 0 && edges.length === 0) return;
-  await commitArtifacts(deps, ctx.workflowOperationId, currentAttemptId(ctx), artifacts, edges);
+  if (artifacts.length > 0 || edges.length > 0) {
+    await commitArtifacts(deps, ctx.workflowOperationId, currentAttemptId(ctx), artifacts, edges);
+  }
+  return {
+    blockingFindingIds: report.findings
+      .filter((finding) => finding.blocking)
+      .map((finding) => auditFindingId(finding))
+      .sort(),
+  };
 }
 
 /**
@@ -2891,7 +2924,10 @@ async function commitEvaluationGraph(
     currentNodes.set(id, node as unknown as NodeRecord);
   };
 
-  const graphStatus = result.passed && !provisional ? "accepted" : "proposed";
+  // Finality and verdict are separate dimensions: a conclusive failed
+  // evaluation is accepted evidence with `passed: false`; only an explicitly
+  // provisional evaluator result remains proposed.
+  const graphStatus = provisional ? "proposed" : "accepted";
   appendNode(
     evidenceId,
     "Evidence",
@@ -2961,8 +2997,80 @@ async function commitEvaluationGraph(
   await commitArtifacts(ctx.deps, ctx.workflowOperationId, currentAttemptId(ctx), artifacts, edges);
 }
 
-async function phaseEvaluate(ctx: PipelineContext): Promise<PhaseStep> {
+async function evaluateTaskRun(
+  ctx: PipelineContext,
+  taskId: string,
+  run: { readonly runId: string; readonly result: AgentRunResult },
+): Promise<EvaluationPortResult> {
   const { deps } = ctx;
+  const runDigest = sha256Hex(canonicalizeJson(run.result));
+  const stored = loadEvaluateArtifacts(deps, ctx.iterationId).find(
+    (artifact) => artifact.run_digest === runDigest,
+  );
+  let result: EvaluationPortResult;
+  if (stored !== undefined) {
+    result = stored.result;
+  } else {
+    const port = deps.evaluate ?? createDefaultEvaluationPort();
+    result = await port({
+      taskId,
+      iterationId: ctx.iterationId,
+      run: run.result,
+      visibility: deps.trajectoryVisibility ?? "external-only",
+      budget: {
+        max_steps: ctx.envelope?.loop_policy.max_steps ?? 30,
+        max_tokens: ctx.envelope?.loop_policy.max_tokens ?? 120000,
+        max_duration_ms: ctx.envelope?.loop_policy.max_duration_ms ?? 2700000,
+      },
+      now: nowOf(deps),
+    });
+    await commitArtifacts(deps, ctx.workflowOperationId, currentAttemptId(ctx), [
+      {
+        path: `artifacts/evaluations/${result.evidenceId}/${String(result.record["digest"])}.json`,
+        content: `${canonicalizeJson(result.record)}\n`,
+      },
+      ...result.findings.map((finding) => {
+        const content = {
+          protocol_version: PROTOCOL_VERSION,
+          record_kind: "feedback",
+          id: finding.id,
+          type: "Finding",
+          iteration_id: ctx.iterationId,
+          status: "proposed",
+          summary: finding.summary,
+          created_at: nowOf(deps),
+        };
+        const record = { ...content, digest: contentDigest(content) };
+        const validation = validateSchema("feedback", record);
+        if (!validation.valid) {
+          throw new OrchestrationError(
+            "configuration",
+            `invalid evaluation finding record: ${validation.errors
+              .map((issue) => issue.message)
+              .join("; ")}`,
+          );
+        }
+        return {
+          path: `artifacts/findings/${finding.id}/proposed.json`,
+          content: `${canonicalizeJson(record)}\n`,
+        };
+      }),
+      {
+        path: evaluateArtifactPath(ctx.iterationId, runDigest),
+        content: `${canonicalizeJson({
+          record_kind: "orchestration_evaluate_result",
+          iteration_id: ctx.iterationId,
+          run_digest: runDigest,
+          result,
+        } satisfies EvaluatePhaseArtifact)}\n`,
+      },
+    ]);
+  }
+  await commitEvaluationGraph(ctx, taskId, run.runId, result);
+  return result;
+}
+
+async function phaseEvaluate(ctx: PipelineContext): Promise<PhaseStep> {
   const plan = ctx.plan ?? loadPlan(ctx);
   if (plan === undefined)
     throw new OrchestrationError("binding_drift", "evaluate phase requires a plan");
@@ -2980,71 +3088,7 @@ async function phaseEvaluate(ctx: PipelineContext): Promise<PhaseStep> {
         `evaluate phase requires a terminated run for task ${task.id}`,
       );
     }
-    const runDigest = sha256Hex(canonicalizeJson(run.result));
-    const stored = loadEvaluateArtifacts(deps, ctx.iterationId).find(
-      (artifact) => artifact.run_digest === runDigest,
-    );
-    let result: EvaluationPortResult;
-    if (stored !== undefined) {
-      // Same run, same verdict: replay the committed evaluation.
-      result = stored.result;
-    } else {
-      const port = deps.evaluate ?? createDefaultEvaluationPort();
-      result = await port({
-        taskId: task.id,
-        iterationId: ctx.iterationId,
-        run: run.result,
-        visibility: deps.trajectoryVisibility ?? "external-only",
-        budget: {
-          max_steps: ctx.envelope?.loop_policy.max_steps ?? 30,
-          max_tokens: ctx.envelope?.loop_policy.max_tokens ?? 120000,
-          max_duration_ms: ctx.envelope?.loop_policy.max_duration_ms ?? 2700000,
-        },
-        now: nowOf(deps),
-      });
-      await commitArtifacts(deps, ctx.workflowOperationId, currentAttemptId(ctx), [
-        {
-          path: `artifacts/evaluations/${result.evidenceId}/${String(result.record["digest"])}.json`,
-          content: `${canonicalizeJson(result.record)}\n`,
-        },
-        ...result.findings.map((finding) => {
-          const content = {
-            protocol_version: PROTOCOL_VERSION,
-            record_kind: "feedback",
-            id: finding.id,
-            type: "Finding",
-            iteration_id: ctx.iterationId,
-            status: "proposed",
-            summary: finding.summary,
-            created_at: nowOf(deps),
-          };
-          const record = { ...content, digest: contentDigest(content) };
-          const validation = validateSchema("feedback", record);
-          if (!validation.valid) {
-            throw new OrchestrationError(
-              "configuration",
-              `invalid evaluation finding record: ${validation.errors
-                .map((issue) => issue.message)
-                .join("; ")}`,
-            );
-          }
-          return {
-            path: `artifacts/findings/${finding.id}/proposed.json`,
-            content: `${canonicalizeJson(record)}\n`,
-          };
-        }),
-        {
-          path: evaluateArtifactPath(ctx.iterationId, runDigest),
-          content: `${canonicalizeJson({
-            record_kind: "orchestration_evaluate_result",
-            iteration_id: ctx.iterationId,
-            run_digest: runDigest,
-            result,
-          } satisfies EvaluatePhaseArtifact)}\n`,
-        },
-      ]);
-    }
-    await commitEvaluationGraph(ctx, task.id, run.runId, result);
+    const result = await evaluateTaskRun(ctx, task.id, run);
     ctx.evaluation = result;
     evaluations.push(result);
 
@@ -3192,7 +3236,50 @@ async function phaseSnapshot(ctx: PipelineContext): Promise<PhaseStep> {
     (gates === undefined || gates.completed_allowed) &&
     evaluations.every((evaluation) => evaluation?.passed === true);
 
-  const verifyStored = loadVerifyArtifact(deps, ctx.iterationId, verifyBindings(ctx));
+  // Completion is a graph verdict, not merely a successful agent claim.
+  // Rescan first, attach the still-fresh gate evidence to newly discovered
+  // tests, then audit the resulting graph before creating any completed
+  // snapshot or completed Iteration revision.
+  await commitIterationNode(ctx, "running");
+  await commitScannedDocumentation(ctx);
+  const suiteGates = ctx.deps.gates ?? createDefaultGateSuite(deps.projectRoot).gates;
+  const bindings = verifyBindings(ctx);
+  const verifyStored = loadVerifyArtifact(deps, ctx.iterationId, bindings);
+  if (verifyStored !== undefined) {
+    await commitEvidenceNodes(
+      ctx,
+      storedEvidenceMaterials(deps, suiteGates, verifyStored),
+      bindings,
+    );
+  }
+  const audit = await commitAuditFindings(ctx);
+  if (audit.blockingFindingIds.length > 0) {
+    const outcome = await blockWithSnapshot(ctx, {
+      reason: "repairable_gate_failure",
+      detail: `graph audit blocked completion: ${audit.blockingFindingIds.join(", ")}`,
+      resumePhase: "verify",
+      input: snapshotBaseInput(
+        ctx,
+        taskRuns.map((taskRun) => ({
+          task_id: taskRun.taskId,
+          required: true,
+          outcome: taskRun.result.outcome,
+        })),
+      ),
+    });
+    return { continue: false, outcome };
+  }
+  const resolvedAuditBlockers = ctx.workingState.blockers.filter((blocker) =>
+    blocker.startsWith("graph audit blocked completion:"),
+  );
+  if (resolvedAuditBlockers.length > 0) {
+    await ctx.engine.commitCheckpoint(ctx.workflowOperationId, {
+      boundary: PHASE_CHECKPOINT_BOUNDARY.snapshot,
+      proposal: { phase: "snapshot", clear_blockers: resolvedAuditBlockers },
+    });
+    refreshWorkingState(ctx);
+  }
+
   const snapshot = buildSnapshot({
     ...snapshotBaseInput(
       ctx,
@@ -3261,28 +3348,6 @@ async function phaseSnapshot(ctx: PipelineContext): Promise<PhaseStep> {
     },
   ]);
   await commitIterationNode(ctx, "completed");
-  // Pick up documents and tests written since adoption so the audit sees
-  // them, then run the post-verify/evaluate audit at the completing snapshot:
-  // the Iteration node exists only now, so blocking findings can bind it.
-  // Committed gaps surface in `harness status` without a manual `harness
-  // audit`; idempotent re-runs dedupe by finding id.
-  await commitScannedDocumentation(ctx);
-  // Wire evidence for tests the rescan just brought into the graph, replaying
-  // the stored verify verdict -- the gates ran over a worktree that already
-  // contained those files, so the suite evidence vouches for them. Without
-  // this, a test added between iterations would be flagged by
-  // missing_verification for one full iteration until the next verify ran.
-  const suiteGates = ctx.deps.gates ?? createDefaultGateSuite(deps.projectRoot).gates;
-  const bindings = verifyBindings(ctx);
-  const storedVerify = loadVerifyArtifact(deps, ctx.iterationId, bindings);
-  if (storedVerify !== undefined) {
-    await commitEvidenceNodes(
-      ctx,
-      storedEvidenceMaterials(deps, suiteGates, storedVerify),
-      bindings,
-    );
-  }
-  await commitAuditFindings(ctx);
   await regenerateTasksProjection(ctx);
   await ctx.engine.advance(ctx.workflowOperationId, "completed");
   let finalCommit = deps.readBaseline();

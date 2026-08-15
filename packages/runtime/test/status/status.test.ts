@@ -192,6 +192,22 @@ describe("deriveProjectStatus", () => {
     expect(status.next_action).toBe("repair blocker: blocking finding finding_01");
   });
 
+  it("suppresses a historical run-failure blocker once its task is accepted", () => {
+    const status = deriveProjectStatus({
+      nodes: [
+        makeNode({ id: "iteration_01", type: "Iteration", iterationState: "completed" }),
+        makeNode({ id: "task_01", type: "Task", status: "accepted" }),
+      ],
+      edges: [],
+      workingState: {
+        blockers: ["task task_01 did not complete: provider credential is missing"],
+        budget: { used_steps: 0, used_tokens: 0, ceiling_steps: 1, ceiling_tokens: 1 },
+      },
+    });
+
+    expect(status.blockers).toEqual([]);
+  });
+
   it("demotes explicitly non-blocking findings to warnings", () => {
     const status = deriveProjectStatus({
       nodes: [

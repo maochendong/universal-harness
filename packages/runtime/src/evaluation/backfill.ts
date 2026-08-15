@@ -256,7 +256,7 @@ export async function backfillEvaluationGraph(
       skipped.push(`${evidenceId}: unknown Task ${subjectId}`);
       continue;
     }
-    const status = summary.result.passed && !provisional ? "accepted" : "proposed";
+    const status = provisional ? "proposed" : "accepted";
     appendNode({
       id: evidenceId,
       type: "Evidence",

@@ -29,6 +29,7 @@ Inspection:
   graph sync                      Rebuild the SQLite graph cache from the ledger
   graph query [--type <type>]     Query materialized graph nodes
   graph check                     Verify ledger integrity and cache consistency
+  graph reconcile                 Repair historical run, evidence and audit graph closure
   graph backfill-evaluations      Repair verdict links from historical evaluation evidence
   graph project-tasks             Rebuild the managed Task projection from graph truth
   graph propose-edge|approve-edge Stage and commit human-reviewed graph edges
@@ -69,6 +70,7 @@ Inspection:
   graph sync                      Rebuild the SQLite graph cache from the ledger
   graph query [--type <type>]     Query materialized graph nodes
   graph check                     Verify ledger integrity and cache consistency
+  graph reconcile                 Repair historical run, evidence and audit graph closure
   graph backfill-evaluations      Repair verdict links from historical evaluation evidence
   graph project-tasks             Rebuild the managed Task projection from graph truth
   graph propose-edge|approve-edge Stage and commit human-reviewed graph edges
@@ -109,6 +111,7 @@ Inspection:
   graph sync                      Rebuild the SQLite graph cache from the ledger
   graph query [--type <type>]     Query materialized graph nodes
   graph check                     Verify ledger integrity and cache consistency
+  graph reconcile                 Repair historical run, evidence and audit graph closure
   graph backfill-evaluations      Repair verdict links from historical evaluation evidence
   graph project-tasks             Rebuild the managed Task projection from graph truth
   graph propose-edge|approve-edge Stage and commit human-reviewed graph edges
@@ -258,11 +261,12 @@ and graph cache health. Exits non-zero when any check fails.
 `;
 
 exports[`harness CLI help and version > prints per-command help 17`] = `
-"Usage: harness graph <sync|query|check|backfill-evaluations|project-tasks|propose-edge|approve-edge> [options]
+"Usage: harness graph <sync|query|check|reconcile|backfill-evaluations|project-tasks|propose-edge|approve-edge> [options]
 
   sync          Rebuild the disposable SQLite cache from the authoritative ledger
   query         Query materialized graph nodes (--type, --limit, --cursor)
   check         Verify ledger integrity invariants and cache consistency
+  reconcile     Repair historical Run, Evaluation, Evidence and Finding closure
   backfill-evaluations  Materialize missing historical evaluation nodes and edges
   project-tasks  Rebuild views/tasks.md (--approve-overwrite for an existing view)
   propose-edge  Stage a human-driven edge proposal (--type, --source, --target)
@@ -281,7 +285,7 @@ exports[`harness CLI inspection commands > fails graph query before the first sy
 `;
 
 exports[`harness CLI inspection commands > rejects unknown graph subcommands and node types 1`] = `
-"error [usage_error]: unknown graph subcommand: explode; expected sync, query, check, backfill-evaluations, project-tasks, propose-edge or approve-edge
+"error [usage_error]: unknown graph subcommand: explode; expected sync, query, check, reconcile, backfill-evaluations, project-tasks, propose-edge or approve-edge
 "
 `;
 

@@ -144,6 +144,7 @@ function derivePendingApprovals(
  * blocker next to an empty pending-approval list.
  */
 const APPROVAL_BLOCKER_PATTERN = /^approval request (\S+) awaiting a decision$/;
+const TASK_RUN_FAILURE_BLOCKER_PATTERN = /^task (\S+) did not complete:/;
 
 /**
  * A Finding only holds its iteration when its bound subject says so. Gate and
@@ -165,9 +166,16 @@ function deriveBlockers(
   workingStateBlockers: readonly string[],
   resolvedApprovalIds: ReadonlySet<string>,
 ): { readonly blockers: string[]; readonly warnings: string[] } {
+  const acceptedTaskIds = new Set(
+    nodes
+      .filter((node) => node.type === "Task" && node.status === "accepted")
+      .map((node) => node.id),
+  );
   const liveWorkingStateBlockers = workingStateBlockers.filter((blocker) => {
-    const match = APPROVAL_BLOCKER_PATTERN.exec(blocker);
-    return match === null || !resolvedApprovalIds.has(match[1] ?? "");
+    const approvalMatch = APPROVAL_BLOCKER_PATTERN.exec(blocker);
+    if (approvalMatch !== null && resolvedApprovalIds.has(approvalMatch[1] ?? "")) return false;
+    const taskMatch = TASK_RUN_FAILURE_BLOCKER_PATTERN.exec(blocker);
+    return taskMatch === null || !acceptedTaskIds.has(taskMatch[1] ?? "");
   });
   const blockers = new Set(liveWorkingStateBlockers);
   const warnings = new Set<string>();

@@ -656,6 +656,11 @@ export {
   type EvaluationBackfillResult,
 } from "./evaluation/backfill.js";
 export {
+  reconcileProjectGraph,
+  type GraphReconcileDependencies,
+  type GraphReconcileResult,
+} from "./graph/reconcile.js";
+export {
   FINDING_ACTIONS,
   ORCHESTRATION_ERROR_KINDS,
   OrchestrationError,

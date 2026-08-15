@@ -31,6 +31,7 @@ import { runGraphBackfillEvaluationsCommand } from "./commands/graph/backfill-ev
 import { runGraphApproveEdgeCommand, runGraphProposeEdgeCommand } from "./commands/graph/edge.js";
 import { runGraphQueryCommand } from "./commands/graph/query.js";
 import { runGraphProjectTasksCommand } from "./commands/graph/project-tasks.js";
+import { runGraphReconcileCommand } from "./commands/graph/reconcile.js";
 import { runGraphSyncCommand } from "./commands/graph/sync.js";
 
 export const CLI_VERSION = "0.0.0" as const;
@@ -224,6 +225,7 @@ Inspection:
   graph sync                      Rebuild the SQLite graph cache from the ledger
   graph query [--type <type>]     Query materialized graph nodes
   graph check                     Verify ledger integrity and cache consistency
+  graph reconcile                 Repair historical run, evidence and audit graph closure
   graph backfill-evaluations      Repair verdict links from historical evaluation evidence
   graph project-tasks             Rebuild the managed Task projection from graph truth
   graph propose-edge|approve-edge Stage and commit human-reviewed graph edges
@@ -324,11 +326,12 @@ cache health and the last ledger operation for the current project.
 Diagnose the runtime environment, Git availability, managed project layout
 and graph cache health. Exits non-zero when any check fails.
 `,
-  graph: `Usage: harness graph <sync|query|check|backfill-evaluations|project-tasks|propose-edge|approve-edge> [options]
+  graph: `Usage: harness graph <sync|query|check|reconcile|backfill-evaluations|project-tasks|propose-edge|approve-edge> [options]
 
   sync          Rebuild the disposable SQLite cache from the authoritative ledger
   query         Query materialized graph nodes (--type, --limit, --cursor)
   check         Verify ledger integrity invariants and cache consistency
+  reconcile     Repair historical Run, Evaluation, Evidence and Finding closure
   backfill-evaluations  Materialize missing historical evaluation nodes and edges
   project-tasks  Rebuild views/tasks.md (--approve-overwrite for an existing view)
   propose-edge  Stage a human-driven edge proposal (--type, --source, --target)
@@ -415,6 +418,8 @@ async function dispatch(args: readonly string[], context: CommandContext): Promi
           return runGraphQueryCommand(subRest, context);
         case "check":
           return runGraphCheckCommand(subRest, context);
+        case "reconcile":
+          return runGraphReconcileCommand(subRest, context);
         case "backfill-evaluations":
           return runGraphBackfillEvaluationsCommand(subRest, context);
         case "project-tasks":
@@ -425,7 +430,7 @@ async function dispatch(args: readonly string[], context: CommandContext): Promi
           return runGraphApproveEdgeCommand(subRest, context);
         default:
           throw usageError(
-            `unknown graph subcommand: ${subcommand ?? "none"}; expected sync, query, check, backfill-evaluations, project-tasks, propose-edge or approve-edge`,
+            `unknown graph subcommand: ${subcommand ?? "none"}; expected sync, query, check, reconcile, backfill-evaluations, project-tasks, propose-edge or approve-edge`,
           );
       }
     }

@@ -1,4 +1,12 @@
-import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { join } from "node:path";
 
 import { afterEach, describe, expect, it } from "vitest";
@@ -20,6 +28,7 @@ import {
   createNewProject,
   detectProjectionDrift,
   findOpenWorkflowOperation,
+  hashWorktreeCode,
   normalizeGateDefinition,
   proposeGraphEdge,
   readApprovalDecisions,
@@ -54,6 +63,7 @@ import {
   cleanupDirectories,
   git,
   headOf,
+  makeRepo,
   makeTempDir,
   sequentialIds,
 } from "../bootstrap/helpers.js";
@@ -66,6 +76,69 @@ import {
 afterEach(cleanupDirectories);
 
 const INTENT = "add the first capability";
+
+describe("worktree code binding", () => {
+  it("does not change when a Git-ignored gate output is created", () => {
+    const projectRoot = makeRepo({
+      ".gitignore": "target/\n",
+      "src/app.ts": "export const value = 1;\n",
+    });
+    const before = hashWorktreeCode(projectRoot);
+
+    mkdirSync(join(projectRoot, "target"), { recursive: true });
+    writeFileSync(join(projectRoot, "target", "test-report.xml"), "generated", "utf8");
+
+    expect(hashWorktreeCode(projectRoot)).toBe(before);
+  });
+
+  it("changes when an untracked source file is created", () => {
+    const projectRoot = makeRepo({ "src/app.ts": "export const value = 1;\n" });
+    const before = hashWorktreeCode(projectRoot);
+
+    writeFileSync(join(projectRoot, "src/new.ts"), "export const added = true;\n", "utf8");
+
+    expect(hashWorktreeCode(projectRoot)).not.toBe(before);
+  });
+
+  it("changes when a tracked source file is edited", () => {
+    const projectRoot = makeRepo({ "src/app.ts": "export const value = 1;\n" });
+    const before = hashWorktreeCode(projectRoot);
+
+    writeFileSync(join(projectRoot, "src/app.ts"), "export const value = 2;\n", "utf8");
+
+    expect(hashWorktreeCode(projectRoot)).not.toBe(before);
+  });
+
+  it("binds a symbolic link without following external content", () => {
+    const projectRoot = makeRepo({ "src/app.ts": "export const value = 1;\n" });
+    const externalRoot = makeTempDir("harness-code-binding-external-");
+    const externalFile = join(externalRoot, "outside.txt");
+    writeFileSync(externalFile, "first", "utf8");
+    symlinkSync(externalFile, join(projectRoot, "outside-link"));
+    const before = hashWorktreeCode(projectRoot);
+
+    writeFileSync(externalFile, "second", "utf8");
+
+    expect(hashWorktreeCode(projectRoot)).toBe(before);
+  });
+
+  it("changes when a symbolic link target changes", () => {
+    const projectRoot = makeRepo({ "src/app.ts": "export const value = 1;\n" });
+    const externalRoot = makeTempDir("harness-code-binding-target-");
+    const firstTarget = join(externalRoot, "first.txt");
+    const secondTarget = join(externalRoot, "second.txt");
+    writeFileSync(firstTarget, "same", "utf8");
+    writeFileSync(secondTarget, "same", "utf8");
+    const link = join(projectRoot, "outside-link");
+    symlinkSync(firstTarget, link);
+    const before = hashWorktreeCode(projectRoot);
+
+    rmSync(link);
+    symlinkSync(secondTarget, link);
+
+    expect(hashWorktreeCode(projectRoot)).not.toBe(before);
+  });
+});
 
 interface FakeExecutor {
   readonly calls: readonly AgentTaskEnvelope[];
@@ -1205,8 +1278,8 @@ describe("phase orchestrator", { timeout: 30000 }, () => {
     };
 
     const first = await driveToCompletion(INTENT, bootstrapped.value.iterationId);
-    expect(first.status).toBe("completed");
-    if (first.status !== "completed") return;
+    expect(first.status).toBe("blocked");
+    if (first.status !== "blocked") return;
     const findingsRoot = join(projectRoot, ".harness", "artifacts", "findings");
     const gapFinding = readdirSync(findingsRoot)
       .filter((entry) => entry.startsWith("finding_audit-traceability-gap-"))
@@ -1215,8 +1288,21 @@ describe("phase orchestrator", { timeout: 30000 }, () => {
     if (gapFinding === undefined) return;
     const blocksEdgeId = `edge_${sha256Hex(`BLOCKS:${gapFinding}:${first.iterationId}`).slice(0, 16)}`;
 
-    const second = await driveToCompletion("wire the legacy requirement");
-    expect(second.status).toBe("completed");
+    const requirementId = `requirement_${sha256Hex(INTENT).slice(0, 16)}`;
+    const editDeps = { projectRoot, readBaseline: () => headOf(projectRoot) };
+    const repair = await proposeGraphEdge(editDeps, {
+      type: "IMPLEMENTS",
+      sourceId: "task_unwired",
+      targetId: requirementId,
+      actor: "human:local",
+    });
+    await approveGraphEdge(editDeps, {
+      edgeId: repair.edgeId,
+      previewDigest: repair.previewDigest,
+      actor: "human:local",
+    });
+    const repaired = await resumeIteration(deps, first.workflowOperationId, undefined);
+    expect(repaired.status).toBe("completed");
 
     // The finding is superseded and its BLOCKS edge retired with it.
     const findingNodeDirectory = join(
@@ -1264,12 +1350,10 @@ describe("phase orchestrator", { timeout: 30000 }, () => {
     } finally {
       database.close();
     }
-    // The resolved traceability finding no longer blocks; the deliberately
-    // unwired task from iteration 1 remains an orphan, as it should.
+    // Both sides of the repaired traceability relation are now clean.
     const blockers = collectProjectStatus(projectRoot).blockers;
     expect(blockers.some((blocker) => blocker.includes("traceability-gap"))).toBe(false);
-    expect(blockers).toHaveLength(1);
-    expect(blockers[0]).toContain("finding_audit-task-orphan-");
+    expect(blockers).toEqual([]);
   });
 
   it("drives findings through accept, supersede and close with ledger-backed transitions", async () => {
@@ -1308,7 +1392,7 @@ describe("phase orchestrator", { timeout: 30000 }, () => {
     while (outcome.status === "approval_required") {
       outcome = await approveAndResume(deps, outcome);
     }
-    expect(outcome.status).toBe("completed");
+    expect(outcome.status).toBe("blocked");
 
     const findingsRoot = join(projectRoot, ".harness", "artifacts", "findings");
     const designFinding = readdirSync(findingsRoot).find((entry) =>
@@ -1438,7 +1522,9 @@ describe("phase orchestrator", { timeout: 30000 }, () => {
     while (outcome.status === "approval_required") {
       outcome = await approveAndResume(deps, outcome);
     }
-    expect(outcome.status).toBe("completed");
+    expect(outcome.status).toBe("blocked");
+    if (outcome.status !== "blocked") return;
+    const blockedWorkflowOperationId = outcome.workflowOperationId;
 
     const requirementId = `requirement_${sha256Hex(INTENT).slice(0, 16)}`;
     const editDeps = { projectRoot, readBaseline: () => headOf(projectRoot) };
@@ -1533,6 +1619,9 @@ describe("phase orchestrator", { timeout: 30000 }, () => {
     } finally {
       database.close();
     }
+
+    const completed = await resumeIteration(deps, blockedWorkflowOperationId, undefined);
+    expect(completed.status).toBe("completed");
   });
 
   it("aborts an open operation and closes its pending approval requests", async () => {
@@ -1839,6 +1928,102 @@ describe("phase orchestrator", { timeout: 30000 }, () => {
       ),
     ) as { status: string };
     expect(finding.status).toBe("closed");
+  });
+
+  it("records an accepted evaluation for a terminal failed run before blocking", async () => {
+    const newId = sequentialIds();
+    const projectRoot = await bootstrapProject("orch-terminal-failure", newId);
+    const fake = recordingExecutor((envelope) => ({
+      ...claimedResult(envelope, "credential failure"),
+      outcome: "failed",
+      termination_reason: "adapter_failure",
+      completion_claimed: false,
+      summary: "provider credential is missing",
+    }));
+    const deps = makeDeps(projectRoot, newId, { execute: fake.executor });
+
+    let outcome = await runIteration(deps, { intent: INTENT, intentShape: "pack-converted" });
+    outcome = await approveAndResume(deps, outcome);
+    outcome = await approveAndResume(deps, outcome);
+
+    expect(outcome.status).toBe("blocked");
+    expect(collectProjectStatus(projectRoot).evaluation_coverage).toEqual({
+      evaluated: 1,
+      total: 1,
+    });
+  });
+
+  it("clears a task-owned run failure blocker after a successful retry", async () => {
+    const newId = sequentialIds();
+    const projectRoot = await bootstrapProject("orch-retry-blocker", newId);
+    const fake = recordingExecutor((envelope, call) =>
+      call === 1
+        ? {
+            ...claimedResult(envelope, "first attempt"),
+            outcome: "failed",
+            termination_reason: "adapter_failure",
+            completion_claimed: false,
+            summary: "provider credential is missing",
+          }
+        : claimedResult(envelope, "retry succeeded"),
+    );
+    const deps = makeDeps(projectRoot, newId, { execute: fake.executor });
+
+    let outcome = await runIteration(deps, { intent: INTENT, intentShape: "pack-converted" });
+    outcome = await approveAndResume(deps, outcome);
+    outcome = await approveAndResume(deps, outcome);
+    expect(outcome.status).toBe("blocked");
+    if (outcome.status !== "blocked") return;
+
+    outcome = await resumeIteration(deps, outcome.workflowOperationId, undefined);
+
+    expect(outcome.status).toBe("completed");
+    expect(collectProjectStatus(projectRoot).blockers).toEqual([]);
+  });
+
+  it("blocks completion when the post-evaluation audit finds a blocking gap", async () => {
+    const newId = sequentialIds();
+    const projectRoot = await bootstrapProject("orch-audit-before-complete", newId);
+    const defaultEvaluate = createDefaultEvaluationPort();
+    const deps = makeDeps(projectRoot, newId, {
+      execute: recordingExecutor().executor,
+      evaluate: (input) => {
+        mkdirSync(join(projectRoot, "test"), { recursive: true });
+        writeFileSync(join(projectRoot, "test", "late.test.ts"), "export {};\n", "utf8");
+        return defaultEvaluate(input);
+      },
+    });
+
+    let outcome = await runIteration(deps, { intent: INTENT, intentShape: "pack-converted" });
+    outcome = await approveAndResume(deps, outcome);
+    outcome = await approveAndResume(deps, outcome);
+
+    expect(outcome.status).toBe("blocked");
+    if (outcome.status !== "blocked") return;
+    const blockedSnapshot = JSON.parse(
+      readFileSync(
+        join(projectRoot, ".harness", "artifacts", "snapshots", `${outcome.snapshotId}.json`),
+        "utf8",
+      ),
+    ) as SnapshotRecord;
+    expect(blockedSnapshot.status).toBe("blocked");
+    const iterationRevisions = readdirSync(
+      join(projectRoot, ".harness", "artifacts", "iterations", outcome.iterationId),
+    ).sort((left, right) => Number.parseInt(left, 10) - Number.parseInt(right, 10));
+    const iteration = JSON.parse(
+      readFileSync(
+        join(
+          projectRoot,
+          ".harness",
+          "artifacts",
+          "iterations",
+          outcome.iterationId,
+          iterationRevisions.at(-1) as string,
+        ),
+        "utf8",
+      ),
+    ) as { iteration_state: string };
+    expect(iteration.iteration_state).toBe("blocked");
   });
 
   it("reconciles a crashed run on resume without duplicating runs or side effects", async () => {
