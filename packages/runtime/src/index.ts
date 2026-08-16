@@ -780,6 +780,15 @@ export {
   type LiveSpoolOptions,
   type ObservationInput,
 } from "./observability/live-spool.js";
+export {
+  ObservationPublisher,
+  gateCompletionObservationKey,
+  type ObservationPublisherOptions,
+  type ObservationPublisherPort,
+  type ObservationSink,
+  type ObservationStreamIdentity,
+  type RunOutputOptions,
+} from "./observability/publisher.js";
 
 /**
  * Runtime orchestration service (design section 11.1). The CLI shell injects

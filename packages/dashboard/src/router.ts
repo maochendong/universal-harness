@@ -9,6 +9,7 @@ import {
   type NodeRecord,
 } from "@universal-harness-internal/core";
 import type { TraversalDirection } from "@universal-harness-internal/graph";
+import type { EventStreamPort } from "@universal-harness-internal/runtime";
 
 import {
   DashboardProblem,
@@ -19,6 +20,14 @@ import {
 import type { DashboardReadApi } from "./read-api.js";
 import type { DashboardSessionStore } from "./session.js";
 import { loadDashboardAsset, type DashboardAssetName } from "./assets.js";
+import { streamDashboardEvents } from "./sse.js";
+import {
+  DASHBOARD_APPROVAL_DECISIONS,
+  DASHBOARD_FINDING_ACTIONS,
+  type DashboardApprovalDecision,
+  type DashboardFindingAction,
+  type DashboardWriteApi,
+} from "./write-api.js";
 
 const IDENTIFIER = /^[A-Za-z][A-Za-z0-9_.:-]{0,255}$/u;
 const VALID_NODE_STATUSES = new Set<string>(NODE_STATUSES);
@@ -26,11 +35,17 @@ const VALID_EDGE_STATUSES = new Set<string>(EDGE_STATUSES);
 const VALID_NODE_TYPES = new Set<string>(NODE_TYPES);
 const VALID_EDGE_TYPES = new Set<string>(RELATION_TYPES);
 const DIRECTIONS = new Set<TraversalDirection>(["incoming", "outgoing", "both"]);
+const EVENT_CURSOR = /^cursor_[A-Za-z0-9_-]{1,2048}$/u;
+const DIGEST = /^[a-f0-9]{64}$/u;
+const MAX_WRITE_BODY_BYTES = 32 * 1024;
 
 export interface DashboardRouterOptions {
   readonly origin: string;
   readonly sessions: DashboardSessionStore;
   readonly readApi: DashboardReadApi;
+  readonly eventStream: EventStreamPort;
+  readonly writeApi: DashboardWriteApi;
+  readonly shutdownSignal: AbortSignal;
 }
 
 function sendJson(response: ServerResponse, data: unknown, status = 200): void {
@@ -127,12 +142,125 @@ function validateOrigin(request: IncomingMessage, origin: string): void {
   }
 }
 
+function lastEventCursor(request: IncomingMessage): string | undefined {
+  const supplied = request.headers["last-event-id"];
+  if (supplied === undefined) return undefined;
+  if (Array.isArray(supplied) || !EVENT_CURSOR.test(supplied)) {
+    throw new DashboardProblem(
+      400,
+      "invalid_event_cursor",
+      "Bad Request",
+      "Last-Event-ID is not a valid event cursor",
+    );
+  }
+  return supplied;
+}
+
 function queryKeys(query: URLSearchParams, allowed: ReadonlySet<string>): void {
   for (const key of query.keys()) {
     if (!allowed.has(key)) {
       throw new DashboardProblem(400, "invalid_query", "Bad Request", `unknown query field ${key}`);
     }
   }
+}
+
+function writeOrigin(request: IncomingMessage, origin: string): void {
+  if (request.headers.origin !== origin) {
+    throw new DashboardProblem(
+      403,
+      "origin_mismatch",
+      "Forbidden",
+      "Dashboard writes require the exact same Origin",
+    );
+  }
+}
+
+function stringHeader(request: IncomingMessage, name: string): string | undefined {
+  const value = request.headers[name];
+  return typeof value === "string" ? value : undefined;
+}
+
+async function readJsonBody(request: IncomingMessage): Promise<Record<string, unknown>> {
+  const contentType = stringHeader(request, "content-type")?.split(";", 1)[0]?.trim();
+  if (contentType !== "application/json") {
+    throw new DashboardProblem(
+      415,
+      "unsupported_media_type",
+      "Unsupported Media Type",
+      "Dashboard writes require application/json",
+    );
+  }
+  const chunks: Buffer[] = [];
+  let bytes = 0;
+  for await (const value of request) {
+    const chunk = Buffer.isBuffer(value) ? value : Buffer.from(value as string);
+    bytes += chunk.byteLength;
+    if (bytes > MAX_WRITE_BODY_BYTES) {
+      throw new DashboardProblem(
+        413,
+        "write_body_too_large",
+        "Content Too Large",
+        `Dashboard write bodies may not exceed ${String(MAX_WRITE_BODY_BYTES)} bytes`,
+      );
+    }
+    chunks.push(chunk);
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(Buffer.concat(chunks).toString("utf8")) as unknown;
+  } catch {
+    throw new DashboardProblem(400, "invalid_json", "Bad Request", "request body is not JSON");
+  }
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+    throw new DashboardProblem(
+      400,
+      "invalid_write",
+      "Bad Request",
+      "request body must be a JSON object",
+    );
+  }
+  return parsed as Record<string, unknown>;
+}
+
+function bodyKeys(body: Record<string, unknown>, allowed: ReadonlySet<string>): void {
+  for (const key of Object.keys(body)) {
+    if (!allowed.has(key)) {
+      throw new DashboardProblem(400, "invalid_write", "Bad Request", `unknown field ${key}`);
+    }
+  }
+}
+
+function bodyString(body: Record<string, unknown>, key: string): string {
+  const value = body[key];
+  if (typeof value !== "string" || value === "") {
+    throw new DashboardProblem(400, "invalid_write", "Bad Request", `${key} must be a string`);
+  }
+  return value;
+}
+
+function actor(body: Record<string, unknown>): string {
+  const value = bodyString(body, "actor");
+  const hasControl = [...value].some((character) => {
+    const code = character.codePointAt(0) ?? 0;
+    return code < 32 || code === 127;
+  });
+  if (value.length > 256 || hasControl) {
+    throw new DashboardProblem(400, "invalid_write", "Bad Request", "actor is invalid");
+  }
+  return value;
+}
+
+function expectedDigest(body: Record<string, unknown>): string {
+  const value = bodyString(body, "expected_digest");
+  if (!DIGEST.test(value)) {
+    throw new DashboardProblem(
+      400,
+      "invalid_write",
+      "Bad Request",
+      "expected_digest must be a SHA-256 digest",
+    );
+  }
+  return value;
 }
 
 export function createDashboardRouter(options: DashboardRouterOptions) {
@@ -149,17 +277,25 @@ export function createDashboardRouter(options: DashboardRouterOptions) {
           "the Dashboard request target exceeds 8192 bytes",
         );
       }
-      if (request.method !== "GET") {
+      if (request.method !== "GET" && request.method !== "POST") {
         throw new DashboardProblem(
           405,
           "method_not_allowed",
           "Method Not Allowed",
-          "only GET is available",
+          "only GET and controlled POST operations are available",
         );
       }
       const url = new URL(request.url, options.origin);
       const bootstrapToken = one(url.searchParams, "token");
       if (bootstrapToken !== undefined) {
+        if (request.method !== "GET") {
+          throw new DashboardProblem(
+            405,
+            "method_not_allowed",
+            "Method Not Allowed",
+            "the bootstrap exchange requires GET",
+          );
+        }
         queryKeys(url.searchParams, new Set(["token"]));
         if (url.pathname !== "/") {
           throw new DashboardProblem(
@@ -180,6 +316,121 @@ export function createDashboardRouter(options: DashboardRouterOptions) {
       }
       validateOrigin(request, options.origin);
       const session = options.sessions.authenticate(request);
+
+      if (request.method === "POST") {
+        queryKeys(url.searchParams, new Set());
+        writeOrigin(request, options.origin);
+        options.sessions.assertCsrf(session, stringHeader(request, "x-harness-csrf"));
+        const body = await readJsonBody(request);
+        const approval = /^\/api\/v1\/approvals\/(.+)\/decision$/u.exec(url.pathname);
+        if (approval !== null) {
+          bodyKeys(body, new Set(["decision", "expected_digest", "actor"]));
+          const decision = bodyString(body, "decision");
+          if (!DASHBOARD_APPROVAL_DECISIONS.some((value) => value === decision)) {
+            throw new DashboardProblem(
+              400,
+              "invalid_write",
+              "Bad Request",
+              "decision must be approve, reject or defer",
+            );
+          }
+          sendJson(
+            response,
+            await options.writeApi.decideApproval({
+              requestId: decodedIdentifier(approval[1] ?? "", "approval id"),
+              decision: decision as DashboardApprovalDecision,
+              expectedDigest: expectedDigest(body),
+              actor: actor(body),
+            }),
+          );
+          return;
+        }
+        const workflow = /^\/api\/v1\/workflows\/(.+)\/resume$/u.exec(url.pathname);
+        if (workflow !== null) {
+          bodyKeys(body, new Set(["expected_digest", "actor"]));
+          sendJson(
+            response,
+            await options.writeApi.resumeWorkflow({
+              workflowOperationId: decodedIdentifier(workflow[1] ?? "", "workflow id"),
+              expectedDigest: expectedDigest(body),
+              actor: actor(body),
+            }),
+          );
+          return;
+        }
+        const finding = /^\/api\/v1\/finding-groups\/(.+)\/resolve$/u.exec(url.pathname);
+        if (finding !== null) {
+          bodyKeys(body, new Set(["action", "expected_digest", "actor", "evidence_id"]));
+          const action = bodyString(body, "action");
+          if (!DASHBOARD_FINDING_ACTIONS.some((value) => value === action)) {
+            throw new DashboardProblem(
+              400,
+              "invalid_write",
+              "Bad Request",
+              "action must be accept, close or supersede",
+            );
+          }
+          const evidenceId = body["evidence_id"];
+          if (evidenceId !== undefined && typeof evidenceId !== "string") {
+            throw new DashboardProblem(
+              400,
+              "invalid_write",
+              "Bad Request",
+              "evidence_id must be a Harness identifier",
+            );
+          }
+          sendJson(
+            response,
+            await options.writeApi.resolveFindingGroup({
+              groupId: decodedIdentifier(finding[1] ?? "", "finding group id"),
+              action: action as DashboardFindingAction,
+              expectedDigest: expectedDigest(body),
+              actor: actor(body),
+              ...(evidenceId === undefined
+                ? {}
+                : { evidenceId: identifier(evidenceId as string, "evidence_id") }),
+            }),
+          );
+          return;
+        }
+        throw new DashboardProblem(
+          404,
+          "route_not_found",
+          "Not Found",
+          "Dashboard write route not found",
+        );
+      }
+
+      if (url.pathname === "/events") {
+        queryKeys(url.searchParams, new Set(["iteration", "workflow"]));
+        const iterationId = one(url.searchParams, "iteration");
+        const workflowOperationId = one(url.searchParams, "workflow");
+        const disconnected = new AbortController();
+        const abort = (): void => disconnected.abort();
+        request.once("aborted", abort);
+        response.once("close", abort);
+        options.shutdownSignal.addEventListener("abort", abort, { once: true });
+        const cursor = lastEventCursor(request);
+        try {
+          await streamDashboardEvents({
+            response,
+            eventStream: options.eventStream,
+            signal: disconnected.signal,
+            ...(cursor === undefined ? {} : { cursor }),
+            ...(iterationId === undefined
+              ? {}
+              : { iterationId: identifier(iterationId, "iteration") }),
+            ...(workflowOperationId === undefined
+              ? {}
+              : { workflowOperationId: identifier(workflowOperationId, "workflow") }),
+          });
+        } finally {
+          request.off("aborted", abort);
+          response.off("close", abort);
+          options.shutdownSignal.removeEventListener("abort", abort);
+        }
+        return;
+      }
 
       if (url.pathname === "/") {
         queryKeys(url.searchParams, new Set());

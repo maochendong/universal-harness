@@ -15,6 +15,7 @@ export default defineConfig({
       ...configDefaults.exclude,
       "tests/performance/**",
       "tests/e2e/dashboard-readonly.test.ts",
+      "tests/e2e/dashboard-live-approval.test.ts",
     ],
     passWithNoTests: false,
     // Plan Task 28: every run also emits the structured acceptance evidence

@@ -170,6 +170,29 @@ describe("FileEventStream", () => {
     ]);
   });
 
+  it("preserves numeric stream order when more than nine events share a timestamp", async () => {
+    const root = projectRoot();
+    const spool = new FileLiveSpool(root);
+    for (let sequence = 1; sequence <= 12; sequence += 1) {
+      spool.append({
+        streamId: "stream_01",
+        observationKey: `observation_${String(sequence)}`,
+        eventType: "RunHeartbeat",
+        projectId: "project_01",
+        iterationId: "iteration_01",
+        workflowOperationId: "workflow_01",
+        timestamp: "2026-08-16T00:00:01.000Z",
+        payload: {},
+      });
+    }
+
+    const page = await new FileEventStream(root).read({ limit: 20 });
+
+    expect(page.items.map((entry) => entry.event.sequence)).toEqual([
+      1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12,
+    ]);
+  });
+
   it("redacts resolved secret values before an observation reaches disk", async () => {
     const root = projectRoot();
     new FileLiveSpool(root, {
@@ -280,9 +303,8 @@ describe("FileEventStream", () => {
       });
     };
     append(1);
-    const iterator = new FileEventStream(root, { pollIntervalMs: 1 })
-      .subscribe({ limit: 10 })
-      [Symbol.asyncIterator]();
+    const subscription = new FileEventStream(root, { pollIntervalMs: 1 }).subscribe({ limit: 10 });
+    const iterator = subscription[Symbol.asyncIterator]();
 
     expect((await iterator.next()).value?.id).toBe("live:stream_01:1");
     append(2);

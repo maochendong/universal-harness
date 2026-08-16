@@ -12,3 +12,21 @@ export {
   type DashboardAsset,
   type DashboardAssetName,
 } from "./assets.js";
+export {
+  streamDashboardEvents,
+  type SseResponse,
+  type StreamDashboardEventsOptions,
+} from "./sse.js";
+export {
+  DASHBOARD_APPROVAL_DECISIONS,
+  DASHBOARD_FINDING_ACTIONS,
+  DashboardWriteError,
+  unavailableDashboardWriteApi,
+  type ApprovalDecisionWrite,
+  type DashboardApprovalDecision,
+  type DashboardFindingAction,
+  type DashboardWriteApi,
+  type DashboardWriteErrorKind,
+  type ResolveFindingGroupWrite,
+  type ResumeWorkflowWrite,
+} from "./write-api.js";

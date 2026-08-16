@@ -844,6 +844,180 @@ h2 {
   color: var(--paper);
   font: 400 3rem/1 var(--display);
 }
+.live-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(20rem, 0.65fr);
+  gap: 2.5rem;
+}
+.live-swimlane {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(7rem, 1fr));
+  gap: 1px;
+  margin: 0;
+  padding: 1px;
+  background: var(--rule);
+  list-style: none;
+}
+.live-swimlane li {
+  min-height: 5.5rem;
+  padding: 1rem;
+  color: var(--paper-muted);
+  background: var(--ink-soft);
+  font: 0.61rem/1.4 var(--mono);
+  letter-spacing: 0.08em;
+}
+.live-swimlane li span {
+  display: block;
+  margin-bottom: 1.2rem;
+  color: var(--rule-bright);
+}
+.live-swimlane li.is-active {
+  color: var(--ink);
+  background: var(--signal);
+}
+.live-swimlane li.is-active span {
+  color: var(--ink);
+}
+.live-swimlane li.is-complete {
+  color: var(--signal);
+  box-shadow: inset 0 -0.25rem var(--signal);
+}
+.live-swimlane li.is-paused {
+  color: var(--warning);
+  box-shadow: inset 0 -0.25rem var(--warning);
+}
+.live-register-label {
+  margin-top: 2rem;
+}
+.live-register {
+  max-height: 31rem;
+  margin: 0;
+  padding: 0;
+  overflow: auto;
+  border-top: 1px solid var(--rule-bright);
+  list-style: none;
+}
+.live-event {
+  display: grid;
+  grid-template-columns: 5.5rem 4.4rem 9rem minmax(0, 1fr);
+  gap: 0.8rem;
+  align-items: baseline;
+  padding: 0.85rem 0.6rem;
+  border-bottom: 1px solid var(--rule);
+  font: 0.59rem/1.45 var(--mono);
+}
+.live-event time,
+.live-event .live-copy {
+  color: var(--paper-muted);
+}
+.live-event .live-source {
+  color: var(--oxide);
+}
+.live-event.is-authoritative .live-source {
+  color: var(--signal);
+}
+.live-event strong {
+  color: var(--paper);
+  overflow-wrap: anywhere;
+}
+.approval-bay {
+  align-self: start;
+  min-height: 30rem;
+  padding: 1.5rem;
+  border: 1px solid var(--rule-bright);
+  background:
+    linear-gradient(rgba(255, 107, 61, 0.025) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 107, 61, 0.025) 1px, transparent 1px), var(--ink-soft);
+  background-size: 1.4rem 1.4rem;
+}
+.approval-bay > header {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  color: var(--paper-muted);
+  font: 0.56rem/1 var(--mono);
+  letter-spacing: 0.1em;
+}
+.approval-bay > header b {
+  color: var(--oxide);
+}
+.approval-bay h3 {
+  margin: 2rem 0;
+  font: 400 2.2rem/1 var(--display);
+}
+.approval-card > p {
+  color: var(--paper-muted);
+  font-size: 0.75rem;
+  line-height: 1.6;
+}
+.approval-card h4 {
+  margin: 0 0 1.5rem;
+  font: 400 1.6rem/1.1 var(--display);
+}
+.approval-field {
+  display: grid;
+  grid-template-columns: 6rem minmax(0, 1fr);
+  gap: 0.7rem;
+  padding: 0.6rem 0;
+  border-top: 1px solid var(--rule);
+  font: 0.58rem/1.45 var(--mono);
+}
+.approval-field span {
+  color: var(--paper-muted);
+}
+.approval-field strong {
+  overflow-wrap: anywhere;
+}
+.approval-reason {
+  padding-left: 0.8rem;
+  border-left: 2px solid var(--oxide);
+}
+.approval-form {
+  margin-top: 1.5rem;
+  padding-top: 1.2rem;
+  border-top: 1px solid var(--rule-bright);
+}
+.approval-form label span {
+  display: block;
+  color: var(--paper-muted);
+  font: 0.56rem/1 var(--mono);
+  letter-spacing: 0.1em;
+}
+.approval-form input {
+  width: 100%;
+  margin: 0.7rem 0 1rem;
+  padding: 0.7rem;
+  border: 1px solid var(--rule-bright);
+  color: var(--paper);
+  background: var(--ink);
+  font: 0.68rem/1 var(--mono);
+}
+.approval-actions {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1px;
+  background: var(--rule);
+}
+.decision {
+  min-height: 2.8rem;
+  border: 0;
+  color: var(--paper);
+  background: var(--panel);
+  font: 700 0.56rem/1 var(--mono);
+  letter-spacing: 0.08em;
+}
+.decision-approve:hover {
+  color: var(--ink);
+  background: var(--signal);
+}
+.decision-reject:hover {
+  color: var(--ink);
+  background: var(--danger);
+}
+.decision-defer:hover {
+  color: var(--ink);
+  background: var(--warning);
+}
 .state-line {
   min-height: 1.4rem;
   margin: 1.4rem 0 0;
@@ -950,7 +1124,8 @@ h2 {
   .overview-grid,
   .graph-layout,
   .split-register,
-  .finding-grid {
+  .finding-grid,
+  .live-layout {
     grid-template-columns: 1fr;
   }
   .instrument-wide {
@@ -968,6 +1143,12 @@ h2 {
   }
   .evidence-row > :nth-child(n + 3) {
     grid-column: 2;
+  }
+  .live-event {
+    grid-template-columns: 4.5rem 4rem minmax(0, 1fr);
+  }
+  .live-event .live-copy {
+    grid-column: 3;
   }
   .footer {
     display: none;
@@ -996,6 +1177,15 @@ h2 {
   .phase-track {
     grid-template-columns: repeat(4, 1fr);
     row-gap: 1.8rem;
+  }
+  .live-swimlane {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .live-event {
+    grid-template-columns: 4rem minmax(0, 1fr);
+  }
+  .live-event > :nth-child(n + 3) {
+    grid-column: 2;
   }
   .node-card,
   .record-button {

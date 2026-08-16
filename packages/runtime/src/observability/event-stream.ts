@@ -94,6 +94,22 @@ function compareItems(left: EventStreamItem, right: EventStreamItem): number {
   if (left.event.timestamp !== right.event.timestamp) {
     return left.event.timestamp < right.event.timestamp ? -1 : 1;
   }
+  if (
+    "stream_id" in left.event &&
+    "stream_id" in right.event &&
+    left.event.stream_id === right.event.stream_id &&
+    left.event.sequence !== right.event.sequence
+  ) {
+    return left.event.sequence - right.event.sequence;
+  }
+  if (
+    "ledger_operation_id" in left.event &&
+    "ledger_operation_id" in right.event &&
+    left.event.workflow_operation_id === right.event.workflow_operation_id &&
+    left.event.sequence !== right.event.sequence
+  ) {
+    return left.event.sequence - right.event.sequence;
+  }
   return left.id < right.id ? -1 : left.id > right.id ? 1 : 0;
 }
 

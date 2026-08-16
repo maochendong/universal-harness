@@ -6,11 +6,13 @@ import {
   resolveHarnessPath,
 } from "@universal-harness-internal/core";
 import { checkGraphCache, rebuildGraphCache } from "@universal-harness-internal/graph";
+import { FileEventStream, type EventStreamPort } from "@universal-harness-internal/runtime";
 
 import { DashboardProblem } from "./problem.js";
 import { createDashboardReadApi } from "./read-api.js";
 import { createDashboardRouter } from "./router.js";
 import { DashboardSessionStore } from "./session.js";
+import { unavailableDashboardWriteApi, type DashboardWriteApi } from "./write-api.js";
 
 const LOOPBACK_HOSTS = new Set(["127.0.0.1", "::1", "localhost"]);
 
@@ -18,6 +20,8 @@ export interface DashboardServerOptions {
   readonly projectRoot: string;
   readonly host?: string;
   readonly port?: number;
+  readonly eventStream?: EventStreamPort;
+  readonly writeApi?: DashboardWriteApi;
 }
 
 export interface DashboardServer {
@@ -98,6 +102,7 @@ export async function startDashboardServer(
   }
   prepareCache(options.projectRoot);
   const sessions = new DashboardSessionStore();
+  const shutdown = new AbortController();
   const routing: { handler?: ReturnType<typeof createDashboardRouter> } = {};
   const server = createServer((request, response) => {
     void routing.handler?.(request, response);
@@ -111,6 +116,9 @@ export async function startDashboardServer(
     origin,
     sessions,
     readApi: createDashboardReadApi(options.projectRoot),
+    eventStream: options.eventStream ?? new FileEventStream(options.projectRoot),
+    writeApi: options.writeApi ?? unavailableDashboardWriteApi(),
+    shutdownSignal: shutdown.signal,
   });
   let closed = false;
   return {
@@ -121,6 +129,7 @@ export async function startDashboardServer(
     close: async () => {
       if (closed) return;
       closed = true;
+      shutdown.abort();
       sessions.clear();
       await close(server);
     },

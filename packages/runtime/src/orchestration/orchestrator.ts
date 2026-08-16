@@ -82,6 +82,13 @@ import { planFindingDecay } from "../finding/decay.js";
 import { findingLifecyclePayload } from "../finding/lifecycle.js";
 import { runGateSuite, type GateSuiteOutcome } from "../gates/runner.js";
 import { ProjectionError, writeManagedOutput } from "../projection/managed-output.js";
+import { FileLiveSpool } from "../observability/live-spool.js";
+import {
+  ObservationPublisher,
+  gateCompletionObservationKey,
+  type ObservationPublisherPort,
+  type ObservationStreamIdentity,
+} from "../observability/publisher.js";
 import { issueGrant } from "../policy/capability-grant.js";
 import { mergePolicyLayers } from "../policy/evaluator.js";
 import { isPathWithinScopes, normalizeRepoRelativePath } from "../policy/path-boundary.js";
@@ -304,6 +311,10 @@ export interface OrchestratorDependencies {
   readonly taskEnvelopeScope?: TaskEnvelopeScopePort;
   readonly trajectoryVisibility?: AgentTrajectoryVisibility;
   readonly tokenBudget?: number;
+  /** Override the default file-spool publisher (primarily for hosts and tests). */
+  readonly createObservationPublisher?: (
+    identity: ObservationStreamIdentity,
+  ) => ObservationPublisherPort;
   /**
    * Optional side-channel observer invoked at each phase boundary so hosts
    * can stream progress for long-running pipelines (never affects outcomes).
@@ -782,6 +793,7 @@ interface PipelineContext {
   workingState: WorkingState;
   readonly proposal: RequirementProposal;
   readonly baselineDigest: string;
+  readonly observations: ObservationPublisherPort;
   impactSet?: NodeRecord;
   plan?: { readonly node: NodeRecord; readonly content: ExecutionPlanContent };
   bundle?: ContextBundleRecord;
@@ -2103,9 +2115,37 @@ async function phaseExecute(ctx: PipelineContext): Promise<PhaseStep> {
       activeRunId = started.run_id;
       await commitRunNode(ctx, activeRunId);
     }
+    observe(ctx, () =>
+      ctx.observations.runStarted(activeRunId, {
+        task_id: task.id,
+        executor: "agent",
+      }),
+    );
+    observe(ctx, () => ctx.observations.runHeartbeat(activeRunId, { task_id: task.id }));
+    const heartbeat = setInterval(() => {
+      observe(ctx, () => ctx.observations.runHeartbeat(activeRunId, { task_id: task.id }));
+    }, 5_000);
+    heartbeat.unref();
     // A throw here is a process-level crash: no terminal record is written and
     // resume reconciles the open run. Typed failures come back as results.
-    const result = await executor(envelope as AgentTaskEnvelope);
+    let result: AgentRunResult;
+    try {
+      result = await executor(envelope as AgentTaskEnvelope);
+    } finally {
+      clearInterval(heartbeat);
+    }
+    observe(ctx, () => ctx.observations.runOutput(activeRunId, result.summary, { flush: true }));
+    observe(ctx, () =>
+      ctx.observations.budgetUpdated({
+        run_id: activeRunId,
+        task_id: task.id,
+        input_tokens: result.usage.input_tokens,
+        output_tokens: result.usage.output_tokens,
+        total_tokens: result.usage.total_tokens,
+        duration_ms: result.usage.duration_ms,
+        metering: result.usage.metering,
+      }),
+    );
     await ctx.engine.terminateRun(ctx.workflowOperationId, {
       runId: activeRunId,
       outcome: result.outcome,
@@ -2444,6 +2484,7 @@ async function phaseVerify(
         policy_digest: bindings.policy_digest,
       },
       clock: () => nowOf(deps),
+      observations: ctx.observations,
     });
     ctx.gateOutcome = outcome;
     summary = {
@@ -2538,7 +2579,15 @@ async function phaseVerify(
     proposal: { phase: "evaluate" },
     events: phaseLifecycleEvents({
       phase: "verify",
-      gates: summary.results.map((result) => ({ gateId: result.gate_id, passed: result.passed })),
+      gates: summary.results.map((result) => ({
+        gateId: result.gate_id,
+        passed: result.passed,
+        observationKey: gateCompletionObservationKey(
+          ctx.workflowOperationId,
+          currentAttemptId(ctx),
+          result.gate_id,
+        ),
+      })),
     }),
   });
   refreshWorkingState(ctx);
@@ -3703,6 +3752,19 @@ async function drivePipeline(
         phase,
         ...(completedByStep ? {} : { paused_status: step.outcome.status }),
       });
+      if (step.outcome.status === "approval_required") {
+        const required = step.outcome.required;
+        observe(ctx, () =>
+          ctx.observations.approvalRequired({
+            request_id: required.request_id,
+            object_id: required.object_id,
+            object_type: required.object_type,
+            object_digest: required.object_digest,
+            allowed_decisions: [...required.allowed_decisions],
+            resume_phase: required.resume_phase,
+          }),
+        );
+      }
       return step.outcome;
     }
     completedPhase = phase;
@@ -3715,6 +3777,19 @@ function emitPhaseProgress(
   ctx: PipelineContext,
   event: Omit<PhaseProgressEvent, "workflow_operation_id" | "iteration_id" | "timestamp">,
 ): void {
+  switch (event.type) {
+    case "phase_started":
+      observe(ctx, () => ctx.observations.phaseStarted(event.phase));
+      break;
+    case "phase_completed":
+      observe(ctx, () => ctx.observations.phaseCompleted(event.phase));
+      break;
+    case "phase_paused":
+      observe(ctx, () =>
+        ctx.observations.phasePaused(event.phase, event.paused_status ?? "paused"),
+      );
+      break;
+  }
   const observer = ctx.deps.onPhaseProgress;
   if (observer === undefined) return;
   observer({
@@ -3723,6 +3798,14 @@ function emitPhaseProgress(
     iteration_id: ctx.iterationId,
     timestamp: ctx.deps.now?.() ?? new Date().toISOString(),
   });
+}
+
+function observe(_ctx: PipelineContext, action: () => unknown): void {
+  try {
+    action();
+  } catch {
+    // Live observations are explicitly disposable and never affect outcomes.
+  }
 }
 
 async function buildPipelineContext(
@@ -3750,6 +3833,19 @@ async function buildPipelineContext(
       "re-derived requirement baseline digest no longer matches the approved checkpoint binding",
     );
   }
+  const operation = engine.getOperation(workflowOperationId);
+  if (operation === undefined) {
+    throw new OrchestrationError(
+      "operation_not_found",
+      `workflow operation ${workflowOperationId} disappeared before observation binding`,
+    );
+  }
+  const identity: ObservationStreamIdentity = {
+    projectId: readManagedManifest(deps.projectRoot).repository_id,
+    iterationId,
+    workflowOperationId,
+    attemptId: operation.attempt_id,
+  };
   return {
     deps,
     engine,
@@ -3762,6 +3858,9 @@ async function buildPipelineContext(
     workingState,
     proposal: captured.proposal,
     baselineDigest,
+    observations:
+      deps.createObservationPublisher?.(identity) ??
+      new ObservationPublisher(new FileLiveSpool(deps.projectRoot), identity),
   };
 }
 
@@ -3937,6 +4036,8 @@ export async function resolveApproval(
     readonly requestId: string;
     readonly decision: ApprovalDecision;
     readonly actor: string;
+    /** Optional caller-held binding used by conflict-aware HTTP clients. */
+    readonly expectedObjectDigest?: string;
   },
 ): Promise<{
   readonly requestId: string;
@@ -3959,6 +4060,15 @@ export async function resolveApproval(
     throw new OrchestrationError(
       "operation_not_found",
       `unknown approval request: ${input.requestId}`,
+    );
+  }
+  if (
+    input.expectedObjectDigest !== undefined &&
+    input.expectedObjectDigest !== request.object_digest
+  ) {
+    throw new OrchestrationError(
+      "binding_drift",
+      `approval request ${request.request_id} changed; expected ${input.expectedObjectDigest}, current ${request.object_digest}`,
     );
   }
   const engine = new WorkflowEngine(workflowDeps(deps));
@@ -4022,6 +4132,19 @@ export async function resolveApproval(
     objectDigest: request.object_digest,
     actor: input.actor,
   });
+  if (input.decision === "defer") {
+    const afterDecision = engine.getOperation(request.workflow_operation_id);
+    if (afterDecision !== undefined && afterDecision.state !== "blocked") {
+      await engine.block(request.workflow_operation_id, {
+        reason: "awaiting_approval",
+        detail: `approval request ${request.request_id} remains deferred`,
+        proposal: {
+          phase: request.resume_phase,
+          set_next_action: resumeCommandFor(request.workflow_operation_id),
+        },
+      });
+    }
+  }
   return {
     requestId: record.request_id,
     decision: record.decision,

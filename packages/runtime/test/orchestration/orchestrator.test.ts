@@ -28,11 +28,13 @@ import {
   createNewProject,
   detectProjectionDrift,
   findOpenWorkflowOperation,
+  FileEventStream,
   hashWorktreeCode,
   normalizeGateDefinition,
   proposeGraphEdge,
   readApprovalDecisions,
   readApprovalRequests,
+  readCurrentOperation,
   readLatestSnapshot,
   resolveApproval,
   resolveFinding,
@@ -324,6 +326,49 @@ async function approveAndResume(
 }
 
 describe("phase orchestrator", { timeout: 30000 }, () => {
+  it("binds conflict-aware approval decisions to the expected digest and keeps defer resumable", async () => {
+    const newId = sequentialIds();
+    const projectRoot = await bootstrapProject("orch-web-approval", newId);
+    const deps = makeDeps(projectRoot, newId);
+    const outcome = await runIteration(deps, { intent: INTENT, intentShape: "pack-converted" });
+    expect(outcome.status).toBe("approval_required");
+    if (outcome.status !== "approval_required") return;
+    expect(collectProjectStatus(projectRoot).pending_approvals).toContain(
+      outcome.required.request_id,
+    );
+
+    await expect(
+      resolveApproval(deps, {
+        requestId: outcome.required.request_id,
+        decision: "approve",
+        actor: "human:web-reviewer",
+        expectedObjectDigest: "f".repeat(64),
+      }),
+    ).rejects.toMatchObject({ kind: "binding_drift" });
+    expect(
+      readApprovalDecisions(
+        harnessRootFor(projectRoot),
+        readCommittedOperations(harnessRootFor(projectRoot)),
+        outcome.required.workflow_operation_id,
+      ),
+    ).toEqual([]);
+
+    await resolveApproval(deps, {
+      requestId: outcome.required.request_id,
+      decision: "defer",
+      actor: "human:web-reviewer",
+      expectedObjectDigest: outcome.required.object_digest,
+    });
+    const current = readCurrentOperation(
+      { projectRoot, readBaseline: deps.readBaseline },
+      outcome.required.workflow_operation_id,
+    );
+    expect(current?.state).toBe("blocked");
+    expect(collectProjectStatus(projectRoot).pending_approvals).toContain(
+      outcome.required.request_id,
+    );
+  });
+
   it("runs a full iteration from intent to a completed snapshot, pausing only for approvals", async () => {
     const newId = sequentialIds();
     const projectRoot = await bootstrapProject("orch-demo", newId);
@@ -379,6 +424,11 @@ describe("phase orchestrator", { timeout: 30000 }, () => {
     expect(eventTypes.indexOf("BeforeContextCompile")).toBeLessThan(
       eventTypes.indexOf("ContextCompiled"),
     );
+    const streamedGates = (
+      await new FileEventStream(projectRoot).read({ limit: 500 })
+    ).items.filter((item) => item.event.event_type === "GateCompleted");
+    expect(streamedGates).toHaveLength(1);
+    expect(streamedGates[0]).toMatchObject({ source: "ledger", authoritative: true });
 
     // Evaluation evidence is graph-native: the accepted case evaluates both
     // the Task and its concrete Run, so status coverage and task freshness are

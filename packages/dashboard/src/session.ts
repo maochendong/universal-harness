@@ -90,6 +90,17 @@ export class DashboardSessionStore {
     return session;
   }
 
+  assertCsrf(session: DashboardSession, supplied: string | undefined): void {
+    if (supplied === undefined || !sameSecret(supplied, session.csrfToken)) {
+      throw new DashboardProblem(
+        403,
+        "csrf_mismatch",
+        "Forbidden",
+        "the CSRF token is missing or does not belong to this Dashboard session",
+      );
+    }
+  }
+
   clear(): void {
     this.sessions.clear();
   }

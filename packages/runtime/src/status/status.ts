@@ -16,7 +16,11 @@ import {
 } from "@universal-harness-internal/graph";
 
 import type { ControlLevel } from "../policy/action.js";
-import { readApprovalDecisions } from "../approval/request.js";
+import {
+  readApprovalDecisions,
+  readApprovalRequests,
+  supersededRequestId,
+} from "../approval/request.js";
 import { latestValidCheckpoint } from "../workflow/checkpoint.js";
 import type { BudgetUse } from "../workflow/working-state.js";
 import { projectFindingGroups, type FindingGroupProjection } from "../finding/groups.js";
@@ -471,6 +475,22 @@ export function collectProjectStatus(projectRoot: string): ProjectStatus {
         .filter((decision) => decision.decision === "approve" || decision.decision === "reject")
         .map((decision) => decision.request_id),
     );
+    const requests = workflowOperationIds.flatMap((operationId) =>
+      readApprovalRequests(harnessRoot, operations, operationId),
+    );
+    const terminalApprovalIds = new Set(resolvedApprovalIds);
+    const supersededApprovalIds = new Set(
+      requests
+        .map((request) => supersededRequestId(request))
+        .filter((requestId): requestId is string => requestId !== undefined),
+    );
+    const artifactPendingApprovals = requests
+      .filter(
+        (request) =>
+          !terminalApprovalIds.has(request.request_id) &&
+          !supersededApprovalIds.has(request.request_id),
+      )
+      .map((request) => request.request_id);
     const derived = deriveProjectStatus({
       nodes,
       edges,
@@ -495,6 +515,14 @@ export function collectProjectStatus(projectRoot: string): ProjectStatus {
       last_ledger_operation: lastOperation?.manifest.ledger_operation_id ?? "none",
       graph_cache: cache.status,
       ...derived,
+      pending_approvals: [
+        ...new Set([...derived.pending_approvals, ...artifactPendingApprovals]),
+      ].sort(byId),
+      ...(artifactPendingApprovals.length === 0
+        ? {}
+        : {
+            next_action: `resolve approval request ${[...artifactPendingApprovals].sort(byId)[0]}`,
+          }),
       control_level: "none",
     };
   } finally {

@@ -3,12 +3,14 @@ import { createInterface } from "node:readline";
 import { resolve } from "node:path";
 
 import { createGitVcsAdapter } from "@universal-harness-internal/adapter-vcs-git";
-import { startDashboardServer } from "@universal-harness-internal/dashboard";
+import { DashboardWriteError, startDashboardServer } from "@universal-harness-internal/dashboard";
 import { renderTasksProjection } from "@universal-harness-internal/adapter-projection-markdown";
 import { defineEvaluationCase, evaluateRun } from "@universal-harness-internal/eval";
 import {
   FindingGroupError,
   OrchestrationError,
+  ApprovalError,
+  WorkflowError,
   abortIteration,
   createDirectExecutor,
   createGenericInterpreter,
@@ -19,6 +21,7 @@ import {
   provenQualityTaskIds,
   readLatestExecutionPlan,
   readLatestSnapshot,
+  readCurrentOperation,
   resolveSnapshotSourceCommit,
   readStagedAdoptionPreview,
   resolveApproval,
@@ -37,7 +40,7 @@ import {
   type TaskEnvelopeScopePort,
 } from "@universal-harness-internal/runtime";
 import { materializeLedger, pageEdges, pageNodes } from "@universal-harness-internal/graph";
-import type { EdgeRecord, NodeRecord } from "@universal-harness-internal/core";
+import { contentDigest, type EdgeRecord, type NodeRecord } from "@universal-harness-internal/core";
 
 import type { GateDefinition, ToolRegistry } from "@universal-harness-internal/runtime";
 
@@ -555,9 +558,114 @@ export function createOrchestratedRuntimeService(
       }),
 
     serve: async (request: ServeRequest): Promise<CommandResult> => {
+      const deps = orchestratorDeps(request.projectRoot);
+      const writeFailure = (error: unknown): never => {
+        if (
+          (error instanceof OrchestrationError && error.kind === "binding_drift") ||
+          (error instanceof ApprovalError && error.kind === "approval_binding_drift") ||
+          (error instanceof FindingGroupError && error.kind === "finding_group_digest_mismatch")
+        ) {
+          throw new DashboardWriteError("conflict", "the target changed; refresh before retrying");
+        }
+        if (
+          (error instanceof OrchestrationError && error.kind === "operation_not_found") ||
+          (error instanceof ApprovalError && error.kind === "approval_request_not_found") ||
+          (error instanceof FindingGroupError && error.kind === "finding_group_not_found") ||
+          (error instanceof WorkflowError && error.kind === "operation_not_found")
+        ) {
+          throw new DashboardWriteError("not_found", "the requested target no longer exists");
+        }
+        if (
+          error instanceof OrchestrationError ||
+          error instanceof ApprovalError ||
+          error instanceof FindingGroupError ||
+          error instanceof WorkflowError
+        ) {
+          throw new DashboardWriteError("invalid", "the governed operation was refused");
+        }
+        throw error;
+      };
       const server = await startDashboardServer({
         projectRoot: request.projectRoot,
         port: request.port,
+        writeApi: {
+          decideApproval: async (input) => {
+            try {
+              const resolved = await resolveApproval(deps, {
+                requestId: input.requestId,
+                decision: input.decision,
+                actor: input.actor,
+                expectedObjectDigest: input.expectedDigest,
+              });
+              const workflow = readCurrentOperation(
+                { projectRoot: request.projectRoot, readBaseline: deps.readBaseline },
+                resolved.workflowOperationId,
+              );
+              return {
+                request_id: resolved.requestId,
+                decision: resolved.decision,
+                approval_digest: resolved.approvalDigest,
+                workflow_operation_id: resolved.workflowOperationId,
+                ...(workflow === undefined ? {} : { workflow_digest: contentDigest(workflow) }),
+                expected_digest: input.expectedDigest,
+                actor: input.actor,
+              };
+            } catch (error) {
+              return writeFailure(error);
+            }
+          },
+          resumeWorkflow: async (input) => {
+            try {
+              const current = readCurrentOperation(
+                { projectRoot: request.projectRoot, readBaseline: deps.readBaseline },
+                input.workflowOperationId,
+              );
+              if (current === undefined) {
+                throw new DashboardWriteError("not_found", "the workflow no longer exists");
+              }
+              if (contentDigest(current) !== input.expectedDigest) {
+                throw new DashboardWriteError(
+                  "conflict",
+                  "the workflow changed; refresh before retrying",
+                );
+              }
+              const outcome = await resumeIteration(deps, input.workflowOperationId, {
+                intent: "",
+                intentShape: "pack-converted",
+              });
+              return {
+                ...outcomeToResult("resume", outcome).data,
+                status: outcome.status,
+                expected_digest: input.expectedDigest,
+                actor: input.actor,
+              };
+            } catch (error) {
+              if (error instanceof DashboardWriteError) throw error;
+              return writeFailure(error);
+            }
+          },
+          resolveFindingGroup: async (input) => {
+            try {
+              const resolved = await resolveFindingGroup(deps, {
+                groupId: input.groupId,
+                membershipDigest: input.expectedDigest,
+                action: input.action,
+                actor: input.actor,
+                ...(input.evidenceId === undefined ? {} : { evidenceId: input.evidenceId }),
+              });
+              return {
+                group_id: resolved.groupId,
+                membership_digest: resolved.membershipDigest,
+                action: resolved.action,
+                status: resolved.status,
+                members: [...resolved.members],
+                actor: input.actor,
+              };
+            } catch (error) {
+              return writeFailure(error);
+            }
+          },
+        },
       });
       return {
         command: "serve",

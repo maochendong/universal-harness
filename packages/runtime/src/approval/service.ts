@@ -202,6 +202,7 @@ export class ApprovalService {
             object_digest: request.object_digest,
             risk: request.risk,
             reason: request.reason,
+            proposed_by: proposedByOf(request) ?? "unknown",
           },
         },
       ],

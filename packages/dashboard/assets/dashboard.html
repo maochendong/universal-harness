@@ -41,10 +41,11 @@
           >
           <a class="nav-link" href="#evidence" data-view="evidence"><span>05</span> Evidence</a>
           <a class="nav-link" href="#findings" data-view="findings"><span>06</span> Findings</a>
+          <a class="nav-link" href="#live" data-view="live"><span>07</span> Live</a>
         </nav>
         <div class="rail-note">
-          <span>MODE</span><strong>READ / OBSERVE</strong>
-          <p>Ledger truth remains authoritative.</p>
+          <span>MODE</span><strong>OBSERVE / GOVERN</strong>
+          <p>Only digest-bound actions may write.</p>
         </div>
       </aside>
 
@@ -59,8 +60,8 @@
               </h1>
               <p class="lede" id="project-next-action">Reading the latest authoritative state…</p>
             </div>
-            <div class="hero-stamp" aria-label="Local read-only session">
-              <span>SESSION</span><strong>LOCAL</strong><small>READ ONLY</small>
+            <div class="hero-stamp" aria-label="Local governed session">
+              <span>SESSION</span><strong>LOCAL</strong><small>GOVERNED</small>
             </div>
           </div>
           <div class="metric-strip" aria-label="Project metrics">
@@ -251,6 +252,45 @@
             Load next page →
           </button>
           <p class="state-line" data-state="findings" role="status">Loading governance groups…</p>
+        </section>
+
+        <section class="panel" data-panel="live" aria-labelledby="live-title" hidden>
+          <div class="section-kicker"><span>07</span> LIVE TELEMETRY</div>
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">LOSSY SIGNAL / AUTHORITATIVE REPLACEMENT</p>
+              <h2 id="live-title">Operation stream</h2>
+            </div>
+            <p>
+              Live signals explain what is moving now. Ledger events replace matching observations
+              when they commit.
+            </p>
+          </div>
+          <div class="live-layout">
+            <div>
+              <div class="plot-label">PHASE SWIMLANE</div>
+              <ol class="live-swimlane" id="live-swimlane" aria-label="Live operation phases">
+                <li data-live-phase="capture"><span>01</span>CAPTURE</li>
+                <li data-live-phase="impact"><span>02</span>IMPACT</li>
+                <li data-live-phase="plan"><span>03</span>PLAN</li>
+                <li data-live-phase="context"><span>04</span>CONTEXT</li>
+                <li data-live-phase="execute"><span>05</span>EXECUTE</li>
+                <li data-live-phase="verify"><span>06</span>VERIFY</li>
+                <li data-live-phase="evaluate"><span>07</span>EVALUATE</li>
+                <li data-live-phase="snapshot"><span>08</span>SNAPSHOT</li>
+              </ol>
+              <div class="plot-label live-register-label">EVENT REGISTER</div>
+              <ol class="live-register" id="live-register" aria-live="polite"></ol>
+            </div>
+            <aside class="approval-bay" aria-labelledby="approval-title">
+              <header><span>CONTROLLED WRITE</span><b>DIGEST BOUND</b></header>
+              <h3 id="approval-title">Approval station</h3>
+              <div id="approval-card" class="approval-card">
+                <p>No pending approval observed.</p>
+              </div>
+            </aside>
+          </div>
+          <p class="state-line" data-state="live" role="status">Live stream is idle.</p>
         </section>
       </main>
     </div>

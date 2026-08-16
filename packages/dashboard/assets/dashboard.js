@@ -1,4 +1,4 @@
-/* global document, window, location, fetch, URLSearchParams, setInterval */
+/* global document, window, location, fetch, URLSearchParams, EventSource, FormData, setInterval */
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
 
@@ -8,6 +8,13 @@ const model = {
   iterationCursor: undefined,
   evidenceCursor: undefined,
   findingCursor: undefined,
+  csrfToken: undefined,
+  eventSource: undefined,
+  pendingApprovals: new Set(),
+  liveByKey: new Map(),
+  heartbeatByRun: new Map(),
+  unknownRuns: new Set(),
+  approvalById: new Map(),
 };
 
 function node(tag, className = "", text) {
@@ -33,6 +40,31 @@ async function api(path) {
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) {
     throw new Error(payload.detail || payload.title || `Request failed (${response.status})`);
+  }
+  return payload.data;
+}
+
+async function apiWrite(path, body) {
+  if (!model.csrfToken) {
+    const session = await api("/api/v1/session");
+    model.csrfToken = session.csrf_token;
+  }
+  const response = await fetch(path, {
+    method: "POST",
+    headers: {
+      accept: "application/json",
+      "content-type": "application/json",
+      "x-harness-csrf": model.csrfToken,
+    },
+    body: JSON.stringify(body),
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    const error = new Error(
+      payload.detail || payload.title || `Request failed (${response.status})`,
+    );
+    error.status = response.status;
+    throw error;
   }
   return payload.data;
 }
@@ -64,6 +96,7 @@ async function loadOverview() {
     const coverage = project.evaluation_coverage || { evaluated: 0, total: 0 };
     setText("#metric-evaluation", `${coverage.evaluated} / ${coverage.total}`);
     const openGroups = (project.finding_groups || []).filter((group) => group.open_count > 0);
+    model.pendingApprovals = new Set(project.pending_approvals || []);
     setText("#metric-findings", openGroups.length);
     setText("#iteration-state", project.iteration?.state || "NONE");
     setText(
@@ -363,6 +396,273 @@ async function loadFindings({ append = false } = {}) {
   }
 }
 
+function liveKey(item) {
+  return item.event.observation_key || item.event.payload?.observation_key || item.id;
+}
+
+function liveTime(timestamp) {
+  const parsed = new Date(timestamp);
+  return Number.isNaN(parsed.getTime())
+    ? "--:--:--"
+    : parsed.toLocaleTimeString([], { hour12: false });
+}
+
+function liveSummary(event) {
+  const payload = event.payload || {};
+  switch (event.event_type) {
+    case "PhaseStarted":
+      return `${payload.phase || "phase"} started`;
+    case "PhaseCompleted":
+      return `${payload.phase || "phase"} completed`;
+    case "PhasePaused":
+      return `${payload.phase || "phase"} paused · ${payload.status || "waiting"}`;
+    case "GateStarted":
+      return `${payload.gate_id || "gate"} started`;
+    case "GateCompleted":
+      return `${payload.gate_id || "gate"} · ${payload.passed ? "passed" : "failed"}`;
+    case "RunStarted":
+      return `${payload.run_id || "run"} started`;
+    case "RunHeartbeat":
+      return `${payload.run_id || "run"} ${payload.status === "unknown" ? "status unknown" : "heartbeat"}`;
+    case "RunOutputSummary":
+      return `${payload.run_id || "run"} · ${short(payload.summary, 72)}`;
+    case "BudgetUpdated":
+      return `budget · ${payload.total_tokens ?? payload.used_tokens ?? "unmetered"} tokens`;
+    case "ApprovalRequired":
+      return `${payload.request_id || "approval"} requires a decision`;
+    default:
+      return event.event_type;
+  }
+}
+
+function updateSwimlane(event) {
+  const phase = event.payload?.phase;
+  if (typeof phase !== "string") return;
+  const marker = $(`[data-live-phase="${phase}"]`);
+  if (!marker) return;
+  marker.classList.remove("is-active", "is-complete", "is-paused");
+  if (event.event_type === "PhaseStarted") marker.classList.add("is-active");
+  if (event.event_type === "PhaseCompleted") marker.classList.add("is-complete");
+  if (event.event_type === "PhasePaused") marker.classList.add("is-paused");
+}
+
+function appendLiveItem(item) {
+  const register = $("#live-register");
+  const key = liveKey(item);
+  const previous = model.liveByKey.get(key);
+  const row = node("li", `live-event ${item.authoritative ? "is-authoritative" : "is-live"}`);
+  row.append(
+    node("time", "", liveTime(item.event.timestamp)),
+    node("span", "live-source", item.authoritative ? "LEDGER" : "LIVE"),
+    node("strong", "", item.event.event_type),
+    node("span", "live-copy", liveSummary(item.event)),
+  );
+  if (previous) previous.replaceWith(row);
+  else register.prepend(row);
+  model.liveByKey.set(key, row);
+  while (register.children.length > 100) register.lastElementChild?.remove();
+  updateSwimlane(item.event);
+}
+
+async function approvalDetails(item) {
+  const payload = item.event.payload || {};
+  const requestId = payload.request_id;
+  if (typeof requestId !== "string") return;
+  if (!model.pendingApprovals.has(requestId)) {
+    await loadOverview();
+    if (!model.pendingApprovals.has(requestId)) return;
+  }
+  const previous = model.approvalById.get(requestId) || {};
+  const merged = {
+    ...previous,
+    ...payload,
+    workflow_operation_id: item.event.workflow_operation_id,
+  };
+  model.approvalById.set(requestId, merged);
+  renderApproval(merged);
+}
+
+function approvalField(label, value) {
+  const wrapper = node("div", "approval-field");
+  wrapper.append(node("span", "", label), node("strong", "", value || "—"));
+  return wrapper;
+}
+
+function renderApproval(approval) {
+  const card = $("#approval-card");
+  clear(card);
+  card.append(
+    node("p", "eyebrow", approval.risk ? `${approval.risk} risk` : "approval required"),
+    node("h4", "", approval.object_type || "Governed object"),
+    approvalField("REQUEST", approval.request_id),
+    approvalField("OBJECT", approval.object_id),
+    approvalField("DIGEST", approval.object_digest),
+    approvalField("REQUEST ACTOR", approval.proposed_by || "unknown"),
+    node("p", "approval-reason", approval.reason || "A governed decision is required."),
+  );
+  const form = node("form", "approval-form");
+  const label = node("label", "");
+  label.append(node("span", "", "DECISION ACTOR"));
+  const input = node("input");
+  input.name = "actor";
+  input.required = true;
+  input.autocomplete = "off";
+  input.placeholder = "human:reviewer";
+  label.append(input);
+  const actions = node("div", "approval-actions");
+  for (const decision of approval.allowed_decisions || ["approve", "reject", "defer"]) {
+    const button = node("button", `decision decision-${decision}`, decision.toUpperCase());
+    button.type = "submit";
+    button.value = decision;
+    button.name = "decision";
+    actions.append(button);
+  }
+  form.append(label, actions);
+  form.addEventListener("submit", (event) => void decideApproval(event, approval));
+  card.append(form);
+}
+
+async function decideApproval(event, approval) {
+  event.preventDefault();
+  const submitter = event.submitter;
+  const actor = new FormData(event.currentTarget).get("actor")?.toString().trim();
+  if (!actor || !submitter?.value) return;
+  status("live", `Recording ${submitter.value} for ${approval.request_id}…`);
+  try {
+    const result = await apiWrite(
+      `/api/v1/approvals/${encodeURIComponent(approval.request_id)}/decision`,
+      {
+        decision: submitter.value,
+        expected_digest: approval.object_digest,
+        actor,
+      },
+    );
+    model.pendingApprovals.delete(approval.request_id);
+    const card = $("#approval-card");
+    clear(card);
+    card.append(node("p", "eyebrow", "DECISION RECORDED"), node("h4", "", result.decision));
+    if (result.decision === "approve" && result.workflow_digest) {
+      const resume = node("button", "command", "RESUME WORKFLOW");
+      resume.type = "button";
+      resume.addEventListener(
+        "click",
+        () => void resumeWorkflow(result.workflow_operation_id, result.workflow_digest, actor),
+      );
+      card.append(resume);
+    } else {
+      card.append(node("p", "", "Ledger readback accepted the actor and expected digest."));
+    }
+    status("live", `Decision ${result.decision} committed by ${actor}`);
+    await loadOverview();
+  } catch (error) {
+    status(
+      "live",
+      error.status === 409
+        ? "Target changed. Project state refreshed; review again."
+        : error.message,
+      "error",
+    );
+    if (error.status === 409) await loadOverview();
+  }
+}
+
+async function resumeWorkflow(workflowId, workflowDigest, actor) {
+  status("live", `Resuming ${workflowId} from its committed checkpoint…`);
+  try {
+    const result = await apiWrite(`/api/v1/workflows/${encodeURIComponent(workflowId)}/resume`, {
+      expected_digest: workflowDigest,
+      actor,
+    });
+    status("live", `Resume settled as ${result.status || "advanced"}`);
+    await loadOverview();
+  } catch (error) {
+    status(
+      "live",
+      error.status === 409 ? "Workflow changed. Project state refreshed." : error.message,
+      "error",
+    );
+    if (error.status === 409) await loadOverview();
+  }
+}
+
+function receiveLive(message) {
+  let item;
+  try {
+    item = JSON.parse(message.data);
+  } catch {
+    status("live", "The live stream returned an invalid event.", "error");
+    return;
+  }
+  appendLiveItem(item);
+  const payload = item.event.payload || {};
+  if (item.event.event_type === "RunStarted" || item.event.event_type === "RunHeartbeat") {
+    if (typeof payload.run_id === "string") {
+      model.heartbeatByRun.set(payload.run_id, Date.now());
+      model.unknownRuns.delete(payload.run_id);
+    }
+  }
+  if (item.event.event_type === "ApprovalRequired") void approvalDetails(item);
+  status("live", `${item.authoritative ? "Ledger" : "Live"} event · ${item.event.event_type}`);
+}
+
+function startLive() {
+  if (model.eventSource) return;
+  status("live", "Connecting to the unified event stream…");
+  const source = new EventSource("/events");
+  model.eventSource = source;
+  for (const type of [
+    "PhaseStarted",
+    "PhaseCompleted",
+    "PhasePaused",
+    "GateStarted",
+    "GateCompleted",
+    "RunStarted",
+    "RunHeartbeat",
+    "RunOutputSummary",
+    "BudgetUpdated",
+    "ApprovalRequired",
+  ])
+    source.addEventListener(type, receiveLive);
+  source.addEventListener("stream_reset", () => {
+    source.close();
+    model.eventSource = undefined;
+    model.liveByKey.clear();
+    clear($("#live-register"));
+    status("live", "Live cursor rotated; authoritative snapshot refreshed.", "empty");
+    void loadOverview().then(startLive);
+  });
+  source.addEventListener("stream_error", () => {
+    status("live", "Event stream is temporarily unavailable.", "error");
+  });
+  source.onopen = () => {
+    setText("#connection-label", "LIVE / LOCAL");
+    status("live", "Unified event stream connected");
+  };
+  source.onerror = () => {
+    setText("#connection-label", "RECONNECTING");
+  };
+}
+
+function markUnknownRuns() {
+  const now = Date.now();
+  for (const [runId, heartbeat] of model.heartbeatByRun) {
+    if (now - heartbeat <= 15_000 || model.unknownRuns.has(runId)) continue;
+    model.unknownRuns.add(runId);
+    const item = {
+      id: `local:unknown:${runId}`,
+      authoritative: false,
+      event: {
+        event_type: "RunHeartbeat",
+        timestamp: new Date(now).toISOString(),
+        observation_key: `local_unknown_${runId}`,
+        payload: { run_id: runId, status: "unknown" },
+      },
+    };
+    appendLiveItem(item);
+    status("live", `${runId} has no heartbeat for 15s · status unknown`, "empty");
+  }
+}
+
 const loaders = {
   overview: loadOverview,
   graph: loadGraph,
@@ -370,6 +670,7 @@ const loaders = {
   iterations: loadIterations,
   evidence: loadEvidence,
   findings: loadFindings,
+  live: async () => startLive(),
 };
 
 async function activate(view) {
@@ -411,4 +712,5 @@ function tick() {
 }
 tick();
 setInterval(tick, 1000);
+setInterval(markUnknownRuns, 5_000);
 void activate(location.hash.slice(1) || "overview");

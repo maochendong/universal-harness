@@ -37,7 +37,11 @@ export type PhaseLifecycleDetails =
     }
   | {
       readonly phase: "verify";
-      readonly gates: readonly { readonly gateId: string; readonly passed: boolean }[];
+      readonly gates: readonly {
+        readonly gateId: string;
+        readonly passed: boolean;
+        readonly observationKey?: string;
+      }[];
     }
   | {
       readonly phase: "evaluate";
@@ -86,7 +90,11 @@ export function phaseLifecycleEvents(details: PhaseLifecycleDetails): PhaseLifec
     case "verify":
       return details.gates.map((gate) => ({
         eventType: "GateCompleted" as const,
-        payload: { gate_id: gate.gateId, passed: gate.passed },
+        payload: {
+          gate_id: gate.gateId,
+          passed: gate.passed,
+          ...(gate.observationKey === undefined ? {} : { observation_key: gate.observationKey }),
+        },
       }));
     case "evaluate":
       return [

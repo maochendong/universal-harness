@@ -2,7 +2,7 @@ import { defineConfig } from "@playwright/test";
 
 export default defineConfig({
   testDir: "./tests/e2e",
-  testMatch: "dashboard-readonly.test.ts",
+  testMatch: ["dashboard-readonly.test.ts", "dashboard-live-approval.test.ts"],
   fullyParallel: false,
   workers: 1,
   retries: process.env["CI"] === undefined ? 0 : 1,

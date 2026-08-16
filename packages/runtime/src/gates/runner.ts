@@ -7,6 +7,7 @@ import {
 
 import type { ToolInvocationContext } from "../tools/invocation.js";
 import type { ToolRegistry } from "../tools/registry.js";
+import type { ObservationPublisherPort } from "../observability/publisher.js";
 import { buildGateEvidence, type EvidenceBindings, type GateEvidenceRecord } from "./evidence.js";
 import { isEvidenceStale, type CurrentEvidenceState } from "./freshness.js";
 import { buildFindingGovernanceMetadata } from "../finding/governance.js";
@@ -46,6 +47,11 @@ export interface GateSuiteSpec {
   readonly clock: () => string;
   /** Mark all produced evidence provisional (design 10.3 stale-input rule). */
   readonly provisional?: boolean;
+  /** Lossy Gate telemetry; never participates in verdict calculation. */
+  readonly observations?: Pick<
+    ObservationPublisherPort,
+    "gateStarted" | "gateCompleted" | "runStarted" | "runHeartbeat" | "runOutput"
+  >;
 }
 
 export interface GateSuiteOutcome {
@@ -146,10 +152,36 @@ export async function runGateSuite(
   const results: GateRunResult[] = [];
   const findings: FeedbackRecord[] = [];
   for (const gate of orderGates(spec.gates)) {
+    try {
+      spec.observations?.gateStarted(gate.gate_id);
+    } catch {
+      // Observation delivery is intentionally non-authoritative.
+    }
     const outcome = await runGate(registry, gate, {
       intentId: `intent_${idSuffix(gate)}`,
-      ...(invocation === undefined ? {} : { invocation }),
+      ...(invocation === undefined && spec.observations === undefined
+        ? {}
+        : {
+            invocation: {
+              ...(invocation ?? {}),
+              ...(invocation?.observations !== undefined
+                ? {}
+                : spec.observations === undefined
+                  ? {}
+                  : { observations: spec.observations }),
+            },
+          }),
     });
+    try {
+      spec.observations?.gateCompleted(gate.gate_id, {
+        passed: outcome.passed,
+        mandatory: gate.mandatory,
+        output_digest: outcome.output_digest,
+        summary: outcome.summary,
+      });
+    } catch {
+      // The authoritative GateCompleted event is committed by the orchestrator.
+    }
     const evidence = buildGateEvidence({
       evidenceId: `evidence_${idSuffix(gate)}`,
       createdAt: spec.clock(),

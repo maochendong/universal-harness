@@ -10,6 +10,7 @@ import {
 } from "./action-intent.js";
 import { ToolError, resourceMatchesPatterns, type ToolDefinition } from "./definition.js";
 import type { RegisteredTool, ToolRegistry } from "./registry.js";
+import type { ObservationPublisherPort } from "../observability/publisher.js";
 
 /**
  * Three-phase invocation pipeline (design 13.5).
@@ -55,6 +56,11 @@ export interface ToolInvocationContext {
   readonly validateApproval?: (approvalDigest: string, requestDigest: string) => boolean;
   /** Environment for secret resolution; defaults to `process.env`. */
   readonly env?: Readonly<Record<string, string | undefined>>;
+  /** Lossy live telemetry; failures never alter the governed invocation. */
+  readonly observations?: Pick<
+    ObservationPublisherPort,
+    "runStarted" | "runHeartbeat" | "runOutput"
+  >;
 }
 
 export interface ToolInvocationEvidence {
@@ -268,6 +274,15 @@ function evidenceOf(
   };
 }
 
+function observe(action: (() => unknown) | undefined): void {
+  if (action === undefined) return;
+  try {
+    action();
+  } catch {
+    // The live spool is disposable and must never change tool authority.
+  }
+}
+
 /**
  * Invoke a registered tool through the three-phase pipeline. Deterministic
  * given the same registry, journal and handler behavior; never persists
@@ -357,75 +372,104 @@ export async function invokeTool(
   const retryable = definition.retry_class !== "none";
   const maxAttempts = retryable ? 1 + definition.max_retries : 1;
   let attempts = 0;
-  for (;;) {
-    attempts += 1;
-    try {
-      const raw = await withTimeout(
-        (signal) =>
-          Promise.resolve(
-            entry.handler({
-              parameters: secrets.parameters,
-              ...(request.resource === undefined ? {} : { resource: request.resource }),
-              signal,
-            }),
-          ),
-        definition.timeout_ms,
-      );
-      const output = entry.validateOutput(raw);
-      if (!output.valid) {
-        // The provider responded: the external effect applied, so the intent
-        // completes; the protocol violation itself is not retryable blindly.
-        if (intent !== null && journal !== undefined) {
-          journal.complete(intent, contentDigest(raw ?? null));
+  observe(() =>
+    context.observations?.runStarted(request.intent_id, {
+      tool: toolKey(definition),
+      phase: request.phase,
+      ...(request.resource === undefined ? {} : { resource: request.resource }),
+    }),
+  );
+  observe(() => context.observations?.runHeartbeat(request.intent_id, { attempts: 0 }));
+  const heartbeat =
+    context.observations === undefined
+      ? undefined
+      : setInterval(() => {
+          observe(() => context.observations?.runHeartbeat(request.intent_id, { attempts }));
+        }, 5_000);
+  heartbeat?.unref();
+  try {
+    for (;;) {
+      attempts += 1;
+      try {
+        const raw = await withTimeout(
+          (signal) =>
+            Promise.resolve(
+              entry.handler({
+                parameters: secrets.parameters,
+                ...(request.resource === undefined ? {} : { resource: request.resource }),
+                signal,
+              }),
+            ),
+          definition.timeout_ms,
+        );
+        const output = entry.validateOutput(raw);
+        if (!output.valid) {
+          // The provider responded: the external effect applied, so the intent
+          // completes; the protocol violation itself is not retryable blindly.
+          if (intent !== null && journal !== undefined) {
+            journal.complete(intent, contentDigest(raw ?? null));
+          }
+          throw new ToolError(
+            "invalid_output",
+            `output of tool ${definition.name} failed its schema`,
+            { issues: output.errors.map((issue) => `${issue.instancePath}: ${issue.message}`) },
+          );
         }
-        throw new ToolError(
-          "invalid_output",
-          `output of tool ${definition.name} failed its schema`,
-          { issues: output.errors.map((issue) => `${issue.instancePath}: ${issue.message}`) },
+        const { output: redacted, redacted: wasRedacted } = redactOutput(
+          definition,
+          raw,
+          secrets.values,
         );
-      }
-      const { output: redacted, redacted: wasRedacted } = redactOutput(
-        definition,
-        raw,
-        secrets.values,
-      );
-      const closed =
-        intent !== null && journal !== undefined
-          ? journal.complete(intent, contentDigest(redacted ?? null))
-          : null;
-      if (closed !== null && journal !== undefined) {
-        journal.rememberOutput(closed.intent_id, redacted);
-      }
-      return evidenceOf(definition, digest, redacted, attempts, wasRedacted, false, closed);
-    } catch (error) {
-      if (error instanceof ToolError && error.kind === "invalid_output") throw error;
-      const timedOut = error instanceof TimeoutSignal;
-      if (external) {
-        // The provider may have applied the effect; never retry blindly.
-        if (intent !== null && journal !== undefined) journal.markUncertain(intent);
-        throw new ToolError(
-          "uncertain_result",
-          `tool ${definition.name} ${timedOut ? "timed out" : "failed"} after the external ` +
-            "side effect may have been applied; the intent stays uncertain until reconciled",
-          { intent_id: request.intent_id },
+        const closed =
+          intent !== null && journal !== undefined
+            ? journal.complete(intent, contentDigest(redacted ?? null))
+            : null;
+        if (closed !== null && journal !== undefined) {
+          journal.rememberOutput(closed.intent_id, redacted);
+        }
+        observe(() =>
+          context.observations?.runOutput(
+            request.intent_id,
+            typeof redacted === "string" ? redacted : JSON.stringify(redacted ?? null),
+            { flush: true },
+          ),
         );
-      }
-      if (timedOut) {
+        return evidenceOf(definition, digest, redacted, attempts, wasRedacted, false, closed);
+      } catch (error) {
+        if (error instanceof ToolError && error.kind === "invalid_output") throw error;
+        const timedOut = error instanceof TimeoutSignal;
+        if (external) {
+          // The provider may have applied the effect; never retry blindly.
+          if (intent !== null && journal !== undefined) journal.markUncertain(intent);
+          throw new ToolError(
+            "uncertain_result",
+            `tool ${definition.name} ${timedOut ? "timed out" : "failed"} after the external ` +
+              "side effect may have been applied; the intent stays uncertain until reconciled",
+            { intent_id: request.intent_id },
+          );
+        }
+        if (timedOut) {
+          if (retryable && attempts < maxAttempts) continue;
+          throw new ToolError(
+            "timeout",
+            `tool ${definition.name} exceeded its timeout of ${String(definition.timeout_ms)}ms`,
+            { attempts },
+          );
+        }
         if (retryable && attempts < maxAttempts) continue;
-        throw new ToolError(
-          "timeout",
-          `tool ${definition.name} exceeded its timeout of ${String(definition.timeout_ms)}ms`,
-          { attempts },
+        const message = redactSecretValues(
+          error instanceof Error ? error.message : String(error),
+          secrets.values,
         );
+        observe(() =>
+          context.observations?.runOutput(request.intent_id, `error: ${message}`, { flush: true }),
+        );
+        throw new ToolError("tool_failed", `tool ${definition.name} failed: ${message}`, {
+          attempts,
+        });
       }
-      if (retryable && attempts < maxAttempts) continue;
-      const message = redactSecretValues(
-        error instanceof Error ? error.message : String(error),
-        secrets.values,
-      );
-      throw new ToolError("tool_failed", `tool ${definition.name} failed: ${message}`, {
-        attempts,
-      });
     }
+  } finally {
+    if (heartbeat !== undefined) clearInterval(heartbeat);
   }
 }
