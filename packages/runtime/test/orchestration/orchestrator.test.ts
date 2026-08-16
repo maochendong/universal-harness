@@ -1088,6 +1088,8 @@ describe("phase orchestrator", { timeout: 30000 }, () => {
       "task_beta",
       "task_gamma",
     ]);
+    expect(new Set(fake.calls.map((envelope) => envelope.context_bundle_id)).size).toBe(3);
+    expect(new Set(fake.calls.map((envelope) => envelope.context_bundle_digest)).size).toBe(3);
 
     // The graph carries three Task nodes and two DEPENDS_ON edges, and the
     // projection renders the numbered list with dependency annotations.

@@ -113,8 +113,14 @@ function verifyContextBundleBinding(
   allowedDigests: ReadonlySet<string>,
   workingState: WorkingState,
 ): void {
-  const digest = workingState.context_bundle_digest;
-  if (digest === undefined) return;
+  const digests = new Set([
+    ...(workingState.context_bundle_digest === undefined
+      ? []
+      : [workingState.context_bundle_digest]),
+    ...Object.values(workingState.context_bundle_digests ?? {}),
+  ]);
+  if (digests.size === 0) return;
+  const found = new Set<string>();
   for (const relative of listArtifactFiles(harnessRoot, "artifacts/context-bundles")) {
     let parsed: unknown;
     try {
@@ -124,19 +130,28 @@ function verifyContextBundleBinding(
     }
     if (typeof parsed !== "object" || parsed === null) continue;
     const bundle = parsed as { record_kind?: unknown; digest?: unknown; stale?: unknown };
-    if (bundle.record_kind !== "context_bundle" || bundle.digest !== digest) continue;
+    if (
+      bundle.record_kind !== "context_bundle" ||
+      typeof bundle.digest !== "string" ||
+      !digests.has(bundle.digest)
+    ) {
+      continue;
+    }
     if (bundle.stale === true) {
       throw new WorkflowError(
         "context_bundle_invalid",
-        `context bundle ${digest} is stale; recompile context before resuming`,
+        `context bundle ${bundle.digest} is stale; recompile context before resuming`,
       );
     }
-    return;
+    found.add(bundle.digest);
   }
-  throw new WorkflowError(
-    "context_bundle_invalid",
-    `context bundle ${digest} has no committed artifact`,
-  );
+  const missing = [...digests].filter((digest) => !found.has(digest));
+  if (missing.length > 0) {
+    throw new WorkflowError(
+      "context_bundle_invalid",
+      `context bundle ${missing.join(", ")} has no committed artifact`,
+    );
+  }
 }
 
 export async function resumeWorkflowOperation(

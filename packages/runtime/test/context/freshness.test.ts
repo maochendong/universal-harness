@@ -65,7 +65,7 @@ describe("stalenessReasons", () => {
     expect(stalenessReasons(manifest, vanished)).toEqual(["source code_01 is no longer available"]);
   });
 
-  it("flags requirement baseline, policy, plan and approval drift", () => {
+  it("flags requirement, policy, plan, impact coverage, task and approval drift", () => {
     const { manifest } = compile();
     for (const [bindings, reason] of [
       [
@@ -74,6 +74,8 @@ describe("stalenessReasons", () => {
       ],
       [{ ...BINDINGS, policy_digest: "2".repeat(64) }, "policy digest changed"],
       [{ ...BINDINGS, plan_digest: "3".repeat(64) }, "execution plan digest changed"],
+      [{ ...BINDINGS, impact_coverage_digest: "4".repeat(64) }, "impact coverage digest changed"],
+      [{ ...BINDINGS, task_digest: "5".repeat(64) }, "task digest changed"],
       [{ ...BINDINGS, approval_digests: [] }, "approval binding set changed"],
       [
         { ...BINDINGS, approval_digests: ["d".repeat(64), "e".repeat(64)] },

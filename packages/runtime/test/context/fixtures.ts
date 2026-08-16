@@ -14,6 +14,8 @@ export const BINDINGS: BundleBindings = {
   requirement_baseline_digest: "a".repeat(64),
   policy_digest: "b".repeat(64),
   plan_digest: "c".repeat(64),
+  impact_coverage_digest: "e".repeat(64),
+  task_digest: "f".repeat(64),
   approval_digests: ["d".repeat(64)],
 };
 
@@ -28,6 +30,7 @@ export function makeNode(id: string, type: NodeRecord["type"], revision = 1): No
     source: "human",
     provenance: { iteration_id: "iteration_01", actor: "context-test", timestamp: FIXED_NOW },
     confidence: 1,
+    locator: `graph://${id}`,
   };
   return { ...record, digest: contentDigest(record) } as unknown as NodeRecord;
 }

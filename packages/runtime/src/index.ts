@@ -297,6 +297,13 @@ export {
   type SourceExclusion,
 } from "./context/compiler.js";
 export {
+  TaskBundleBindingError,
+  assertTaskBundleBinding,
+  readContextBundleManifest,
+  type ExpectedTaskBundleBinding,
+  type TaskBundleBindingErrorKind,
+} from "./context/task-bundles.js";
+export {
   TIER_WEIGHTS,
   allocateTierBudgets,
   estimateTokens,

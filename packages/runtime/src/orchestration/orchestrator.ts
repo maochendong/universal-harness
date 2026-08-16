@@ -71,6 +71,8 @@ import {
   type ContextBundleRecord,
   type ContextCandidate,
 } from "../context/compiler.js";
+import { selectTaskNeighborhood } from "../context/selector.js";
+import { TaskBundleBindingError, assertTaskBundleBinding } from "../context/task-bundles.js";
 import { normalizeGateDefinition, type GateDefinition } from "../gates/provider.js";
 import { evidenceBindingsOf, type GateEvidenceRecord } from "../gates/evidence.js";
 import { findingClosableBy, type CurrentEvidenceState } from "../gates/freshness.js";
@@ -820,7 +822,7 @@ interface PipelineContext {
   readonly observations: ObservationPublisherPort;
   impactSet?: NodeRecord;
   plan?: { readonly node: NodeRecord; readonly content: ExecutionPlanContent };
-  bundle?: ContextBundleRecord;
+  bundles: Map<string, ContextBundleRecord>;
   envelope?: TaskEnvelope;
   run?: { readonly runId: string; readonly result: AgentRunResult };
   gateOutcome?: GateSuiteOutcome;
@@ -1098,11 +1100,17 @@ function loadPlan(
   }
 }
 
-function loadBundleRecord(ctx: PipelineContext): ContextBundleRecord | undefined {
-  const digest = ctx.workingState.context_bundle_digest;
-  if (digest === undefined) return undefined;
+function loadBundleRecords(ctx: PipelineContext): Map<string, ContextBundleRecord> {
+  const digests = new Set([
+    ...Object.values(ctx.workingState.context_bundle_digests ?? {}),
+    ...(ctx.workingState.context_bundle_digest === undefined
+      ? []
+      : [ctx.workingState.context_bundle_digest]),
+  ]);
+  const records = new Map<string, ContextBundleRecord>();
+  if (digests.size === 0) return records;
   const directory = resolveHarnessPath(harnessRoot(ctx.deps), "artifacts/context-bundles");
-  if (!existsSync(directory)) return undefined;
+  if (!existsSync(directory)) return records;
   for (const name of readdirSync(directory)
     .filter((entry) => entry.endsWith(".json"))
     .sort()) {
@@ -1110,9 +1118,9 @@ function loadBundleRecord(ctx: PipelineContext): ContextBundleRecord | undefined
       ctx.deps,
       `artifacts/context-bundles/${name}`,
     );
-    if (record?.digest === digest) return record;
+    if (record !== undefined && digests.has(record.digest)) records.set(record.task_id, record);
   }
-  return undefined;
+  return records;
 }
 
 function runResultArtifactPath(runId: string): string {
@@ -1928,9 +1936,9 @@ async function phaseContext(ctx: PipelineContext): Promise<PhaseStep> {
     throw new OrchestrationError("binding_drift", "context phase requires a committed plan");
   }
   ctx.plan = plan;
-  const stored = loadBundleRecord(ctx);
-  if (stored !== undefined) {
-    ctx.bundle = stored;
+  const stored = loadBundleRecords(ctx);
+  if (plan.content.tasks.every((task) => stored.has(task.id))) {
+    ctx.bundles = stored;
     await ctx.engine.commitCheckpoint(ctx.workflowOperationId, {
       boundary: PHASE_CHECKPOINT_BOUNDARY.context,
       proposal: { phase: "execute" },
@@ -1939,54 +1947,94 @@ async function phaseContext(ctx: PipelineContext): Promise<PhaseStep> {
     return { continue: true };
   }
   const graph = materializeProjectGraph(deps.projectRoot);
-  let compiled: CompiledContextBundle;
+  const compiled = new Map<string, CompiledContextBundle>();
   try {
-    const candidates: ContextCandidate[] = [];
-    const wanted = new Set([
-      ctx.proposal.intent.id,
-      ...ctx.proposal.requirements.map((requirement) => requirement.id),
-      plan.node.id,
-    ]);
-    for (const node of graph.nodes) {
-      if (!wanted.has(node.id)) continue;
-      candidates.push({
-        node,
-        content: canonicalizeJson(node),
-        tier: node.type === "ExecutionPlan" ? 2 : 1,
-        reason: `${node.type} ${node.id} binds this iteration`,
-      });
+    const nodeById = new Map(graph.nodes.map((node) => [node.id, node]));
+    for (const task of plan.content.tasks) {
+      const candidatesById = new Map<string, ContextCandidate>();
+      const addCandidate = (
+        nodeId: string,
+        tier: ContextCandidate["tier"],
+        reason: string,
+      ): void => {
+        const node = nodeById.get(nodeId);
+        if (node === undefined) return;
+        const existing = candidatesById.get(nodeId);
+        if (existing !== undefined && existing.tier <= tier) return;
+        candidatesById.set(nodeId, {
+          node,
+          content: canonicalizeJson(node),
+          tier,
+          reason,
+        });
+      };
+      addCandidate(ctx.proposal.intent.id, 1, "approved intent for this iteration");
+      for (const output of task.expected_outputs) {
+        addCandidate(output, 1, `expected output of ${task.id}`);
+      }
+      for (const assertion of task.assertions ?? []) {
+        for (const testId of assertion.test_ids) {
+          addCandidate(testId, 1, `accepted test for ${assertion.assertion_id}`);
+        }
+      }
+      addCandidate(plan.node.id, 2, "owning execution plan");
+      addCandidate(task.id, 2, "owning task specification");
+      for (const selection of selectTaskNeighborhood(task, graph.nodes, graph.edges)) {
+        addCandidate(selection.nodeId, 3, selection.reason);
+      }
+      compiled.set(
+        task.id,
+        compileContextBundle({
+          taskId: task.id,
+          goal: ctx.goal,
+          bindings: {
+            requirement_baseline_digest: ctx.baselineDigest,
+            policy_digest: ctx.workingState.policy_digest,
+            plan_digest: plan.content.content_digest,
+            impact_coverage_digest: plan.content.impact_coverage.digest,
+            task_digest: contentDigest(task),
+            approval_digests: ctx.workingState.approval_digests,
+          },
+          tokenBudget: deps.tokenBudget ?? DEFAULT_TOKEN_BUDGET,
+          candidates: [...candidatesById.values()],
+        }),
+      );
     }
-    compiled = compileContextBundle({
-      taskId: plan.content.tasks[0]?.id ?? "task_unknown",
-      goal: ctx.goal,
-      bindings: {
-        requirement_baseline_digest: ctx.baselineDigest,
-        policy_digest: ctx.workingState.policy_digest,
-        plan_digest: plan.content.content_digest,
-        approval_digests: ctx.workingState.approval_digests,
-      },
-      tokenBudget: deps.tokenBudget ?? DEFAULT_TOKEN_BUDGET,
-      candidates,
-    });
   } finally {
     graph.close();
   }
-  await commitArtifacts(deps, ctx.workflowOperationId, currentAttemptId(ctx), [
-    {
-      path: `artifacts/context-bundles/${compiled.record.context_bundle_id}.json`,
-      content: `${canonicalizeJson(compiled.record)}\n`,
-    },
-  ]);
-  ctx.bundle = compiled.record;
+  const orderedCompiled = [...compiled.values()].sort((left, right) =>
+    left.record.task_id.localeCompare(right.record.task_id),
+  );
+  await commitArtifacts(
+    deps,
+    ctx.workflowOperationId,
+    currentAttemptId(ctx),
+    orderedCompiled.map((bundle) => ({
+      path: `artifacts/context-bundles/${bundle.record.context_bundle_id}.json`,
+      content: `${canonicalizeJson(bundle.record)}\n`,
+    })),
+  );
+  ctx.bundles = new Map(orderedCompiled.map((bundle) => [bundle.record.task_id, bundle.record]));
+  const digestByTask = Object.fromEntries(
+    orderedCompiled.map((bundle) => [bundle.record.task_id, bundle.record.digest]),
+  );
+  const lastBundle = orderedCompiled.at(-1);
   await ctx.engine.commitCheckpoint(ctx.workflowOperationId, {
     boundary: PHASE_CHECKPOINT_BOUNDARY.context,
-    proposal: { phase: "execute", set_context_bundle_digest: compiled.record.digest },
-    events: phaseLifecycleEvents({
-      phase: "context",
-      contextBundleId: compiled.record.context_bundle_id,
-      contextBundleDigest: compiled.record.digest,
-      includedTokens: compiled.manifest.included_tokens,
-    }),
+    proposal: {
+      phase: "execute",
+      set_context_bundle_digests: digestByTask,
+      ...(lastBundle === undefined ? {} : { set_context_bundle_digest: lastBundle.record.digest }),
+    },
+    events: orderedCompiled.flatMap((bundle) =>
+      phaseLifecycleEvents({
+        phase: "context",
+        contextBundleId: bundle.record.context_bundle_id,
+        contextBundleDigest: bundle.record.digest,
+        includedTokens: bundle.manifest.included_tokens,
+      }),
+    ),
   });
   refreshWorkingState(ctx);
   return { continue: true };
@@ -2000,12 +2048,25 @@ function buildEnvelope(
   readonly grantDigest: string;
 } {
   const plan = ctx.plan;
-  const bundle = ctx.bundle;
+  const bundle = ctx.bundles.get(task.id);
   if (plan === undefined || bundle === undefined) {
     throw new OrchestrationError(
       "binding_drift",
       "execute phase requires a plan and a context bundle",
     );
+  }
+  try {
+    assertTaskBundleBinding(bundle, {
+      taskId: task.id,
+      taskDigest: contentDigest(task),
+      planDigest: plan.content.content_digest,
+      impactCoverageDigest: plan.content.impact_coverage.digest,
+    });
+  } catch (error) {
+    if (error instanceof TaskBundleBindingError) {
+      throw new OrchestrationError("binding_drift", error.message);
+    }
+    throw error;
   }
   const policy = effectivePolicy();
   const loopPolicy = resolveLoopPolicy(policy);
@@ -2130,8 +2191,7 @@ async function phaseExecute(ctx: PipelineContext): Promise<PhaseStep> {
   if (plan === undefined)
     throw new OrchestrationError("binding_drift", "execute phase requires a plan");
   ctx.plan = plan;
-  const storedBundle = ctx.bundle ?? loadBundleRecord(ctx);
-  if (storedBundle !== undefined) ctx.bundle = storedBundle;
+  if (ctx.bundles.size === 0) ctx.bundles = loadBundleRecords(ctx);
   const tasks = orderedPlanTasks(plan.content.tasks);
   if (tasks.length === 0) throw new OrchestrationError("configuration", "plan carries no tasks");
 
@@ -2304,8 +2364,10 @@ function verifyBindings(ctx: PipelineContext): VerifyPhaseArtifact["bindings"] {
   if (impactSet !== undefined) ctx.impactSet = impactSet;
   const plan = ctx.plan ?? loadPlan(ctx);
   if (plan !== undefined) ctx.plan = plan;
-  const bundle = ctx.bundle ?? loadBundleRecord(ctx);
-  if (bundle !== undefined) ctx.bundle = bundle;
+  if (ctx.bundles.size === 0) ctx.bundles = loadBundleRecords(ctx);
+  const bundle = [...ctx.bundles.values()]
+    .sort((left, right) => left.task_id.localeCompare(right.task_id))
+    .at(-1);
   const planDigest = plan?.content.content_digest;
   return {
     artifact_digests: [
@@ -3936,6 +3998,7 @@ async function buildPipelineContext(
     workingState,
     proposal: captured.proposal,
     baselineDigest,
+    bundles: new Map(),
     observations:
       deps.createObservationPublisher?.(identity) ??
       new ObservationPublisher(new FileLiveSpool(deps.projectRoot), identity),

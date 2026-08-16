@@ -55,6 +55,12 @@ export function stalenessReasons(
   if (expected.plan_digest !== actual.plan_digest) {
     reasons.push("execution plan digest changed");
   }
+  if (expected.impact_coverage_digest !== actual.impact_coverage_digest) {
+    reasons.push("impact coverage digest changed");
+  }
+  if (expected.task_digest !== actual.task_digest) {
+    reasons.push("task digest changed");
+  }
   const expectedApprovals = [...expected.approval_digests].sort();
   const actualApprovals = [...actual.approval_digests].sort();
   if (JSON.stringify(expectedApprovals) !== JSON.stringify(actualApprovals)) {

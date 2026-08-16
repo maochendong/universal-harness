@@ -45,6 +45,8 @@ export interface BundleBindings {
   readonly requirement_baseline_digest: string;
   readonly policy_digest: string;
   readonly plan_digest: string;
+  readonly impact_coverage_digest: string;
+  readonly task_digest: string;
   readonly approval_digests: readonly string[];
 }
 
@@ -64,10 +66,12 @@ export interface ContextCandidate {
 export interface SourceExclusion {
   readonly nodeId: string;
   readonly reason: string;
+  readonly locator?: string;
 }
 
 export interface ContextSourceEntry {
   readonly node_id: string;
+  readonly locator: string;
   readonly revision: number;
   /** Source content digest at compile time; drift invalidates the bundle. */
   readonly digest: string;
@@ -83,6 +87,7 @@ export interface ContextSourceEntry {
 
 export interface ExcludedSource {
   readonly node_id: string;
+  readonly locator: string;
   readonly reason: string;
 }
 
@@ -160,7 +165,12 @@ export function compileContextBundle(input: CompileContextInput): CompiledContex
   const callerExclusions = new Map<string, string>();
   for (const exclusion of input.exclusions ?? []) {
     callerExclusions.set(exclusion.nodeId, exclusion.reason);
-    exclusions.push({ node_id: exclusion.nodeId, reason: exclusion.reason });
+    const candidate = input.candidates.find((item) => item.node.id === exclusion.nodeId);
+    exclusions.push({
+      node_id: exclusion.nodeId,
+      locator: exclusion.locator ?? candidate?.node.locator ?? `node://${exclusion.nodeId}`,
+      reason: exclusion.reason,
+    });
   }
 
   // Deterministic candidate order; a node offered twice keeps its highest
@@ -174,7 +184,11 @@ export function compileContextBundle(input: CompileContextInput): CompiledContex
     assertProtectedFieldsPresent(candidate.id, candidate.content, candidate.protectedFields ?? []);
     if (callerExclusions.has(candidate.id)) continue;
     if (seen.has(candidate.id)) {
-      exclusions.push({ node_id: candidate.id, reason: "duplicate_source" });
+      exclusions.push({
+        node_id: candidate.id,
+        locator: candidate.node.locator ?? `node://${candidate.id}`,
+        reason: "duplicate_source",
+      });
       continue;
     }
     seen.add(candidate.id);
@@ -195,13 +209,18 @@ export function compileContextBundle(input: CompileContextInput): CompiledContex
       candidate.protectedFields ?? [],
     );
     if (result.content.length === 0 && candidate.content.length > 0) {
-      exclusions.push({ node_id: candidate.id, reason: "budget_exhausted" });
+      exclusions.push({
+        node_id: candidate.id,
+        locator: candidate.node.locator ?? `node://${candidate.id}`,
+        reason: "budget_exhausted",
+      });
       continue;
     }
     remaining.set(candidate.tier, Math.max(0, tierBudget - result.includedTokens));
     compressedContent.set(candidate.id, result.content);
     entries.push({
       node_id: candidate.id,
+      locator: candidate.node.locator ?? `node://${candidate.id}`,
       revision: candidate.node.revision,
       digest: sha256Hex(candidate.content),
       knowledge_layer: knowledgeLayerFor(candidate.node.type),
@@ -238,6 +257,8 @@ export function compileContextBundle(input: CompileContextInput): CompiledContex
       requirement_baseline_digest: input.bindings.requirement_baseline_digest,
       policy_digest: input.bindings.policy_digest,
       plan_digest: input.bindings.plan_digest,
+      impact_coverage_digest: input.bindings.impact_coverage_digest,
+      task_digest: input.bindings.task_digest,
       approval_digests: [...input.bindings.approval_digests].sort(),
     },
     token_budget: input.tokenBudget,
@@ -260,6 +281,7 @@ export function compileContextBundle(input: CompileContextInput): CompiledContex
     source_digests: [...new Set(entries.map((entry) => entry.digest))].sort(),
     digest: manifest.content_digest,
     stale: false,
+    extensions: { [CONTEXT_EXTENSION_KEY]: manifest },
   };
   const validation = validateSchema("runtime", record);
   if (!validation.valid) {

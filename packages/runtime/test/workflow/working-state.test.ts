@@ -94,6 +94,24 @@ describe("typed WorkingState proposals", () => {
     });
     expect(completed.external_action_intents).toEqual([{ ...intent, status: "completed" }]);
   });
+
+  it("persists task-local context bundle digests without collapsing them", () => {
+    const digests = {
+      task_alpha: "a".repeat(64),
+      task_beta: "b".repeat(64),
+      task_gamma: "c".repeat(64),
+    };
+    const next = applyWorkingStateProposal(baseState(), {
+      set_context_bundle_digest: digests.task_gamma,
+      set_context_bundle_digests: digests,
+    });
+    expect(next.context_bundle_digests).toEqual(digests);
+    expect(next.context_bundle_digest).toBe(digests.task_gamma);
+    expect(isWorkingState(next)).toBe(true);
+    expect(
+      isWorkingState({ ...next, context_bundle_digests: { task_alpha: "not-a-digest" } }),
+    ).toBe(false);
+  });
 });
 
 describe("WorkingState writer discipline", () => {

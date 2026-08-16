@@ -41,6 +41,7 @@ describe("compileContextBundle", () => {
     const requirement = manifest.entries[0];
     expect(requirement).toMatchObject({
       node_id: "requirement_01",
+      locator: "graph://requirement_01",
       revision: 1,
       knowledge_layer: "none",
       reason: "reason for requirement_01",
@@ -60,6 +61,7 @@ describe("compileContextBundle", () => {
     expect(record.source_digests).toEqual(
       [...new Set(manifest.entries.map((entry) => entry.digest))].sort(),
     );
+    expect(record.extensions?.["harness.context"]).toEqual(manifest);
     expect(validateSchema("runtime", record).valid).toBe(true);
   });
 
@@ -122,6 +124,9 @@ describe("compileContextBundle", () => {
     expect(byId.get("code_01")).toBe("duplicate_source");
     // Tier 5 gets 10 percent of 40 tokens; the 400 character finding cannot fit.
     expect(byId.get("finding_01")).toBe("budget_exhausted");
+    expect(compiled.manifest.exclusions.every((exclusion) => exclusion.locator.length > 0)).toBe(
+      true,
+    );
     expect(compiled.manifest.entries.map((entry) => entry.node_id)).toEqual([
       "requirement_01",
       "code_01",

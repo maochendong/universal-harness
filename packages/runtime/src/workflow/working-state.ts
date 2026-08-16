@@ -60,6 +60,8 @@ export interface WorkingState {
   /** SHA-256 of each committed approval decision artifact still relied on. */
   readonly approval_digests: readonly string[];
   readonly context_bundle_digest?: string;
+  /** Task id -> task-local ContextBundle digest. Absent on legacy checkpoints. */
+  readonly context_bundle_digests?: Readonly<Record<string, string>>;
   readonly input_digests: readonly string[];
   readonly external_action_intents: readonly ExternalActionIntent[];
 }
@@ -84,6 +86,7 @@ export interface WorkingStateProposal {
   readonly add_capability_grants?: readonly string[];
   readonly add_approval_digests?: readonly string[];
   readonly set_context_bundle_digest?: string;
+  readonly set_context_bundle_digests?: Readonly<Record<string, string>>;
   readonly add_input_digests?: readonly string[];
   readonly upsert_external_action_intents?: readonly ExternalActionIntent[];
 }
@@ -213,6 +216,9 @@ export function applyWorkingStateProposal(
     ...(proposal.set_context_bundle_digest === undefined
       ? {}
       : { context_bundle_digest: proposal.set_context_bundle_digest }),
+    ...(proposal.set_context_bundle_digests === undefined
+      ? {}
+      : { context_bundle_digests: { ...proposal.set_context_bundle_digests } }),
     input_digests: uniqueStrings([...state.input_digests, ...(proposal.add_input_digests ?? [])]),
     external_action_intents: [...intents.values()],
   };
@@ -231,6 +237,18 @@ function isStringArray(value: unknown): value is string[] {
 
 function isDigestArray(value: unknown): boolean {
   return isStringArray(value) && value.every((entry) => DIGEST_PATTERN.test(entry));
+}
+
+function isDigestMap(value: unknown): value is Record<string, string> {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    !Array.isArray(value) &&
+    Object.entries(value).every(
+      ([taskId, digest]) =>
+        taskId.length > 0 && typeof digest === "string" && DIGEST_PATTERN.test(digest),
+    )
+  );
 }
 
 function isFactArray(value: unknown): value is ConfirmedFact[] {
@@ -320,6 +338,7 @@ export function isWorkingState(value: unknown): value is WorkingState {
     isDigestArray(state.approval_digests) &&
     (state.context_bundle_digest === undefined ||
       DIGEST_PATTERN.test(state.context_bundle_digest)) &&
+    (state.context_bundle_digests === undefined || isDigestMap(state.context_bundle_digests)) &&
     isDigestArray(state.input_digests) &&
     isIntentArray(state.external_action_intents)
   );
