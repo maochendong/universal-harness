@@ -19,10 +19,32 @@ export function runStatusCommand(args: readonly string[], context: CommandContex
   }
   const projectRoot = requireProjectRoot(context.cwd);
   const status = collectProjectStatus(projectRoot);
+  const openGroups = status.finding_groups.filter((group) => group.open_count > 0);
+  const nextAction =
+    openGroups.length > 0 && /(?:blocking|warning) finding /u.test(status.next_action)
+      ? `review finding group ${openGroups[0]?.group_id ?? "unknown"}`
+      : status.next_action;
+  const data: Record<string, unknown> = context.json
+    ? { ...status }
+    : {
+        ...Object.fromEntries(
+          Object.entries(status).filter(
+            ([key]) => key !== "blockers" && key !== "warnings" && key !== "finding_groups",
+          ),
+        ),
+        ...(status.blockers.filter((blocker) => !/^blocking finding /u.test(blocker)).length === 0
+          ? {}
+          : {
+              blockers: status.blockers.filter((blocker) => !/^blocking finding /u.test(blocker)),
+            }),
+        finding_group_count: openGroups.length,
+        finding_groups: openGroups,
+        next_action: nextAction,
+      };
   return {
     command: "status",
     status: "ok",
-    message: `project ${status.name}: ${status.committed_operations} committed operations, graph cache ${status.graph_cache}; next: ${status.next_action}`,
-    data: { ...status },
+    message: `project ${status.name}: ${status.committed_operations} committed operations, graph cache ${status.graph_cache}; next: ${nextAction}`,
+    data,
   };
 }

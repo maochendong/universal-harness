@@ -19,6 +19,7 @@ import type { ControlLevel } from "../policy/action.js";
 import { readApprovalDecisions } from "../approval/request.js";
 import { latestValidCheckpoint } from "../workflow/checkpoint.js";
 import type { BudgetUse } from "../workflow/working-state.js";
+import { projectFindingGroups, type FindingGroupProjection } from "../finding/groups.js";
 
 /**
  * Project status (design 11.2 `harness status`, plan Task 22). The report is
@@ -48,6 +49,7 @@ export interface ProjectStatus {
   readonly blockers: readonly string[];
   /** Non-blocking findings the iteration should surface but not be held by. */
   readonly warnings: readonly string[];
+  readonly finding_groups: readonly FindingGroupProjection[];
   readonly stale_evidence: readonly string[];
   readonly pending_approvals: readonly string[];
   readonly budget?: BudgetUse;
@@ -77,6 +79,7 @@ export interface DerivedStatus {
   readonly evaluation_coverage: { readonly evaluated: number; readonly total: number };
   readonly blockers: readonly string[];
   readonly warnings: readonly string[];
+  readonly finding_groups: readonly FindingGroupProjection[];
   readonly stale_evidence: readonly string[];
   readonly pending_approvals: readonly string[];
   readonly budget?: BudgetUse;
@@ -408,6 +411,7 @@ export function deriveProjectStatus(input: StatusDerivationInput): DerivedStatus
     evaluation_coverage: coverage,
     blockers,
     warnings: allWarnings,
+    finding_groups: projectFindingGroups(nodes),
     stale_evidence: staleEvidence,
     pending_approvals: pendingApprovals,
     ...(input.workingState === undefined ? {} : { budget: input.workingState.budget }),

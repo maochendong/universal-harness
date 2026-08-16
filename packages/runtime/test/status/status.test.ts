@@ -242,6 +242,74 @@ describe("deriveProjectStatus", () => {
     expect(status.next_action).toBe("repair blocker: blocking finding finding_01");
   });
 
+  it("projects Atlas-scale Findings into stable groups while preserving legacy arrays", () => {
+    const staleFindings = Array.from({ length: 52 }, (_, index) => {
+      const suffix = String(index + 1).padStart(2, "0");
+      return makeNode({
+        id: `finding_stale-${suffix}`,
+        type: "Finding",
+        status: "proposed",
+        extensions: {
+          "harness.finding": {
+            origin: "audit",
+            blocking: false,
+            blocks: [],
+            rule: "audit/stale_knowledge",
+            scope_prefix: "project/repository_atlas/knowledge",
+            severity: "warning",
+            actionability: "auto_close",
+            subject_ids: [`node_${suffix}`],
+            subject_digests: [],
+          },
+        },
+      });
+    });
+    const designFinding = makeNode({
+      id: "finding_design-01",
+      type: "Finding",
+      status: "proposed",
+      extensions: {
+        "harness.finding": {
+          origin: "audit",
+          blocking: false,
+          blocks: [],
+          rule: "audit/missing_design_artifact",
+          scope_prefix: "project/repository_atlas/design",
+          severity: "warning",
+          actionability: "human_review",
+          subject_ids: ["design"],
+          subject_digests: [],
+        },
+      },
+    });
+
+    const status = deriveProjectStatus({ nodes: [...staleFindings, designFinding], edges: [] });
+
+    expect(status.warnings).toHaveLength(53);
+    expect(status.finding_groups).toHaveLength(2);
+    expect(status.finding_groups).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          rule: "audit/stale_knowledge",
+          open_count: 52,
+          member_count: 52,
+          samples: [
+            "finding_stale-01",
+            "finding_stale-02",
+            "finding_stale-03",
+            "finding_stale-04",
+            "finding_stale-05",
+          ],
+        }),
+        expect.objectContaining({
+          rule: "audit/missing_design_artifact",
+          open_count: 1,
+          samples: ["finding_design-01"],
+        }),
+      ]),
+    );
+  });
+
   it("drops working-state approval blockers once the request is resolved", () => {
     const base = {
       nodes: [

@@ -73,6 +73,10 @@ import {
 import { normalizeGateDefinition, type GateDefinition } from "../gates/provider.js";
 import { evidenceBindingsOf, type GateEvidenceRecord } from "../gates/evidence.js";
 import { findingClosableBy, type CurrentEvidenceState } from "../gates/freshness.js";
+import {
+  buildFindingGovernanceMetadata,
+  findingGovernanceForAudit,
+} from "../finding/governance.js";
 import { runGateSuite, type GateSuiteOutcome } from "../gates/runner.js";
 import { ProjectionError, writeManagedOutput } from "../projection/managed-output.js";
 import { issueGrant } from "../policy/capability-grant.js";
@@ -2389,6 +2393,7 @@ async function phaseVerify(
   } else {
     outcome = await runGateSuite(registry, {
       iterationId: ctx.iterationId,
+      repositoryId: readManagedManifest(deps.projectRoot).repository_id,
       gates,
       bindings: {
         artifact_digests: bindings.artifact_digests,
@@ -2629,6 +2634,10 @@ function buildAuditFindingArtifacts(
   const { deps } = ctx;
   const feedbackPath = `artifacts/findings/${id}/proposed.json`;
   const auditExtension = { kind: finding.kind, subjects: [...finding.subjects] };
+  const governance = findingGovernanceForAudit(
+    finding,
+    readManagedManifest(deps.projectRoot).repository_id,
+  );
   // A non-blocking finding blocks nothing: no BLOCKS edge, empty subject.
   const blocks = finding.blocking ? [ctx.iterationId] : [];
   // The committed feedback record wins: a later iteration must reuse its
@@ -2652,6 +2661,7 @@ function buildAuditFindingArtifacts(
           violates: [],
           blocks,
           evidence: [],
+          ...governance,
         },
         "harness.audit": auditExtension,
       },
@@ -2682,6 +2692,7 @@ function buildAuditFindingArtifacts(
         violates: [],
         blocks,
         evidence: [],
+        ...governance,
       },
       "harness.audit": auditExtension,
     },
@@ -3103,6 +3114,30 @@ async function evaluateTaskRun(
         content: `${canonicalizeJson(result.record)}\n`,
       },
       ...result.findings.map((finding) => {
+        const evaluationExtensionValue =
+          typeof result.record["extensions"] === "object" && result.record["extensions"] !== null
+            ? (result.record["extensions"] as Record<string, unknown>)["harness.evaluation"]
+            : undefined;
+        const evaluationExtension =
+          typeof evaluationExtensionValue === "object" && evaluationExtensionValue !== null
+            ? (evaluationExtensionValue as Record<string, unknown>)
+            : {};
+        const caseId =
+          typeof evaluationExtension["case_id"] === "string"
+            ? evaluationExtension["case_id"]
+            : `case_${taskId.slice("task_".length)}`;
+        const evidenceDigest = result.record["digest"];
+        const governance = buildFindingGovernanceMetadata({
+          rule: "evaluation/failure",
+          scopePrefix: `project/${readManagedManifest(deps.projectRoot).repository_id}/evaluation/${caseId}`,
+          severity: "blocker",
+          actionability: "human_review",
+          subjectIds: [taskId],
+          subjectDigests:
+            typeof evidenceDigest === "string" && /^[a-f0-9]{64}$/u.test(evidenceDigest)
+              ? [evidenceDigest]
+              : [],
+        });
         const content = {
           protocol_version: PROTOCOL_VERSION,
           record_kind: "feedback",
@@ -3112,6 +3147,16 @@ async function evaluateTaskRun(
           status: "proposed",
           summary: finding.summary,
           created_at: nowOf(deps),
+          extensions: {
+            "harness.finding": {
+              origin: "evaluation",
+              blocking: true,
+              violates: [taskId],
+              blocks: [ctx.iterationId],
+              evidence: [result.evidenceId],
+              ...governance,
+            },
+          },
         };
         const record = { ...content, digest: contentDigest(content) };
         const validation = validateSchema("feedback", record);

@@ -9,6 +9,7 @@ import type { ToolInvocationContext } from "../tools/invocation.js";
 import type { ToolRegistry } from "../tools/registry.js";
 import { buildGateEvidence, type EvidenceBindings, type GateEvidenceRecord } from "./evidence.js";
 import { isEvidenceStale, type CurrentEvidenceState } from "./freshness.js";
+import { buildFindingGovernanceMetadata } from "../finding/governance.js";
 import {
   GATE_LAYERS,
   GateError,
@@ -34,6 +35,7 @@ export interface GateRunResult {
 
 export interface GateSuiteSpec {
   readonly iterationId: string;
+  readonly repositoryId: string;
   readonly gates: readonly GateDefinition[];
   /**
    * Inputs every gate in the suite ran against; the runner injects each
@@ -48,7 +50,7 @@ export interface GateSuiteSpec {
 
 export interface GateSuiteOutcome {
   readonly results: readonly GateRunResult[];
-  /** One proposed Finding per failed mandatory gate, in run order. */
+  /** One governed proposed Finding per failed gate, in run order. */
   readonly findings: readonly FeedbackRecord[];
   /** True only when every mandatory gate passed with non-provisional evidence. */
   readonly completed_allowed: boolean;
@@ -78,10 +80,28 @@ function buildGateFinding(
   gate: GateDefinition,
   outcome: GateOutcome,
 ): FeedbackRecord {
-  const summary = `Mandatory ${gate.layer} gate ${gate.gate_id} failed: ${outcome.summary}`.slice(
-    0,
-    FINDING_SUMMARY_LIMIT,
-  );
+  const severity = gate.mandatory ? "blocker" : "warning";
+  const governance = buildFindingGovernanceMetadata({
+    rule: "gate/failure",
+    scopePrefix: `project/${spec.repositoryId}/gate/${gate.gate_id}`,
+    severity,
+    actionability: "human_review",
+    subjectIds: [gate.subject_id],
+    subjectDigests: [
+      ...spec.bindings.artifact_digests,
+      ...spec.bindings.code_digests,
+      ...spec.bindings.evaluation_case_digests,
+      spec.bindings.policy_digest,
+      ...(spec.bindings.context_bundle_digest === undefined
+        ? []
+        : [spec.bindings.context_bundle_digest]),
+    ],
+  });
+  const summary =
+    `${gate.mandatory ? "Mandatory" : "Advisory"} ${gate.layer} gate ${gate.gate_id} failed: ${outcome.summary}`.slice(
+      0,
+      FINDING_SUMMARY_LIMIT,
+    );
   const content = {
     protocol_version: PROTOCOL_VERSION,
     record_kind: "feedback",
@@ -91,6 +111,16 @@ function buildGateFinding(
     status: "proposed",
     summary,
     created_at: spec.clock(),
+    extensions: {
+      "harness.finding": {
+        origin: "test",
+        blocking: gate.mandatory,
+        violates: [gate.subject_id],
+        blocks: gate.mandatory ? [spec.iterationId] : [],
+        evidence: [`evidence_${idSuffix(gate)}`],
+        ...governance,
+      },
+    },
   };
   const record = { ...content, digest: contentDigest(content) };
   const validation = validateSchema("feedback", record);
@@ -128,7 +158,7 @@ export async function runGateSuite(
       bindings: { ...spec.bindings, gate_digest: gate.digest },
     });
     results.push({ gate, outcome, evidence });
-    if (gate.mandatory && !outcome.passed) {
+    if (!outcome.passed) {
       findings.push(buildGateFinding(spec, gate, outcome));
     }
   }

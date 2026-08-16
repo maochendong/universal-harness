@@ -42,6 +42,7 @@ function gate(
 function suiteSpec(gates: readonly GateDefinition[]): GateSuiteSpec {
   return {
     iterationId: "iteration_01",
+    repositoryId: "repository_01",
     gates,
     bindings: {
       artifact_digests: [BINDING_DIGESTS.artifact],
@@ -153,7 +154,7 @@ describe("runGateSuite", () => {
     expect(completionBlockers(outcome)[0]).toContain("gate_build");
   });
 
-  it("records advisory failures as evidence without findings or blocking", async () => {
+  it("records advisory failures as non-blocking governed Findings", async () => {
     const registry = new ToolRegistry();
     registry.register(gateTool("run_lint"), failingHandler());
     const gates = [gate("gate_lint", "project", "run_lint", false)];
@@ -161,7 +162,23 @@ describe("runGateSuite", () => {
     const outcome = await runGateSuite(registry, suiteSpec(gates));
 
     expect(outcome.completed_allowed).toBe(true);
-    expect(outcome.findings).toEqual([]);
+    expect(outcome.findings).toEqual([
+      expect.objectContaining({
+        status: "proposed",
+        summary: expect.stringContaining("Advisory"),
+        extensions: {
+          "harness.finding": expect.objectContaining({
+            origin: "test",
+            blocking: false,
+            rule: "gate/failure",
+            scope_prefix: "project/repository_01/gate/gate_lint",
+            severity: "warning",
+            actionability: "human_review",
+            subject_ids: ["test_smoke"],
+          }),
+        },
+      }),
+    ]);
     expect(outcome.results[0]?.outcome.passed).toBe(false);
     expect(completionBlockers(outcome)).toEqual([]);
   });

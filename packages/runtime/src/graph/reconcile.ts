@@ -10,6 +10,7 @@ import {
   contentDigest,
   harnessRootFor,
   readCommittedOperations,
+  readManagedManifest,
   resolveHarnessPath,
   sha256Hex,
   ulid,
@@ -25,6 +26,7 @@ import {
 } from "@universal-harness-internal/graph";
 
 import { auditGraph, type AuditFinding } from "../audit/auditor.js";
+import { findingGovernanceForAudit } from "../finding/governance.js";
 import { hashWorktreeCode, resolveSnapshotSourceCommit } from "../snapshot/anchor.js";
 import type { SnapshotRecord } from "../snapshot/builder.js";
 
@@ -561,6 +563,7 @@ export async function reconcileProjectGraph(
   const virtualNodes = [...currentNodes.values()].filter((node) => node.status !== "tombstoned");
   const virtualEdges = [...activeEdges.values()];
   const report = auditGraph({ nodes: virtualNodes, edges: virtualEdges });
+  const repositoryId = readManagedManifest(deps.projectRoot).repository_id;
   const liveFindingIds = new Set(report.findings.map(auditFindingId));
   const latestIteration = virtualNodes
     .filter((node) => node.type === "Iteration")
@@ -577,6 +580,7 @@ export async function reconcileProjectGraph(
       continue;
     }
     const blocks = finding.blocking ? [latestIteration.id] : [];
+    const governance = findingGovernanceForAudit(finding, repositoryId);
     const feedbackContent: Record<string, unknown> = {
       protocol_version: PROTOCOL_VERSION,
       record_kind: "feedback",
@@ -593,6 +597,7 @@ export async function reconcileProjectGraph(
           violates: [],
           blocks,
           evidence: [],
+          ...governance,
         },
         "harness.audit": { kind: finding.kind, subjects: [...finding.subjects] },
       },
@@ -624,6 +629,7 @@ export async function reconcileProjectGraph(
           violates: [],
           blocks,
           evidence: [],
+          ...governance,
         },
         "harness.audit": { kind: finding.kind, subjects: [...finding.subjects] },
       },

@@ -483,6 +483,17 @@ describe("phase orchestrator", { timeout: 30000 }, () => {
     for (const id of designFindingIds) {
       expect(status.warnings).toContain(`warning finding ${id}`);
     }
+    expect(status.finding_groups).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          rule: "audit/missing_design_artifact",
+          scope_prefix: `project/${bootstrapped.value.repositoryId}/design`,
+          severity: "warning",
+          actionability: "human_review",
+          open_count: designFindingIds.length,
+        }),
+      ]),
+    );
 
     // A second iteration re-runs the audit: the same gaps dedupe to the same
     // Finding ids (still revision 1, same feedback record) instead of
@@ -2221,6 +2232,27 @@ describe("phase orchestrator", { timeout: 30000 }, () => {
     expect(outcome.status).toBe("blocked");
     if (outcome.status !== "blocked") return;
     expect(outcome.reason).toBe("repairable_gate_failure");
+    const findingRecord = JSON.parse(
+      readFileSync(
+        join(
+          projectRoot,
+          ".harness",
+          "artifacts",
+          "findings",
+          "finding_eval_once",
+          "proposed.json",
+        ),
+        "utf8",
+      ),
+    ) as { extensions?: Record<string, unknown> };
+    expect(findingRecord.extensions?.["harness.finding"]).toMatchObject({
+      origin: "evaluation",
+      blocking: true,
+      rule: "evaluation/failure",
+      scope_prefix: expect.stringMatching(/^project\/.+\/evaluation\/case_/u),
+      severity: "blocker",
+      actionability: "human_review",
+    });
 
     outcome = await resumeIteration(deps, outcome.workflowOperationId, undefined);
     expect(outcome.status).toBe("completed");

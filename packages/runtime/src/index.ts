@@ -26,6 +26,19 @@ export {
   type UnknownItem,
 } from "./bootstrap/scanner.js";
 export {
+  FINDING_ACTIONABILITIES,
+  FINDING_SEVERITIES,
+  FindingGovernanceError,
+  buildFindingGovernanceMetadata,
+  findingGovernanceForAudit,
+  readFindingGovernance,
+  type FindingActionability,
+  type FindingGovernanceInput,
+  type FindingGovernanceMetadata,
+  type FindingSeverity,
+} from "./finding/governance.js";
+export { projectFindingGroups, type FindingGroupProjection } from "./finding/groups.js";
+export {
   discardStagedDocuments,
   readStagedDocument,
   stagedPreviewDigest,
