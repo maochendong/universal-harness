@@ -562,6 +562,19 @@ export function createDashboardRouter(options: DashboardRouterOptions) {
         );
         return;
       }
+      if (url.pathname === "/api/v1/semantic-proposals") {
+        queryKeys(url.searchParams, new Set(["cursor", "limit"]));
+        const cursor = one(url.searchParams, "cursor");
+        const limit = integer(one(url.searchParams, "limit"), "limit", 1, 500);
+        sendJson(
+          response,
+          options.readApi.semanticProposals({
+            ...(cursor === undefined ? {} : { cursor: identifier(cursor, "cursor") }),
+            ...(limit === undefined ? {} : { limit }),
+          }),
+        );
+        return;
+      }
       if (url.pathname === "/api/v1/evidence") {
         queryKeys(url.searchParams, new Set(["cursor", "limit", "status", "iteration"]));
         const status = one(url.searchParams, "status");

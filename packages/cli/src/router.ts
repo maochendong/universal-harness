@@ -101,6 +101,7 @@ export interface FindingGroupRequest {
 export interface ImpactRequest {
   readonly projectRoot: string;
   readonly target?: string;
+  readonly semantic: boolean;
 }
 
 export interface ProjectRequest {
@@ -320,10 +321,11 @@ repaired and requires --evidence with a passing, non-provisional, still
 current evidence id. Resolutions are ledger-backed and keep the audit
 history.
 `,
-  impact: `Usage: harness impact [node-id] [--json]
+  impact: `Usage: harness impact [node-id] [--semantic] [--json]
 
 Preview the ImpactSet a change on the given (or latest) seed node would
-produce over the current artifact graph. Read-only.
+produce over the current artifact graph. --semantic additionally stages
+digest-bound MAY_IMPACT proposals; it never activates graph edges.
 `,
   plan: `Usage: harness plan [--json]
 

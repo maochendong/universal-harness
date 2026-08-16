@@ -10,6 +10,8 @@ export * from "./migrations/runner.js";
 export * from "./query-port.js";
 export * from "./read-ports.js";
 export * from "./rebuild.js";
+export * from "./semantic/extractor.js";
+export * from "./semantic/index.js";
 export * from "./sqlite/database.js";
 export * from "./views/artifact-graph.js";
 export * from "./views/execution-graph.js";

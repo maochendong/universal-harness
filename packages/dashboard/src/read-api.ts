@@ -1,3 +1,4 @@
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
 
 import {
@@ -43,6 +44,10 @@ export interface DashboardReadApi {
     readonly cursor?: string;
     readonly limit?: number;
   }): DashboardPage<unknown>;
+  semanticProposals(query: {
+    readonly cursor?: string;
+    readonly limit?: number;
+  }): DashboardPage<unknown>;
 }
 
 function page<T>(value: { readonly items: T[]; readonly nextCursor?: string }): DashboardPage<T> {
@@ -69,6 +74,10 @@ function mapQueryError(error: unknown): never {
 }
 
 export function createDashboardReadApi(projectRoot: string): DashboardReadApi {
+  const semanticProposalDirectory = resolveHarnessPath(
+    harnessRootFor(projectRoot),
+    "artifacts/edge-proposals",
+  );
   const databasePath = resolveHarnessPath(
     harnessRootFor(projectRoot),
     GRAPH_DATABASE_RELATIVE_PATH,
@@ -186,5 +195,52 @@ export function createDashboardReadApi(projectRoot: string): DashboardReadApi {
           ...(groups.length > limit && last !== undefined ? { next_cursor: last.group_id } : {}),
         };
       }),
+    semanticProposals: (query) => {
+      const limit = query.limit ?? 50;
+      if (!existsSync(semanticProposalDirectory)) return { items: [] };
+      const proposals = readdirSync(semanticProposalDirectory)
+        .filter((name) => name.endsWith(".json"))
+        .sort()
+        .flatMap((name) => {
+          try {
+            const value = JSON.parse(
+              readFileSync(resolveHarnessPath(semanticProposalDirectory, name), "utf8"),
+            ) as {
+              edge?: { id?: string; source_id?: string; target_id?: string; confidence?: number };
+              preview_digest?: string;
+              suggestion?: { score?: { millionths?: number }; reason?: string };
+            };
+            if (
+              value.edge?.id === undefined ||
+              value.edge.source_id === undefined ||
+              value.edge.target_id === undefined ||
+              value.preview_digest === undefined ||
+              value.suggestion?.score?.millionths === undefined
+            ) {
+              return [];
+            }
+            return [
+              {
+                edge_id: value.edge.id,
+                source_node_id: value.edge.source_id,
+                candidate_node_id: value.edge.target_id,
+                score: value.suggestion.score.millionths,
+                reason: value.suggestion.reason ?? "semantic feature overlap",
+                preview_digest: value.preview_digest,
+                approve_command: `harness graph approve-edge ${value.edge.id} --digest ${value.preview_digest}`,
+              },
+            ];
+          } catch {
+            return [];
+          }
+        })
+        .filter((proposal) => query.cursor === undefined || proposal.edge_id > query.cursor);
+      const items = proposals.slice(0, limit);
+      const last = items.at(-1);
+      return {
+        items,
+        ...(proposals.length > limit && last !== undefined ? { next_cursor: last.edge_id } : {}),
+      };
+    },
   };
 }

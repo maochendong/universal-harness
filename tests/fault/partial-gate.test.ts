@@ -19,8 +19,8 @@ import {
 /**
  * Partial gate failure fault injection (design 13.6, 15.2; completion rules
  * 15-16). A suite with mixed outcomes keeps running to completion: every gate
- * produces evidence, failed mandatory gates append proposed Findings and
- * block completion, advisory failures are recorded but block nothing, a gate
+ * produces evidence, every failed gate appends a proposed Finding, mandatory
+ * failures block completion while advisory Findings remain warnings, a gate
  * whose tool cannot run fails closed, and provisional mandatory evidence
  * never satisfies completion.
  */
@@ -58,7 +58,7 @@ function suite(gates: readonly GateDefinition[], provisional = false) {
 }
 
 describe("partial gate failure", () => {
-  it("runs every gate, findings only for failed mandatory gates", async () => {
+  it("runs every gate and records blocking plus advisory failures", async () => {
     const registry = new ToolRegistry();
     registry.register(gateTool("unit_tests"), passingHandler());
     registry.register(gateTool("lint"), failingHandler());
@@ -86,11 +86,14 @@ describe("partial gate failure", () => {
     ]);
     expect(outcome.results.every((result) => result.evidence.evidence_id.length > 0)).toBe(true);
 
-    // One proposed Finding for the failed mandatory gate; the advisory
-    // failure is evidence-only.
-    expect(outcome.findings).toHaveLength(1);
-    expect(outcome.findings[0]?.summary).toContain("gate_lint");
-    expect(outcome.findings[0]?.status).toBe("proposed");
+    // Both failures become governable Findings, but only the mandatory one
+    // participates in completion blockers.
+    expect(outcome.findings).toHaveLength(2);
+    expect(outcome.findings.map((finding) => finding.summary)).toEqual([
+      expect.stringContaining("gate_lint"),
+      expect.stringContaining("gate_style"),
+    ]);
+    expect(outcome.findings.every((finding) => finding.status === "proposed")).toBe(true);
     expect(outcome.completed_allowed).toBe(false);
 
     const blockers = completionBlockers(outcome);
@@ -109,7 +112,8 @@ describe("partial gate failure", () => {
         gate("gate_style", "style", "project", false),
       ]),
     );
-    expect(outcome.findings).toHaveLength(0);
+    expect(outcome.findings).toHaveLength(1);
+    expect(outcome.findings[0]?.summary).toContain("gate_style");
     expect(outcome.completed_allowed).toBe(true);
     expect(completionBlockers(outcome)).toEqual([]);
   });

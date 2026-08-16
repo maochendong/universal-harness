@@ -237,6 +237,31 @@ async function traceImpact(event) {
   }
 }
 
+async function loadSemanticProposals() {
+  const output = $("#semantic-proposal-list");
+  clear(output);
+  try {
+    const page = await api("/api/v1/semantic-proposals?limit=50");
+    if (page.items.length === 0) {
+      output.append(node("p", "", "No semantic proposals staged."));
+      return;
+    }
+    for (const proposal of page.items) {
+      const card = node("article", "evidence-card semantic-proposal");
+      card.append(
+        node("span", "kind", `SCORE ${(proposal.score / 1_000_000).toFixed(3)}`),
+        node("strong", "", `${proposal.source_node_id} → ${proposal.candidate_node_id}`),
+        node("p", "", proposal.reason),
+        node("code", "approval-command", proposal.approve_command),
+      );
+      output.append(card);
+    }
+  } catch (error) {
+    output.append(node("p", "", "Semantic proposal register unavailable."));
+    status("impact", error.message, "error");
+  }
+}
+
 function iterationButton(record) {
   const button = node("button", "record-button");
   button.type = "button";
@@ -666,7 +691,10 @@ function markUnknownRuns() {
 const loaders = {
   overview: loadOverview,
   graph: loadGraph,
-  impact: async () => status("impact", "Enter two Harness node ids."),
+  impact: async () => {
+    status("impact", "Enter two Harness node ids.");
+    await loadSemanticProposals();
+  },
   iterations: loadIterations,
   evidence: loadEvidence,
   findings: loadFindings,

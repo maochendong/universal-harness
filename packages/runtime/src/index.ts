@@ -694,11 +694,16 @@ export {
   GRAPH_EDIT_ERROR_KINDS,
   GraphEditError,
   approveGraphEdge,
+  buildSemanticIndexInput,
   graphEdgeId,
   proposeGraphEdge,
+  proposeSemanticImpactEdges,
   type ApprovedGraphEdge,
   type GraphEditDependencies,
   type ProposedGraphEdge,
+  type SemanticGraphEdgeProposal,
+  type SemanticGraphProposalBatch,
+  type SemanticSuggestionMetadata,
 } from "./graph/edits.js";
 export {
   backfillEvaluationGraph,

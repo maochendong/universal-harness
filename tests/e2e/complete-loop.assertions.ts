@@ -777,8 +777,9 @@ export async function assertUncertainExternalActionFeedback(): Promise<void> {
 /**
  * Normalized ledger view for cross-run comparison: every file under the
  * managed `.harness` root, keyed by POSIX relative path, with the absolute
- * project root scrubbed. The disposable SQLite cache is not ledger data and
- * is excluded.
+ * project root scrubbed. Every cache (SQLite, live event spool, semantic
+ * index) is disposable and non-authoritative, so the whole cache subtree is
+ * excluded from deterministic Ledger comparisons.
  */
 export function normalizedLedger(projectRoot: string): Readonly<Record<string, string>> {
   const harnessRoot = join(projectRoot, ".harness");
@@ -789,13 +790,19 @@ export function normalizedLedger(projectRoot: string): Readonly<Record<string, s
     );
     for (const entry of entries) {
       const absolute = join(directory, entry.name);
+      const relativeEntry = relative(harnessRoot, absolute).split(sep).join("/");
+      if (
+        entry.isDirectory() &&
+        (relativeEntry === "cache" || relativeEntry.startsWith("cache/"))
+      ) {
+        continue;
+      }
       if (entry.isDirectory()) {
         walk(absolute);
         continue;
       }
       if (!entry.isFile()) continue;
       const key = relative(harnessRoot, absolute).split(sep).join("/");
-      if (key === "cache/graph.db") continue;
       files[key] = readFileSync(absolute, "utf8").split(projectRoot).join("<project-root>");
     }
   };

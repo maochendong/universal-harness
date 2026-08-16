@@ -18,6 +18,7 @@ import {
   driveOpenOperation,
   parseApprovalDecision,
   previewImpactSet,
+  proposeSemanticImpactEdges,
   provenQualityTaskIds,
   readLatestExecutionPlan,
   readLatestSnapshot,
@@ -39,6 +40,7 @@ import {
   type PhaseProgressEvent,
   type TaskEnvelopeScopePort,
 } from "@universal-harness-internal/runtime";
+import type { SemanticSeedProvider } from "@universal-harness-internal/plugin-sdk";
 import { materializeLedger, pageEdges, pageNodes } from "@universal-harness-internal/graph";
 import { contentDigest, type EdgeRecord, type NodeRecord } from "@universal-harness-internal/core";
 
@@ -97,6 +99,7 @@ export interface OrchestratedServiceOptions {
    * output until the final result.
    */
   readonly onPhaseProgress?: (event: PhaseProgressEvent) => void;
+  readonly semanticProvider?: SemanticSeedProvider;
 }
 
 /** Interactive stdin prompt; only constructed when the CLI runs on a TTY. */
@@ -704,6 +707,40 @@ export function createOrchestratedRuntimeService(
     impact: async (request: ImpactRequest): Promise<CommandResult> =>
       guard("impact", async () => {
         const preview = previewImpactSet(request.projectRoot, request.target);
+        let semantic: Record<string, unknown> = {};
+        if (request.semantic) {
+          try {
+            const batch = await proposeSemanticImpactEdges(
+              {
+                projectRoot: request.projectRoot,
+                readBaseline: () => gitHead(request.projectRoot),
+                ...(options.now === undefined ? {} : { now: options.now }),
+                ...(options.semanticProvider === undefined
+                  ? {}
+                  : { semanticProvider: options.semanticProvider }),
+              },
+              { sourceNodeIds: [preview.seedNodeId], actor },
+            );
+            semantic = {
+              semantic_descriptor: { ...batch.descriptor },
+              semantic_proposals: batch.proposals.map((proposal) => ({
+                edge_id: proposal.edgeId,
+                source_node_id: proposal.sourceNodeId,
+                candidate_node_id: proposal.candidateNodeId,
+                score: proposal.score,
+                reason: proposal.reason,
+                preview_digest: proposal.previewDigest,
+                approve_command: `harness graph approve-edge ${proposal.edgeId} --digest ${proposal.previewDigest}`,
+              })),
+            };
+          } catch (error) {
+            semantic = {
+              semantic_proposals: [],
+              semantic_diagnostic:
+                error instanceof Error ? error.message : "semantic provider failed",
+            };
+          }
+        }
         return {
           command: "impact",
           status: "ok",
@@ -713,6 +750,7 @@ export function createOrchestratedRuntimeService(
             content_digest: preview.contentDigest,
             seed_node_id: preview.seedNodeId,
             entries: preview.entries.map((entry) => ({ ...entry })),
+            ...semantic,
           },
         };
       }),

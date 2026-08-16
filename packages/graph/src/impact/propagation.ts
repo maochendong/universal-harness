@@ -48,6 +48,7 @@ export const PROPAGATION_RULES: readonly PropagationRule[] = [
     defaultRisk: "medium",
     allowsInference: false,
   },
+  { type: "MAY_IMPACT", direction: "forward", defaultRisk: "low", allowsInference: true },
 ];
 
 export const DEFAULT_MAX_PROPAGATION_DEPTH = 6;

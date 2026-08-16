@@ -195,10 +195,11 @@ history.
 `;
 
 exports[`harness CLI help and version > prints per-command help 8`] = `
-"Usage: harness impact [node-id] [--json]
+"Usage: harness impact [node-id] [--semantic] [--json]
 
 Preview the ImpactSet a change on the given (or latest) seed node would
-produce over the current artifact graph. Read-only.
+produce over the current artifact graph. --semantic additionally stages
+digest-bound MAY_IMPACT proposals; it never activates graph edges.
 "
 `;
 

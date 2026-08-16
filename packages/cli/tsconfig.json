@@ -6,6 +6,7 @@
     { "path": "../core" },
     { "path": "../dashboard" },
     { "path": "../graph" },
+    { "path": "../plugin-sdk" },
     { "path": "../runtime" },
     { "path": "../eval" },
     { "path": "../../adapters/agent-manual" },

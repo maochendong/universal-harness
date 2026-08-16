@@ -49,6 +49,7 @@
     "@universal-harness-internal/dashboard": "workspace:*",
     "@universal-harness-internal/eval": "workspace:*",
     "@universal-harness-internal/graph": "workspace:*",
+    "@universal-harness-internal/plugin-sdk": "workspace:*",
     "@universal-harness-internal/runtime": "workspace:*"
   }
 }

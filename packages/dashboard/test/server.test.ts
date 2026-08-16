@@ -142,6 +142,12 @@ describe("Dashboard server", () => {
     });
     expect(findings.status).toBe(200);
     await expect(findings.json()).resolves.toEqual({ data: { items: [] } });
+
+    const semantic = await fetch(`${server.origin}/api/v1/semantic-proposals`, {
+      headers: { cookie },
+    });
+    expect(semantic.status).toBe(200);
+    await expect(semantic.json()).resolves.toEqual({ data: { items: [] } });
   });
 
   it("returns typed problems for invalid limits, unknown nodes, and a damaged cache", async () => {

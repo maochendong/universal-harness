@@ -110,6 +110,7 @@ export const RELATION_COMPATIBILITY: readonly RelationRule[] = [
     targets: VERSIONABLE_NODE_TYPES,
   },
   { type: "TRIGGERS", sources: ["Finding", "ImprovementCandidate"], targets: ["ImpactSet"] },
+  { type: "MAY_IMPACT", sources: VERSIONABLE_NODE_TYPES, targets: VERSIONABLE_NODE_TYPES },
 ];
 
 export function isRelationCompatible(

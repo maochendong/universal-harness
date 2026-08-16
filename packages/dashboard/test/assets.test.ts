@@ -44,6 +44,8 @@ describe("Dashboard assets", () => {
     expect(`${html}\n${css}\n${javascript}`).not.toMatch(/https?:\/\//u);
     expect(javascript).not.toMatch(/innerHTML|localStorage|sessionStorage|eval\s*\(/u);
     expect(javascript).toContain("/api/v1/graph/neighborhood/");
+    expect(javascript).toContain("/api/v1/semantic-proposals");
+    expect(html).toContain("Candidate edge proposals");
     expect(javascript).not.toContain("/api/v1/graph/nodes?limit=500");
     expect(css).toContain(":focus-visible");
     expect(css).toContain("prefers-reduced-motion: reduce");

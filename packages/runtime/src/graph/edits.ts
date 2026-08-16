@@ -1,4 +1,6 @@
+import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 
 import {
   LedgerRepository,
@@ -6,6 +8,7 @@ import {
   canonicalizeJson,
   contentDigest,
   harnessRootFor,
+  parseLocator,
   readCommittedOperations,
   resolveHarnessPath,
   ulid,
@@ -20,7 +23,16 @@ import {
   materializeLedger,
   pageEdges,
   pageNodes,
+  LocalSymbolSemanticSeedProvider,
+  SEMANTIC_EXTRACTOR_VERSION,
+  VERSIONABLE_NODE_TYPES,
 } from "@universal-harness-internal/graph";
+import type {
+  SemanticIndexDescriptor,
+  SemanticIndexInput,
+  SemanticSeedProvider,
+  SemanticSeedSuggestion,
+} from "@universal-harness-internal/plugin-sdk";
 
 /**
  * Human-driven graph edits (design 8.5 mutation rules): a relation change a
@@ -37,6 +49,8 @@ export const GRAPH_EDIT_ERROR_KINDS = [
   "edge_exists",
   "proposal_not_found",
   "proposal_digest_mismatch",
+  "endpoint_revision_drift",
+  "semantic_index_drift",
   "no_ledger_operation",
 ] as const;
 
@@ -58,6 +72,10 @@ export interface GraphEditDependencies {
   readonly now?: () => string;
   readonly hooks?: CommitHooks;
   readonly lock?: LockTuning;
+  /** Optional provider injection for conformance and failure-path tests. */
+  readonly semanticProvider?: SemanticSeedProvider;
+  /** Digest of semantic extraction configuration beyond the fixed extractor version. */
+  readonly semanticConfigDigest?: string;
 }
 
 export interface ProposedGraphEdge {
@@ -71,8 +89,25 @@ export interface ApprovedGraphEdge {
   readonly edgeId: string;
 }
 
+export interface SemanticGraphEdgeProposal extends ProposedGraphEdge {
+  readonly status: "staged";
+  readonly score: number;
+  readonly reason: string;
+  readonly sourceNodeId: string;
+  readonly candidateNodeId: string;
+}
+
+export interface SemanticGraphProposalBatch {
+  readonly descriptor: SemanticIndexDescriptor;
+  readonly proposals: readonly SemanticGraphEdgeProposal[];
+}
+
 function nowOf(deps: GraphEditDependencies): string {
   return (deps.now ?? (() => new Date().toISOString()))();
+}
+
+function byText(left: string, right: string): number {
+  return left < right ? -1 : left > right ? 1 : 0;
 }
 
 interface GraphState {
@@ -134,6 +169,11 @@ function edgeArtifact(
   status: EdgeRecord["status"],
   actor: string,
   iterationId: string,
+  options: {
+    readonly source?: EdgeRecord["source"];
+    readonly confidence?: number;
+    readonly extensions?: Readonly<Record<string, unknown>>;
+  } = {},
 ): EdgeRecord {
   const content: Record<string, unknown> = {
     protocol_version: PROTOCOL_VERSION,
@@ -143,9 +183,10 @@ function edgeArtifact(
     source_id: input.sourceId,
     target_id: input.targetId,
     status,
-    source: "human",
+    source: options.source ?? "human",
     provenance: { iteration_id: iterationId, actor, timestamp: nowOf(deps) },
-    confidence: 1,
+    confidence: options.confidence ?? 1,
+    ...(options.extensions === undefined ? {} : { extensions: options.extensions }),
   };
   const edge = { ...content, digest: contentDigest(content) };
   const validation = validateSchema("edge", edge);
@@ -203,6 +244,19 @@ interface EdgeProposalDocument {
   readonly preview_digest: string;
   readonly proposed_by: string;
   readonly created_at: string;
+  readonly suggestion?: SemanticSuggestionMetadata;
+}
+
+export interface SemanticSuggestionMetadata {
+  readonly provider: string;
+  readonly provider_version: string;
+  readonly input_digest: string;
+  readonly index_digest: string;
+  readonly source_revision: number;
+  readonly target_revision: number;
+  readonly score: SemanticSeedSuggestion["score"];
+  readonly features: SemanticSeedSuggestion["features"];
+  readonly reason: string;
 }
 
 function proposalPath(edgeId: string): string {
@@ -233,6 +287,226 @@ function validateProposal(
       `relation ${input.type} is not compatible with ${source.type} -> ${target.type}`,
     );
   }
+}
+
+const VERSIONABLE_TYPES = new Set<NodeRecord["type"]>(VERSIONABLE_NODE_TYPES);
+
+function gitCommit(projectRoot: string): string {
+  try {
+    return execFileSync("git", ["rev-parse", "HEAD"], {
+      cwd: projectRoot,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    }).trim();
+  } catch {
+    return "unborn";
+  }
+}
+
+function semanticDocument(
+  projectRoot: string,
+  node: NodeRecord,
+): SemanticIndexInput["documents"][number] {
+  let content = canonicalizeJson({
+    id: node.id,
+    type: node.type,
+    extensions: node.extensions ?? {},
+  });
+  let blobDigest: string | undefined;
+  if (node.locator !== undefined) {
+    try {
+      const parsed = parseLocator(node.locator);
+      if (parsed.path !== undefined) {
+        const absolute = join(projectRoot, parsed.path);
+        if (existsSync(absolute)) {
+          // Semantic indexing is advisory. Bound memory while retaining enough
+          // source text for identifiers, imports and headings.
+          content = readFileSync(absolute, "utf8").slice(0, 1024 * 1024);
+          try {
+            blobDigest = execFileSync("git", ["hash-object", "--", parsed.path], {
+              cwd: projectRoot,
+              encoding: "utf8",
+              stdio: ["ignore", "pipe", "ignore"],
+            }).trim();
+          } catch {
+            blobDigest = contentDigest(content);
+          }
+        }
+      }
+    } catch {
+      // A malformed or non-repository locator cannot grant filesystem access.
+      // The canonical node metadata remains a deterministic fallback document.
+    }
+  }
+  return {
+    node_id: node.id,
+    node_type: node.type,
+    revision: node.revision,
+    ...(node.locator === undefined ? {} : { locator: node.locator }),
+    source_digest: node.digest,
+    ...(blobDigest === undefined ? {} : { blob_digest: blobDigest }),
+    content,
+  };
+}
+
+/** Build the complete digest-bound input for a rebuildable semantic index. */
+function semanticIndexInput(deps: GraphEditDependencies, state: GraphState): SemanticIndexInput {
+  const nodes = [...state.currentNodes.values()]
+    .filter((node) => VERSIONABLE_TYPES.has(node.type))
+    .sort((left, right) => byText(left.id, right.id));
+  const graphSourceDigest = contentDigest(
+    nodes.map((node) => ({
+      id: node.id,
+      type: node.type,
+      revision: node.revision,
+      digest: node.digest,
+      ...(node.locator === undefined ? {} : { locator: node.locator }),
+    })),
+  );
+  return {
+    protocol_version: 1,
+    project_id:
+      [...state.currentNodes.values()]
+        .filter((node) => node.type === "Project")
+        .sort((left, right) => byText(left.id, right.id))
+        .at(-1)?.id ?? "project_local",
+    git_commit: gitCommit(deps.projectRoot),
+    graph_source_digest: graphSourceDigest,
+    extractor_version: SEMANTIC_EXTRACTOR_VERSION,
+    config_digest: deps.semanticConfigDigest ?? contentDigest({ threshold: 350_000, top_k: 10 }),
+    documents: nodes.map((node) => semanticDocument(deps.projectRoot, node)),
+  };
+}
+
+export function buildSemanticIndexInput(deps: GraphEditDependencies): SemanticIndexInput {
+  return semanticIndexInput(deps, readGraph(deps.projectRoot));
+}
+
+function semanticMetadata(suggestion: SemanticSeedSuggestion): SemanticSuggestionMetadata {
+  return {
+    provider: suggestion.provider,
+    provider_version: suggestion.provider_version,
+    input_digest: suggestion.input_digest,
+    index_digest: suggestion.index_digest,
+    source_revision: suggestion.source_revision,
+    target_revision: suggestion.candidate_revision,
+    score: suggestion.score,
+    features: suggestion.features,
+    reason: suggestion.reason,
+  };
+}
+
+function proposalDigest(edge: EdgeRecord, suggestion?: SemanticSuggestionMetadata): string {
+  return suggestion === undefined ? contentDigest(edge) : contentDigest({ edge, suggestion });
+}
+
+/**
+ * Build semantic candidates and stage every proposal in one Ledger transaction.
+ * No graph edge is submitted here; only explicit approval can activate one.
+ */
+export async function proposeSemanticImpactEdges(
+  deps: GraphEditDependencies,
+  input: {
+    readonly sourceNodeIds: readonly string[];
+    readonly actor: string;
+    readonly thresholdMillionths?: number;
+    readonly topK?: number;
+  },
+): Promise<SemanticGraphProposalBatch> {
+  const state = readGraph(deps.projectRoot);
+  for (const sourceNodeId of input.sourceNodeIds) {
+    if (state.currentNodes.get(sourceNodeId) === undefined) {
+      throw new GraphEditError("unknown_node", `unknown semantic source node: ${sourceNodeId}`);
+    }
+  }
+  const provider = deps.semanticProvider ?? new LocalSymbolSemanticSeedProvider(deps.projectRoot);
+  const descriptor = await provider.buildIndex(semanticIndexInput(deps, state));
+  const suggestions = await provider.suggest({
+    descriptor,
+    source_node_ids: input.sourceNodeIds,
+    threshold_millionths: input.thresholdMillionths ?? 350_000,
+    top_k: input.topK ?? 10,
+  });
+  const iterationId =
+    [...state.currentNodes.values()]
+      .filter((node) => node.type === "Iteration")
+      .sort((left, right) => byText(left.id, right.id))
+      .at(-1)?.id ?? "iteration_graph-edit";
+  const artifacts: { path: string; content: string }[] = [];
+  const proposals: SemanticGraphEdgeProposal[] = [];
+  for (const suggestion of suggestions) {
+    const edgeInput = {
+      type: "MAY_IMPACT" as const,
+      sourceId: suggestion.source_node_id,
+      targetId: suggestion.candidate_node_id,
+    };
+    validateProposal(state, edgeInput);
+    if (
+      state.edges.some(
+        (edge) =>
+          edge.type === edgeInput.type &&
+          edge.source_id === edgeInput.sourceId &&
+          edge.target_id === edgeInput.targetId &&
+          isActive(edge),
+      )
+    ) {
+      continue;
+    }
+    const edge = edgeArtifact(deps, edgeInput, "proposed", input.actor, iterationId, {
+      source: "tool",
+      confidence: suggestion.score.millionths / 1_000_000,
+      extensions: {
+        "harness.semantic": {
+          provider: suggestion.provider,
+          provider_version: suggestion.provider_version,
+          input_digest: suggestion.input_digest,
+          index_digest: suggestion.index_digest,
+          features: suggestion.features,
+        },
+      },
+    });
+    const suggestionMetadata = semanticMetadata(suggestion);
+    const path = proposalPath(edge.id);
+    const absolute = resolveHarnessPath(harnessRootFor(deps.projectRoot), path);
+    let proposal: EdgeProposalDocument | undefined;
+    if (existsSync(absolute)) {
+      try {
+        const existing = JSON.parse(readFileSync(absolute, "utf8")) as EdgeProposalDocument;
+        if (
+          existing.edge.id === edge.id &&
+          existing.suggestion !== undefined &&
+          canonicalizeJson(existing.suggestion) === canonicalizeJson(suggestionMetadata) &&
+          existing.preview_digest === proposalDigest(existing.edge, existing.suggestion)
+        ) {
+          proposal = existing;
+        }
+      } catch {
+        // Replace invalid proposal bytes through the same atomic Ledger commit.
+      }
+    }
+    if (proposal === undefined) {
+      proposal = {
+        record_kind: "edge_proposal",
+        edge,
+        preview_digest: proposalDigest(edge, suggestionMetadata),
+        proposed_by: input.actor,
+        created_at: nowOf(deps),
+        suggestion: suggestionMetadata,
+      };
+      artifacts.push({ path, content: `${canonicalizeJson(proposal)}\n` });
+    }
+    proposals.push({
+      status: "staged",
+      edgeId: edge.id,
+      previewDigest: proposal.preview_digest,
+      score: suggestion.score.millionths,
+      reason: suggestion.reason,
+      sourceNodeId: suggestion.source_node_id,
+      candidateNodeId: suggestion.candidate_node_id,
+    });
+  }
+  if (artifacts.length > 0) await commitEditArtifacts(deps, artifacts, []);
+  return { descriptor, proposals };
 }
 
 /**
@@ -270,6 +544,7 @@ export async function proposeGraphEdge(
     const staged = JSON.parse(readFileSync(absolute, "utf8")) as EdgeProposalDocument;
     if (
       staged.edge.id === edgeId &&
+      staged.suggestion === undefined &&
       staged.edge.type === input.type &&
       staged.edge.source_id === input.sourceId &&
       staged.edge.target_id === input.targetId
@@ -286,7 +561,7 @@ export async function proposeGraphEdge(
   const proposal: EdgeProposalDocument = {
     record_kind: "edge_proposal",
     edge,
-    preview_digest: contentDigest(edge),
+    preview_digest: proposalDigest(edge),
     proposed_by: input.actor,
     created_at: nowOf(deps),
   };
@@ -314,7 +589,7 @@ export async function approveGraphEdge(
   }
   const proposal = JSON.parse(readFileSync(absolute, "utf8")) as EdgeProposalDocument;
   if (
-    contentDigest(proposal.edge) !== proposal.preview_digest ||
+    proposalDigest(proposal.edge, proposal.suggestion) !== proposal.preview_digest ||
     proposal.preview_digest !== input.previewDigest
   ) {
     throw new GraphEditError(
@@ -330,6 +605,40 @@ export async function approveGraphEdge(
   });
   const duplicate = state.edges.find((edge) => edge.id === input.edgeId && isActive(edge));
   if (duplicate !== undefined) return { status: "already_present", edgeId: input.edgeId };
+  if (proposal.suggestion !== undefined) {
+    const source = state.currentNodes.get(proposal.edge.source_id) as NodeRecord;
+    const target = state.currentNodes.get(proposal.edge.target_id) as NodeRecord;
+    if (
+      source.revision !== proposal.suggestion.source_revision ||
+      target.revision !== proposal.suggestion.target_revision
+    ) {
+      throw new GraphEditError(
+        "endpoint_revision_drift",
+        `semantic proposal ${input.edgeId} endpoint revision drifted; regenerate impact suggestions`,
+      );
+    }
+    const provider = deps.semanticProvider ?? new LocalSymbolSemanticSeedProvider(deps.projectRoot);
+    let descriptor: SemanticIndexDescriptor;
+    try {
+      descriptor = await provider.buildIndex(semanticIndexInput(deps, state));
+    } catch (error) {
+      throw new GraphEditError(
+        "semantic_index_drift",
+        `semantic proposal ${input.edgeId} cannot rebuild its index: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+    if (
+      descriptor.provider !== proposal.suggestion.provider ||
+      descriptor.provider_version !== proposal.suggestion.provider_version ||
+      descriptor.input_digest !== proposal.suggestion.input_digest ||
+      descriptor.index_digest !== proposal.suggestion.index_digest
+    ) {
+      throw new GraphEditError(
+        "semantic_index_drift",
+        `semantic proposal ${input.edgeId} provider or index drifted; regenerate impact suggestions`,
+      );
+    }
+  }
   const iterationId = proposal.edge.provenance.iteration_id;
   const approved = edgeArtifact(
     deps,
@@ -341,6 +650,11 @@ export async function approveGraphEdge(
     "accepted",
     input.actor,
     iterationId,
+    {
+      source: proposal.edge.source,
+      confidence: proposal.edge.confidence,
+      ...(proposal.edge.extensions === undefined ? {} : { extensions: proposal.edge.extensions }),
+    },
   );
   await commitEditArtifacts(deps, [], [approved]);
   return { status: "committed", edgeId: input.edgeId };

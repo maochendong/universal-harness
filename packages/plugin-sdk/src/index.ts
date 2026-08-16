@@ -4,6 +4,7 @@ export * from "./gate.js";
 export * from "./manifest.js";
 export * from "./pack.js";
 export * from "./projection.js";
+export * from "./semantic-seed.js";
 export * from "./stack.js";
 export * from "./subprocess.js";
 export * from "./tool.js";

@@ -18,6 +18,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@universal-harness-internal/core": "workspace:*"
+    "@universal-harness-internal/core": "workspace:*",
+    "@universal-harness-internal/plugin-sdk": "workspace:*"
   }
 }

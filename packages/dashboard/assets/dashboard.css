@@ -679,6 +679,17 @@ h2 {
   color: var(--oxide);
   font-size: 2rem;
 }
+
+.semantic-heading {
+  margin-top: 2rem;
+}
+
+.semantic-proposal .approval-command {
+  display: block;
+  overflow-wrap: anywhere;
+  margin-top: 0.75rem;
+  color: var(--paper-muted);
+}
 .trace-output {
   min-height: 17rem;
   padding: 2rem;
