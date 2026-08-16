@@ -729,6 +729,22 @@ export {
   type PhaseLifecycleDetails,
   type PhaseLifecycleEventSpec,
 } from "./orchestration/lifecycle-events.js";
+export {
+  FileEventStream,
+  EventStreamError,
+  type EventStreamErrorKind,
+  type EventStreamItem,
+  type EventStreamPage,
+  type EventStreamPort,
+  type EventStreamQuery,
+  type FileEventStreamOptions,
+} from "./observability/event-stream.js";
+export {
+  FileLiveSpool,
+  LiveSpoolError,
+  type LiveSpoolOptions,
+  type ObservationInput,
+} from "./observability/live-spool.js";
 
 /**
  * Runtime orchestration service (design section 11.1). The CLI shell injects

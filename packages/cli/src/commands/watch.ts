@@ -1,8 +1,9 @@
-import { readdirSync, readFileSync, statSync } from "node:fs";
-import { join } from "node:path";
-
-import type { LifecycleEvent } from "@universal-harness-internal/core";
-import { canonicalizeJson } from "@universal-harness-internal/core";
+import {
+  canonicalizeJson,
+  type LifecycleEvent,
+  type ObservationEvent,
+} from "@universal-harness-internal/core";
+import { FileEventStream, type EventStreamItem } from "@universal-harness-internal/runtime";
 
 import { usageError } from "../errors.js";
 import { parseCommandArgs, requireProjectRoot, type CommandResult } from "../io.js";
@@ -52,9 +53,19 @@ const EVENT_STYLES: Record<string, EventStyle> = {
   GateCompleted: { icon: "●", color: GREEN },
   EvaluationCompleted: { icon: "◆", color: GREEN },
   FindingCreated: { icon: "⚠", color: MAGENTA },
+  PhaseStarted: { icon: "▶", color: CYAN },
+  PhaseCompleted: { icon: "✔", color: GREEN },
+  PhasePaused: { icon: "⏸", color: YELLOW },
+  GateStarted: { icon: "○", color: CYAN },
+  RunStarted: { icon: "▶", color: CYAN },
+  RunHeartbeat: { icon: "·", color: GRAY },
+  RunOutputSummary: { icon: "…", color: GRAY },
+  BudgetUpdated: { icon: "◆", color: BLUE },
 };
 
-function describePayload(event: LifecycleEvent): string {
+type StreamEvent = LifecycleEvent | ObservationEvent;
+
+function describePayload(event: StreamEvent): string {
   const payload = event.payload as Record<string, unknown>;
   const text = (key: string): string | undefined => {
     const value = payload[key];
@@ -122,7 +133,7 @@ function clockOf(timestamp: string): string {
  * side-effect free so tests can pin the exact formatting; `color` toggles the
  * ANSI styling (callers disable it for non-TTY streams and NO_COLOR).
  */
-export function formatEventLine(event: LifecycleEvent, options: { color: boolean }): string {
+export function formatEventLine(event: StreamEvent, options: { color: boolean }): string {
   const style = EVENT_STYLES[event.event_type];
   const clock = clockOf(event.timestamp);
   const failed =
@@ -138,52 +149,6 @@ export function formatEventLine(event: LifecycleEvent, options: { color: boolean
 
 function colorEnabled(): boolean {
   return process.env.NO_COLOR === undefined && Boolean(process.stderr.isTTY);
-}
-
-function listEventFiles(projectRoot: string): string[] {
-  const eventsRoot = join(projectRoot, ".harness", "events");
-  const files: string[] = [];
-  const walk = (directory: string): void => {
-    let entries;
-    try {
-      entries = readdirSync(directory, { withFileTypes: true });
-    } catch {
-      return;
-    }
-    for (const entry of entries) {
-      const fullPath = join(directory, entry.name);
-      if (entry.isDirectory()) walk(fullPath);
-      else if (entry.name.endsWith(".jsonl")) files.push(fullPath);
-    }
-  };
-  walk(eventsRoot);
-  return files.sort();
-}
-
-function parseEventLines(path: string, start: number, end: number): LifecycleEvent[] {
-  if (end <= start) return [];
-  const buffer = readFileSync(path);
-  const slice = buffer.subarray(start, end).toString("utf8");
-  const events: LifecycleEvent[] = [];
-  for (const line of slice.split("\n")) {
-    if (line === "") continue;
-    try {
-      const parsed = JSON.parse(line) as Record<string, unknown>;
-      if (parsed["record_kind"] === "event" && typeof parsed["event_id"] === "string") {
-        events.push(parsed as unknown as LifecycleEvent);
-      }
-    } catch {
-      // Partially written tail lines are skipped; the next tick re-reads them.
-    }
-  }
-  return events;
-}
-
-function sortEvents(events: readonly LifecycleEvent[]): LifecycleEvent[] {
-  return [...events].sort((left, right) => {
-    if (left.timestamp !== right.timestamp) return left.timestamp < right.timestamp ? -1 : 1;
-    return left.event_id < right.event_id ? -1 : left.event_id > right.event_id ? 1 : 0;
-  });
 }
 
 function sleep(ms: number): Promise<void> {
@@ -232,26 +197,9 @@ export async function runWatchCommand(
   }
   const follow = values.follow === true;
 
-  const offsets = new Map<string, number>();
-  const drainNewEvents = (): LifecycleEvent[] => {
-    const collected: LifecycleEvent[] = [];
-    for (const path of listEventFiles(projectRoot)) {
-      let size: number;
-      try {
-        size = statSync(path).size;
-      } catch {
-        continue;
-      }
-      const previous = offsets.get(path) ?? 0;
-      if (size > previous) collected.push(...parseEventLines(path, previous, size));
-      offsets.set(path, size);
-    }
-    return sortEvents(collected);
-  };
-
   const color = colorEnabled();
   let rendered = 0;
-  const emit = (event: LifecycleEvent): void => {
+  const emit = (event: StreamEvent): void => {
     rendered += 1;
     if (context.json) {
       context.io.writeStderr(`${canonicalizeJson(event)}\n`);
@@ -260,10 +208,22 @@ export async function runWatchCommand(
     context.io.writeStderr(`${formatEventLine(event, { color })}\n`);
   };
 
-  const allEvents = drainNewEvents();
+  const stream = new FileEventStream(projectRoot, { pollIntervalMs: resolved.pollIntervalMs });
+  const allEvents: EventStreamItem[] = [];
+  let cursor: string | undefined;
+  let nextCursor: string | undefined;
+  do {
+    const page = await stream.read({
+      limit: 500,
+      ...(nextCursor === undefined ? {} : { cursor: nextCursor }),
+    });
+    allEvents.push(...page.items);
+    cursor = page.cursor ?? cursor;
+    nextCursor = page.nextCursor;
+  } while (nextCursor !== undefined);
   const operations = new Set<string>();
-  for (const event of allEvents) operations.add(event.workflow_operation_id);
-  for (const event of allEvents.slice(-limit)) emit(event);
+  for (const item of allEvents) operations.add(item.event.workflow_operation_id);
+  for (const item of allEvents.slice(-limit)) emit(item.event);
 
   let ticks = 0;
   let stopped = false;
@@ -280,9 +240,11 @@ export async function runWatchCommand(
       while (!stopped && Date.now() < deadline) {
         await sleep(resolved.pollIntervalMs);
         ticks += 1;
-        for (const event of drainNewEvents()) {
-          operations.add(event.workflow_operation_id);
-          emit(event);
+        const page = await stream.read({ limit: 500, ...(cursor === undefined ? {} : { cursor }) });
+        cursor = page.cursor ?? cursor;
+        for (const item of page.items) {
+          operations.add(item.event.workflow_operation_id);
+          emit(item.event);
         }
       }
     } finally {

@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
 import type { LifecycleEvent } from "@universal-harness-internal/core";
+import { FileLiveSpool } from "@universal-harness-internal/runtime";
 
 import type { CliIo } from "../src/index.js";
 import { formatEventLine, runWatchCommand } from "../src/commands/watch.js";
@@ -119,6 +120,26 @@ describe("formatEventLine", () => {
 });
 
 describe("harness watch", () => {
+  it("renders live observations before they become ledger events", async () => {
+    const root = makeProject();
+    new FileLiveSpool(root).append({
+      streamId: "stream_01",
+      observationKey: "phase_capture_started",
+      eventType: "PhaseStarted",
+      projectId: "project_demo",
+      iterationId: "iteration_01M02WWWWWWWWWWWWWWWWWWWWWW",
+      workflowOperationId: "workflow_01M02WWWWWWWWWWWWWWWWWWWWW",
+      timestamp: "2026-08-15T10:00:00.000Z",
+      payload: { phase: "capture" },
+    });
+    const captured = captureIo();
+
+    const result = await runWatchCommand([], makeContext(captured, false, root));
+
+    expect(result.data["events"]).toBe(1);
+    expect(captured.stderr()).toContain("PhaseStarted phase=capture");
+  });
+
   it("renders the newest snapshot events on stderr and the summary on stdout", async () => {
     const root = makeProject();
     writeEvents(root, "ledger_a.jsonl", [
