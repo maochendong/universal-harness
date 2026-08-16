@@ -41,20 +41,20 @@ interface AuditGovernanceRule {
 }
 
 const AUDIT_GOVERNANCE_RULES = {
-  traceability_gap: { domain: "traceability", actionability: "human_review" },
+  traceability_gap: { domain: "traceability", actionability: "auto_close" },
   stale_knowledge: { domain: "knowledge", actionability: "auto_close" },
   contradictory_constraint: { domain: "requirements", actionability: "human_review" },
   orphan_node: { domain: "graph", actionability: "human_review" },
-  missing_verification: { domain: "verification", actionability: "human_review" },
+  missing_verification: { domain: "verification", actionability: "auto_close" },
   unpromoted_high_risk_improvement: {
     domain: "improvement",
     actionability: "human_review",
   },
   unhealthy_context_source: { domain: "context", actionability: "upstream_change" },
-  missing_design_artifact: { domain: "design", actionability: "human_review" },
-  task_orphan: { domain: "plan", actionability: "human_review" },
-  api_contract_coverage: { domain: "design", actionability: "human_review" },
-  task_stale: { domain: "execution", actionability: "human_review" },
+  missing_design_artifact: { domain: "design", actionability: "auto_close" },
+  task_orphan: { domain: "plan", actionability: "auto_close" },
+  api_contract_coverage: { domain: "design", actionability: "auto_close" },
+  task_stale: { domain: "execution", actionability: "auto_close" },
 } as const satisfies Readonly<Record<AuditFindingKind, AuditGovernanceRule>>;
 
 function stableUnique(values: readonly string[]): string[] {

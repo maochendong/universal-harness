@@ -489,7 +489,7 @@ describe("phase orchestrator", { timeout: 30000 }, () => {
           rule: "audit/missing_design_artifact",
           scope_prefix: `project/${bootstrapped.value.repositoryId}/design`,
           severity: "warning",
-          actionability: "human_review",
+          actionability: "auto_close",
           open_count: designFindingIds.length,
         }),
       ]),
@@ -604,6 +604,25 @@ describe("phase orchestrator", { timeout: 30000 }, () => {
       readFileSync(join(findingNodesRoot, findingId, "2.json"), "utf8"),
     ) as { status?: string };
     expect(superseded.status).toBe("superseded");
+    const decayEventsAfterRepair = new LedgerRepository({
+      projectRoot,
+      readBaseline: () => headOf(projectRoot),
+    })
+      .replay()
+      .events.filter(
+        (event) =>
+          event.event_type === "FindingSuperseded" && event.payload["finding_id"] === findingId,
+      );
+    expect(decayEventsAfterRepair).toEqual([
+      expect.objectContaining({
+        event_type: "FindingSuperseded",
+        payload: expect.objectContaining({
+          finding_id: findingId,
+          actor: "workflow-engine",
+          cause: "predicate_resolved",
+        }),
+      }),
+    ]);
 
     // The scanned document is a graph CodeArtifact and the audit agrees the
     // domain is covered; no new finding replaces the superseded one.
@@ -648,6 +667,22 @@ describe("phase orchestrator", { timeout: 30000 }, () => {
     } finally {
       database.close();
     }
+
+    // A later snapshot observes the already-superseded Finding and does not
+    // append another revision or lifecycle event for the repaired predicate.
+    const third = await driveToCompletion("add the third capability");
+    expect(third.status).toBe("completed");
+    expect(readdirSync(join(findingNodesRoot, findingId)).sort()).toEqual(["1.json", "2.json"]);
+    const decayEventsAfterThird = new LedgerRepository({
+      projectRoot,
+      readBaseline: () => headOf(projectRoot),
+    })
+      .replay()
+      .events.filter(
+        (event) =>
+          event.event_type === "FindingSuperseded" && event.payload["finding_id"] === findingId,
+      );
+    expect(decayEventsAfterThird).toHaveLength(1);
   });
 
   it("regenerates the tasks.md projection at snapshot and refuses hand edits", async () => {
@@ -1589,6 +1624,40 @@ describe("phase orchestrator", { timeout: 30000 }, () => {
     } finally {
       database.close();
     }
+    const findingEvents = new LedgerRepository({
+      projectRoot,
+      readBaseline: () => headOf(projectRoot),
+    })
+      .replay()
+      .events.filter((event) => event.event_type.startsWith("Finding"));
+    expect(findingEvents).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          event_type: "FindingAccepted",
+          payload: expect.objectContaining({
+            finding_id: designFinding,
+            actor: "human:local",
+            cause: "single_accept",
+          }),
+        }),
+        expect.objectContaining({
+          event_type: "FindingSuperseded",
+          payload: expect.objectContaining({
+            finding_id: designFinding,
+            actor: "human:local",
+            cause: "single_supersede",
+          }),
+        }),
+        expect.objectContaining({
+          event_type: "FindingClosed",
+          payload: expect.objectContaining({
+            finding_id: orphanFinding,
+            evidence_id: "evidence_ledger_integrity",
+            cause: "single_close",
+          }),
+        }),
+      ]),
+    );
 
     // Resolved findings refuse further transitions.
     await expect(

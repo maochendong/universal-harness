@@ -39,6 +39,28 @@ export {
 } from "./finding/governance.js";
 export { projectFindingGroups, type FindingGroupProjection } from "./finding/groups.js";
 export {
+  FINDING_GROUP_ACTIONS,
+  FindingGroupError,
+  resolveFindingGroup,
+  type FindingGroupAction,
+  type FindingGroupDependencies,
+  type FindingGroupErrorKind,
+  type ResolveFindingGroupInput,
+  type ResolvedFindingGroup,
+} from "./finding/group-service.js";
+export {
+  planFindingDecay,
+  type FindingDecayInput,
+  type FindingDecayPlan,
+} from "./finding/decay.js";
+export {
+  buildFindingLifecycleEvent,
+  findingLifecycleEventType,
+  findingLifecyclePayload,
+  type FindingLifecycleAction,
+  type FindingLifecyclePayloadInput,
+} from "./finding/lifecycle.js";
+export {
   discardStagedDocuments,
   readStagedDocument,
   stagedPreviewDigest,

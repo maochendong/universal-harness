@@ -344,6 +344,25 @@ describe("reconcileProjectGraph", () => {
     } finally {
       materialized.close();
     }
+    const lifecycleEventsAfterFirst = new LedgerRepository({
+      projectRoot,
+      readBaseline: () => headOf(projectRoot),
+    })
+      .replay()
+      .events.filter(
+        (event) =>
+          event.event_type === "FindingSuperseded" && event.payload["finding_id"] === findingId,
+      );
+    expect(lifecycleEventsAfterFirst).toEqual([
+      expect.objectContaining({
+        event_type: "FindingSuperseded",
+        payload: expect.objectContaining({
+          finding_id: findingId,
+          actor: "workflow-engine",
+          cause: "predicate_resolved",
+        }),
+      }),
+    ]);
 
     // Legacy ledgers can contain an active edge written after the Finding was
     // already superseded. Reconcile must retire that residue without needing
@@ -399,6 +418,16 @@ describe("reconcileProjectGraph", () => {
       finding_edges_retired: 0,
       skipped: [],
     });
+    const lifecycleEventsAfterThird = new LedgerRepository({
+      projectRoot,
+      readBaseline: () => headOf(projectRoot),
+    })
+      .replay()
+      .events.filter(
+        (event) =>
+          event.event_type === "FindingSuperseded" && event.payload["finding_id"] === findingId,
+      );
+    expect(lifecycleEventsAfterThird).toHaveLength(1);
     expect(checkGraphCache(resolveHarnessPath(harnessRoot, GRAPH_DATABASE_RELATIVE_PATH))).toEqual({
       status: "ok",
     });

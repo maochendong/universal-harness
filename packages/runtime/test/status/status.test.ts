@@ -276,7 +276,7 @@ describe("deriveProjectStatus", () => {
           rule: "audit/missing_design_artifact",
           scope_prefix: "project/repository_atlas/design",
           severity: "warning",
-          actionability: "human_review",
+          actionability: "auto_close",
           subject_ids: ["design"],
           subject_digests: [],
         },

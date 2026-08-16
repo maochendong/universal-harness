@@ -16,6 +16,7 @@ import {
   ulid,
   validateSchema,
   type EdgeRecord,
+  type LifecycleEvent,
   type NodeRecord,
 } from "@universal-harness-internal/core";
 import {
@@ -27,6 +28,8 @@ import {
 
 import { auditGraph, type AuditFinding } from "../audit/auditor.js";
 import { findingGovernanceForAudit } from "../finding/governance.js";
+import { planFindingDecay } from "../finding/decay.js";
+import { buildFindingLifecycleEvent } from "../finding/lifecycle.js";
 import { hashWorktreeCode, resolveSnapshotSourceCommit } from "../snapshot/anchor.js";
 import type { SnapshotRecord } from "../snapshot/builder.js";
 
@@ -245,6 +248,11 @@ export async function reconcileProjectGraph(
   let findingsSuperseded = 0;
   let blockEdgesRetired = 0;
   let findingEdgesRetired = 0;
+  const findingLifecyclePlans: {
+    readonly finding: NodeRecord;
+    readonly oldSubjectDigests: readonly string[];
+    readonly newSubjectDigests: readonly string[];
+  }[] = [];
 
   const appendEdge = (
     type: EdgeRecord["type"],
@@ -653,15 +661,13 @@ export async function reconcileProjectGraph(
     }
   }
 
-  for (const finding of [...currentNodes.values()]) {
-    if (
-      finding.type !== "Finding" ||
-      finding.source !== "audit" ||
-      (finding.status !== "accepted" && finding.status !== "proposed") ||
-      liveFindingIds.has(finding.id)
-    ) {
-      continue;
-    }
+  const decayPlans = planFindingDecay({
+    nodes: virtualNodes,
+    edges: virtualEdges,
+    liveFindingIds: [...liveFindingIds],
+  });
+  for (const plan of decayPlans) {
+    const finding = plan.finding;
     const revision = finding.revision + 1;
     const content: Record<string, unknown> = Object.fromEntries(
       Object.entries(finding).filter(([key]) => key !== "digest"),
@@ -683,21 +689,56 @@ export async function reconcileProjectGraph(
     findingsSuperseded += 1;
     revisions += 1;
     retireActiveFindingEdges(finding.id);
+    findingLifecyclePlans.push({
+      finding,
+      oldSubjectDigests: plan.oldSubjectDigests,
+      newSubjectDigests: plan.newSubjectDigests,
+    });
   }
 
   if (artifacts.length > 0 || committedEdges.length > 0) {
-    await new LedgerRepository({
+    const repository = new LedgerRepository({
       projectRoot: deps.projectRoot,
       readBaseline: deps.readBaseline,
       ...(deps.now === undefined ? {} : { now: deps.now }),
-    }).commit({
-      ledger_operation_id: `ledger_${ulid()}`,
+    });
+    const ledgerOperationId = `ledger_${ulid()}`;
+    const workflowOperationId = last.manifest.workflow_operation_id;
+    const firstSequence =
+      repository
+        .replay()
+        .events.filter((event) => event.workflow_operation_id === workflowOperationId)
+        .reduce((maximum, event) => Math.max(maximum, event.sequence), 0) + 1;
+    const projectId = `project_${readManagedManifest(deps.projectRoot).name}`;
+    const events: LifecycleEvent[] = findingLifecyclePlans.map((plan, index) =>
+      buildFindingLifecycleEvent({
+        eventId: `event_${ulid()}`,
+        action: "supersede",
+        projectId,
+        iterationId: plan.finding.provenance.iteration_id,
+        workflowOperationId,
+        ledgerOperationId,
+        sequence: firstSequence + index,
+        timestamp: now,
+        payload: {
+          findingId: plan.finding.id,
+          from: plan.finding.status,
+          to: "superseded",
+          actor: "workflow-engine",
+          cause: "predicate_resolved",
+          oldSubjectDigests: plan.oldSubjectDigests,
+          newSubjectDigests: plan.newSubjectDigests,
+        },
+      }),
+    );
+    await repository.commit({
+      ledger_operation_id: ledgerOperationId,
       workflow_operation_id: last.manifest.workflow_operation_id,
       attempt_id: last.manifest.attempt_id,
       expected_baseline: deps.readBaseline(),
       artifacts,
       edges: committedEdges,
-      events: [],
+      events,
     });
   }
 

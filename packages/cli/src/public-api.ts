@@ -28,6 +28,7 @@ export {
   type CliDependencies,
   type CommandContext,
   type ImpactRequest,
+  type FindingGroupRequest,
   type IterateRequest,
   type NewProjectRequest,
   type ProjectRequest,

@@ -88,6 +88,15 @@ export interface FindingRequest {
   readonly actor?: string;
 }
 
+export interface FindingGroupRequest {
+  readonly action: "accept" | "close" | "supersede";
+  readonly groupId: string;
+  readonly membershipDigest: string;
+  readonly projectRoot: string;
+  readonly evidenceId?: string;
+  readonly actor?: string;
+}
+
 export interface ImpactRequest {
   readonly projectRoot: string;
   readonly target?: string;
@@ -110,6 +119,7 @@ export interface RuntimeService {
   abort(request: AbortRequest): Promise<CommandResult>;
   approve(request: ApproveRequest): Promise<CommandResult>;
   finding(request: FindingRequest): Promise<CommandResult>;
+  findingGroup(request: FindingGroupRequest): Promise<CommandResult>;
   impact(request: ImpactRequest): Promise<CommandResult>;
   plan(request: ProjectRequest): Promise<CommandResult>;
   run(request: RunRequest): Promise<CommandResult>;
@@ -153,6 +163,8 @@ export function createStubRuntimeService(): RuntimeService {
       Promise.resolve(stageUnavailable("approve", "approval.resolve", { ...request })),
     finding: (request) =>
       Promise.resolve(stageUnavailable("finding", "feedback.resolve", { ...request })),
+    findingGroup: (request) =>
+      Promise.resolve(stageUnavailable("finding", "feedback.resolve_group", { ...request })),
     impact: (request) =>
       Promise.resolve(stageUnavailable("impact", "impact.preview", { ...request })),
     plan: (request) => Promise.resolve(stageUnavailable("plan", "plan.read", { ...request })),
@@ -290,6 +302,7 @@ digest. Defer keeps the proposal resumable; reject closes it but keeps the
 audit history.
 `,
   finding: `Usage: harness finding <accept|close|supersede> <finding-id> [--evidence <id>] [--actor <id>] [--json]
+       harness finding group <accept|close|supersede> <group-id> --digest <membership-digest> [--evidence <id>] [--actor <id>] [--json]
 
 Drive one finding through its lifecycle. Accept marks it confirmed for
 repair routing; supersede retires it as no longer relevant; close marks it

@@ -6,6 +6,7 @@ import { createGitVcsAdapter } from "@universal-harness-internal/adapter-vcs-git
 import { renderTasksProjection } from "@universal-harness-internal/adapter-projection-markdown";
 import { defineEvaluationCase, evaluateRun } from "@universal-harness-internal/eval";
 import {
+  FindingGroupError,
   OrchestrationError,
   abortIteration,
   createDirectExecutor,
@@ -21,6 +22,7 @@ import {
   readStagedAdoptionPreview,
   resolveApproval,
   resolveFinding,
+  resolveFindingGroup,
   resumeIteration,
   runIteration,
   auditGraph,
@@ -43,6 +45,7 @@ import type {
   AbortRequest,
   AdoptProjectRequest,
   ApproveRequest,
+  FindingGroupRequest,
   FindingRequest,
   ImpactRequest,
   IterateRequest,
@@ -306,6 +309,14 @@ export function createOrchestratedRuntimeService(
           data: { kind: error.kind },
         };
       }
+      if (error instanceof FindingGroupError) {
+        return {
+          command,
+          status: "failed",
+          message: error.message,
+          data: { kind: error.kind },
+        };
+      }
       throw error;
     }
   };
@@ -514,6 +525,29 @@ export function createOrchestratedRuntimeService(
             finding_id: resolved.findingId,
             action: resolved.action,
             status: resolved.status,
+          },
+        };
+      }),
+
+    findingGroup: async (request: FindingGroupRequest): Promise<CommandResult> =>
+      guard("finding", async () => {
+        const resolved = await resolveFindingGroup(orchestratorDeps(request.projectRoot), {
+          groupId: request.groupId,
+          membershipDigest: request.membershipDigest,
+          action: request.action,
+          actor: request.actor ?? actor,
+          ...(request.evidenceId === undefined ? {} : { evidenceId: request.evidenceId }),
+        });
+        return {
+          command: "finding",
+          status: "ok",
+          message: `finding group ${resolved.groupId} is now ${resolved.status}`,
+          data: {
+            group_id: resolved.groupId,
+            membership_digest: resolved.membershipDigest,
+            action: resolved.action,
+            status: resolved.status,
+            members: [...resolved.members],
           },
         };
       }),

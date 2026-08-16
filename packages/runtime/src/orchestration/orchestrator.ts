@@ -16,6 +16,7 @@ import {
   validateSchema,
   type CommitHooks,
   type EdgeRecord,
+  type LifecycleEvent,
   type LockTuning,
   type NodeRecord,
 } from "@universal-harness-internal/core";
@@ -77,6 +78,8 @@ import {
   buildFindingGovernanceMetadata,
   findingGovernanceForAudit,
 } from "../finding/governance.js";
+import { planFindingDecay } from "../finding/decay.js";
+import { findingLifecyclePayload } from "../finding/lifecycle.js";
 import { runGateSuite, type GateSuiteOutcome } from "../gates/runner.js";
 import { ProjectionError, writeManagedOutput } from "../projection/managed-output.js";
 import { issueGrant } from "../policy/capability-grant.js";
@@ -712,7 +715,13 @@ async function commitArtifacts(
   attemptId: string,
   artifacts: readonly { readonly path: string; readonly content: string }[],
   edges: readonly EdgeRecord[] = [],
+  lifecycleEvents: readonly {
+    readonly eventType: LifecycleEvent["event_type"];
+    readonly iterationId: string;
+    readonly payload: Record<string, unknown>;
+  }[] = [],
 ): Promise<void> {
+  const ledgerOperationId = newIdOf(deps, "ledger");
   const repository = new LedgerRepository({
     projectRoot: deps.projectRoot,
     readBaseline: deps.readBaseline,
@@ -720,14 +729,44 @@ async function commitArtifacts(
     ...(deps.hooks === undefined ? {} : { hooks: deps.hooks }),
     ...(deps.lock === undefined ? {} : { lock: deps.lock }),
   });
+  const projectId = `project_${readManagedManifest(deps.projectRoot).name}`;
+  const timestamp = nowOf(deps);
+  const firstEventSequence =
+    repository
+      .replay()
+      .events.filter((event) => event.workflow_operation_id === workflowOperationId)
+      .reduce((maximum, event) => Math.max(maximum, event.sequence), 0) + 1;
+  const events = lifecycleEvents.map((spec, index) => {
+    const draft = {
+      protocol_version: PROTOCOL_VERSION,
+      record_kind: "event",
+      event_id: newIdOf(deps, "event"),
+      event_type: spec.eventType,
+      project_id: projectId,
+      iteration_id: spec.iterationId,
+      workflow_operation_id: workflowOperationId,
+      ledger_operation_id: ledgerOperationId,
+      sequence: firstEventSequence + index,
+      timestamp,
+      payload: spec.payload,
+    };
+    const validation = validateSchema("event", draft);
+    if (!validation.valid) {
+      throw new OrchestrationError(
+        "configuration",
+        `invalid lifecycle event: ${validation.errors.map((issue) => issue.message).join("; ")}`,
+      );
+    }
+    return draft as LifecycleEvent;
+  });
   await repository.commit({
-    ledger_operation_id: newIdOf(deps, "ledger"),
+    ledger_operation_id: ledgerOperationId,
     workflow_operation_id: workflowOperationId,
     attempt_id: attemptId,
     expected_baseline: deps.readBaseline(),
     artifacts,
     edges,
-    events: [],
+    events,
   });
 }
 
@@ -2768,7 +2807,11 @@ async function commitAuditFindings(ctx: PipelineContext): Promise<AuditCommitOut
   let openAuditFindings: NodeRecord[];
   let committedEdgeIds: ReadonlySet<string>;
   let activeFindingEdges: readonly EdgeRecord[];
+  let auditNodes: readonly NodeRecord[];
+  let auditEdges: readonly EdgeRecord[];
   try {
+    auditNodes = graph.nodes;
+    auditEdges = graph.edges;
     report = auditGraph(
       { nodes: graph.nodes, edges: graph.edges },
       { provenTaskIds: provenQualityTaskIds(deps.projectRoot) },
@@ -2796,7 +2839,12 @@ async function commitAuditFindings(ctx: PipelineContext): Promise<AuditCommitOut
   }
 
   const artifacts: { readonly path: string; readonly content: string }[] = [];
-  const edges: EdgeRecord[] = [];
+  const edgeRevisions = new Map<string, EdgeRecord>();
+  const lifecycleEvents: {
+    readonly eventType: LifecycleEvent["event_type"];
+    readonly iterationId: string;
+    readonly payload: Record<string, unknown>;
+  }[] = [];
   const liveFindingIds = new Set<string>();
   for (const finding of report.findings) {
     const id = auditFindingId(finding);
@@ -2833,18 +2881,45 @@ async function commitAuditFindings(ctx: PipelineContext): Promise<AuditCommitOut
     const edge = { ...edgeContent, digest: contentDigest(edgeContent) };
     const validation = validateSchema("edge", edge);
     if (!validation.valid) throw invalidAuditRecord("edge", edgeId, validation.errors);
-    edges.push(edge as unknown as EdgeRecord);
+    edgeRevisions.set(edgeId, edge as unknown as EdgeRecord);
   }
 
   // A gap that no longer reproduces supersedes its committed Finding: the
   // deterministic re-check is the repair verdict for audit findings. The
   // finding's active BLOCKS edges retire with it -- a superseded node held by
   // a live edge is exactly what the stale_knowledge rule (correctly) flags.
-  for (const existing of openAuditFindings) {
-    if (liveFindingIds.has(existing.id)) continue;
+  const decayPlans = planFindingDecay({
+    nodes: auditNodes,
+    edges: auditEdges,
+    liveFindingIds: [...liveFindingIds],
+  });
+  for (const decay of decayPlans) {
+    const existing = decay.finding;
     const revision = existing.revision + 1;
     const path = `${AUDIT_FINDING_NODE_DIRECTORY}/${existing.id}/${String(revision)}.json`;
     if (artifactExists(deps, path)) continue;
+    const proposedFeedback = readJsonArtifact<Record<string, unknown>>(
+      deps,
+      `artifacts/findings/${existing.id}/proposed.json`,
+    );
+    let feedbackDigest: string | undefined;
+    if (proposedFeedback !== undefined) {
+      const feedbackContent: Record<string, unknown> = {
+        ...proposedFeedback,
+        status: "superseded",
+      };
+      delete feedbackContent["digest"];
+      const feedback = { ...feedbackContent, digest: contentDigest(feedbackContent) };
+      const feedbackValidation = validateSchema("feedback", feedback);
+      if (!feedbackValidation.valid) {
+        throw invalidAuditRecord("feedback", existing.id, feedbackValidation.errors);
+      }
+      feedbackDigest = feedback.digest;
+      artifacts.push({
+        path: `artifacts/findings/${existing.id}/superseded.json`,
+        content: `${canonicalizeJson(feedback)}\n`,
+      });
+    }
     const base: Record<string, unknown> = Object.fromEntries(
       Object.entries(existing).filter(([key]) => key !== "digest"),
     );
@@ -2855,6 +2930,18 @@ async function commitAuditFindings(ctx: PipelineContext): Promise<AuditCommitOut
       actor: "workflow-engine",
       timestamp: nowOf(deps),
     };
+    if (feedbackDigest !== undefined) {
+      const findingExtension = existing.extensions?.["harness.finding"];
+      base.extensions = {
+        ...existing.extensions,
+        "harness.finding": {
+          ...(typeof findingExtension === "object" && findingExtension !== null
+            ? (findingExtension as Record<string, unknown>)
+            : {}),
+          feedback_digest: feedbackDigest,
+        },
+      };
+    }
     const node = { ...base, digest: contentDigest(base) };
     const validation = validateSchema("node", node);
     if (!validation.valid) throw invalidAuditRecord("finding node", existing.id, validation.errors);
@@ -2875,12 +2962,33 @@ async function commitAuditFindings(ctx: PipelineContext): Promise<AuditCommitOut
       if (!edgeValidation.valid) {
         throw invalidAuditRecord("edge", active.id, edgeValidation.errors);
       }
-      edges.push(retired as unknown as EdgeRecord);
+      edgeRevisions.set(active.id, retired as unknown as EdgeRecord);
     }
+    lifecycleEvents.push({
+      eventType: "FindingSuperseded",
+      iterationId: existing.provenance.iteration_id,
+      payload: findingLifecyclePayload({
+        findingId: existing.id,
+        from: existing.status,
+        to: "superseded",
+        actor: "workflow-engine",
+        cause: decay.cause,
+        oldSubjectDigests: decay.oldSubjectDigests,
+        newSubjectDigests: decay.newSubjectDigests,
+      }),
+    });
   }
 
+  const edges = [...edgeRevisions.values()].sort((left, right) => left.id.localeCompare(right.id));
   if (artifacts.length > 0 || edges.length > 0) {
-    await commitArtifacts(deps, ctx.workflowOperationId, currentAttemptId(ctx), artifacts, edges);
+    await commitArtifacts(
+      deps,
+      ctx.workflowOperationId,
+      currentAttemptId(ctx),
+      artifacts,
+      edges,
+      lifecycleEvents,
+    );
   }
   return {
     blockingFindingIds: report.findings
@@ -3980,6 +4088,7 @@ export async function resolveFinding(
 
   const targetStatus =
     input.action === "accept" ? "accepted" : input.action === "close" ? "closed" : "superseded";
+  const fromStatus = existing("accepted") ? "accepted" : "proposed";
   if (input.action === "close") {
     if (input.evidenceId === undefined) {
       throw new OrchestrationError(
@@ -4114,6 +4223,27 @@ export async function resolveFinding(
     commitContext.attemptId,
     artifacts,
     edges,
+    [
+      {
+        eventType:
+          input.action === "accept"
+            ? "FindingAccepted"
+            : input.action === "close"
+              ? "FindingClosed"
+              : "FindingSuperseded",
+        iterationId:
+          findingNode?.provenance.iteration_id ??
+          String(feedback["iteration_id"] ?? "iteration_unknown"),
+        payload: {
+          finding_id: input.findingId,
+          from: fromStatus,
+          to: targetStatus,
+          actor: input.actor,
+          cause: `single_${input.action}`,
+          ...(input.evidenceId === undefined ? {} : { evidence_id: input.evidenceId }),
+        },
+      },
+    ],
   );
   return { findingId: input.findingId, action: input.action, status: targetStatus };
 }
