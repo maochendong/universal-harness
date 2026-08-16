@@ -127,6 +127,11 @@ import { deriveActualRunChanges } from "../planning/scope-drift.js";
 import { buildTaskVerdict, type TaskVerdictRecord } from "../evaluation/task-verdict.js";
 import { projectTaskVerdict } from "../evaluation/outcome-projection.js";
 import {
+  assessOpenIterationMigration,
+  buildOpenIterationMigrationRecord,
+  type OpenIterationMigrationRecord,
+} from "../compatibility/open-iteration.js";
+import {
   captureRequirements,
   type IntentInput,
   type RequirementProposal,
@@ -391,6 +396,14 @@ export type OrchestrationOutcome =
       readonly workflowOperationId: string;
       readonly iterationId: string;
       readonly completedPhase: OrchestrationPhase;
+    }
+  | {
+      readonly status: "migration_required";
+      readonly workflowOperationId: string;
+      readonly iterationId: string;
+      readonly reasons: readonly string[];
+      readonly resumePhase: "impact" | "plan";
+      readonly resumeCommand: string;
     };
 
 export interface RunIterationInput {
@@ -1120,18 +1133,34 @@ function loadPlan(
 ): { readonly node: NodeRecord; readonly content: ExecutionPlanContent } | undefined {
   const graph = materializeProjectGraph(ctx.deps.projectRoot);
   try {
-    const node = graph.nodes.find(
-      (candidate) =>
-        candidate.type === "ExecutionPlan" && candidate.provenance.iteration_id === ctx.iterationId,
+    const migration = readJsonArtifact<OpenIterationMigrationRecord>(
+      ctx.deps,
+      migrationArtifactPath(ctx.workflowOperationId),
     );
-    if (node === undefined) return undefined;
-    return { node, content: readExecutionPlanContent(node) };
+    const invalidated = migration?.invalidated.plan_digest;
+    const candidates = graph.nodes
+      .filter(
+        (candidate) =>
+          candidate.type === "ExecutionPlan" &&
+          candidate.provenance.iteration_id === ctx.iterationId,
+      )
+      .sort((left, right) => right.revision - left.revision);
+    for (const node of candidates) {
+      const content = readExecutionPlanContent(node);
+      if (content.content_digest !== invalidated) return { node, content };
+    }
+    return undefined;
   } finally {
     graph.close();
   }
 }
 
 function loadBundleRecords(ctx: PipelineContext): Map<string, ContextBundleRecord> {
+  const migration = readJsonArtifact<OpenIterationMigrationRecord>(
+    ctx.deps,
+    migrationArtifactPath(ctx.workflowOperationId),
+  );
+  const invalidated = new Set(migration?.invalidated.context_digests ?? []);
   const digests = new Set([
     ...Object.values(ctx.workingState.context_bundle_digests ?? {}),
     ...(ctx.workingState.context_bundle_digest === undefined
@@ -1149,9 +1178,25 @@ function loadBundleRecords(ctx: PipelineContext): Map<string, ContextBundleRecor
       ctx.deps,
       `artifacts/context-bundles/${name}`,
     );
-    if (record !== undefined && digests.has(record.digest)) records.set(record.task_id, record);
+    if (record !== undefined && digests.has(record.digest) && !invalidated.has(record.digest)) {
+      records.set(record.task_id, record);
+    }
   }
   return records;
+}
+
+function migrationArtifactPath(workflowOperationId: string): string {
+  return `artifacts/migrations/${workflowOperationId}.json`;
+}
+
+function readJsonDirectory(deps: OrchestratorDependencies, relative: string): unknown[] {
+  const directory = resolveHarnessPath(harnessRoot(deps), relative);
+  if (!existsSync(directory)) return [];
+  return readdirSync(directory)
+    .filter((entry) => entry.endsWith(".json"))
+    .sort()
+    .map((entry) => readJsonArtifact<unknown>(deps, `${relative}/${entry}`))
+    .filter((record): record is unknown => record !== undefined);
 }
 
 function runResultArtifactPath(runId: string): string {
@@ -2006,11 +2051,17 @@ function implementsEdgesFor(
 async function phasePlan(ctx: PipelineContext, gateIds: readonly string[]): Promise<PhaseStep> {
   const { deps } = ctx;
   const existing = loadPlan(ctx);
+  const migrationBlockers = ctx.workingState.blockers.filter((blocker) =>
+    blocker.startsWith("migration required:"),
+  );
   if (existing !== undefined) {
     ctx.plan = existing;
     await ctx.engine.commitCheckpoint(ctx.workflowOperationId, {
       boundary: PHASE_CHECKPOINT_BOUNDARY.plan,
-      proposal: { phase: "context" },
+      proposal: {
+        phase: "context",
+        ...(migrationBlockers.length === 0 ? {} : { clear_blockers: migrationBlockers }),
+      },
     });
     refreshWorkingState(ctx);
     return { continue: true };
@@ -2080,7 +2131,10 @@ async function phasePlan(ctx: PipelineContext, gateIds: readonly string[]): Prom
   ctx.plan = { node: records.plan, content: readExecutionPlanContent(records.plan) };
   await ctx.engine.commitCheckpoint(ctx.workflowOperationId, {
     boundary: PHASE_CHECKPOINT_BOUNDARY.plan,
-    proposal: { phase: "context" },
+    proposal: {
+      phase: "context",
+      ...(migrationBlockers.length === 0 ? {} : { clear_blockers: migrationBlockers }),
+    },
     events: phaseLifecycleEvents({
       phase: "plan",
       planId: records.plan.id,
@@ -2594,6 +2648,52 @@ async function phaseExecute(ctx: PipelineContext): Promise<PhaseStep> {
   if (ctx.bundles.size === 0) ctx.bundles = loadBundleRecords(ctx);
   const tasks = orderedPlanTasks(plan.content.tasks);
   if (tasks.length === 0) throw new OrchestrationError("configuration", "plan carries no tasks");
+
+  const migrationInput = {
+    workflow_operation_id: ctx.workflowOperationId,
+    iteration_id: ctx.iterationId,
+    plan: plan.content,
+    contexts: [...ctx.bundles.values()],
+    authorization_records: readJsonDirectory(deps, "artifacts/execution-authorizations"),
+    grant_records: readJsonDirectory(deps, "artifacts/capability-grants"),
+    relied_grant_digests: ctx.workingState.capability_grants,
+  };
+  const migration = assessOpenIterationMigration(migrationInput);
+  if (migration.required) {
+    const path = migrationArtifactPath(ctx.workflowOperationId);
+    const migrationArtifacts = artifactExists(deps, path)
+      ? []
+      : [
+          {
+            path,
+            content: `${canonicalizeJson(
+              buildOpenIterationMigrationRecord(migrationInput, migration, nowOf(deps)),
+            )}\n`,
+          },
+        ];
+    const detail = `migration required: ${migration.reasons.join(", ")}`;
+    await ctx.engine.block(ctx.workflowOperationId, {
+      reason: "missing_input",
+      detail,
+      artifacts: migrationArtifacts,
+      proposal: {
+        phase: migration.resume_phase,
+        set_next_action: resumeCommandFor(ctx.workflowOperationId),
+      },
+    });
+    refreshWorkingState(ctx);
+    return {
+      continue: false,
+      outcome: {
+        status: "migration_required",
+        workflowOperationId: ctx.workflowOperationId,
+        iterationId: ctx.iterationId,
+        reasons: migration.reasons,
+        resumePhase: migration.resume_phase,
+        resumeCommand: resumeCommandFor(ctx.workflowOperationId),
+      },
+    };
+  }
 
   // One run per task, in dependency order. A claimed run is final (unless its
   // committed evaluation failed), so a resume re-executes only the tasks that

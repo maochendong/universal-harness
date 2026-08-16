@@ -72,9 +72,11 @@ export function governanceMigrationReasons(input: GovernanceMigrationInput): rea
   const hasAtomicAcceptance =
     tasks.length > 0 &&
     tasks.every((task) => {
-      const acceptance = Array.isArray(task["acceptance"])
-        ? task["acceptance"].map(objectValue)
-        : [];
+      const acceptance = Array.isArray(task["assertions"])
+        ? task["assertions"].map(objectValue)
+        : Array.isArray(task["acceptance"])
+          ? task["acceptance"].map(objectValue)
+          : [];
       return (
         acceptance.length > 0 &&
         acceptance.every((assertion) => stringValue(assertion["assertion_id"]) !== undefined)

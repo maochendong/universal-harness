@@ -247,6 +247,21 @@ function outcomeToResult(
           detail: outcome.detail,
         },
       };
+    case "migration_required":
+      return {
+        command,
+        status: "blocked",
+        message: `legacy open iteration requires migration from ${outcome.resumePhase}; resume with: ${outcome.resumeCommand}`,
+        data: {
+          ...extra,
+          kind: "migration_required",
+          workflow_operation_id: outcome.workflowOperationId,
+          iteration_id: outcome.iterationId,
+          reasons: outcome.reasons,
+          resume_phase: outcome.resumePhase,
+          resume_command: outcome.resumeCommand,
+        },
+      };
   }
 }
 

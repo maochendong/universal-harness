@@ -119,6 +119,8 @@ export interface BlockOperationInput {
   /** Human-readable blocker recorded in the WorkingState and event payload. */
   readonly detail: string;
   readonly proposal?: WorkingStateProposal;
+  /** Diagnostic artifacts that must be atomic with the blocked checkpoint. */
+  readonly artifacts?: readonly { readonly path: string; readonly content: string }[];
 }
 
 export interface AbortOperationInput {
@@ -751,7 +753,11 @@ export class WorkflowEngine {
       ledgerOperationId,
       workflowOperationId,
       attemptId: current.attempt_id,
-      artifacts: [this.operationArtifact(operation, history.length + 1), ...checkpoint.files],
+      artifacts: [
+        this.operationArtifact(operation, history.length + 1),
+        ...checkpoint.files,
+        ...(input.artifacts ?? []),
+      ],
       events,
     });
     return { operation, checkpointId };

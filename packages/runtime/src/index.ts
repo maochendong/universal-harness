@@ -26,6 +26,13 @@ export {
   type GovernanceMigrationInput,
   type LegacySnapshotTruthProjection,
 } from "./compatibility/governance-records.js";
+export {
+  assessOpenIterationMigration,
+  buildOpenIterationMigrationRecord,
+  type OpenIterationMigrationAssessment,
+  type OpenIterationMigrationInput,
+  type OpenIterationMigrationRecord,
+} from "./compatibility/open-iteration.js";
 
 export {
   STACK_PROFILES,
