@@ -1,7 +1,9 @@
 # Universal Harness M2 完整设计
 
-日期：2026-08-16  
-状态：设计已确认，书面规格待复核  
+日期：2026-08-16
+
+状态：已批准
+
 范围依据：[M2–M3 范围决策](2026-08-15-m2-m3-scope-decisions.md)
 
 ## 1. 结论
@@ -72,7 +74,7 @@ SQLite 可重建投影 ────────┤
 | `packages/graph` | 读端口、Finding 分组投影、语义索引与候选排序、SQLite 查询适配器 | Approval、HTTP、secret |
 | `packages/plugin-sdk` | `SemanticSeedProvider` 版本化契约；沿用 Gate Provider 契约 | 具体 Provider 凭据和进程管理 |
 | `packages/runtime` | Finding 生命周期/批处理/衰减、EventStream、观察事件发布、Judge Gate 归一化、应用服务 | 页面渲染 |
-| `packages/gate-llm-judge` | Review Bundle、OpenAI-compatible transport、结构化响应校验与 Gate adapter | Policy 决策、secret 持久化、直接写 Ledger |
+| `adapters/gate-llm-judge` | Review Bundle、OpenAI-compatible transport、结构化响应校验与 Gate adapter | Policy 决策、secret 持久化、直接写 Ledger |
 | `packages/dashboard` | 本地 HTTP、SSE、静态单页、只读 API 与受控操作适配器 | 直接解析/修改 Ledger、执行任意命令 |
 | `packages/cli` | `serve`、扩展后的 `watch`、Finding group、semantic impact、配置与组合 | 重复领域实现 |
 | `packages/conformance` | Provider 契约、跨包端口和发布包一致性测试 | 项目私有规则 |
@@ -214,7 +216,7 @@ interface LlmJudgeResult {
 
 ### 7.4 Evidence 与 Finding
 
-`packages/gate-llm-judge` 提供普通 Gate adapter，并经 ToolRegistry 执行；runtime 只负责 Gate policy、Evidence 和 Finding 编排。Evidence 继续使用既有 Gate bindings，并在 `harness.llm-judge` extension 中增加：
+`adapters/gate-llm-judge` 提供普通 Gate adapter，并经 ToolRegistry 执行；runtime 只负责 Gate policy、Evidence 和 Finding 编排。Evidence 继续使用既有 Gate bindings，并在 `harness.llm-judge` extension 中增加：
 
 - provider protocol、endpoint origin（不含凭据）、model、参数；
 - prompt version/digest；
