@@ -1,0 +1,68 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.universal-harness.dev/m1/observation.schema.json",
+  "additionalProperties": false,
+  "type": "object",
+  "required": [
+    "stream_version",
+    "stream_id",
+    "sequence",
+    "observation_key",
+    "event_type",
+    "project_id",
+    "iteration_id",
+    "workflow_operation_id",
+    "timestamp",
+    "payload"
+  ],
+  "properties": {
+    "stream_version": { "const": 1, "type": "number" },
+    "stream_id": {
+      "minLength": 3,
+      "maxLength": 160,
+      "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+      "type": "string"
+    },
+    "sequence": { "minimum": 1, "type": "integer" },
+    "observation_key": {
+      "minLength": 3,
+      "maxLength": 160,
+      "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+      "type": "string"
+    },
+    "event_type": {
+      "anyOf": [
+        { "const": "PhaseStarted", "type": "string" },
+        { "const": "PhaseCompleted", "type": "string" },
+        { "const": "PhasePaused", "type": "string" },
+        { "const": "GateStarted", "type": "string" },
+        { "const": "GateCompleted", "type": "string" },
+        { "const": "RunStarted", "type": "string" },
+        { "const": "RunHeartbeat", "type": "string" },
+        { "const": "RunOutputSummary", "type": "string" },
+        { "const": "BudgetUpdated", "type": "string" },
+        { "const": "ApprovalRequired", "type": "string" }
+      ]
+    },
+    "project_id": {
+      "minLength": 3,
+      "maxLength": 160,
+      "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+      "type": "string"
+    },
+    "iteration_id": {
+      "minLength": 3,
+      "maxLength": 160,
+      "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+      "type": "string"
+    },
+    "workflow_operation_id": {
+      "minLength": 3,
+      "maxLength": 160,
+      "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+      "type": "string"
+    },
+    "timestamp": { "format": "date-time", "type": "string" },
+    "payload": { "type": "object", "patternProperties": { "^(.*)$": {} } }
+  }
+}

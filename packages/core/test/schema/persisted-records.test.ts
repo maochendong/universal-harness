@@ -222,6 +222,24 @@ describe("persisted schemas", () => {
     }
   });
 
+  it("accepts a human-reviewed may-impact relation", () => {
+    expect(
+      validateSchema("edge", {
+        protocol_version: "1.0.0",
+        record_kind: "edge",
+        id: "edge_may-impact_01",
+        type: "MAY_IMPACT",
+        source_id: "requirement_01K1ABCDEFGHIJ",
+        target_id: "component_01K1ABCDEFGHIJK",
+        status: "accepted",
+        source: "human",
+        provenance,
+        confidence: 1,
+        digest,
+      }),
+    ).toEqual({ valid: true, errors: [] });
+  });
+
   it("rejects unknown fields and only permits namespaced extensions", () => {
     expect(validateSchema("node", { ...baseNode("Requirement"), unexpected: true })).toMatchObject({
       valid: false,

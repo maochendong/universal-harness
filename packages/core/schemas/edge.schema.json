@@ -60,7 +60,8 @@
         { "const": "APPROVES", "type": "string" },
         { "const": "DIAGNOSED_BY", "type": "string" },
         { "const": "PROPOSES_CHANGE_TO", "type": "string" },
-        { "const": "TRIGGERS", "type": "string" }
+        { "const": "TRIGGERS", "type": "string" },
+        { "const": "MAY_IMPACT", "type": "string" }
       ]
     },
     "source_id": {

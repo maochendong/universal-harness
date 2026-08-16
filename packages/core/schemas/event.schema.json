@@ -42,6 +42,9 @@
         { "const": "GateCompleted", "type": "string" },
         { "const": "EvaluationCompleted", "type": "string" },
         { "const": "FindingCreated", "type": "string" },
+        { "const": "FindingAccepted", "type": "string" },
+        { "const": "FindingClosed", "type": "string" },
+        { "const": "FindingSuperseded", "type": "string" },
         { "const": "OperationCompleted", "type": "string" }
       ]
     },

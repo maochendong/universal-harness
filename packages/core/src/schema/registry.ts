@@ -7,6 +7,7 @@ import { EdgeSchema } from "./edge.js";
 import { EventSchema } from "./event.js";
 import { FeedbackSchema } from "./feedback.js";
 import { NodeSchema } from "./node.js";
+import { ObservationEventSchema } from "./observation.js";
 import { LedgerOperationSchema, OperationSchema, WorkflowOperationSchema } from "./operation.js";
 import { PluginManifestSchema } from "./plugin.js";
 import { RuntimeSchema } from "./runtime.js";
@@ -15,6 +16,7 @@ export const SCHEMA_KEYS = [
   "node",
   "edge",
   "event",
+  "observation",
   "operation",
   "workflow-operation",
   "ledger-operation",
@@ -29,6 +31,7 @@ export const SCHEMA_REGISTRY = {
   node: NodeSchema,
   edge: EdgeSchema,
   event: EventSchema,
+  observation: ObservationEventSchema,
   operation: OperationSchema,
   "workflow-operation": WorkflowOperationSchema,
   "ledger-operation": LedgerOperationSchema,
@@ -108,6 +111,10 @@ export function validateSchema(key: SchemaKey, value: unknown): ValidationResult
 
   if (!validator(value)) {
     return { valid: false, errors: normalizeErrors(validator.errors) };
+  }
+
+  if (key === "observation") {
+    return { valid: true, errors: [] };
   }
 
   const protocolVersion = protocolVersionOf(value);

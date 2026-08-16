@@ -21,6 +21,9 @@ export const EVENT_TYPES = [
   "GateCompleted",
   "EvaluationCompleted",
   "FindingCreated",
+  "FindingAccepted",
+  "FindingClosed",
+  "FindingSuperseded",
   "OperationCompleted",
 ] as const;
 

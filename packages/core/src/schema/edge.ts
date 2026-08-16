@@ -42,6 +42,7 @@ export const RELATION_TYPES = [
   "DIAGNOSED_BY",
   "PROPOSES_CHANGE_TO",
   "TRIGGERS",
+  "MAY_IMPACT",
 ] as const;
 
 export const EDGE_STATUSES = ["proposed", "accepted", "rejected", "superseded"] as const;
