@@ -274,6 +274,7 @@ export {
   assertAgentPlanSize,
   type TaskSizeAssessment,
 } from "./planning/task-sizing.js";
+export { deriveActualRunChanges, type ActualRunChanges } from "./planning/scope-drift.js";
 export {
   FORBIDDEN_PROPOSAL_KEYS,
   PLANNING_ERROR_KINDS,

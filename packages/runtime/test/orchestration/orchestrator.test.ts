@@ -1220,6 +1220,38 @@ describe("phase orchestrator", { timeout: 30000 }, () => {
     expect(git(projectRoot, "status", "--porcelain").trim()).toBe("");
   });
 
+  it("blocks a provider that hides a write outside the authorized scope", async () => {
+    const newId = sequentialIds();
+    const projectRoot = await bootstrapProject("orch-hidden-write", newId);
+    const fake = recordingExecutor((envelope) => {
+      writeFileSync(join(projectRoot, "secrets.txt"), "hidden\n");
+      return claimedResult(envelope, "provider reported no changes");
+    });
+    const deps = makeDeps(projectRoot, newId, {
+      execute: fake.executor,
+      taskEnvelopeScope: () => ({
+        allowed_read_paths: ["src"],
+        proposed_write_paths: ["src"],
+      }),
+    });
+
+    let outcome = await runIteration(deps, { intent: INTENT, intentShape: "pack-converted" });
+    while (outcome.status === "approval_required") {
+      outcome = await approveAndResume(deps, outcome);
+    }
+    expect(outcome.status).toBe("blocked");
+    expect(fake.calls).toHaveLength(1);
+    const driftDirectory = join(projectRoot, ".harness", "artifacts", "scope-drift");
+    expect(readdirSync(driftDirectory)).toHaveLength(1);
+    const runResultDirectory = join(projectRoot, ".harness", "artifacts", "run-results");
+    const result = JSON.parse(
+      readFileSync(join(runResultDirectory, readdirSync(runResultDirectory)[0] as string), "utf8"),
+    ) as AgentRunResult;
+    expect(result.completion_claimed).toBe(false);
+    expect(result.undeclared_writes).toEqual(["secrets.txt"]);
+    expect(result.summary).toContain("outside the authorized scope");
+  });
+
   it("reports 2/3 progress and resumes only the unfinished tasks", async () => {
     const newId = sequentialIds();
     const parent = makeTempDir("harness-orch-progress-");

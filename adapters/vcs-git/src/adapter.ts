@@ -1,4 +1,6 @@
 import { isAbsolute } from "node:path";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 
 import {
   vcsErr,
@@ -18,7 +20,7 @@ import {
 } from "@universal-harness-internal/plugin-sdk";
 
 import { createGitRunner, narrowError, type GitRunner, type GitRunnerOptions } from "./commands.js";
-import { parseNameStatusZ, parseNumstatZ, readWorktreeStatus } from "./status.js";
+import { parseGitDiffStat, readWorktreeStatus, type UntrackedDiffEntry } from "./status.js";
 import { runAddWorktree, runRemoveWorktree } from "./worktree.js";
 
 export type GitVcsAdapterOptions = GitRunnerOptions;
@@ -200,17 +202,29 @@ export function createGitVcsAdapter(options: GitVcsAdapterOptions = {}): VcsAdap
     const numstat = await run("diffSummary", root, ["diff", "--numstat", "-z", "-M", ...range]);
     if (!numstat.ok) return numstat;
 
-    const counts = parseNumstatZ(numstat.value.stdout);
-    const files: DiffFileSummary[] = parseNameStatusZ(nameStatus.value.stdout).map((entry) => {
-      const lineCounts = counts.get(entry.path) ?? { insertions: 0, deletions: 0 };
-      return {
-        path: entry.path,
-        status: entry.status,
-        ...(entry.previousPath !== undefined ? { previousPath: entry.previousPath } : {}),
-        insertions: lineCounts.insertions,
-        deletions: lineCounts.deletions,
-      };
-    });
+    const untracked: UntrackedDiffEntry[] = [];
+    if (to === undefined) {
+      const listed = await run("diffSummary", root, [
+        "ls-files",
+        "--others",
+        "--exclude-standard",
+        "-z",
+      ]);
+      if (!listed.ok) return listed;
+      for (const path of listed.value.stdout.split("\0").filter((entry) => entry.length > 0)) {
+        const content = readFileSync(join(root, path));
+        const binary = content.includes(0);
+        const text = binary ? "" : content.toString("utf8");
+        const insertions =
+          text.length === 0 ? 0 : text.split("\n").length - (text.endsWith("\n") ? 1 : 0);
+        untracked.push({ path, insertions, binary });
+      }
+    }
+    const files: DiffFileSummary[] = parseGitDiffStat(
+      nameStatus.value.stdout,
+      numstat.value.stdout,
+      untracked,
+    );
     return vcsOk({
       from,
       to: resolvedTo,

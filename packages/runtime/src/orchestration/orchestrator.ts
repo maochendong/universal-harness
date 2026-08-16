@@ -34,6 +34,7 @@ import type {
   AgentRunResult,
   AgentTaskEnvelope,
   AgentTrajectoryVisibility,
+  DiffSummary,
   VcsAdapter,
 } from "@universal-harness-internal/plugin-sdk";
 
@@ -122,6 +123,7 @@ import {
 } from "../planning/execution-plan.js";
 import type { IntentShape } from "../planning/mode-selector.js";
 import type { TaskSpecification } from "../planning/task.js";
+import { deriveActualRunChanges } from "../planning/scope-drift.js";
 import {
   captureRequirements,
   type IntentInput,
@@ -2480,6 +2482,7 @@ async function phaseExecute(ctx: PipelineContext): Promise<PhaseStep> {
     const built = buildEnvelope(ctx, task, grantRecord, authority.authorization);
     const envelope = built.envelope;
     ctx.envelope = envelope;
+    let beforeDiff: DiffSummary | undefined;
     // A run left open by an interrupted process was reconciled by resume into
     // exactly one successor run; attach to it instead of opening a duplicate.
     const runId = loadOpenRunId(ctx, task.id);
@@ -2496,6 +2499,19 @@ async function phaseExecute(ctx: PipelineContext): Promise<PhaseStep> {
       });
       activeRunId = started.run_id;
       await commitRunNode(ctx, activeRunId);
+    }
+    if (deps.vcs !== undefined) {
+      const observed = await deps.vcs.diffSummary(
+        deps.projectRoot,
+        ctx.workingState.baseline_commit,
+      );
+      if (!observed.ok) {
+        throw new OrchestrationError(
+          "configuration",
+          `pre-run VCS inspection failed: ${observed.error.message}`,
+        );
+      }
+      beforeDiff = observed.value;
     }
     observe(ctx, () =>
       ctx.observations.runStarted(activeRunId, {
@@ -2515,6 +2531,53 @@ async function phaseExecute(ctx: PipelineContext): Promise<PhaseStep> {
       result = await executor(envelope as AgentTaskEnvelope);
     } finally {
       clearInterval(heartbeat);
+    }
+    let actualChanges: ReturnType<typeof deriveActualRunChanges> | undefined;
+    if (deps.vcs !== undefined && beforeDiff !== undefined) {
+      const observed = await deps.vcs.diffSummary(
+        deps.projectRoot,
+        ctx.workingState.baseline_commit,
+      );
+      if (!observed.ok) {
+        throw new OrchestrationError(
+          "configuration",
+          `post-run VCS inspection failed: ${observed.error.message}`,
+        );
+      }
+      actualChanges = deriveActualRunChanges(
+        beforeDiff,
+        observed.value,
+        grantRecord.spec.write_paths,
+      );
+      const undeclaredWrites = [
+        ...new Set([...result.undeclared_writes, ...actualChanges.undeclared_writes]),
+      ].sort();
+      const diffDigest = contentDigest({
+        before: beforeDiff,
+        after: observed.value,
+        actual: actualChanges,
+      });
+      result = {
+        ...result,
+        ...(undeclaredWrites.length === 0
+          ? {}
+          : {
+              outcome: "failed" as const,
+              termination_reason: "policy_denial" as const,
+              completion_claimed: false,
+              summary: `Harness detected writes outside the authorized scope: ${undeclaredWrites.join(", ")}`,
+            }),
+        change_summary: actualChanges.change_summary,
+        undeclared_writes: undeclaredWrites,
+        evidence: [
+          ...result.evidence,
+          {
+            kind: "harness_diff",
+            locator: `repository://${envelope.repository_id}/run/${activeRunId}`,
+            digest: diffDigest,
+          },
+        ],
+      };
     }
     observe(ctx, () => ctx.observations.runOutput(activeRunId, result.summary, { flush: true }));
     observe(ctx, () =>
@@ -2543,6 +2606,14 @@ async function phaseExecute(ctx: PipelineContext): Promise<PhaseStep> {
         path: runResultArtifactPath(activeRunId),
         content: `${canonicalizeJson(result)}\n`,
       },
+      ...(actualChanges === undefined || actualChanges.undeclared_writes.length === 0
+        ? []
+        : [
+            {
+              path: `artifacts/scope-drift/${activeRunId}.json`,
+              content: `${canonicalizeJson(actualChanges)}\n`,
+            },
+          ]),
     ]);
     lastRun = { runId: activeRunId, result };
 

@@ -1,4 +1,9 @@
-import { vcsOk, type VcsResult, type WorktreeStatus } from "@universal-harness-internal/plugin-sdk";
+import {
+  vcsOk,
+  type DiffFileSummary,
+  type VcsResult,
+  type WorktreeStatus,
+} from "@universal-harness-internal/plugin-sdk";
 
 import type { GitRunner } from "./commands.js";
 
@@ -74,6 +79,7 @@ export function parseNameStatusZ(output: string): ParsedNameStatusEntry[] {
 export interface LineCounts {
   readonly insertions: number;
   readonly deletions: number;
+  readonly binary: boolean;
 }
 
 /**
@@ -96,6 +102,7 @@ export function parseNumstatZ(output: string): Map<string, LineCounts> {
     const entry: LineCounts = {
       insertions: parseCount(fields[0]),
       deletions: parseCount(fields[1]),
+      binary: fields[0] === "-" || fields[1] === "-",
     };
     const pathField = fields[2];
     if (pathField !== undefined && pathField.length > 0) {
@@ -109,6 +116,44 @@ export function parseNumstatZ(output: string): Map<string, LineCounts> {
     counts.set(path, entry);
   }
   return counts;
+}
+
+export interface UntrackedDiffEntry {
+  readonly path: string;
+  readonly insertions: number;
+  readonly binary: boolean;
+}
+
+/** Merge Git name-status/numstat plus explicitly inspected untracked files. */
+export function parseGitDiffStat(
+  nameStatusOutput: string,
+  numstatOutput: string,
+  untracked: readonly UntrackedDiffEntry[] = [],
+): DiffFileSummary[] {
+  const counts = parseNumstatZ(numstatOutput);
+  const tracked = parseNameStatusZ(nameStatusOutput).map((entry) => {
+    const lineCounts = counts.get(entry.path) ?? {
+      insertions: 0,
+      deletions: 0,
+      binary: false,
+    };
+    return {
+      path: entry.path,
+      status: entry.status,
+      ...(entry.previousPath === undefined ? {} : { previousPath: entry.previousPath }),
+      insertions: lineCounts.insertions,
+      deletions: lineCounts.deletions,
+      ...(lineCounts.binary ? { binary: true } : {}),
+    } satisfies DiffFileSummary;
+  });
+  const additions: DiffFileSummary[] = untracked.map((entry) => ({
+    path: entry.path,
+    status: "added",
+    insertions: entry.insertions,
+    deletions: 0,
+    ...(entry.binary ? { binary: true } : {}),
+  }));
+  return [...tracked, ...additions.sort((left, right) => left.path.localeCompare(right.path))];
 }
 
 /**

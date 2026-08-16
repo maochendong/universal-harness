@@ -74,6 +74,8 @@ export interface DiffFileSummary {
   readonly previousPath?: string;
   readonly insertions: number;
   readonly deletions: number;
+  /** Git numstat reports `-` for binary content. */
+  readonly binary?: boolean;
 }
 
 export interface DiffSummary {
