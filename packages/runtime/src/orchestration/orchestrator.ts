@@ -2990,6 +2990,15 @@ async function commitEvaluationGraph(
   // evaluation is accepted evidence with `passed: false`; only an explicitly
   // provisional evaluator result remains proposed.
   const graphStatus = provisional ? "proposed" : "accepted";
+  const verdictDetails = {
+    ...(Array.isArray(extension["dimensions"]) ? { dimensions: extension["dimensions"] } : {}),
+    ...(Array.isArray(extension["mandatory_failures"])
+      ? { mandatory_failures: extension["mandatory_failures"] }
+      : {}),
+    ...(typeof extension["coverage"] === "object" && extension["coverage"] !== null
+      ? { coverage: extension["coverage"] }
+      : {}),
+  };
   appendNode(
     evidenceId,
     "Evidence",
@@ -3000,6 +3009,7 @@ async function commitEvaluationGraph(
       subject_id: taskId,
       provisional,
       passed: result.passed,
+      ...verdictDetails,
     },
     "evaluation-evidence-nodes",
   );
@@ -3014,6 +3024,7 @@ async function commitEvaluationGraph(
       subject_id: taskId,
       ...(extension["visibility"] === undefined ? {} : { visibility: extension["visibility"] }),
       passed: result.passed,
+      ...verdictDetails,
     },
     "evaluation-case-nodes",
   );

@@ -257,6 +257,18 @@ export async function backfillEvaluationGraph(
       continue;
     }
     const status = provisional ? "proposed" : "accepted";
+    const verdictDetails = {
+      ...(Array.isArray(evaluationExtension["dimensions"])
+        ? { dimensions: evaluationExtension["dimensions"] }
+        : {}),
+      ...(Array.isArray(evaluationExtension["mandatory_failures"])
+        ? { mandatory_failures: evaluationExtension["mandatory_failures"] }
+        : {}),
+      ...(typeof evaluationExtension["coverage"] === "object" &&
+      evaluationExtension["coverage"] !== null
+        ? { coverage: evaluationExtension["coverage"] }
+        : {}),
+    };
     appendNode({
       id: evidenceId,
       type: "Evidence",
@@ -273,6 +285,7 @@ export async function backfillEvaluationGraph(
         subject_id: subjectId,
         provisional,
         passed: summary.result.passed,
+        ...verdictDetails,
       },
       directory: "evaluation-evidence-nodes",
     });
@@ -295,6 +308,7 @@ export async function backfillEvaluationGraph(
           ? {}
           : { visibility: evaluationExtension["visibility"] }),
         passed: summary.result.passed,
+        ...verdictDetails,
       },
       directory: "evaluation-case-nodes",
     });

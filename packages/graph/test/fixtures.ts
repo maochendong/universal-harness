@@ -353,3 +353,122 @@ export async function commitScenario(projectRoot: string): Promise<void> {
     await repository.commit(input);
   }
 }
+
+/** Add one complete five-dimension evaluation plus one unevaluated Run. */
+export async function commitEvaluationScenario(
+  projectRoot: string,
+  options: { readonly includeVerdictDetails?: boolean } = {},
+): Promise<void> {
+  const dimensions = [
+    ["outcome", true, 1, 1, true, true],
+    ["safety", true, 1, 1, true, true],
+    ["trajectory", true, 0.75, 0.5, true, false],
+    ["correct_failure", true, 1, 1, true, false],
+    ["efficiency", true, 0.8, 0, true, false],
+  ].map(([dimension, available, score, threshold, passed, mandatory]) => ({
+    dimension,
+    available,
+    score,
+    threshold,
+    passed,
+    mandatory,
+    deterministic: true,
+    scorer: `deterministic/${String(dimension)}`,
+    reason: `${String(dimension)} fixture verdict`,
+    confidence: null,
+  }));
+  const coverage = {
+    visibility: "full",
+    available_fields: [
+      "outcome",
+      "termination_reason",
+      "usage",
+      "tool_activity_summary",
+      "step_sequence",
+      "tool_validity",
+      "repeat_detection",
+    ],
+    unavailable_fields: [],
+    ratio: 1,
+  };
+  const evidence = makeNode({
+    id: "evidence_evaluation_01",
+    type: "Evidence",
+    source: "evaluation",
+    extensions: {
+      "harness.evaluation": {
+        evidence_digest: "a".repeat(64),
+        evidence_type: "evaluation_report",
+        subject_id: "task_01",
+        provisional: false,
+        passed: true,
+        ...(options.includeVerdictDetails === false
+          ? {}
+          : { dimensions, mandatory_failures: [], coverage }),
+      },
+    },
+  });
+  const evaluationCase = makeNode({
+    id: "case_01",
+    type: "EvaluationCase",
+    source: "evaluation",
+    extensions: {
+      "harness.evaluation": {
+        evidence_id: evidence.id,
+        evidence_digest: "a".repeat(64),
+        case_digest: "b".repeat(64),
+        subject_id: "task_01",
+        visibility: "full",
+        passed: true,
+        ...(options.includeVerdictDetails === false
+          ? {}
+          : { dimensions, mandatory_failures: [], coverage }),
+      },
+    },
+  });
+  const unevaluatedRun = makeNode({ id: "run_02", type: "Run" });
+  await makeRepository(projectRoot).commit({
+    ledger_operation_id: "ledger-op_04",
+    workflow_operation_id: "workflow-op_01",
+    attempt_id: "attempt_01",
+    expected_baseline: BASELINE,
+    artifacts: [
+      artifact("artifacts/runs/run_02.json", unevaluatedRun),
+      artifact("artifacts/evaluation-cases/case_01.json", evaluationCase),
+      artifact("artifacts/evaluation-evidence/evidence_evaluation_01.json", evidence),
+    ],
+    edges: [
+      makeEdge({
+        id: "edge-run-produces-evaluation-evidence_01",
+        type: "PRODUCES",
+        sourceId: "run_01",
+        targetId: evidence.id,
+        source: "evaluation",
+      }),
+      makeEdge({
+        id: "edge-evaluation-evidence-supports-case_01",
+        type: "SUPPORTS",
+        sourceId: evidence.id,
+        targetId: evaluationCase.id,
+        source: "evaluation",
+      }),
+      makeEdge({
+        id: "edge-case-evaluates-task_01",
+        type: "EVALUATES",
+        sourceId: evaluationCase.id,
+        targetId: "task_01",
+        source: "evaluation",
+      }),
+      makeEdge({
+        id: "edge-case-evaluates-run_01",
+        type: "EVALUATES",
+        sourceId: evaluationCase.id,
+        targetId: "run_01",
+        source: "evaluation",
+      }),
+    ],
+    events: [
+      makeEvent("event-op-04-evaluation-completed_01", "EvaluationCompleted", "ledger-op_04"),
+    ],
+  });
+}

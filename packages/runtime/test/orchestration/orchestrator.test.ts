@@ -175,6 +175,71 @@ function claimedResult(envelope: AgentTaskEnvelope, note: string): AgentRunResul
   };
 }
 
+const FIVE_DIMENSION_NAMES = [
+  "outcome",
+  "safety",
+  "trajectory",
+  "correct_failure",
+  "efficiency",
+] as const;
+
+const completeEvaluation: EvaluationPort = (input) => {
+  const dimensions = FIVE_DIMENSION_NAMES.map((dimension) => ({
+    dimension,
+    available: true,
+    score: 1,
+    threshold: dimension === "efficiency" ? 0 : 1,
+    passed: true,
+    mandatory: dimension === "outcome" || dimension === "safety",
+    deterministic: true,
+    scorer: `deterministic/${dimension}`,
+    reason: `${dimension} passed`,
+    confidence: null,
+  }));
+  const extension = {
+    case_id: `case_${input.taskId.slice("task_".length)}`,
+    case_digest: "b".repeat(64),
+    visibility: input.visibility,
+    coverage: {
+      visibility: input.visibility,
+      available_fields: ["outcome", "termination_reason", "usage"],
+      unavailable_fields: [
+        "tool_activity_summary",
+        "step_sequence",
+        "tool_validity",
+        "repeat_detection",
+      ],
+      ratio: 0.428571,
+    },
+    dimensions,
+    mandatory_failures: [],
+    passed: true,
+  };
+  const record = {
+    protocol_version: "1.0.0",
+    record_kind: "evidence",
+    evidence_id: `evidence_evaluation_${input.taskId.slice("task_".length)}`,
+    evidence_type: "evaluation_report",
+    subject_id: input.taskId,
+    digest: contentDigest({
+      evidence_type: "evaluation_report",
+      subject_id: input.taskId,
+      extension,
+    }),
+    provisional: false,
+    created_at: input.now,
+    extensions: { "harness.evaluation": extension },
+  };
+  return {
+    evidenceId: record.evidence_id,
+    passed: true,
+    mandatoryFailures: [],
+    findings: [],
+    summary: "five-dimensional evaluation passed",
+    record,
+  };
+};
+
 function recordingExecutor(
   behavior?: (envelope: AgentTaskEnvelope, call: number) => AgentRunResult,
 ): FakeExecutor {
@@ -263,7 +328,10 @@ describe("phase orchestrator", { timeout: 30000 }, () => {
     const newId = sequentialIds();
     const projectRoot = await bootstrapProject("orch-demo", newId);
     const fake = recordingExecutor();
-    const deps = makeDeps(projectRoot, newId, { execute: fake.executor });
+    const deps = makeDeps(projectRoot, newId, {
+      execute: fake.executor,
+      evaluate: completeEvaluation,
+    });
 
     let outcome = await runIteration(deps, { intent: INTENT, intentShape: "pack-converted" });
     expect(outcome.status).toBe("approval_required");
@@ -322,6 +390,13 @@ describe("phase orchestrator", { timeout: 30000 }, () => {
       const nodes = pageNodes(database, { type: "EvaluationCase", limit: 10 }).items;
       expect(nodes).toHaveLength(1);
       expect(nodes[0]).toMatchObject({ status: "accepted", source: "evaluation" });
+      expect(nodes[0]?.extensions?.["harness.evaluation"]).toMatchObject({
+        dimensions: FIVE_DIMENSION_NAMES.map((dimension) =>
+          expect.objectContaining({ dimension, passed: true }),
+        ),
+        mandatory_failures: [],
+        coverage: expect.objectContaining({ ratio: 0.428571 }),
+      });
       const edges = pageEdges(database, { limit: 100 }).items;
       expect(
         edges.filter((edge) => edge.type === "EVALUATES" && edge.source_id === nodes[0]?.id),
