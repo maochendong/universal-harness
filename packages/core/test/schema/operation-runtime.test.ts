@@ -184,4 +184,81 @@ describe("operation and runtime contracts", () => {
       }),
     ).toMatchObject({ valid: true });
   });
+
+  it("validates execution authorization, capability grant and task verdict records", () => {
+    const authorization = {
+      protocol_version: "1.0.0",
+      record_kind: "execution_authorization",
+      authorization_id: "authorization_01K1ABCDEFGHIJK",
+      iteration_id: "iteration_01K1ABCDEFGHIJKLMNO",
+      plan_digest: "1".repeat(64),
+      task_digests: ["2".repeat(64)],
+      impact_set_digest: "3".repeat(64),
+      impact_coverage_digest: "4".repeat(64),
+      context_bundle_digests: ["5".repeat(64)],
+      grant_spec_digests: ["6".repeat(64)],
+      policy_digest: "7".repeat(64),
+      adapter_profile_digest: "8".repeat(64),
+      baseline_commit: "abcdef1234567",
+      effective_risk: "high",
+      approval_digest: "9".repeat(64),
+      digest: "a".repeat(64),
+    };
+    const grant = {
+      protocol_version: "1.0.0",
+      record_kind: "capability_grant",
+      grant_record_id: "grant-record_01K1ABCDEFGHIJ",
+      iteration_id: authorization.iteration_id,
+      spec: {
+        grant_id: "grant_01K1ABCDEFGHIJKLMNO",
+        task_id: "task_01K1ABCDEFGHIJKLMNOPQRSTU",
+        issued_by: "harness",
+        capabilities: [],
+        read_paths: ["src"],
+        write_paths: ["src/feature.ts"],
+        state_fields: [],
+        tools: [],
+        phase: "execute",
+        budget: { steps: 30, tokens: 120000 },
+        approval_digests: [authorization.approval_digest],
+        effective_policy_digest: authorization.policy_digest,
+        plan_digest: authorization.plan_digest,
+        context_bundle_digest: authorization.context_bundle_digests[0],
+        adapter_profile_digest: authorization.adapter_profile_digest,
+        baseline_commit: authorization.baseline_commit,
+        spec_digest: authorization.grant_spec_digests[0],
+      },
+      authorization_digest: authorization.digest,
+      issued_at: "2026-08-16T00:00:00.000Z",
+      digest: "b".repeat(64),
+    };
+    const verdict = {
+      protocol_version: "1.0.0",
+      record_kind: "task_verdict",
+      verdict_id: "verdict_01K1ABCDEFGHIJKLM",
+      iteration_id: authorization.iteration_id,
+      task_id: grant.spec.task_id,
+      run_ids: ["run_01K1ABCDEFGHIJKLMNOPQRSTUV"],
+      verdict: "passed",
+      assertion_verdicts: [
+        {
+          assertion_id: "assertion_01K1ABCDEFGHIJK",
+          passed: true,
+          test_ids: ["test_01K1ABCDEFGHIJKLMNOPQRSTUV"],
+          evidence_ids: ["evidence_01K1ABCDEFGHIJKLMNO"],
+        },
+      ],
+      gate_evidence_ids: ["evidence_01K1ABCDEFGHIJKLMNO"],
+      evaluation_evidence_ids: ["evidence_01K1EVALUATIONABCDEFGH"],
+      created_at: "2026-08-16T00:00:01.000Z",
+      digest: "c".repeat(64),
+    };
+
+    for (const record of [authorization, grant, verdict]) {
+      expect(validateSchema("runtime", record), record.record_kind).toMatchObject({ valid: true });
+      expect(validateSchema("runtime", { ...record, unexpected: true })).toMatchObject({
+        valid: false,
+      });
+    }
+  });
 });

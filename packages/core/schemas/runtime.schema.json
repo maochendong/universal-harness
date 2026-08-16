@@ -338,6 +338,386 @@
       "required": [
         "protocol_version",
         "record_kind",
+        "authorization_id",
+        "iteration_id",
+        "plan_digest",
+        "task_digests",
+        "impact_set_digest",
+        "impact_coverage_digest",
+        "context_bundle_digests",
+        "grant_spec_digests",
+        "policy_digest",
+        "baseline_commit",
+        "effective_risk",
+        "approval_digest",
+        "digest"
+      ],
+      "properties": {
+        "protocol_version": {
+          "pattern": "^1\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?:-[0-9A-Za-z.-]+)?(?:\\+[0-9A-Za-z.-]+)?$",
+          "default": "1.0.0",
+          "type": "string"
+        },
+        "record_kind": { "const": "execution_authorization", "type": "string" },
+        "authorization_id": {
+          "minLength": 3,
+          "maxLength": 160,
+          "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+          "type": "string"
+        },
+        "iteration_id": {
+          "minLength": 3,
+          "maxLength": 160,
+          "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+          "type": "string"
+        },
+        "plan_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
+        "task_digests": {
+          "minItems": 1,
+          "uniqueItems": true,
+          "type": "array",
+          "items": { "pattern": "^[a-f0-9]{64}$", "type": "string" }
+        },
+        "impact_set_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
+        "impact_coverage_digest": {
+          "pattern": "^[a-f0-9]{64}$",
+          "type": "string"
+        },
+        "context_bundle_digests": {
+          "minItems": 1,
+          "uniqueItems": true,
+          "type": "array",
+          "items": { "pattern": "^[a-f0-9]{64}$", "type": "string" }
+        },
+        "grant_spec_digests": {
+          "minItems": 1,
+          "uniqueItems": true,
+          "type": "array",
+          "items": { "pattern": "^[a-f0-9]{64}$", "type": "string" }
+        },
+        "policy_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
+        "adapter_profile_digest": {
+          "pattern": "^[a-f0-9]{64}$",
+          "type": "string"
+        },
+        "baseline_commit": { "pattern": "^[0-9a-f]{7,40}$", "type": "string" },
+        "effective_risk": {
+          "anyOf": [
+            { "const": "low", "type": "string" },
+            { "const": "medium", "type": "string" },
+            { "const": "high", "type": "string" },
+            { "const": "critical", "type": "string" }
+          ]
+        },
+        "approval_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
+        "digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
+        "extensions": {
+          "additionalProperties": false,
+          "default": {},
+          "type": "object",
+          "patternProperties": { "^[a-z][a-z0-9]*(?:[.-][a-z0-9]+)+$": {} }
+        }
+      }
+    },
+    {
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "protocol_version",
+        "record_kind",
+        "grant_record_id",
+        "iteration_id",
+        "spec",
+        "authorization_digest",
+        "issued_at",
+        "digest"
+      ],
+      "properties": {
+        "protocol_version": {
+          "pattern": "^1\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?:-[0-9A-Za-z.-]+)?(?:\\+[0-9A-Za-z.-]+)?$",
+          "default": "1.0.0",
+          "type": "string"
+        },
+        "record_kind": { "const": "capability_grant", "type": "string" },
+        "grant_record_id": {
+          "minLength": 3,
+          "maxLength": 160,
+          "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+          "type": "string"
+        },
+        "iteration_id": {
+          "minLength": 3,
+          "maxLength": 160,
+          "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+          "type": "string"
+        },
+        "spec": {
+          "additionalProperties": false,
+          "type": "object",
+          "required": [
+            "grant_id",
+            "task_id",
+            "issued_by",
+            "capabilities",
+            "read_paths",
+            "write_paths",
+            "state_fields",
+            "tools",
+            "phase",
+            "budget",
+            "approval_digests",
+            "effective_policy_digest",
+            "plan_digest",
+            "context_bundle_digest",
+            "baseline_commit",
+            "spec_digest"
+          ],
+          "properties": {
+            "grant_id": {
+              "minLength": 3,
+              "maxLength": 160,
+              "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+              "type": "string"
+            },
+            "task_id": {
+              "minLength": 3,
+              "maxLength": 160,
+              "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+              "type": "string"
+            },
+            "issued_by": { "const": "harness", "type": "string" },
+            "capabilities": {
+              "uniqueItems": true,
+              "type": "array",
+              "items": { "minLength": 1, "type": "string" }
+            },
+            "read_paths": {
+              "uniqueItems": true,
+              "type": "array",
+              "items": { "minLength": 1, "type": "string" }
+            },
+            "write_paths": {
+              "uniqueItems": true,
+              "type": "array",
+              "items": { "minLength": 1, "type": "string" }
+            },
+            "state_fields": {
+              "uniqueItems": true,
+              "type": "array",
+              "items": { "minLength": 1, "type": "string" }
+            },
+            "tools": {
+              "type": "array",
+              "items": {
+                "additionalProperties": false,
+                "type": "object",
+                "required": ["name"],
+                "properties": {
+                  "name": { "minLength": 1, "type": "string" },
+                  "parameter_bounds": {
+                    "type": "object",
+                    "patternProperties": {
+                      "^(.*)$": {
+                        "uniqueItems": true,
+                        "type": "array",
+                        "items": {
+                          "anyOf": [
+                            { "type": "string" },
+                            { "type": "number" },
+                            { "type": "boolean" }
+                          ]
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "phase": { "minLength": 1, "type": "string" },
+            "budget": {
+              "additionalProperties": false,
+              "type": "object",
+              "required": ["steps", "tokens"],
+              "properties": {
+                "steps": { "minimum": 0, "type": "integer" },
+                "tokens": { "minimum": 0, "type": "integer" }
+              }
+            },
+            "approval_digests": {
+              "uniqueItems": true,
+              "type": "array",
+              "items": { "pattern": "^[a-f0-9]{64}$", "type": "string" }
+            },
+            "effective_policy_digest": {
+              "pattern": "^[a-f0-9]{64}$",
+              "type": "string"
+            },
+            "plan_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
+            "context_bundle_digest": {
+              "pattern": "^[a-f0-9]{64}$",
+              "type": "string"
+            },
+            "adapter_profile_digest": {
+              "pattern": "^[a-f0-9]{64}$",
+              "type": "string"
+            },
+            "baseline_commit": {
+              "pattern": "^[0-9a-f]{7,40}$",
+              "type": "string"
+            },
+            "spec_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" }
+          }
+        },
+        "authorization_digest": {
+          "pattern": "^[a-f0-9]{64}$",
+          "type": "string"
+        },
+        "issued_at": { "format": "date-time", "type": "string" },
+        "digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
+        "extensions": {
+          "additionalProperties": false,
+          "default": {},
+          "type": "object",
+          "patternProperties": { "^[a-z][a-z0-9]*(?:[.-][a-z0-9]+)+$": {} }
+        }
+      }
+    },
+    {
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "protocol_version",
+        "record_kind",
+        "verdict_id",
+        "iteration_id",
+        "task_id",
+        "run_ids",
+        "verdict",
+        "assertion_verdicts",
+        "gate_evidence_ids",
+        "evaluation_evidence_ids",
+        "created_at",
+        "digest"
+      ],
+      "properties": {
+        "protocol_version": {
+          "pattern": "^1\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?:-[0-9A-Za-z.-]+)?(?:\\+[0-9A-Za-z.-]+)?$",
+          "default": "1.0.0",
+          "type": "string"
+        },
+        "record_kind": { "const": "task_verdict", "type": "string" },
+        "verdict_id": {
+          "minLength": 3,
+          "maxLength": 160,
+          "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+          "type": "string"
+        },
+        "iteration_id": {
+          "minLength": 3,
+          "maxLength": 160,
+          "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+          "type": "string"
+        },
+        "task_id": {
+          "minLength": 3,
+          "maxLength": 160,
+          "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+          "type": "string"
+        },
+        "run_ids": {
+          "minItems": 1,
+          "uniqueItems": true,
+          "type": "array",
+          "items": {
+            "minLength": 3,
+            "maxLength": 160,
+            "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+            "type": "string"
+          }
+        },
+        "verdict": {
+          "anyOf": [
+            { "const": "passed", "type": "string" },
+            { "const": "failed", "type": "string" },
+            { "const": "blocked", "type": "string" }
+          ]
+        },
+        "assertion_verdicts": {
+          "minItems": 1,
+          "type": "array",
+          "items": {
+            "additionalProperties": false,
+            "type": "object",
+            "required": ["assertion_id", "passed", "test_ids", "evidence_ids"],
+            "properties": {
+              "assertion_id": {
+                "minLength": 3,
+                "maxLength": 160,
+                "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+                "type": "string"
+              },
+              "passed": { "type": "boolean" },
+              "test_ids": {
+                "minItems": 1,
+                "uniqueItems": true,
+                "type": "array",
+                "items": {
+                  "minLength": 3,
+                  "maxLength": 160,
+                  "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+                  "type": "string"
+                }
+              },
+              "evidence_ids": {
+                "minItems": 1,
+                "uniqueItems": true,
+                "type": "array",
+                "items": {
+                  "minLength": 3,
+                  "maxLength": 160,
+                  "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "gate_evidence_ids": {
+          "uniqueItems": true,
+          "type": "array",
+          "items": {
+            "minLength": 3,
+            "maxLength": 160,
+            "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+            "type": "string"
+          }
+        },
+        "evaluation_evidence_ids": {
+          "uniqueItems": true,
+          "type": "array",
+          "items": {
+            "minLength": 3,
+            "maxLength": 160,
+            "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+            "type": "string"
+          }
+        },
+        "created_at": { "format": "date-time", "type": "string" },
+        "digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
+        "extensions": {
+          "additionalProperties": false,
+          "default": {},
+          "type": "object",
+          "patternProperties": { "^[a-z][a-z0-9]*(?:[.-][a-z0-9]+)+$": {} }
+        }
+      }
+    },
+    {
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "protocol_version",
+        "record_kind",
         "checkpoint_id",
         "workflow_operation_id",
         "attempt_id",

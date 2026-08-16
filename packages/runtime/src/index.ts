@@ -14,6 +14,13 @@ import {
 import type { BootstrapDependencies, BootstrapResult } from "./bootstrap/staging.js";
 
 export {
+  governanceMigrationReasons,
+  projectLegacySnapshotTruth,
+  type GovernanceMigrationInput,
+  type LegacySnapshotTruthProjection,
+} from "./compatibility/governance-records.js";
+
+export {
   STACK_PROFILES,
   extractReferences,
   scanWorktree,

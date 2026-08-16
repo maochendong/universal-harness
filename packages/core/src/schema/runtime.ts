@@ -83,6 +83,95 @@ export const ContextBundleRecordSchema = strictObject({
   extensions: Type.Optional(ExtensionsSchema),
 });
 
+const GitCommitSchema = Type.String({ pattern: "^[0-9a-f]{7,40}$" });
+const DigestSetSchema = Type.Array(DigestSchema, { minItems: 1, uniqueItems: true });
+const StringSetSchema = Type.Array(Type.String({ minLength: 1 }), { uniqueItems: true });
+
+export const ExecutionAuthorizationRecordSchema = strictObject({
+  ...persistedRecordProperties("execution_authorization"),
+  authorization_id: IdentifierSchema,
+  iteration_id: IdentifierSchema,
+  plan_digest: DigestSchema,
+  task_digests: DigestSetSchema,
+  impact_set_digest: DigestSchema,
+  impact_coverage_digest: DigestSchema,
+  context_bundle_digests: DigestSetSchema,
+  grant_spec_digests: DigestSetSchema,
+  policy_digest: DigestSchema,
+  adapter_profile_digest: Type.Optional(DigestSchema),
+  baseline_commit: GitCommitSchema,
+  effective_risk: enumerated(["low", "medium", "high", "critical"] as const),
+  approval_digest: DigestSchema,
+  digest: DigestSchema,
+  extensions: Type.Optional(ExtensionsSchema),
+});
+
+const GrantedToolSchema = strictObject({
+  name: Type.String({ minLength: 1 }),
+  parameter_bounds: Type.Optional(
+    Type.Record(
+      Type.String({ minLength: 1 }),
+      Type.Array(Type.Union([Type.String(), Type.Number(), Type.Boolean()]), { uniqueItems: true }),
+    ),
+  ),
+});
+
+const CapabilityGrantSpecSchema = strictObject({
+  grant_id: IdentifierSchema,
+  task_id: IdentifierSchema,
+  issued_by: Type.Literal("harness"),
+  capabilities: StringSetSchema,
+  read_paths: StringSetSchema,
+  write_paths: StringSetSchema,
+  state_fields: StringSetSchema,
+  tools: Type.Array(GrantedToolSchema),
+  phase: Type.String({ minLength: 1 }),
+  budget: strictObject({
+    steps: Type.Integer({ minimum: 0 }),
+    tokens: Type.Integer({ minimum: 0 }),
+  }),
+  approval_digests: Type.Array(DigestSchema, { uniqueItems: true }),
+  effective_policy_digest: DigestSchema,
+  plan_digest: DigestSchema,
+  context_bundle_digest: DigestSchema,
+  adapter_profile_digest: Type.Optional(DigestSchema),
+  baseline_commit: GitCommitSchema,
+  spec_digest: DigestSchema,
+});
+
+export const CapabilityGrantRecordSchema = strictObject({
+  ...persistedRecordProperties("capability_grant"),
+  grant_record_id: IdentifierSchema,
+  iteration_id: IdentifierSchema,
+  spec: CapabilityGrantSpecSchema,
+  authorization_digest: DigestSchema,
+  issued_at: TimestampSchema,
+  digest: DigestSchema,
+  extensions: Type.Optional(ExtensionsSchema),
+});
+
+const AssertionVerdictSchema = strictObject({
+  assertion_id: IdentifierSchema,
+  passed: Type.Boolean(),
+  test_ids: Type.Array(IdentifierSchema, { minItems: 1, uniqueItems: true }),
+  evidence_ids: Type.Array(IdentifierSchema, { minItems: 1, uniqueItems: true }),
+});
+
+export const TaskVerdictRecordSchema = strictObject({
+  ...persistedRecordProperties("task_verdict"),
+  verdict_id: IdentifierSchema,
+  iteration_id: IdentifierSchema,
+  task_id: IdentifierSchema,
+  run_ids: Type.Array(IdentifierSchema, { minItems: 1, uniqueItems: true }),
+  verdict: enumerated(["passed", "failed", "blocked"] as const),
+  assertion_verdicts: Type.Array(AssertionVerdictSchema, { minItems: 1 }),
+  gate_evidence_ids: Type.Array(IdentifierSchema, { uniqueItems: true }),
+  evaluation_evidence_ids: Type.Array(IdentifierSchema, { uniqueItems: true }),
+  created_at: TimestampSchema,
+  digest: DigestSchema,
+  extensions: Type.Optional(ExtensionsSchema),
+});
+
 export const CheckpointRecordSchema = strictObject({
   ...persistedRecordProperties("checkpoint"),
   checkpoint_id: IdentifierSchema,
@@ -146,6 +235,9 @@ export const RuntimeSchema = Type.Union([
   RunTerminatedSchema,
   RunInterruptedSchema,
   ContextBundleRecordSchema,
+  ExecutionAuthorizationRecordSchema,
+  CapabilityGrantRecordSchema,
+  TaskVerdictRecordSchema,
   CheckpointRecordSchema,
   EvidenceRecordSchema,
   ApprovalRequestRecordSchema,
