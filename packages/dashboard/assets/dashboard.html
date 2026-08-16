@@ -1,0 +1,262 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="dark" />
+    <title>Harness Observatory</title>
+    <link rel="stylesheet" href="/assets/dashboard.css" />
+    <script type="module" src="/assets/dashboard.js"></script>
+  </head>
+  <body>
+    <a class="skip-link" href="#workspace">Skip to workspace</a>
+    <div class="grain" aria-hidden="true"></div>
+
+    <header class="masthead">
+      <a class="wordmark" href="#overview" aria-label="Harness Observatory home">
+        <span class="scope-mark" aria-hidden="true"><i></i><i></i></span>
+        <span
+          ><strong>HARNESS / OBSERVATORY</strong
+          ><small>Graph-native engineering control room</small></span
+        >
+      </a>
+      <div class="masthead-status" aria-live="polite">
+        <span class="signal-dot" aria-hidden="true"></span
+        ><span id="connection-label">LOCAL SESSION</span>
+        <span class="coordinate" id="clock-label">--:--:--</span>
+      </div>
+    </header>
+
+    <div class="shell">
+      <aside class="rail">
+        <div class="rail-index" aria-hidden="true">M2 / READ DECK</div>
+        <nav aria-label="Dashboard sections">
+          <a class="nav-link" href="#overview" data-view="overview" aria-current="page"
+            ><span>01</span> Overview</a
+          >
+          <a class="nav-link" href="#graph" data-view="graph"><span>02</span> Graph</a>
+          <a class="nav-link" href="#impact" data-view="impact"><span>03</span> Impact</a>
+          <a class="nav-link" href="#iterations" data-view="iterations"
+            ><span>04</span> Iterations</a
+          >
+          <a class="nav-link" href="#evidence" data-view="evidence"><span>05</span> Evidence</a>
+          <a class="nav-link" href="#findings" data-view="findings"><span>06</span> Findings</a>
+        </nav>
+        <div class="rail-note">
+          <span>MODE</span><strong>READ / OBSERVE</strong>
+          <p>Ledger truth remains authoritative.</p>
+        </div>
+      </aside>
+
+      <main id="workspace" class="workspace" tabindex="-1">
+        <section class="panel is-active" data-panel="overview" aria-labelledby="overview-title">
+          <div class="section-kicker"><span>01</span> PROJECT FIELD</div>
+          <div class="hero-grid">
+            <div>
+              <p class="eyebrow">CURRENT MANAGED REPOSITORY</p>
+              <h1 id="overview-title">
+                <span id="project-name">Loading</span><em> / control plane</em>
+              </h1>
+              <p class="lede" id="project-next-action">Reading the latest authoritative state…</p>
+            </div>
+            <div class="hero-stamp" aria-label="Local read-only session">
+              <span>SESSION</span><strong>LOCAL</strong><small>READ ONLY</small>
+            </div>
+          </div>
+          <div class="metric-strip" aria-label="Project metrics">
+            <article><span>LEDGER OPS</span><strong id="metric-operations">—</strong></article>
+            <article><span>TASKS</span><strong id="metric-tasks">—</strong></article>
+            <article><span>EVAL COVERAGE</span><strong id="metric-evaluation">—</strong></article>
+            <article><span>OPEN GROUPS</span><strong id="metric-findings">—</strong></article>
+          </div>
+          <div class="overview-grid">
+            <article class="instrument instrument-wide">
+              <header><span>ITERATION SIGNAL</span><b id="iteration-state">UNKNOWN</b></header>
+              <div class="phase-track" aria-label="Iteration pipeline">
+                <span>CAPTURE</span><span>IMPACT</span><span>PLAN</span><span>EXECUTE</span
+                ><span>VERIFY</span><span>EVALUATE</span><span>SNAPSHOT</span>
+              </div>
+              <p id="iteration-identity">No iteration loaded.</p>
+            </article>
+            <article class="instrument">
+              <header><span>GRAPH CACHE</span><b id="cache-state">—</b></header>
+              <div class="radar" aria-hidden="true"><i></i><i></i><i></i></div>
+              <p id="cache-copy">Verifying projection integrity.</p>
+            </article>
+            <article class="instrument">
+              <header><span>CONTROL</span><b id="control-level">—</b></header>
+              <ol class="signal-list" id="project-signals"></ol>
+            </article>
+          </div>
+          <p class="state-line" data-state="overview" role="status">Loading project summary…</p>
+        </section>
+
+        <section class="panel" data-panel="graph" aria-labelledby="graph-title" hidden>
+          <div class="section-kicker"><span>02</span> RELATION FIELD</div>
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">NEIGHBORHOOD-FIRST EXPLORATION</p>
+              <h2 id="graph-title">Artifact graph</h2>
+            </div>
+            <p>Load one stable page, then expand only the neighborhood you ask for.</p>
+          </div>
+          <form class="control-bar" id="graph-controls">
+            <label
+              >View<select id="graph-view">
+                <option value="artifact">Artifact</option>
+                <option value="execution">Execution</option>
+                <option value="all">All</option>
+              </select></label
+            >
+            <label
+              >Type<select id="graph-type">
+                <option value="">Any type</option>
+                <option>Requirement</option>
+                <option>Decision</option>
+                <option>Component</option>
+                <option>Task</option>
+                <option>CodeArtifact</option>
+                <option>Run</option>
+                <option>Evidence</option>
+                <option>Finding</option>
+              </select></label
+            >
+            <label
+              >Status<select id="graph-status">
+                <option value="">Any status</option>
+                <option>accepted</option>
+                <option>proposed</option>
+                <option>superseded</option>
+              </select></label
+            >
+            <button class="command" type="submit">SCAN PAGE</button>
+          </form>
+          <div class="graph-layout">
+            <div>
+              <div class="plot-label">NODE REGISTER</div>
+              <div class="node-register" id="graph-list"></div>
+              <button class="text-button" id="graph-more" type="button" hidden>
+                Load next page →
+              </button>
+            </div>
+            <aside class="node-inspector" id="graph-inspector">
+              <span class="crosshair" aria-hidden="true"></span>
+              <p>Select a node to inspect its immediate field.</p>
+            </aside>
+          </div>
+          <p class="state-line" data-state="graph" role="status">Graph is idle.</p>
+        </section>
+
+        <section class="panel" data-panel="impact" aria-labelledby="impact-title" hidden>
+          <div class="section-kicker"><span>03</span> TRACE TABLE</div>
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">SHORTEST EXPLANATION PATH</p>
+              <h2 id="impact-title">Impact trace</h2>
+            </div>
+            <p>Trace a governed relationship between two known graph identifiers.</p>
+          </div>
+          <form class="impact-form" id="impact-form">
+            <label
+              ><span>FROM / SEED</span
+              ><input
+                id="impact-from"
+                name="from"
+                autocomplete="off"
+                placeholder="requirement_…"
+                required
+            /></label>
+            <span class="impact-arrow" aria-hidden="true">⟶</span>
+            <label
+              ><span>TO / TARGET</span
+              ><input id="impact-to" name="to" autocomplete="off" placeholder="task_…" required
+            /></label>
+            <button class="command" type="submit">TRACE PATH</button>
+          </form>
+          <div class="trace-output" id="impact-output"><p>No path requested.</p></div>
+          <p class="state-line" data-state="impact" role="status">Enter two Harness node ids.</p>
+        </section>
+
+        <section class="panel" data-panel="iterations" aria-labelledby="iterations-title" hidden>
+          <div class="section-kicker"><span>04</span> ITERATION LOG</div>
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">PLAN → SNAPSHOT HISTORY</p>
+              <h2 id="iterations-title">Iteration ledger</h2>
+            </div>
+            <p>Inspect one iteration and its bounded execution neighborhood.</p>
+          </div>
+          <div class="split-register">
+            <div>
+              <div class="plot-label">ITERATIONS</div>
+              <div id="iteration-list" class="record-list"></div>
+              <button class="text-button" id="iteration-more" type="button" hidden>
+                Load next page →
+              </button>
+            </div>
+            <article class="dossier" id="iteration-detail">
+              <p>Select an iteration record.</p>
+            </article>
+          </div>
+          <p class="state-line" data-state="iterations" role="status">
+            Loading iteration register…
+          </p>
+        </section>
+
+        <section class="panel" data-panel="evidence" aria-labelledby="evidence-title" hidden>
+          <div class="section-kicker"><span>05</span> PROOF CABINET</div>
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">BINDINGS / FRESHNESS / VERDICTS</p>
+              <h2 id="evidence-title">Evidence register</h2>
+            </div>
+            <p>Evidence is useful only when its subject and input digests still bind.</p>
+          </div>
+          <form class="control-bar compact" id="evidence-controls">
+            <label
+              >Status<select id="evidence-status">
+                <option value="">Any status</option>
+                <option>accepted</option>
+                <option>proposed</option>
+                <option>superseded</option>
+              </select></label
+            >
+            <label
+              >Iteration<input id="evidence-iteration" autocomplete="off" placeholder="iteration_…"
+            /></label>
+            <button class="command" type="submit">FILTER</button>
+          </form>
+          <div class="evidence-ledger" id="evidence-list"></div>
+          <button class="text-button" id="evidence-more" type="button" hidden>
+            Load next page →
+          </button>
+          <p class="state-line" data-state="evidence" role="status">Evidence register is idle.</p>
+        </section>
+
+        <section class="panel" data-panel="findings" aria-labelledby="findings-title" hidden>
+          <div class="section-kicker"><span>06</span> GOVERNANCE QUEUE</div>
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">GROUPED BY RULE / SCOPE / SEVERITY</p>
+              <h2 id="findings-title">Finding groups</h2>
+            </div>
+            <p>Read-only projection. Group membership is bound by a stable digest.</p>
+          </div>
+          <div class="finding-legend" aria-label="Finding severity legend">
+            <span><i class="blocker"></i>BLOCKER</span><span><i class="warning"></i>WARNING</span
+            ><span><i class="info"></i>INFO</span>
+          </div>
+          <div class="finding-grid" id="finding-list"></div>
+          <button class="text-button" id="finding-more" type="button" hidden>
+            Load next page →
+          </button>
+          <p class="state-line" data-state="findings" role="status">Loading governance groups…</p>
+        </section>
+      </main>
+    </div>
+    <footer class="footer">
+      <span>UNIVERSAL HARNESS / LOCAL INSTRUMENT</span
+      ><span id="repository-label">REPOSITORY —</span>
+    </footer>
+  </body>
+</html>

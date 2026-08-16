@@ -15,6 +15,7 @@
     "pack:smoke": "pnpm build && node scripts/pack-cli.mjs && node scripts/pack-smoke.mjs",
     "test": "vitest run --config vitest.workspace.ts",
     "test:e2e": "vitest run --config vitest.workspace.ts tests/e2e",
+    "test:e2e:dashboard": "playwright test --config playwright.dashboard.config.ts",
     "test:fault": "vitest run --config vitest.workspace.ts tests/fault",
     "test:performance": "vitest run --config vitest.performance.ts",
     "test:release": "pnpm test:security && pnpm test:fault && pnpm test:performance && pnpm test:e2e && node scripts/generate-acceptance-report.mjs",
@@ -23,6 +24,7 @@
     "verify": "pnpm format:check && pnpm lint && pnpm build && pnpm typecheck && pnpm test && node scripts/check-standalone.mjs"
   },
   "devDependencies": {
+    "@playwright/test": "1.55.0",
     "@eslint/js": "10.0.1",
     "@types/node": "26.2.0",
     "eslint": "10.8.1",

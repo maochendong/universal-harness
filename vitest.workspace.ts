@@ -11,7 +11,11 @@ export default defineConfig({
       "adapters/**/test/**/*.test.ts",
       "packs/**/test/**/*.test.ts",
     ],
-    exclude: [...configDefaults.exclude, "tests/performance/**"],
+    exclude: [
+      ...configDefaults.exclude,
+      "tests/performance/**",
+      "tests/e2e/dashboard-readonly.test.ts",
+    ],
     passWithNoTests: false,
     // Plan Task 28: every run also emits the structured acceptance evidence
     // consumed by scripts/generate-acceptance-report.mjs.

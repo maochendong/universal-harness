@@ -18,6 +18,7 @@ import {
 } from "./problem.js";
 import type { DashboardReadApi } from "./read-api.js";
 import type { DashboardSessionStore } from "./session.js";
+import { loadDashboardAsset, type DashboardAssetName } from "./assets.js";
 
 const IDENTIFIER = /^[A-Za-z][A-Za-z0-9_.:-]{0,255}$/u;
 const VALID_NODE_STATUSES = new Set<string>(NODE_STATUSES);
@@ -38,6 +39,16 @@ function sendJson(response: ServerResponse, data: unknown, status = 200): void {
   response.setHeader("cache-control", "no-store");
   response.setHeader("content-type", "application/json; charset=utf-8");
   response.end(`${JSON.stringify({ data })}\n`);
+}
+
+function sendAsset(response: ServerResponse, name: DashboardAssetName): void {
+  const asset = loadDashboardAsset(name);
+  applySecurityHeaders(response);
+  response.statusCode = 200;
+  response.setHeader("cache-control", asset.cacheControl);
+  response.setHeader("content-type", asset.contentType);
+  response.setHeader("content-length", asset.body.byteLength);
+  response.end(asset.body);
 }
 
 function one(query: URLSearchParams, key: string): string | undefined {
@@ -169,6 +180,22 @@ export function createDashboardRouter(options: DashboardRouterOptions) {
       }
       validateOrigin(request, options.origin);
       const session = options.sessions.authenticate(request);
+
+      if (url.pathname === "/") {
+        queryKeys(url.searchParams, new Set());
+        sendAsset(response, "dashboard.html");
+        return;
+      }
+      if (url.pathname === "/assets/dashboard.css") {
+        queryKeys(url.searchParams, new Set());
+        sendAsset(response, "dashboard.css");
+        return;
+      }
+      if (url.pathname === "/assets/dashboard.js") {
+        queryKeys(url.searchParams, new Set());
+        sendAsset(response, "dashboard.js");
+        return;
+      }
 
       if (url.pathname === "/api/v1/session") {
         queryKeys(url.searchParams, new Set());
