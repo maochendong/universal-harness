@@ -4,7 +4,7 @@
 
 Universal Harness 是一个 Graph-native、Provider-neutral 的工程 Harness，用于驱动可审计的软件迭代。
 
-M1 的目标是通过一个编排命令完成完整纵向闭环：
+一个编排命令可以完成完整纵向闭环：
 
 ```text
 新建或接管项目
@@ -21,7 +21,7 @@ M1 的目标是通过一个编排命令完成完整纵向闭环：
 
 本设计采用一套 Git-native Ledger，并提供 Artifact Graph 与 Execution Graph 两个逻辑视图。Agent 提出语义工作建议；Harness 控制计划、上下文、能力、预算、终止、证据、恢复和权威更新。
 
-M1 已完成：Task 1–28 全部落地，28 条验收标准均有通过证据（见 [M1 验收报告](docs/m1-acceptance-report.md)）。从 [快速开始](docs/getting-started.md) 运行你的第一次闭环。
+M1 与 M2 均已完成。M1 的 Task 1–28 和 28 条验收标准已有通过证据；M2 又交付了 Finding 治理、可选 LLM Judge、确定性语义建议、本地 Dashboard 与统一实时事件流。请从 [快速开始](docs/getting-started.md) 运行第一次闭环，并在 [M2 运维指南](docs/operations.md) 中查看新增能力。
 
 ## 核心设计思路
 
@@ -32,10 +32,14 @@ M1 已完成：Task 1–28 全部落地，28 条验收标准均有通过证据�
 - **可审计、可恢复**：Approval 绑定精确 digest，漂移即失效；外部副作用以 Intent Journal 记录，结果不确定时对账而非盲目重试；Checkpoint + Resume 保证中断后不产生重复记录或副作用。
 - **Provider-neutral 插件面**：VCS、Agent、Pack、Tool、Gate、Projection 均为版本化端口，第三方插件经 Capability Manifest 声明能力，并由 Conformance Kit 验证契约。
 
-## M1 已支持的能力
+## 已支持的能力
 
 - **完整迭代闭环**：`harness new` / `adopt` / `iterate` / `resume` / `abort`，以及 `approve`、`finding`、`impact`、`plan`、`run`、`verify`、`eval`、`snapshot`、`audit`、`status`、`doctor`、`graph`（含 `propose-edge`/`approve-edge` 人工补边）等检查与编排命令；交互与非交互（`--json`）双模式，稳定退出码。意图歧义时录入相位产出带显式选项（含 `other` 逃逸）的澄清请求，回答经新一轮需求录入与批准门进入。
-- **实时可观测性（M2-D 首切片）**：迭代运行时相位进度事件（started/completed/paused）经 stderr 流式输出（`--json` 模式为 NDJSON），stdout 只保留最终结果；`harness watch [--follow]` 实时 tail 项目生命周期事件流（操作启停、审批、门禁、评估、Finding），可观察后台或其他进程中的迭代，事件行同样走 stderr、摘要走 stdout。
+- **统一实时可观测性**：相位、Gate、Run heartbeat/output、预算和批准事件写入可删除的 live spool，并与权威 Ledger 生命周期事件合并；`harness watch [--follow]` 和 Dashboard SSE 使用同一 `EventStreamPort`，Ledger 终态会替代同 observation key 的 live 信号。
+- **本地 Dashboard**：`harness serve [--port <port>]` 只监听 loopback，提供 Graph、Impact、Iteration、Evidence、Findings、Live 六个视图；随机一次性 URL token 交换为 HttpOnly session，写操作要求同源 Origin、session CSRF、actor 与 expected digest，并复用原有 Approval/Resume/Finding 服务。
+- **Finding 治理**：按 rule、scope、severity、actionability 稳定分组，显示计数、样本与 membership digest；`harness finding group <accept|close|supersede> <group-id> --digest <digest>` 全成全败地批量处置，stale-knowledge 在知识源刷新后自动衰减但保留历史。
+- **确定性语义建议**：`harness impact [node-id] --semantic` 使用本地 symbol/import/path/term 索引提出 top-K `MAY_IMPACT` 边；建议与索引、输入和 revision digest 绑定，未经 `harness graph approve-edge` 人审不会进入活动图，Provider 失败会退回结构影响分析。
+- **可选 LLM Judge**：runtime config v2 可声明 OpenAI-compatible Judge Gate；默认不配置、零网络调用且默认 advisory。只有显式请求、accepted Policy 启用 blocking、且该 Policy revision 获得有效 Approval 三项同时成立时才可阻断。Review Bundle、请求/响应 digest、重试和错误类型进入脱敏 Evidence。
 - **多任务计划与进度**：ExecutionPlan 可将一次迭代分解为多个带依赖的小任务（整个计划一次批准），逐任务执行与评估，崩溃恢复只重跑未完成任务；`harness status` 报告 `2/3` 式任务进度。
 - **Stack Pack**：Generic、Node、Python、Java——栈检测、扫描、Stack 层 Gate 声明与 Pack 升级预览/批准。
 - **Agent Adapter**：Manual Adapter（人工交接）与通用 Command Adapter（包装现有 Coding Agent CLI），按 Control Profile 决定能否无人值守；无法计量或拦截的 Provider 只能监督运行。
@@ -50,15 +54,19 @@ M1 已完成：Task 1–28 全部落地，28 条验收标准均有通过证据�
 - [快速开始](docs/getting-started.md)
 - [接管已有项目](docs/adopting-a-project.md)
 - [运维与恢复](docs/operations-and-recovery.md)
+- [M2 运维指南](docs/operations.md)
 - [插件契约](docs/plugin-contracts.md)
 - [dsh headless 本机契约](docs/dsh-headless-contract.md)
 - [M1 验收报告](docs/m1-acceptance-report.md)
+- [M2 验收报告](docs/m2-acceptance-report.md)
 
 ## 设计文档
 
 - [已批准的 M1 设计](docs/superpowers/specs/2026-08-11-universal-harness-m1-design.md)
 - [已批准的 M1 实施计划](docs/superpowers/plans/2026-08-11-universal-harness-m1-implementation-plan.md)
 - [M2–M3 范围决策](docs/superpowers/specs/2026-08-15-m2-m3-scope-decisions.md)
+- [已完成的 M2 设计](docs/superpowers/specs/2026-08-16-universal-harness-m2-design.md)
+- [已完成的 M2 实施计划](docs/superpowers/plans/2026-08-16-universal-harness-m2-implementation-plan.md)
 - [SpecKit 对照设计与任务卡](docs/speckit-comparative-design.md)
 - [dsh 执行后端对照设计与任务卡](docs/dsh-execution-backend.md)
 

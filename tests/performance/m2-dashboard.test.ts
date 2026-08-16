@@ -13,12 +13,10 @@ import {
 } from "../../packages/core/src/index.js";
 import { startDashboardServer, type DashboardServer } from "../../packages/dashboard/src/index.js";
 import { rebuildGraphCache } from "../../packages/graph/src/index.js";
-import { FileEventStream } from "../../packages/runtime/src/index.js";
 
 import {
   buildSyntheticLedger,
   loadM2Dataset,
-  measure,
   recordBaseline,
   summarizeSamples,
 } from "./helpers.js";
@@ -107,13 +105,21 @@ describe("M2 Dashboard performance fixture", { timeout: 300_000 }, () => {
       views[path] = summary;
     }
 
-    const stream = new FileEventStream(root);
     const eventSamples: number[] = [];
     for (let run = 0; run < 5; run += 1) {
-      const timed = measure(() => stream.read({ limit: 1 }));
-      const page = await timed.result;
-      expect(page.items).toHaveLength(1);
-      eventSamples.push(timed.elapsedMs);
+      const abort = new AbortController();
+      const started = performance.now();
+      const response = await fetch(`${server.origin}/events`, {
+        headers: { cookie },
+        signal: abort.signal,
+      });
+      const reader = response.body?.getReader();
+      const first = await reader?.read();
+      eventSamples.push(performance.now() - started);
+      expect(response.status).toBe(200);
+      expect(new TextDecoder().decode(first?.value)).toContain("event:");
+      abort.abort();
+      await reader?.cancel().catch(() => undefined);
     }
     const eventTiming = summarizeSamples(eventSamples);
     expect(eventTiming.p95_ms).toBeLessThan(EVENT_P95_THRESHOLD_MS);

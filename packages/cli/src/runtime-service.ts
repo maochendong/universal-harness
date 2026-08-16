@@ -670,6 +670,18 @@ export function createOrchestratedRuntimeService(
           },
         },
       });
+      const shutdown = (): void => {
+        void server.close().then(
+          () => {
+            process.exitCode = 0;
+          },
+          () => {
+            process.exitCode = 1;
+          },
+        );
+      };
+      process.once("SIGINT", shutdown);
+      process.once("SIGTERM", shutdown);
       return {
         command: "serve",
         status: "ok",

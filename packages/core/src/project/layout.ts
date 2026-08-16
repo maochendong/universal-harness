@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 
+import { canonicalizeJson } from "../identity/canonical-json.js";
 import { harnessRootFor, resolveHarnessPath } from "../ledger/layout.js";
 import {
   parseProjectManifest,
@@ -24,7 +25,14 @@ export const MANIFEST_RELATIVE_PATH = "manifest.yaml";
 export const PACK_LOCK_RELATIVE_PATH = "harness.lock";
 export const MANAGED_GITIGNORE_RELATIVE_PATH = ".gitignore";
 export const MANAGED_GITATTRIBUTES_RELATIVE_PATH = ".gitattributes";
+export const RUNTIME_CONFIG_RELATIVE_PATH = "runtime.json";
 export const GRAPH_DATABASE_RELATIVE_PATH = "cache/graph.db";
+
+/** New projects start on config v2 with every optional network gate disabled. */
+export const DEFAULT_RUNTIME_CONFIG_CONTENT = `${canonicalizeJson({
+  runtime_config_version: 2,
+  gates: [],
+})}\n`;
 
 export const MANAGED_GITIGNORE_CONTENT = [
   "# Managed by Universal Harness: local-only state never enters Git.",
@@ -169,6 +177,12 @@ export function initializeManagedLayout(options: {
     harnessRoot,
     MANAGED_GITATTRIBUTES_RELATIVE_PATH,
     MANAGED_GITATTRIBUTES_CONTENT,
+    outcome,
+  );
+  writeManagedFile(
+    harnessRoot,
+    RUNTIME_CONFIG_RELATIVE_PATH,
+    DEFAULT_RUNTIME_CONFIG_CONTENT,
     outcome,
   );
   return { created, reused };

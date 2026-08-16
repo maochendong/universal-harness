@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -7,6 +8,15 @@ import { afterEach, describe, expect, it } from "vitest";
 import { runGate } from "@universal-harness-internal/runtime";
 import { createNewProject, runGateSuite } from "@universal-harness-internal/runtime";
 import { createGitVcsAdapter } from "@universal-harness-internal/adapter-vcs-git";
+import {
+  LedgerRepository,
+  canonicalizeJson,
+  contentDigest,
+  harnessRootFor,
+  readCommittedOperations,
+  type EdgeRecord,
+  type NodeRecord,
+} from "@universal-harness-internal/core";
 
 import {
   createConfiguredAgentExecutor,
@@ -33,6 +43,28 @@ afterEach(() => {
 });
 
 describe("project runtime configuration", () => {
+  it("commits v2 with zero Judge gates for every new managed project", async () => {
+    const parent = realpathSync(mkdtempSync(join(tmpdir(), "harness-project-runtime-v2-")));
+    roots.push(parent);
+    const created = await createNewProject(
+      { parentDirectory: parent, name: "runtime-v2", intent: "start without network gates" },
+      { vcs: createGitVcsAdapter() },
+    );
+    if (!created.ok) throw new Error(created.error.message);
+
+    expect(readProjectRuntimeConfig(created.value.projectRoot)).toEqual({
+      runtime_config_version: 2,
+      gates: [],
+      judge_gates: [],
+    });
+    expect(
+      execFileSync("git", ["show", "HEAD:.harness/runtime.json"], {
+        cwd: created.value.projectRoot,
+        encoding: "utf8",
+      }),
+    ).toBe('{"gates":[],"runtime_config_version":2}\n');
+  });
+
   it("reads v2 Judge gates while v1 remains a zero-Judge configuration", () => {
     const v1 = projectWithConfig({ runtime_config_version: 1, gates: [] });
     expect(readProjectRuntimeConfig(v1)).toEqual({ runtime_config_version: 1, gates: [] });
@@ -306,6 +338,190 @@ describe("project runtime configuration", () => {
       effective_mandatory: false,
       policy_diagnostics: ["blocking_policy_missing"],
       normalized_response: { verdict: "warn" },
+    });
+    expect(JSON.stringify(outcome)).not.toContain("secret-value");
+  });
+
+  it("blocks on a failing Judge only after a digest-bound Policy approval", async () => {
+    const parent = realpathSync(mkdtempSync(join(tmpdir(), "harness-project-judge-policy-")));
+    roots.push(parent);
+    const created = await createNewProject(
+      { parentDirectory: parent, name: "judge-policy", intent: "govern blocking review" },
+      { vcs: createGitVcsAdapter() },
+    );
+    if (!created.ok) throw new Error(created.error.message);
+    const root = created.value.projectRoot;
+    const timestamp = "2026-08-16T00:00:00.000Z";
+    const policyContent = {
+      protocol_version: "1.0.0",
+      record_kind: "node" as const,
+      id: "policy_judge-review",
+      type: "Policy" as const,
+      revision: 1,
+      status: "accepted" as const,
+      source: "human" as const,
+      provenance: {
+        iteration_id: created.value.iterationId,
+        actor: "human:policy-owner",
+        timestamp,
+      },
+      confidence: 1,
+      policy_fields: [
+        {
+          path: "gates.gate_semantic-review.llm_judge_blocking",
+          merge_operator: "project_default" as const,
+          value: true,
+        },
+      ],
+    };
+    const policy = { ...policyContent, digest: contentDigest(policyContent) } as NodeRecord;
+    const approvalContent = {
+      protocol_version: "1.0.0",
+      record_kind: "node" as const,
+      id: "approval_judge-review",
+      type: "Approval" as const,
+      revision: 1,
+      status: "accepted" as const,
+      source: "human" as const,
+      provenance: {
+        iteration_id: created.value.iterationId,
+        actor: "human:policy-approver",
+        timestamp,
+      },
+      confidence: 1,
+      extensions: { "harness.approval": { object_digest: policy.digest } },
+    };
+    const approval = {
+      ...approvalContent,
+      digest: contentDigest(approvalContent),
+    } as NodeRecord;
+    const edgeContent = {
+      protocol_version: "1.0.0",
+      record_kind: "edge" as const,
+      id: "edge_judge-approval-policy",
+      type: "APPROVES" as const,
+      source_id: approval.id,
+      target_id: policy.id,
+      status: "accepted" as const,
+      source: "human" as const,
+      provenance: {
+        iteration_id: created.value.iterationId,
+        actor: "human:policy-approver",
+        timestamp,
+      },
+      confidence: 1,
+    };
+    const approvalEdge = {
+      ...edgeContent,
+      digest: contentDigest(edgeContent),
+    } as EdgeRecord;
+    const last = readCommittedOperations(harnessRootFor(root)).at(-1);
+    if (last === undefined) throw new Error("bootstrap operation missing");
+    const head = execFileSync("git", ["rev-parse", "HEAD"], {
+      cwd: root,
+      encoding: "utf8",
+    }).trim();
+    await new LedgerRepository({ projectRoot: root, readBaseline: () => head }).commit({
+      ledger_operation_id: "ledger_judge-policy",
+      workflow_operation_id: last.manifest.workflow_operation_id,
+      attempt_id: last.manifest.attempt_id,
+      expected_baseline: head,
+      artifacts: [policy, approval].map((node) => ({
+        path: `artifacts/policies/${node.id}/1.json`,
+        content: `${canonicalizeJson(node)}\n`,
+      })),
+      edges: [approvalEdge],
+      events: [],
+    });
+
+    const suite = createConfiguredGateSuite(
+      root,
+      {
+        runtime_config_version: 2,
+        gates: [],
+        judge_gates: [
+          {
+            gate_id: "gate_semantic-review",
+            name: "Semantic review",
+            subject_id: "test_semantic-review",
+            requested_mandatory: true,
+            endpoint: "https://judge.example.com/v1/chat/completions",
+            model: "reviewer-v1",
+            prompt_version: "v1",
+            api_key_env: "JUDGE_KEY",
+            env_allowlist: ["JUDGE_KEY"],
+            timeout_ms: 1_000,
+          },
+        ],
+      },
+      {
+        ambientEnvironment: { JUDGE_KEY: "secret-value" },
+        reviewBundle: () => ({
+          baseline_commit: head,
+          source_commit: head,
+          code_digest: "c".repeat(64),
+          changed_paths: ["src/app.ts"],
+          diff: "+export const unsafe = true;",
+          acceptance_criteria: ["unsafe code is rejected"],
+          related_records: [],
+          deterministic_gates: [],
+          line_counts: { "src/app.ts": 1 },
+        }),
+        judgeTransport: {
+          fetch: () =>
+            Promise.resolve(
+              new Response(
+                JSON.stringify({
+                  choices: [
+                    {
+                      message: {
+                        content: JSON.stringify({
+                          verdict: "fail",
+                          confidence: 1,
+                          reasons: [
+                            {
+                              code: "unsafe",
+                              message: "unsafe change",
+                              path: "src/app.ts",
+                              line: 1,
+                            },
+                          ],
+                        }),
+                      },
+                    },
+                  ],
+                }),
+                { status: 200 },
+              ),
+            ),
+        },
+      },
+    );
+    const judge = suite.gates.find((gate) => gate.gate_id === "gate_semantic-review");
+    if (judge === undefined) throw new Error("Judge gate missing");
+    expect(judge.mandatory).toBe(true);
+
+    const outcome = await runGateSuite(suite.registry, {
+      iterationId: created.value.iterationId,
+      repositoryId: created.value.repositoryId,
+      gates: [judge],
+      bindings: {
+        artifact_digests: [policy.digest],
+        code_digests: ["c".repeat(64)],
+        evaluation_case_digests: [],
+        policy_digest: policy.digest,
+      },
+      clock: () => timestamp,
+    });
+    expect(outcome.completed_allowed).toBe(false);
+    expect(outcome.findings[0]?.extensions?.["harness.finding"]).toMatchObject({
+      blocking: true,
+    });
+    expect(outcome.results[0]?.evidence.extensions?.["harness.llm-judge"]).toMatchObject({
+      effective_mandatory: true,
+      policy_digest: policy.digest,
+      approval_id: approval.id,
+      normalized_response: { verdict: "fail" },
     });
     expect(JSON.stringify(outcome)).not.toContain("secret-value");
   });

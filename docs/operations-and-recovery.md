@@ -2,6 +2,8 @@
 
 本文是 M1 的运行手册：`new`/`adopt`/`iterate` 三条编排路径的全部批准点、触发条件、可用 Decision、暂停/恢复行为，以及各类故障下的恢复操作。
 
+M2 的 Finding 分组、语义建议、LLM Judge、Dashboard 与 EventStream 运维见 [M2 运维指南](operations.md)。
+
 ## 1. 批准点总表
 
 M1 的治理原则是 Agent 提案、Harness 决策。以下每个批准点都会暂停编排，直到人工作出 Decision。**M1 不提供批量批准**：每个批准请求绑定一个对象及其内容摘要（digest），必须逐一显式解决；`approve` 一次只解决一个请求。

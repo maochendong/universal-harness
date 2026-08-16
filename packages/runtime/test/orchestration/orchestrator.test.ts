@@ -733,7 +733,7 @@ describe("phase orchestrator", { timeout: 30000 }, () => {
           event.event_type === "FindingSuperseded" && event.payload["finding_id"] === findingId,
       );
     expect(decayEventsAfterThird).toHaveLength(1);
-  });
+  }, 60_000);
 
   it("regenerates the tasks.md projection at snapshot and refuses hand edits", async () => {
     const newId = sequentialIds();

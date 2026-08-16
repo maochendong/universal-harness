@@ -11,6 +11,8 @@ import {
   MANAGED_GITIGNORE_CONTENT,
   MANAGED_GITIGNORE_RELATIVE_PATH,
   MANIFEST_RELATIVE_PATH,
+  DEFAULT_RUNTIME_CONFIG_CONTENT,
+  RUNTIME_CONFIG_RELATIVE_PATH,
   ManagedFileConflictError,
   ProjectLayoutError,
   createPackLock,
@@ -57,6 +59,7 @@ describe("managed project layout", () => {
       "harness.lock",
       MANAGED_GITIGNORE_RELATIVE_PATH,
       MANAGED_GITATTRIBUTES_RELATIVE_PATH,
+      RUNTIME_CONFIG_RELATIVE_PATH,
     ]);
     for (const directory of MANAGED_DIRECTORIES) {
       expect(statSync(join(root, ".harness", directory)).isDirectory(), directory).toBe(true);
@@ -66,6 +69,9 @@ describe("managed project layout", () => {
     );
     expect(readFileSync(join(root, ".harness", MANAGED_GITATTRIBUTES_RELATIVE_PATH), "utf8")).toBe(
       MANAGED_GITATTRIBUTES_CONTENT,
+    );
+    expect(readFileSync(join(root, ".harness", RUNTIME_CONFIG_RELATIVE_PATH), "utf8")).toBe(
+      DEFAULT_RUNTIME_CONFIG_CONTENT,
     );
     expect(readManagedManifest(root).name).toBe("demo");
     expect(readManagedPackLock(root).packs).toHaveLength(1);
@@ -85,7 +91,7 @@ describe("managed project layout", () => {
     init(root);
     const second = init(root);
     expect(second.created).toEqual([]);
-    expect(second.reused).toHaveLength(4);
+    expect(second.reused).toHaveLength(5);
     writeFileSync(join(root, ".harness", MANAGED_GITIGNORE_RELATIVE_PATH), "user edit\n", "utf8");
     expect(() => init(root)).toThrow(ManagedFileConflictError);
   });

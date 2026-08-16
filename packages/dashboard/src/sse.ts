@@ -132,6 +132,11 @@ export async function streamDashboardEvents(options: StreamDashboardEventsOption
         cursor = page.cursor;
         await write(response, options.signal, eventFrame(next, cursor));
         lastWrite = now();
+        // Yield to the socket and disconnect handlers before scanning the
+        // next page. Without this fairness point a large historical stream
+        // can monopolize the microtask queue until TCP backpressure engages,
+        // delaying the client's first visible frame and abort signal.
+        await abortableWait(wait, 1, options.signal);
         continue;
       }
       if (now() - lastWrite >= heartbeatMs) {

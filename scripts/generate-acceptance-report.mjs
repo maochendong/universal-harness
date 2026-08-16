@@ -95,7 +95,10 @@ for (const entry of readdirSync(reportsDirectory)) {
   if (!entry.endsWith(".json")) continue;
   const suite = entry.slice(0, -".json".length);
   if (suite !== "partial" && !suiteReports.has(suite)) {
-    suiteReports.set(suite, JSON.parse(readFileSync(join(reportsDirectory, entry), "utf8")));
+    const candidate = JSON.parse(readFileSync(join(reportsDirectory, entry), "utf8"));
+    if (Array.isArray(candidate.records) && typeof candidate.files_failed === "number") {
+      suiteReports.set(suite, candidate);
+    }
   }
 }
 
@@ -300,6 +303,7 @@ const m2Matrix = [
       "packages/runtime/test/finding/groups.test.ts",
       "packages/cli/test/status.test.ts",
       "tests/performance/m2-finding-semantic.test.ts",
+      "docs/evidence/m2-atlas-readonly-dogfood.md",
     ],
   },
   {
@@ -362,6 +366,7 @@ const m2Matrix = [
       "tests/e2e/dashboard-readonly.test.ts",
     ],
     playwright: true,
+    dogfood: true,
     pack: true,
   },
   {
@@ -417,6 +422,16 @@ if (existsSync(packPath)) {
     report.commit ===
       execFileSync("git", ["rev-parse", "HEAD"], { cwd: repositoryRoot, encoding: "utf8" }).trim();
 }
+const dogfoodPath = join(reportsDirectory, "m2-dogfood.json");
+let dogfood;
+if (existsSync(dogfoodPath)) {
+  dogfood = JSON.parse(readFileSync(dogfoodPath, "utf8"));
+}
+const dogfoodPassed =
+  dogfood?.status === "passed" &&
+  dogfood?.snapshot_status === "completed" &&
+  dogfood?.judge_calls === 1 &&
+  dogfood?.worktree_clean === true;
 
 const m2DesignStatements = m2Statements();
 if (m2DesignStatements.length !== m2Matrix.length) {
@@ -429,12 +444,15 @@ const m2Results = m2Matrix.map((entry, index) => {
     (path) =>
       path.startsWith("scripts/") === false &&
       path.startsWith("tests/e2e/dashboard-") === false &&
-      executedFiles.get(path) !== "pass",
+      (path.startsWith("docs/")
+        ? !existsSync(join(repositoryRoot, path))
+        : executedFiles.get(path) !== "pass"),
   );
   const failed = entry.evidence.some((path) => executedFiles.get(path) === "fail");
   const externalMissing =
     (entry.playwright === true && !playwrightPassed) ||
     (entry.pack === true && !packPassed) ||
+    (entry.dogfood === true && !dogfoodPassed) ||
     (entry.standalone === true && scan.status !== 0);
   return {
     id: `M2-AC-${String(index + 1).padStart(2, "0")}`,
@@ -458,6 +476,12 @@ const m2Lines = [
     (entry) =>
       `| ${entry.id} | ${entry.scope} | ${entry.statement} | \`${entry.command}\` | ${entry.evidence.join("<br>")} | ${entry.status} |`,
   ),
+  "",
+  "## 纵向闭环 dogfood",
+  "",
+  dogfoodPassed
+    ? `已保存真实受管 fixture 的脱敏证据：\`${dogfood.workflow_operation_id}\` → \`${dogfood.snapshot_id}\`；Judge 调用 ${String(dogfood.judge_calls)} 次，终态 ${dogfood.snapshot_status}，工作树干净。`
+    : "缺少通过的 `.reports/acceptance/m2-dogfood.json` 纵向闭环证据。",
   "",
   m2Passed === m2Results.length
     ? "M2 验收矩阵全部具有当前运行证据，发布退出门禁通过。"

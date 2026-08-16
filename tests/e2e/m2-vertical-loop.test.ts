@@ -1,6 +1,7 @@
 import { createServer, type Server } from "node:http";
-import { writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { mkdirSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 
 import { afterEach, describe, expect, it } from "vitest";
 
@@ -160,7 +161,8 @@ describe("M2 governed vertical loop", { timeout: 120_000 }, () => {
           (item) => item.event.event_type === "EvaluationCompleted" && item.authoritative,
         ),
       ).toBe(true);
-      expect(readLatestSnapshot(projectRoot)?.status).toBe("completed");
+      const snapshot = readLatestSnapshot(projectRoot);
+      expect(snapshot?.status).toBe("completed");
 
       const evidence = git(
         projectRoot,
@@ -172,6 +174,39 @@ describe("M2 governed vertical loop", { timeout: 120_000 }, () => {
       );
       expect(evidence).toContain(".harness/artifacts/evidence/evidence_m2-judge/");
       expect(git(projectRoot, "status", "--porcelain").trim()).toBe("");
+
+      const reportPath = fileURLToPath(
+        new URL("../../.reports/acceptance/m2-dogfood.json", import.meta.url),
+      );
+      mkdirSync(dirname(reportPath), { recursive: true });
+      writeFileSync(
+        reportPath,
+        `${JSON.stringify(
+          {
+            status: "passed",
+            loop: ["iterate", "live", "gate/judge", "approval", "resume", "evaluation", "snapshot"],
+            workflow_operation_id: (result.json["data"] as Record<string, unknown>)[
+              "workflow_operation_id"
+            ],
+            iteration_id: (result.json["data"] as Record<string, unknown>)["iteration_id"],
+            snapshot_id: snapshot?.snapshot_id,
+            snapshot_status: snapshot?.status,
+            judge_calls: judge.calls(),
+            judge_evidence: evidence.trim().split(/\r?\n/u).filter(Boolean),
+            authoritative_event_types: [
+              ...new Set(
+                finalStream.items
+                  .filter((item) => item.authoritative)
+                  .map((item) => item.event.event_type),
+              ),
+            ].sort(),
+            worktree_clean: true,
+          },
+          null,
+          2,
+        )}\n`,
+        "utf8",
+      );
     } finally {
       if (previousSecret === undefined) delete process.env[secretName];
       else process.env[secretName] = previousSecret;
