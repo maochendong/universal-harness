@@ -53,7 +53,7 @@
         "mandatory": false,
         "deterministic": true,
         "scorer": "deterministic/correct_failure",
-        "reason": "run failed correctly: \"handoff\" via \"completion\"",
+        "reason": "handoff/completion is a transfer fact, not a failure scenario",
         "confidence": null
       },
       {
@@ -80,7 +80,7 @@
       ],
       "ratio": 0.428571
     },
-    "evidence_digest": "db7eb97b5055da0f25a9c9d7d8471e49e3d539a43c19771fa94abc49fcd1f213",
+    "evidence_digest": "aa75d8bf552b2e36e725b964e2e9e95a87a4f9ab6526c58c10aa2f6808df7448",
     "findings": []
   }
 }

@@ -120,6 +120,15 @@ describe("scoreTrajectory", () => {
 });
 
 describe("scoreCorrectFailure", () => {
+  it("keeps handoff/completion as a transfer fact rather than calling it a failure", () => {
+    const score = scoreCorrectFailure(
+      contextFor({ expected_outcomes: ["handoff"] }, fullInput(makeRun("handoff", "completion"))),
+    );
+    expect(score.score).toBe(1);
+    expect(score.reason).toContain("not a failure");
+    expect(score.reason).not.toContain("failed correctly");
+  });
+
   it("passes vacuously when no failure-class outcome is expected", () => {
     const score = scoreCorrectFailure(contextFor({}, fullInput(makeRun("success", "completion"))));
     expect(score).toMatchObject({ score: 1, available: true });

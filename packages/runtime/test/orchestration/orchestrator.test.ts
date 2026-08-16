@@ -475,10 +475,15 @@ describe("phase orchestrator", { timeout: 30000 }, () => {
       "execution-authorizations",
     );
     const grantDirectory = join(projectRoot, ".harness", "artifacts", "capability-grants");
+    const verdictDirectory = join(projectRoot, ".harness", "artifacts", "task-verdicts");
     expect(readdirSync(authorizationDirectory)).toHaveLength(1);
     expect(readdirSync(grantDirectory)).toHaveLength(1);
+    expect(readdirSync(verdictDirectory)).toHaveLength(1);
     const authorization = JSON.parse(
-      readFileSync(join(authorizationDirectory, readdirSync(authorizationDirectory)[0] as string), "utf8"),
+      readFileSync(
+        join(authorizationDirectory, readdirSync(authorizationDirectory)[0] as string),
+        "utf8",
+      ),
     ) as Record<string, unknown>;
     expect(authorization["adapter_profile_digest"]).toBe(TEST_AGENT_PROFILE_DIGEST);
     const streams = readRunStreams(deps, outcome.workflowOperationId);
@@ -494,6 +499,12 @@ describe("phase orchestrator", { timeout: 30000 }, () => {
     expect(snapshot?.snapshot_id).toBe(outcome.snapshotId);
     expect(snapshot?.status).toBe("completed");
     expect(snapshot?.evidence.length).toBeGreaterThan(0);
+    expect(snapshot?.run_outcomes).toEqual([
+      { id: expect.stringMatching(/^run_/u), outcome: "handoff" },
+    ]);
+    expect(snapshot?.task_verdicts).toEqual([
+      expect.objectContaining({ task_id: fake.calls[0]?.task_id, verdict: "passed" }),
+    ]);
     expect(snapshot?.adapter_profile_digest).toBe(TEST_AGENT_PROFILE_DIGEST);
     expect(snapshot?.budget_observations).toEqual(
       expect.arrayContaining([
@@ -532,7 +543,7 @@ describe("phase orchestrator", { timeout: 30000 }, () => {
     // the Task and its concrete Run, so status coverage and task freshness are
     // derived from explicit edges instead of an out-of-band artifact.
     const status = collectProjectStatus(projectRoot);
-    expect(status.evaluation_coverage).toEqual({ evaluated: 1, total: 1 });
+    expect(status.evaluation_coverage).toMatchObject({ evaluated: 1, total: 1 });
     expect(status.control_level).toBe("delegated");
     expect(status.adapter_profile_digest).toBe(TEST_AGENT_PROFILE_DIGEST);
     expect(status.budget_observations?.map((entry) => entry.availability)).toEqual([
@@ -540,6 +551,12 @@ describe("phase orchestrator", { timeout: 30000 }, () => {
       "unavailable",
       "measured",
     ]);
+    expect(status.evaluation_coverage).toMatchObject({
+      runs: { covered: 1, total: 1 },
+      tasks: { covered: 1, total: 1 },
+      tests: { covered: 1, total: 1 },
+      assertions: { covered: 1, total: 1 },
+    });
     const { database } = materializeLedger({ projectRoot, databasePath: ":memory:" });
     try {
       const nodes = pageNodes(database, { type: "EvaluationCase", limit: 10 }).items;
@@ -564,6 +581,34 @@ describe("phase orchestrator", { timeout: 30000 }, () => {
           expect.objectContaining({ target_id: fake.calls[0]?.task_id }),
           expect.objectContaining({ target_id: expect.stringMatching(/^run_/u) }),
         ]),
+      );
+      const taskId = fake.calls[0]?.task_id as string;
+      const runId = edges.find(
+        (edge) => edge.type === "EXECUTES" && edge.target_id === taskId,
+      )?.source_id;
+      const allNodes = pageNodes(database, { limit: 500 }).items;
+      const nodeById = new Map(allNodes.map((node) => [node.id, node]));
+      const gateProof = edges.find(
+        (edge) =>
+          edge.type === "SUPPORTS" &&
+          nodeById.get(edge.source_id)?.type === "Evidence" &&
+          nodeById.get(edge.target_id)?.type === "Test",
+      );
+      expect(runId).toMatch(/^run_/u);
+      expect(gateProof).toBeDefined();
+      expect(
+        edges.some(
+          (edge) =>
+            edge.type === "PRODUCES" &&
+            edge.source_id === runId &&
+            edge.target_id === gateProof?.source_id,
+        ),
+      ).toBe(true);
+      expect(
+        edges.some((edge) => edge.type === "VERIFIES" && edge.source_id === gateProof?.target_id),
+      ).toBe(true);
+      expect(edges.some((edge) => edge.type === "IMPLEMENTS" && edge.source_id === taskId)).toBe(
+        true,
       );
     } finally {
       database.close();
@@ -883,10 +928,8 @@ describe("phase orchestrator", { timeout: 30000 }, () => {
         const record = JSON.parse(
           readFileSync(join(snapshotsDirectory, name), "utf8"),
         ) as SnapshotRecord;
-        for (const outcome of record.run_outcomes) {
-          if (outcome.outcome === "success" && outcome.id.startsWith("task_")) {
-            completed.add(outcome.id);
-          }
+        for (const verdict of record.task_verdicts ?? []) {
+          if (verdict.verdict === "passed") completed.add(verdict.task_id);
         }
       }
       const { database } = materializeLedger({ projectRoot, databasePath: ":memory:" });

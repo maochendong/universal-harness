@@ -723,6 +723,8 @@ export {
   collectProjectStatus,
   deriveProjectStatus,
   type DerivedStatus,
+  type CoverageCount,
+  type EvaluationCoverage,
   type ProjectStatus,
   type StatusDerivationInput,
 } from "./status/status.js";
@@ -741,7 +743,17 @@ export {
   type SnapshotRunResult,
   type SnapshotStatus,
   type SnapshotTaskResult,
+  type SnapshotTaskVerdict,
 } from "./snapshot/builder.js";
+export {
+  buildTaskVerdict,
+  type BuildTaskVerdictInput,
+  type TaskVerdictAssertion,
+  type TaskVerdictEvidenceInput,
+  type TaskVerdictGateInput,
+  type TaskVerdictRecord,
+} from "./evaluation/task-verdict.js";
+export { projectRunFact, projectTaskVerdict } from "./evaluation/outcome-projection.js";
 export {
   SNAPSHOT_ANCHOR_ERROR_KINDS,
   SnapshotAnchorError,

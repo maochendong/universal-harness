@@ -13,6 +13,11 @@ export interface SnapshotViewInput {
   readonly workflow_operation_id: string;
   readonly execution_plan_id?: string;
   readonly run_outcomes?: readonly { readonly id: string; readonly outcome: string }[];
+  readonly task_verdicts?: readonly {
+    readonly verdict_id: string;
+    readonly task_id: string;
+    readonly verdict: string;
+  }[];
   readonly budget?: {
     readonly used_steps: number;
     readonly used_tokens: number;
@@ -65,6 +70,14 @@ export function renderSnapshotProjection(snapshot: SnapshotViewInput): Projectio
     body.push("## Run Outcomes", "");
     if (snapshot.run_outcomes.length === 0) body.push("None.", "");
     for (const run of snapshot.run_outcomes) body.push(`- ${run.id}: ${run.outcome}`);
+    body.push("");
+  }
+  if (snapshot.task_verdicts !== undefined) {
+    body.push("## Task Verdicts", "");
+    if (snapshot.task_verdicts.length === 0) body.push("None.", "");
+    for (const verdict of snapshot.task_verdicts) {
+      body.push(`- ${verdict.task_id}: ${verdict.verdict} (${verdict.verdict_id})`);
+    }
     body.push("");
   }
   if (snapshot.budget !== undefined) {

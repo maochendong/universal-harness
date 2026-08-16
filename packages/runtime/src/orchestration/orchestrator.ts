@@ -101,7 +101,6 @@ import {
   bindCapabilityGrantAuthorization,
   createCapabilityGrantSpec,
   type CapabilityGrantRecord,
-  type CapabilityGrantSpec,
 } from "../policy/capability-grant.js";
 import {
   buildExecutionAuthorizationRecord,
@@ -125,6 +124,8 @@ import {
 import type { IntentShape } from "../planning/mode-selector.js";
 import type { TaskSpecification } from "../planning/task.js";
 import { deriveActualRunChanges } from "../planning/scope-drift.js";
+import { buildTaskVerdict, type TaskVerdictRecord } from "../evaluation/task-verdict.js";
+import { projectTaskVerdict } from "../evaluation/outcome-projection.js";
 import {
   captureRequirements,
   type IntentInput,
@@ -1159,14 +1160,7 @@ function runNodeArtifactPath(runId: string): string {
   return `artifacts/run-nodes/${runId}.json`;
 }
 
-/**
- * Commit the Execution-Graph Run node for a run id (idempotent). RESUMES
- * edges bind run ids, so every run must exist as a graph node before the
- * integrity check materializes the ledger.
- */
-async function commitRunNode(ctx: PipelineContext, runId: string): Promise<void> {
-  const path = runNodeArtifactPath(runId);
-  if (artifactExists(ctx.deps, path)) return;
+function runNodeRecord(ctx: PipelineContext, runId: string): NodeRecord {
   const draft: Record<string, unknown> = {
     protocol_version: PROTOCOL_VERSION,
     record_kind: "node",
@@ -1190,8 +1184,132 @@ async function commitRunNode(ctx: PipelineContext, runId: string): Promise<void>
       `invalid run node: ${validation.errors.map((issue) => issue.message).join("; ")}`,
     );
   }
+  return node as unknown as NodeRecord;
+}
+
+/**
+ * Commit the Execution-Graph Run node for a run id (idempotent). RESUMES
+ * edges bind run ids, so every run must exist as a graph node before the
+ * integrity check materializes the ledger.
+ */
+async function commitRunNode(ctx: PipelineContext, runId: string, taskId: string): Promise<void> {
+  const path = runNodeArtifactPath(runId);
+  const artifacts: { readonly path: string; readonly content: string }[] = [];
+  const node = runNodeRecord(ctx, runId);
+  if (!artifactExists(ctx.deps, path)) {
+    artifacts.push({ path, content: `${canonicalizeJson(node)}\n` });
+  }
+  const graph = materializeProjectGraph(ctx.deps.projectRoot);
+  let executesExists: boolean;
+  try {
+    executesExists = graph.edges.some(
+      (edge) => edge.type === "EXECUTES" && edge.source_id === runId && edge.target_id === taskId,
+    );
+  } finally {
+    graph.close();
+  }
+  const edges: EdgeRecord[] = [];
+  if (!executesExists) {
+    const content: Record<string, unknown> = {
+      protocol_version: PROTOCOL_VERSION,
+      record_kind: "edge",
+      id: `edge_${contentDigest({ type: "EXECUTES", source: runId, target: taskId }).slice(0, 16)}`,
+      type: "EXECUTES",
+      source_id: runId,
+      target_id: taskId,
+      status: "accepted",
+      source: "workflow",
+      provenance: {
+        iteration_id: ctx.iterationId,
+        run_id: runId,
+        actor: "workflow-engine",
+        timestamp: nowOf(ctx.deps),
+      },
+      confidence: 1,
+    };
+    const edge = { ...content, digest: contentDigest(content) };
+    const edgeValidation = validateSchema("edge", edge);
+    if (!edgeValidation.valid) {
+      throw new OrchestrationError(
+        "configuration",
+        `invalid Run EXECUTES edge: ${edgeValidation.errors.map((issue) => issue.message).join("; ")}`,
+      );
+    }
+    edges.push(edge as unknown as EdgeRecord);
+  }
+  if (artifacts.length > 0 || edges.length > 0) {
+    await commitArtifacts(
+      ctx.deps,
+      ctx.workflowOperationId,
+      currentAttemptId(ctx),
+      artifacts,
+      edges,
+    );
+  }
+}
+
+/** Project the immutable terminal Run fact into the graph without changing its outcome. */
+async function commitRunFact(
+  ctx: PipelineContext,
+  runId: string,
+  result: AgentRunResult,
+): Promise<void> {
+  const graph = materializeProjectGraph(ctx.deps.projectRoot);
+  let current: NodeRecord | undefined;
+  try {
+    current = graph.nodes.find((node) => node.id === runId && node.type === "Run");
+  } finally {
+    graph.close();
+  }
+  if (current === undefined) {
+    throw new OrchestrationError("binding_drift", `terminal result targets unknown run ${runId}`);
+  }
+  const resultDigest = sha256Hex(canonicalizeJson(result));
+  const prior = current.extensions?.["harness.run-fact"];
+  if (
+    typeof prior === "object" &&
+    prior !== null &&
+    (prior as Record<string, unknown>)["result_digest"] === resultDigest
+  ) {
+    return;
+  }
+  const revision = current.revision + 1;
+  const base: Record<string, unknown> = Object.fromEntries(
+    Object.entries(current).filter(([key]) => key !== "digest"),
+  );
+  base.revision = revision;
+  base.provenance = {
+    iteration_id: ctx.iterationId,
+    run_id: runId,
+    actor: "workflow-engine",
+    timestamp: nowOf(ctx.deps),
+  };
+  base.extensions = {
+    ...(current.extensions ?? {}),
+    "harness.run-fact": {
+      outcome: result.outcome,
+      termination_reason: result.termination_reason,
+      completion_claimed: result.completion_claimed,
+      result_digest: resultDigest,
+      change_summary: result.change_summary,
+      budget_observations: result.budget_observations ?? [],
+    },
+  };
+  const node = { ...base, digest: contentDigest(base) };
+  const validation = validateSchema("node", node);
+  if (!validation.valid) {
+    throw new OrchestrationError(
+      "configuration",
+      `invalid terminal Run fact node: ${validation.errors
+        .map((issue) => `${issue.instancePath}: ${issue.message}`)
+        .join("; ")}`,
+    );
+  }
   await commitArtifacts(ctx.deps, ctx.workflowOperationId, currentAttemptId(ctx), [
-    { path, content: `${canonicalizeJson(node)}\n` },
+    {
+      path: `artifacts/run-nodes/${runId}-${String(revision)}.json`,
+      content: `${canonicalizeJson(node)}\n`,
+    },
   ]);
 }
 
@@ -2327,50 +2445,123 @@ function buildEnvelope(
 }
 
 /**
- * Mark a finished task accepted (card T2): the task node gains a revision
- * whose status is `accepted`, which is the graph-native signal status
- * derivation uses for task progress. Called after a claimed run and on the
- * re-entry skip path (a crash may have landed between the run and the
- * marking); already-accepted tasks are a no-op.
+ * Persist a strict TaskVerdict and project it onto the Task node. Only a
+ * passed verdict promotes the Task to accepted; a Run completion claim alone
+ * never does. Run-to-gate Evidence edges complete the machine-checkable proof
+ * path without rewriting the immutable Run fact.
  */
-async function markTaskAccepted(ctx: PipelineContext, taskId: string): Promise<void> {
+async function commitTaskVerdict(ctx: PipelineContext, verdict: TaskVerdictRecord): Promise<void> {
   const { deps } = ctx;
+  const taskId = verdict.task_id;
   const graph = materializeProjectGraph(deps.projectRoot);
   let current: NodeRecord | undefined;
+  let activeEdgeIds: Set<string>;
   try {
     current = graph.nodes
       .filter((node) => node.id === taskId && node.type === "Task")
       .sort((left, right) => left.revision - right.revision)
       .at(-1);
+    activeEdgeIds = new Set(
+      graph.edges
+        .filter((edge) => edge.status === "proposed" || edge.status === "accepted")
+        .map((edge) => edge.id),
+    );
   } finally {
     graph.close();
   }
-  if (current === undefined || current.status === "accepted") return;
+  if (current === undefined) {
+    throw new OrchestrationError("binding_drift", `TaskVerdict targets unknown task ${taskId}`);
+  }
+  const currentVerdict = current.extensions?.["harness.task-verdict"];
+  const targetStatus = verdict.verdict === "passed" ? "accepted" : "proposed";
+  const alreadyProjected =
+    current.status === targetStatus &&
+    typeof currentVerdict === "object" &&
+    currentVerdict !== null &&
+    (currentVerdict as Record<string, unknown>)["digest"] === verdict.digest;
   const revision = current.revision + 1;
   const base: Record<string, unknown> = Object.fromEntries(
     Object.entries(current).filter(([key]) => key !== "digest"),
   );
   base.revision = revision;
-  base.status = "accepted";
+  base.status = targetStatus;
   base.provenance = {
     iteration_id: ctx.iterationId,
     actor: "workflow-engine",
     timestamp: nowOf(deps),
+  };
+  base.extensions = {
+    ...(current.extensions ?? {}),
+    "harness.task-verdict": {
+      verdict_id: verdict.verdict_id,
+      digest: verdict.digest,
+      verdict: verdict.verdict,
+      run_ids: verdict.run_ids,
+      assertion_verdicts: verdict.assertion_verdicts,
+      gate_evidence_ids: verdict.gate_evidence_ids,
+      evaluation_evidence_ids: verdict.evaluation_evidence_ids,
+    },
   };
   const node = { ...base, digest: contentDigest(base) };
   const validation = validateSchema("node", node);
   if (!validation.valid) {
     throw new OrchestrationError(
       "configuration",
-      `invalid accepted task node: ${validation.errors.map((issue) => issue.message).join("; ")}`,
+      `invalid accepted task node: ${validation.errors
+        .map((issue) => `${issue.instancePath}: ${issue.message}`)
+        .join("; ")}`,
     );
   }
-  await commitArtifacts(deps, ctx.workflowOperationId, currentAttemptId(ctx), [
-    {
+  const artifacts: { readonly path: string; readonly content: string }[] = [];
+  if (!artifactExists(deps, `artifacts/task-verdicts/${verdict.verdict_id}.json`)) {
+    artifacts.push({
+      path: `artifacts/task-verdicts/${verdict.verdict_id}.json`,
+      content: `${canonicalizeJson(verdict)}\n`,
+    });
+  }
+  if (!alreadyProjected) {
+    artifacts.push({
       path: `artifacts/tasks/${taskId}/${String(revision)}.json`,
       content: `${canonicalizeJson(node)}\n`,
-    },
-  ]);
+    });
+  }
+  const edges: EdgeRecord[] = [];
+  for (const runId of verdict.run_ids) {
+    for (const evidenceId of verdict.gate_evidence_ids) {
+      const id = `edge_${contentDigest({ type: "PRODUCES", source: runId, target: evidenceId }).slice(0, 16)}`;
+      if (activeEdgeIds.has(id)) continue;
+      const content: Record<string, unknown> = {
+        protocol_version: PROTOCOL_VERSION,
+        record_kind: "edge",
+        id,
+        type: "PRODUCES",
+        source_id: runId,
+        target_id: evidenceId,
+        status: "accepted",
+        source: "workflow",
+        provenance: {
+          iteration_id: ctx.iterationId,
+          run_id: runId,
+          actor: "workflow-engine",
+          timestamp: nowOf(deps),
+        },
+        confidence: 1,
+      };
+      const edge = { ...content, digest: contentDigest(content) };
+      const validation = validateSchema("edge", edge);
+      if (!validation.valid) {
+        throw new OrchestrationError(
+          "configuration",
+          `invalid TaskVerdict evidence edge: ${validation.errors.map((issue) => issue.message).join("; ")}`,
+        );
+      }
+      edges.push(edge as unknown as EdgeRecord);
+      activeEdgeIds.add(id);
+    }
+  }
+  if (artifacts.length > 0 || edges.length > 0) {
+    await commitArtifacts(deps, ctx.workflowOperationId, currentAttemptId(ctx), artifacts, edges);
+  }
 }
 
 function mapRunFailure(
@@ -2476,7 +2667,7 @@ async function phaseExecute(ctx: PipelineContext): Promise<PhaseStep> {
         (artifact) => artifact.run_digest === completedDigest && !artifact.result.passed,
       );
       if (!failedEvaluation) {
-        await markTaskAccepted(ctx, task.id);
+        await commitRunFact(ctx, completed.runId, completed.result);
         rememberTaskBlockers(task.id);
         lastRun = completed;
         continue;
@@ -2509,8 +2700,8 @@ async function phaseExecute(ctx: PipelineContext): Promise<PhaseStep> {
           : { adapterProfileDigest: authority.authorization.adapter_profile_digest }),
       });
       activeRunId = started.run_id;
-      await commitRunNode(ctx, activeRunId);
     }
+    await commitRunNode(ctx, activeRunId, task.id);
     if (deps.vcs !== undefined) {
       const observed = await deps.vcs.diffSummary(
         deps.projectRoot,
@@ -2634,6 +2825,7 @@ async function phaseExecute(ctx: PipelineContext): Promise<PhaseStep> {
             },
           ]),
     ]);
+    await commitRunFact(ctx, activeRunId, result);
     lastRun = { runId: activeRunId, result };
     ctx.run = lastRun;
 
@@ -2666,7 +2858,6 @@ async function phaseExecute(ctx: PipelineContext): Promise<PhaseStep> {
       });
       return { continue: false, outcome };
     }
-    await markTaskAccepted(ctx, task.id);
     rememberTaskBlockers(task.id);
   }
   if (lastRun === undefined) {
@@ -3936,9 +4127,15 @@ function completedTaskIds(deps: OrchestratorDependencies): string[] {
     .sort()) {
     const record = readJsonArtifact<SnapshotRecord>(deps, `artifacts/snapshots/${name}`);
     if (record === undefined) continue;
-    for (const outcome of record.run_outcomes) {
-      if (outcome.outcome === "success" && outcome.id.startsWith("task_")) {
-        completed.add(outcome.id);
+    const verdicts = record.task_verdicts ?? [];
+    for (const verdict of verdicts) {
+      if (verdict.verdict === "passed") completed.add(verdict.task_id);
+    }
+    if (verdicts.length === 0) {
+      for (const outcome of record.run_outcomes) {
+        if (outcome.id.startsWith("task_") && outcome.outcome === "success") {
+          completed.add(outcome.id);
+        }
       }
     }
   }
@@ -4003,18 +4200,12 @@ async function phaseSnapshot(ctx: PipelineContext): Promise<PhaseStep> {
     taskRuns.push({ taskId: task.id, runId: run.runId, result: run.result });
   }
   ctx.run = taskRuns.at(-1) as { readonly runId: string; readonly result: AgentRunResult };
-  const gates = ctx.gateOutcome;
   const evaluations = taskRuns.map(
     (taskRun) =>
       loadEvaluateArtifacts(deps, ctx.iterationId).find(
         (artifact) => artifact.run_digest === sha256Hex(canonicalizeJson(taskRun.result)),
       )?.result,
   );
-  const success =
-    taskRuns.every((taskRun) => taskRun.result.completion_claimed) &&
-    (gates === undefined || gates.completed_allowed) &&
-    evaluations.every((evaluation) => evaluation?.passed === true);
-
   // Completion is a graph verdict, not merely a successful agent claim.
   // Rescan first, attach the still-fresh gate evidence to newly discovered
   // tests, then audit the resulting graph before creating any completed
@@ -4031,20 +4222,113 @@ async function phaseSnapshot(ctx: PipelineContext): Promise<PhaseStep> {
       bindings,
     );
   }
+  if (verifyStored === undefined) {
+    const driftAudit = await commitAuditFindings(ctx);
+    const detail =
+      driftAudit.blockingFindingIds.length > 0
+        ? `graph audit blocked completion: ${driftAudit.blockingFindingIds.join(", ")}`
+        : "verification bindings changed after gates; current graph requires a fresh gate verdict";
+    const outcome = await blockWithSnapshot(ctx, {
+      reason: "repairable_gate_failure",
+      detail,
+      resumePhase: "verify",
+      input: {
+        ...snapshotBaseInput(
+          ctx,
+          taskRuns.map((taskRun) => ({
+            task_id: taskRun.taskId,
+            required: true,
+            outcome: taskRun.result.outcome,
+          })),
+        ),
+        runs: taskRuns.map((taskRun) => ({
+          run_id: taskRun.runId,
+          required: true,
+          outcome: taskRun.result.outcome,
+        })),
+      },
+    });
+    return { continue: false, outcome };
+  }
+  const taskVerdicts: TaskVerdictRecord[] = [];
+  for (const [index, task] of tasks.entries()) {
+    const taskRun = taskRuns[index];
+    const evaluation = evaluations[index];
+    if (taskRun === undefined || evaluation === undefined) {
+      throw new OrchestrationError(
+        "binding_drift",
+        `task ${task.id} has no committed run evaluation`,
+      );
+    }
+    const verdictId = `verdict_${contentDigest({
+      task: task.id,
+      run: taskRun.runId,
+      gates: verifyStored.results.map((result) => result.evidence_id),
+      evaluation: evaluation.evidenceId,
+    }).slice(0, 16)}`;
+    const verdict = buildTaskVerdict({
+      verdictId,
+      iterationId: ctx.iterationId,
+      taskId: task.id,
+      runIds: [taskRun.runId],
+      assertions: task.assertions ?? [],
+      gates: verifyStored.results.map((result) => ({
+        gate_id: result.gate_id,
+        passed: result.passed,
+        evidence_id: result.evidence_id,
+      })),
+      evaluations: [{ passed: evaluation.passed, evidence_id: evaluation.evidenceId }],
+      createdAt: nowOf(deps),
+    });
+    await commitTaskVerdict(ctx, verdict);
+    taskVerdicts.push(verdict);
+  }
+  if (taskVerdicts.some((verdict) => verdict.verdict !== "passed")) {
+    const outcome = await blockWithSnapshot(ctx, {
+      reason: "repairable_gate_failure",
+      detail: "one or more TaskVerdicts did not pass",
+      resumePhase: "verify",
+      input: {
+        ...snapshotBaseInput(
+          ctx,
+          taskRuns.map((taskRun) => ({
+            task_id: taskRun.taskId,
+            required: true,
+            outcome: taskRun.result.outcome,
+          })),
+        ),
+        task_verdicts: taskVerdicts.map(projectTaskVerdict),
+        runs: taskRuns.map((taskRun) => ({
+          run_id: taskRun.runId,
+          required: true,
+          outcome: taskRun.result.outcome,
+        })),
+      },
+    });
+    return { continue: false, outcome };
+  }
   const audit = await commitAuditFindings(ctx);
   if (audit.blockingFindingIds.length > 0) {
     const outcome = await blockWithSnapshot(ctx, {
       reason: "repairable_gate_failure",
       detail: `graph audit blocked completion: ${audit.blockingFindingIds.join(", ")}`,
       resumePhase: "verify",
-      input: snapshotBaseInput(
-        ctx,
-        taskRuns.map((taskRun) => ({
-          task_id: taskRun.taskId,
+      input: {
+        ...snapshotBaseInput(
+          ctx,
+          taskRuns.map((taskRun) => ({
+            task_id: taskRun.taskId,
+            required: true,
+            outcome: taskRun.result.outcome,
+          })),
+        ),
+        task_verdicts: taskVerdicts.map(projectTaskVerdict),
+        runs: taskRuns.map((taskRun) => ({
+          run_id: taskRun.runId,
           required: true,
           outcome: taskRun.result.outcome,
         })),
-      ),
+      },
     });
     return { continue: false, outcome };
   }
@@ -4066,17 +4350,18 @@ async function phaseSnapshot(ctx: PipelineContext): Promise<PhaseStep> {
       taskRuns.map((taskRun) => ({
         task_id: taskRun.taskId,
         required: true,
-        outcome: success ? ("success" as const) : taskRun.result.outcome,
+        outcome: taskRun.result.outcome,
       })),
     ),
     snapshot_id: `snapshot_${sha256Hex(`${ctx.iterationId}:completed`).slice(0, 16)}`,
     final_commit: sourceCommit,
     created_at: nowOf(deps),
     execution_plan_id: plan.node.id,
+    task_verdicts: taskVerdicts.map(projectTaskVerdict),
     runs: taskRuns.map((taskRun) => ({
       run_id: taskRun.runId,
       required: true,
-      outcome: success ? ("success" as const) : taskRun.result.outcome,
+      outcome: taskRun.result.outcome,
     })),
     findings: [
       ...(verifyStored?.findings ?? []).map((finding) => ({
@@ -4486,9 +4771,35 @@ export async function resumeIteration(
   if ("outcome" in context) return context.outcome;
   // RESUMES edges bind run ids; both the interrupted run and its successor
   // must exist as Execution-Graph nodes before anything materializes.
+  const resumedStreams = readRunStreams(workflowDeps(deps), workflowOperationId);
+  const resumedRunBindings: Array<{ readonly runId: string; readonly taskId: string }> = [];
   for (const resumed of resumedRuns) {
-    await commitRunNode(context, resumed.interruptedRunId);
-    await commitRunNode(context, resumed.successorRunId);
+    for (const runId of [resumed.interruptedRunId, resumed.successorRunId]) {
+      const started = resumedStreams
+        .find((stream) => stream.runId === runId)
+        ?.records.find((record) => record.record_kind === "run_started");
+      if (started === undefined) {
+        throw new OrchestrationError("binding_drift", `resumed run ${runId} has no start fact`);
+      }
+      resumedRunBindings.push({ runId, taskId: started.task_id });
+    }
+  }
+  const missingRunNodes = resumedRunBindings.filter(
+    ({ runId }) => !artifactExists(deps, runNodeArtifactPath(runId)),
+  );
+  if (missingRunNodes.length > 0) {
+    await commitArtifacts(
+      deps,
+      workflowOperationId,
+      currentAttemptId(context),
+      missingRunNodes.map(({ runId }) => ({
+        path: runNodeArtifactPath(runId),
+        content: `${canonicalizeJson(runNodeRecord(context, runId))}\n`,
+      })),
+    );
+  }
+  for (const binding of resumedRunBindings) {
+    await commitRunNode(context, binding.runId, binding.taskId);
   }
   const phase = context.workingState.phase;
   if (!isOrchestrationPhase(phase)) {

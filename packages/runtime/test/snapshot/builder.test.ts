@@ -28,9 +28,14 @@ function baseInput(overrides?: Partial<SnapshotInput>): SnapshotInput {
     adapter_control_profile: PROFILE,
     adapter_profile_digest: contentDigest(PROFILE),
     tasks: [
-      { task_id: "task_01", required: true, outcome: "success" },
+      { task_id: "task_01", required: true, outcome: "handoff" },
       { task_id: "task_02", required: false, outcome: "partial" },
     ],
+    task_verdicts: [
+      { verdict_id: "verdict_01", task_id: "task_01", verdict: "passed" },
+      { verdict_id: "verdict_02", task_id: "task_02", verdict: "blocked" },
+    ],
+    runs: [{ run_id: "run_01", required: true, outcome: "handoff" }],
     findings: [{ finding_id: "finding_01", blocking: true, status: "closed" }],
     evidence: [
       {
@@ -86,7 +91,11 @@ describe("buildSnapshot", () => {
     const snapshot = buildSnapshot(baseInput());
     expect(snapshot.status).toBe("completed");
     expect(snapshot.final_commit).toBe(FINAL_COMMIT);
-    expect(snapshot.run_outcomes.map((run) => run.id)).toEqual(["task_01", "task_02"]);
+    expect(snapshot.run_outcomes).toEqual([{ id: "run_01", outcome: "handoff" }]);
+    expect(snapshot.task_verdicts).toEqual([
+      { verdict_id: "verdict_01", task_id: "task_01", verdict: "passed" },
+      { verdict_id: "verdict_02", task_id: "task_02", verdict: "blocked" },
+    ]);
     expect(snapshot.closed_findings).toEqual(["finding_01"]);
     expect(snapshot.evidence).toEqual(["evidence_01"]);
     expect(snapshot.adapter_profile_digest).toBe(contentDigest(PROFILE));
@@ -102,15 +111,17 @@ describe("buildSnapshot", () => {
   it("refuses completed while a required task is unfinished", () => {
     const input = baseInput({
       tasks: [{ task_id: "task_01", required: true, outcome: "pending" }],
+      task_verdicts: [],
+      runs: [],
     });
-    expect(snapshotCompletionBlockers(input)).toEqual(["required task task_01 has not finished"]);
+    expect(snapshotCompletionBlockers(input)).toEqual(["required task task_01 has no TaskVerdict"]);
     try {
       buildSnapshot(input);
       expect.unreachable("must throw");
     } catch (error) {
       const snapshotError = error as SnapshotError;
       expect(snapshotError.kind).toBe("completion_blocked");
-      expect(snapshotError.blockers).toEqual(["required task task_01 has not finished"]);
+      expect(snapshotError.blockers).toEqual(["required task task_01 has no TaskVerdict"]);
     }
   });
 
@@ -150,12 +161,12 @@ describe("buildSnapshot", () => {
     );
   });
 
-  it("refuses completed for an unsuccessful required run or unfinished external action", () => {
-    const runFailed = baseInput({
-      runs: [{ run_id: "run_01", required: true, outcome: "failed" }],
+  it("refuses completed for a failed task verdict or unfinished external action", () => {
+    const verdictFailed = baseInput({
+      task_verdicts: [{ verdict_id: "verdict_01", task_id: "task_01", verdict: "failed" }],
     });
-    expect(snapshotCompletionBlockers(runFailed)).toContain(
-      "required run run_01 ended with outcome failed",
+    expect(snapshotCompletionBlockers(verdictFailed)).toContain(
+      "required task task_01 verdict is failed",
     );
     const uncertain = baseInput({
       external_actions: [
@@ -177,6 +188,8 @@ describe("buildSnapshot", () => {
     const snapshot = buildSnapshot(
       baseInput({
         tasks: [{ task_id: "task_01", required: true, outcome: "pending" }],
+        task_verdicts: [],
+        runs: [],
         block_reason: "awaiting_approval",
         resume_phase: "verification",
         checkpoint_id: "checkpoint_01",
@@ -184,7 +197,7 @@ describe("buildSnapshot", () => {
     );
     expect(snapshot.status).toBe("blocked");
     expect(snapshot.resume_phase).toBe("verification");
-    expect(snapshot.blockers).toEqual(["required task task_01 has not finished"]);
+    expect(snapshot.blockers).toEqual(["required task task_01 has no TaskVerdict"]);
     expect(snapshot.checkpoint_id).toBe("checkpoint_01");
     expect(snapshot.workflow_operation_id).toBe("workflow-op_01");
   });
@@ -194,6 +207,8 @@ describe("buildSnapshot", () => {
       buildSnapshot(
         baseInput({
           tasks: [{ task_id: "task_01", required: true, outcome: "pending" }],
+          task_verdicts: [],
+          runs: [],
           resume_phase: "verification",
         }),
       ),
@@ -202,6 +217,8 @@ describe("buildSnapshot", () => {
       buildSnapshot(
         baseInput({
           tasks: [{ task_id: "task_01", required: true, outcome: "pending" }],
+          task_verdicts: [],
+          runs: [],
           block_reason: "user_cancellation" as never,
           resume_phase: "verification",
         }),

@@ -54,7 +54,7 @@ export interface ProjectStatus {
   readonly control_level: ControlLevel | "none";
   readonly adapter_control_profile?: AdapterControlProfile;
   readonly adapter_profile_digest?: string;
-  readonly evaluation_coverage: { readonly evaluated: number; readonly total: number };
+  readonly evaluation_coverage: EvaluationCoverage;
   readonly blockers: readonly string[];
   /** Non-blocking findings the iteration should surface but not be held by. */
   readonly warnings: readonly string[];
@@ -92,7 +92,7 @@ export interface StatusDerivationInput {
 export interface DerivedStatus {
   readonly iteration?: { readonly id: string; readonly state: string };
   readonly task_progress?: TaskProgress;
-  readonly evaluation_coverage: { readonly evaluated: number; readonly total: number };
+  readonly evaluation_coverage: EvaluationCoverage;
   readonly blockers: readonly string[];
   readonly warnings: readonly string[];
   readonly finding_groups: readonly FindingGroupProjection[];
@@ -258,10 +258,25 @@ function deriveStaleEvidence(nodes: readonly NodeRecord[], edges: readonly EdgeR
   return [...stale].sort(byId);
 }
 
+export interface CoverageCount {
+  readonly covered: number;
+  readonly total: number;
+}
+
+export interface EvaluationCoverage {
+  /** Compatibility projection: evaluated Run count. */
+  readonly evaluated: number;
+  readonly total: number;
+  readonly runs?: CoverageCount;
+  readonly tasks?: CoverageCount;
+  readonly tests?: CoverageCount;
+  readonly assertions?: CoverageCount;
+}
+
 function deriveEvaluationCoverage(
   nodes: readonly NodeRecord[],
   edges: readonly EdgeRecord[],
-): { readonly evaluated: number; readonly total: number } {
+): EvaluationCoverage {
   const evaluatedSubjects = new Set(
     edges
       .filter(
@@ -272,9 +287,45 @@ function deriveEvaluationCoverage(
       .map((edge) => edge.target_id),
   );
   const runs = nodes.filter((node) => node.type === "Run");
-  return {
+  const base = {
     evaluated: runs.filter((run) => evaluatedSubjects.has(run.id)).length,
     total: runs.length,
+  };
+  const verdictExtensions = nodes.flatMap((node) => {
+    if (node.type !== "Task") return [];
+    const extension = node.extensions?.["harness.task-verdict"];
+    if (typeof extension !== "object" || extension === null) return [];
+    return [{ task: node, verdict: extension as Record<string, unknown> }];
+  });
+  if (verdictExtensions.length === 0) return base;
+  const assertionVerdicts = verdictExtensions.flatMap(({ verdict }) =>
+    Array.isArray(verdict["assertion_verdicts"])
+      ? (verdict["assertion_verdicts"] as Array<Record<string, unknown>>)
+      : [],
+  );
+  const coveredTestIds = new Set(
+    assertionVerdicts.flatMap((assertion) =>
+      assertion["passed"] === true && Array.isArray(assertion["test_ids"])
+        ? (assertion["test_ids"] as string[])
+        : [],
+    ),
+  );
+  const tests = nodes.filter((node) => node.type === "Test" && node.status === "accepted");
+  return {
+    ...base,
+    runs: { covered: base.evaluated, total: base.total },
+    tasks: {
+      covered: verdictExtensions.filter(({ verdict }) => verdict["verdict"] === "passed").length,
+      total: verdictExtensions.length,
+    },
+    tests: {
+      covered: tests.filter((test) => coveredTestIds.has(test.id)).length,
+      total: tests.length,
+    },
+    assertions: {
+      covered: assertionVerdicts.filter((assertion) => assertion["passed"] === true).length,
+      total: assertionVerdicts.length,
+    },
   };
 }
 
@@ -330,8 +381,24 @@ function deriveTaskProgress(
     }
   }
   for (const id of taskIds.filter((id) => !ordered.includes(id)).sort(byId)) ordered.push(id);
-  const completed = taskIds.filter((id) => nodeById.get(id)?.status === "accepted").length;
-  const nextTaskId = ordered.find((id) => nodeById.get(id)?.status !== "accepted");
+  const executedTaskIds = new Set(
+    edges
+      .filter((edge) => edge.type === "EXECUTES" && members.has(edge.target_id))
+      .filter((edge) => {
+        const runFact = nodeById.get(edge.source_id)?.extensions?.["harness.run-fact"];
+        return (
+          typeof runFact === "object" &&
+          runFact !== null &&
+          (runFact as Record<string, unknown>)["completion_claimed"] === true &&
+          (runFact as Record<string, unknown>)["outcome"] === "handoff"
+        );
+      })
+      .map((edge) => edge.target_id),
+  );
+  const taskComplete = (id: string): boolean =>
+    nodeById.get(id)?.status === "accepted" || executedTaskIds.has(id);
+  const completed = taskIds.filter(taskComplete).length;
+  const nextTaskId = ordered.find((id) => !taskComplete(id));
   return {
     completed,
     total: taskIds.length,
@@ -462,8 +529,11 @@ function latestSnapshotProjection(
 ): StatusSnapshotProjection | undefined {
   const directory = resolveHarnessPath(harnessRoot, "artifacts/snapshots");
   if (!existsSync(directory)) return undefined;
-  const snapshots: Array<{ readonly record: StatusSnapshotProjection; readonly sequence: number }> = [];
-  for (const name of readdirSync(directory).filter((entry) => entry.endsWith(".json")).sort()) {
+  const snapshots: Array<{ readonly record: StatusSnapshotProjection; readonly sequence: number }> =
+    [];
+  for (const name of readdirSync(directory)
+    .filter((entry) => entry.endsWith(".json"))
+    .sort()) {
     try {
       const raw = readFileSync(resolveHarnessPath(directory, name), "utf8");
       const sequence = committedArtifactSequences.get(sha256Hex(raw));

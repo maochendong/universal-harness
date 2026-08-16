@@ -1,6 +1,6 @@
 <!-- harness:projection
 view: snapshot
-generation_digest: b548e4d7b84b17c97ee9f237f1efb99dd767c4eacb6024c8bddd8ef9b151194a
+generation_digest: 0a8cfb33d10a554f4d1dde48a8743c8465a1ab52259f3addd56705aed824d033
 sources:
 - snapshot_01 r1
 -->
@@ -15,8 +15,13 @@ sources:
 
 ## Run Outcomes
 
-- task_01: success
-- task_02: success
+- run_01: handoff
+- run_02: handoff
+
+## Task Verdicts
+
+- task_01: passed (verdict_01)
+- task_02: passed (verdict_02)
 
 ## Budget
 

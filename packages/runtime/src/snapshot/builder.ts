@@ -62,6 +62,12 @@ export interface SnapshotRunResult {
   readonly outcome: RunOutcome;
 }
 
+export interface SnapshotTaskVerdict {
+  readonly verdict_id: string;
+  readonly task_id: string;
+  readonly verdict: "passed" | "failed" | "blocked";
+}
+
 export interface SnapshotFindingState {
   readonly finding_id: string;
   readonly blocking: boolean;
@@ -92,6 +98,7 @@ export interface SnapshotInput {
   readonly adapter_control_profile?: AdapterControlProfile;
   readonly adapter_profile_digest?: string;
   readonly tasks: readonly SnapshotTaskResult[];
+  readonly task_verdicts?: readonly SnapshotTaskVerdict[];
   readonly runs?: readonly SnapshotRunResult[];
   readonly findings?: readonly SnapshotFindingState[];
   readonly evidence?: readonly SnapshotEvidenceState[];
@@ -129,6 +136,7 @@ export interface SnapshotRecord {
   readonly adapter_control_profile?: AdapterControlProfile;
   readonly adapter_profile_digest?: string;
   readonly run_outcomes: readonly { readonly id: string; readonly outcome: string }[];
+  readonly task_verdicts: readonly SnapshotTaskVerdict[];
   readonly budget?: BudgetUse;
   readonly budget_observations?: readonly BudgetObservation[];
   readonly trajectory_summary?: string;
@@ -163,21 +171,33 @@ function sortedUnique(values: readonly string[]): readonly string[] {
  */
 export function snapshotCompletionBlockers(input: SnapshotInput): readonly string[] {
   const blockers: string[] = [];
+  const verdictByTask = new Map(
+    (input.task_verdicts ?? []).map((verdict) => [verdict.task_id, verdict]),
+  );
   for (const task of [...input.tasks].sort((left, right) =>
     left.task_id < right.task_id ? -1 : 1,
   )) {
     if (!task.required) continue;
-    if (task.outcome === "pending") {
+    if (input.task_verdicts !== undefined) {
+      const verdict = verdictByTask.get(task.task_id);
+      if (verdict === undefined) {
+        blockers.push(`required task ${task.task_id} has no TaskVerdict`);
+      } else if (verdict.verdict !== "passed") {
+        blockers.push(`required task ${task.task_id} verdict is ${verdict.verdict}`);
+      }
+    } else if (task.outcome === "pending") {
       blockers.push(`required task ${task.task_id} has not finished`);
     } else if (task.outcome !== "success") {
       blockers.push(`required task ${task.task_id} ended with outcome ${task.outcome}`);
     }
   }
-  for (const run of [...(input.runs ?? [])].sort((left, right) =>
-    left.run_id < right.run_id ? -1 : 1,
-  )) {
-    if (run.required && run.outcome !== "success") {
-      blockers.push(`required run ${run.run_id} ended with outcome ${run.outcome}`);
+  if (input.task_verdicts === undefined) {
+    for (const run of [...(input.runs ?? [])].sort((left, right) =>
+      left.run_id < right.run_id ? -1 : 1,
+    )) {
+      if (run.required && run.outcome !== "success") {
+        blockers.push(`required run ${run.run_id} ended with outcome ${run.outcome}`);
+      }
     }
   }
   for (const finding of [...(input.findings ?? [])].sort((left, right) =>
@@ -256,10 +276,12 @@ function buildRecord(input: SnapshotInput, status: SnapshotStatus): SnapshotReco
     ...(input.adapter_profile_digest === undefined
       ? {}
       : { adapter_profile_digest: input.adapter_profile_digest }),
-    run_outcomes: [
-      ...input.tasks.map((task) => ({ id: task.task_id, outcome: task.outcome })),
-      ...(input.runs ?? []).map((run) => ({ id: run.run_id, outcome: run.outcome })),
-    ].sort((left, right) => (left.id < right.id ? -1 : left.id > right.id ? 1 : 0)),
+    run_outcomes: (input.runs ?? [])
+      .map((run) => ({ id: run.run_id, outcome: run.outcome }))
+      .sort((left, right) => (left.id < right.id ? -1 : left.id > right.id ? 1 : 0)),
+    task_verdicts: [...(input.task_verdicts ?? [])].sort((left, right) =>
+      left.task_id.localeCompare(right.task_id),
+    ),
     ...(input.budget === undefined ? {} : { budget: input.budget }),
     ...(input.budget_observations === undefined
       ? {}

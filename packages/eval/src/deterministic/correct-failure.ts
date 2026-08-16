@@ -28,6 +28,17 @@ function expectedFailures(context: ScorerContext): readonly AgentRunOutcome[] {
 }
 
 export function scoreCorrectFailure(context: ScorerContext): DimensionScore {
+  if (
+    context.input.run.outcome === "handoff" &&
+    context.input.run.termination_reason === "completion" &&
+    context.case.expected_outcomes.includes("handoff")
+  ) {
+    return dimensionScore(context, "correct_failure", {
+      available: true,
+      score: 1,
+      reason: "handoff/completion is a transfer fact, not a failure scenario",
+    });
+  }
   const failures = expectedFailures(context);
   if (failures.length === 0) {
     return dimensionScore(context, "correct_failure", {

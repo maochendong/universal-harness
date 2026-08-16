@@ -25,7 +25,14 @@ function completedTaskIds(projectRoot: string): string[] {
     .sort()) {
     const snapshot = JSON.parse(readFileSync(join(root, name), "utf8")) as {
       run_outcomes?: readonly { readonly id?: unknown; readonly outcome?: unknown }[];
+      task_verdicts?: readonly { readonly task_id?: unknown; readonly verdict?: unknown }[];
     };
+    for (const verdict of snapshot.task_verdicts ?? []) {
+      if (verdict.verdict === "passed" && typeof verdict.task_id === "string") {
+        completed.add(verdict.task_id);
+      }
+    }
+    if ((snapshot.task_verdicts ?? []).length > 0) continue;
     for (const outcome of snapshot.run_outcomes ?? []) {
       if (
         outcome.outcome === "success" &&

@@ -250,8 +250,12 @@ const SNAPSHOT_INPUT: SnapshotViewInput = {
   workflow_operation_id: "workflow-op_01",
   execution_plan_id: "plan_01",
   run_outcomes: [
-    { id: "task_01", outcome: "success" },
-    { id: "task_02", outcome: "success" },
+    { id: "run_01", outcome: "handoff" },
+    { id: "run_02", outcome: "handoff" },
+  ],
+  task_verdicts: [
+    { verdict_id: "verdict_01", task_id: "task_01", verdict: "passed" },
+    { verdict_id: "verdict_02", task_id: "task_02", verdict: "passed" },
   ],
   budget: { used_steps: 12, used_tokens: 21000, ceiling_steps: 20, ceiling_tokens: 50000 },
   trajectory_summary: "2 runs, 14 tool calls, 0 denials",
