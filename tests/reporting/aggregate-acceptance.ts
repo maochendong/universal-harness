@@ -167,6 +167,8 @@ export interface SuiteAcceptanceReport {
   readonly files_total: number;
   readonly files_failed: number;
   readonly failed_files: readonly string[];
+  /** Every executed module, retained so later milestones can bind evidence. */
+  readonly files: readonly SuiteFileResult[];
   readonly records: readonly AcceptanceEvidenceRecord[];
   /**
    * Registry snapshot (id, command, gate) so the report generator renders
@@ -254,6 +256,7 @@ export function buildSuiteReport(
     files_total: files.length,
     files_failed: failedFiles.length,
     failed_files: failedFiles,
+    files: [...files].sort((left, right) => left.path.localeCompare(right.path)),
     records,
     criteria: ACCEPTANCE_CRITERIA.map((criterionEntry) => ({
       id: criterionEntry.id,

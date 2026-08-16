@@ -1,5 +1,5 @@
 /**
- * Build the publishable `universal-harness` tarball (plan Task 28).
+ * Build the publishable `universal-harness` tarball (M1 Task 28, M2 Task 11).
  *
  * The public npm package ships as one self-contained tarball: the CLI `dist`
  * plus every workspace-internal package and every third-party runtime
@@ -187,6 +187,26 @@ for (const [dependency, spec] of Object.entries(cliManifest.dependencies ?? {}))
   } else {
     stageExternalDependency(dependency, cliDirectory);
   }
+}
+
+for (const required of [
+  "@universal-harness-internal/dashboard",
+  "@universal-harness-internal/adapter-gate-llm-judge",
+]) {
+  if (!staged.has(required)) {
+    throw new Error(`M2 runtime dependency was not staged: ${required}`);
+  }
+}
+for (const asset of ["dashboard.html", "dashboard.css", "dashboard.js"]) {
+  const path = join(
+    stagingModules,
+    "@universal-harness-internal",
+    "dashboard",
+    "dist",
+    "assets",
+    asset,
+  );
+  if (!existsSync(path)) throw new Error(`M2 Dashboard asset was not staged: ${asset}`);
 }
 
 // --- Assemble the publishable package ---------------------------------------

@@ -63,6 +63,13 @@ const requiredEntries = [
   "package/node_modules/@universal-harness-internal/runtime/dist/index.js",
   "package/node_modules/@universal-harness-internal/adapter-agent-manual/dist/index.js",
   "package/node_modules/@universal-harness-internal/adapter-agent-command/dist/index.js",
+  "package/node_modules/@universal-harness-internal/adapter-gate-llm-judge/dist/index.js",
+  "package/node_modules/@universal-harness-internal/adapter-gate-llm-judge/dist/provider.js",
+  "package/node_modules/@universal-harness-internal/dashboard/dist/index.js",
+  "package/node_modules/@universal-harness-internal/dashboard/dist/server.js",
+  "package/node_modules/@universal-harness-internal/dashboard/dist/assets/dashboard.html",
+  "package/node_modules/@universal-harness-internal/dashboard/dist/assets/dashboard.css",
+  "package/node_modules/@universal-harness-internal/dashboard/dist/assets/dashboard.js",
   "package/node_modules/ajv/package.json",
   "package/node_modules/@sinclair/typebox/package.json",
 ];
@@ -87,6 +94,39 @@ const forbiddenEntry = entries
   );
 if (forbiddenEntry !== undefined) {
   fail(`tarball contains internal-only source or build metadata: ${forbiddenEntry}`);
+}
+
+// Distribution bytes must be relocatable and secret-free. Scan our compiled
+// code/assets (third-party packages retain their upstream fixtures) for the
+// build workspace and for credential values present in the pack environment.
+function filesUnder(directory) {
+  return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
+    const path = join(directory, entry.name);
+    return entry.isDirectory() ? filesUnder(path) : [path];
+  });
+}
+const ownFiles = [
+  ...filesUnder(join(stagingRoot, "dist")),
+  ...filesUnder(join(stagingRoot, "node_modules", "@universal-harness-internal")),
+];
+const credentialValues = Object.entries(process.env)
+  .filter(
+    ([name, value]) =>
+      value !== undefined &&
+      value.length >= 16 &&
+      /(?:API_KEY|TOKEN|SECRET|PASSWORD|CREDENTIAL)/u.test(name),
+  )
+  .map(([, value]) => value);
+for (const path of ownFiles) {
+  const bytes = readFileSync(path);
+  if (bytes.includes(0)) continue;
+  const content = bytes.toString("utf8");
+  if (content.includes(repositoryRoot) || /\/Users\/[^/\s]+\//u.test(content)) {
+    fail(`packed artifact contains an absolute workspace path: ${path}`);
+  }
+  if (credentialValues.some((value) => content.includes(value))) {
+    fail(`packed artifact contains a credential value from the build environment: ${path}`);
+  }
 }
 
 // --- Staged manifest hygiene --------------------------------------------------
@@ -266,6 +306,27 @@ try {
   if (snapshot.json.status !== "ok" || snapshot.json.data.status !== "completed") {
     fail(`adopt loop ended without a completed snapshot: ${JSON.stringify(snapshot.json)}`);
   }
+
+  const evidenceDirectory = join(repositoryRoot, ".reports", "acceptance");
+  mkdirSync(evidenceDirectory, { recursive: true });
+  writeFileSync(
+    join(evidenceDirectory, "pack-smoke.json"),
+    `${JSON.stringify(
+      {
+        status: "passed",
+        commit: execFileSync("git", ["rev-parse", "HEAD"], {
+          cwd: repositoryRoot,
+          encoding: "utf8",
+        }).trim(),
+        tarball: tarball.split(/[\\/]/u).at(-1),
+        dashboard_assets: ["dashboard.html", "dashboard.css", "dashboard.js"],
+        judge_adapter: true,
+      },
+      null,
+      2,
+    )}\n`,
+    "utf8",
+  );
 
   console.log(
     "Pack smoke passed: offline install, harness binary, ESM exports, " +

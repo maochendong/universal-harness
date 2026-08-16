@@ -156,9 +156,13 @@ export async function requestJudgeCompletion(
     );
   }
   const hostname = new URL(config.endpoint).hostname.replace(/^\[|\]$/gu, "");
+  const testLoopback =
+    config.allow_loopback_http === true &&
+    new URL(config.endpoint).protocol === "http:" &&
+    loopback(hostname);
   const resolveHostname =
     deps.resolveHostname ??
-    (deps.fetch === undefined
+    (deps.fetch === undefined && !testLoopback
       ? async (host: string): Promise<readonly string[]> =>
           (await lookup(host, { all: true, verbatim: true })).map((entry) => entry.address)
       : undefined);

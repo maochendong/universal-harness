@@ -1,4 +1,4 @@
-import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
 
 import {
@@ -82,9 +82,27 @@ export function createDashboardReadApi(projectRoot: string): DashboardReadApi {
     harnessRootFor(projectRoot),
     GRAPH_DATABASE_RELATIVE_PATH,
   );
+  const fingerprint = (): string | undefined => {
+    try {
+      const stat = statSync(databasePath);
+      return `${String(stat.dev)}:${String(stat.ino)}:${String(stat.size)}:${String(stat.mtimeMs)}`;
+    } catch {
+      return undefined;
+    }
+  };
+  // The server validates the full projection before constructing this API.
+  // Direct library users get the same validation here. Subsequent healthy
+  // reads reuse that verdict until the SQLite file identity changes; a
+  // changed/missing file is fully checked again before any row is served.
+  let verifiedFingerprint =
+    checkGraphCache(databasePath).status === "ok" ? fingerprint() : undefined;
   const withPorts = <T>(read: (ports: GraphReadPorts) => T): T => {
-    const check = checkGraphCache(databasePath);
-    if (check.status !== "ok") throw unavailable(check.detail ?? check.status);
+    const currentFingerprint = fingerprint();
+    if (currentFingerprint === undefined || currentFingerprint !== verifiedFingerprint) {
+      const check = checkGraphCache(databasePath);
+      if (check.status !== "ok") throw unavailable(check.detail ?? check.status);
+      verifiedFingerprint = fingerprint();
+    }
     let database: DatabaseSync;
     try {
       database = new DatabaseSync(databasePath, { readOnly: true });

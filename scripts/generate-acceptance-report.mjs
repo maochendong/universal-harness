@@ -32,6 +32,14 @@ const designPath = join(
   "2026-08-11-universal-harness-m1-design.md",
 );
 const reportPath = join(repositoryRoot, "docs", "m1-acceptance-report.md");
+const m2DesignPath = join(
+  repositoryRoot,
+  "docs",
+  "superpowers",
+  "specs",
+  "2026-08-16-universal-harness-m2-design.md",
+);
+const m2ReportPath = join(repositoryRoot, "docs", "m2-acceptance-report.md");
 const baselineDirectory = join(
   repositoryRoot,
   "node_modules",
@@ -270,7 +278,199 @@ lines.push("");
 
 writeFileSync(reportPath, `${lines.join("\n")}`, "utf8");
 
-if (counts.passed !== CRITERION_COUNT) {
-  fail(`report written to ${reportPath} but not every criterion passed`);
+// --- M2 acceptance matrix ------------------------------------------------------
+
+function m2Statements() {
+  const design = readFileSync(m2DesignPath, "utf8");
+  const section = design.split("## 15. ")[1]?.split("## 16.")[0];
+  if (section === undefined) fail("M2 design section 15 not found");
+  return section
+    .split(/\r?\n/u)
+    .map((line) => line.split("|").map((cell) => cell.trim()))
+    .filter(
+      (cells) => cells.length >= 5 && cells[1] !== "范围" && cells[1] !== "---" && cells[1] !== "",
+    )
+    .map((cells) => ({ scope: cells[1], statement: cells[2] }));
 }
-console.log(`Acceptance report written to ${reportPath}: 28/28 criteria passed.`);
+
+const m2Matrix = [
+  {
+    command: "pnpm test && pnpm test:performance",
+    evidence: [
+      "packages/runtime/test/finding/groups.test.ts",
+      "packages/cli/test/status.test.ts",
+      "tests/performance/m2-finding-semantic.test.ts",
+    ],
+  },
+  {
+    command: "pnpm test",
+    evidence: ["packages/runtime/test/finding/decay.test.ts"],
+  },
+  {
+    command: "pnpm test",
+    evidence: ["packages/runtime/test/finding/group-service.test.ts"],
+  },
+  {
+    command: "pnpm test",
+    evidence: [
+      "packages/cli/test/project-runtime-config.test.ts",
+      "adapters/gate-llm-judge/test/transport.test.ts",
+    ],
+  },
+  {
+    command: "pnpm test",
+    evidence: [
+      "packages/runtime/test/gates/llm-judge.test.ts",
+      "packages/cli/test/project-runtime-config.test.ts",
+    ],
+  },
+  {
+    command: "pnpm test",
+    evidence: [
+      "adapters/gate-llm-judge/test/provider.test.ts",
+      "adapters/gate-llm-judge/test/review-bundle.test.ts",
+      "adapters/gate-llm-judge/test/response.test.ts",
+    ],
+  },
+  {
+    command: "pnpm test",
+    evidence: [
+      "packages/graph/test/semantic/provider.test.ts",
+      "packages/conformance/test/semantic-seed-provider.test.ts",
+    ],
+  },
+  {
+    command: "pnpm test",
+    evidence: [
+      "packages/cli/test/impact.test.ts",
+      "packages/graph/test/semantic/graph-policy.test.ts",
+    ],
+  },
+  {
+    command: "pnpm test && pnpm test:fault",
+    evidence: [
+      "packages/runtime/test/observability/event-stream.test.ts",
+      "packages/runtime/test/observability/publisher.test.ts",
+      "tests/fault/event-stream-recovery.test.ts",
+    ],
+  },
+  {
+    command: "pnpm test && pnpm test:e2e:dashboard && pnpm pack:smoke",
+    evidence: [
+      "packages/dashboard/test/server.test.ts",
+      "packages/cli/test/serve.test.ts",
+      "tests/e2e/dashboard-readonly.test.ts",
+    ],
+    playwright: true,
+    pack: true,
+  },
+  {
+    command: "pnpm test && pnpm test:e2e && pnpm test:e2e:dashboard",
+    evidence: [
+      "packages/dashboard/test/write-api.test.ts",
+      "tests/e2e/m2-vertical-loop.test.ts",
+      "tests/e2e/dashboard-live-approval.test.ts",
+    ],
+    playwright: true,
+  },
+  {
+    command: "pnpm test:security",
+    evidence: [
+      "tests/security/dashboard-security.test.ts",
+      "tests/security/judge-security.test.ts",
+    ],
+  },
+  {
+    command: "pnpm verify && pnpm pack:smoke",
+    evidence: ["scripts/check-standalone.mjs", "scripts/pack-smoke.mjs"],
+    pack: true,
+    standalone: true,
+  },
+];
+
+const executedFiles = new Map();
+for (const report of suiteReports.values()) {
+  for (const file of report.files ?? []) {
+    const previous = executedFiles.get(file.path);
+    executedFiles.set(
+      file.path,
+      previous === "fail" || file.state === "fail"
+        ? "fail"
+        : previous === "pass" || file.state === "pass"
+          ? "pass"
+          : "skip",
+    );
+  }
+}
+const playwrightPath = join(reportsDirectory, "playwright-dashboard.json");
+let playwrightPassed = false;
+if (existsSync(playwrightPath)) {
+  const report = JSON.parse(readFileSync(playwrightPath, "utf8"));
+  playwrightPassed = report.stats?.unexpected === 0 && report.stats?.expected > 0;
+}
+const packPath = join(reportsDirectory, "pack-smoke.json");
+let packPassed = false;
+if (existsSync(packPath)) {
+  const report = JSON.parse(readFileSync(packPath, "utf8"));
+  packPassed =
+    report.status === "passed" &&
+    report.commit ===
+      execFileSync("git", ["rev-parse", "HEAD"], { cwd: repositoryRoot, encoding: "utf8" }).trim();
+}
+
+const m2DesignStatements = m2Statements();
+if (m2DesignStatements.length !== m2Matrix.length) {
+  fail(
+    `M2 design section 15 must list ${String(m2Matrix.length)} rows, found ${String(m2DesignStatements.length)}`,
+  );
+}
+const m2Results = m2Matrix.map((entry, index) => {
+  const missing = entry.evidence.filter(
+    (path) =>
+      path.startsWith("scripts/") === false &&
+      path.startsWith("tests/e2e/dashboard-") === false &&
+      executedFiles.get(path) !== "pass",
+  );
+  const failed = entry.evidence.some((path) => executedFiles.get(path) === "fail");
+  const externalMissing =
+    (entry.playwright === true && !playwrightPassed) ||
+    (entry.pack === true && !packPassed) ||
+    (entry.standalone === true && scan.status !== 0);
+  return {
+    id: `M2-AC-${String(index + 1).padStart(2, "0")}`,
+    ...m2DesignStatements[index],
+    ...entry,
+    status: failed ? "failed" : missing.length > 0 || externalMissing ? "not_run" : "passed",
+  };
+});
+const m2Passed = m2Results.filter((entry) => entry.status === "passed").length;
+const m2Lines = [
+  "# M2 验收报告",
+  "",
+  "本文件由 `scripts/generate-acceptance-report.mjs` 从测试、Playwright、性能与打包门禁的结构化输出生成；验收语句引用自 M2 设计第 15 节。",
+  "",
+  `- 生成基线 commit：\`${head}\``,
+  `- 汇总：${String(m2Passed)}/${String(m2Results.length)} 通过`,
+  "",
+  "| AC | 范围 | 必须证明的结果 | 命令 | Evidence | 结果 |",
+  "|---|---|---|---|---|---|",
+  ...m2Results.map(
+    (entry) =>
+      `| ${entry.id} | ${entry.scope} | ${entry.statement} | \`${entry.command}\` | ${entry.evidence.join("<br>")} | ${entry.status} |`,
+  ),
+  "",
+  m2Passed === m2Results.length
+    ? "M2 验收矩阵全部具有当前运行证据，发布退出门禁通过。"
+    : "M2 尚有缺失或失败证据，发布退出门禁未通过。",
+  "",
+];
+writeFileSync(m2ReportPath, m2Lines.join("\n"), "utf8");
+
+if (counts.passed !== CRITERION_COUNT || m2Passed !== m2Results.length) {
+  fail(
+    `reports written but release criteria are incomplete (M1 ${String(counts.passed)}/${String(CRITERION_COUNT)}, M2 ${String(m2Passed)}/${String(m2Results.length)})`,
+  );
+}
+console.log(
+  `Acceptance reports written: M1 28/28 and M2 ${String(m2Passed)}/${String(m2Results.length)}.`,
+);

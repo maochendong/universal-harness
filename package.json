@@ -18,7 +18,7 @@
     "test:e2e:dashboard": "playwright test --config playwright.dashboard.config.ts",
     "test:fault": "vitest run --config vitest.workspace.ts tests/fault",
     "test:performance": "vitest run --config vitest.performance.ts",
-    "test:release": "pnpm test:security && pnpm test:fault && pnpm test:performance && pnpm test:e2e && node scripts/generate-acceptance-report.mjs",
+    "test:release": "pnpm test:security && pnpm test:fault && pnpm test:performance && pnpm test:e2e && pnpm test:e2e:dashboard && pnpm pack:smoke && node scripts/generate-acceptance-report.mjs",
     "test:security": "vitest run --config vitest.workspace.ts tests/security",
     "typecheck": "pnpm -r --if-present typecheck",
     "verify": "pnpm format:check && pnpm lint && pnpm build && pnpm typecheck && pnpm test && node scripts/check-standalone.mjs"

@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import {
   buildManifest,
   canonicalizeJson,
+  contentDigest,
   edgeShardRelativePath,
   eventShardRelativePath,
   harnessRootFor,
@@ -13,6 +14,7 @@ import {
   resolveHarnessPath,
   sha256Hex,
   type EdgeRecord,
+  type LifecycleEvent,
   type LedgerOperation,
   type NodeRecord,
 } from "../../packages/core/src/index.js";
@@ -28,6 +30,14 @@ export interface PerformanceDataset {
   readonly nodes: NodeRecord[];
   readonly edges: EdgeRecord[];
   readonly manifest: DatasetManifest;
+}
+
+/** Fixed M2 release fixture from design section 14.4. */
+export interface M2PerformanceDataset {
+  readonly nodes: NodeRecord[];
+  readonly edges: EdgeRecord[];
+  readonly events: LifecycleEvent[];
+  readonly findings: NodeRecord[];
 }
 
 export interface DatasetManifest {
@@ -134,7 +144,8 @@ const LEDGER_MONTH = "2026-08";
  */
 export function buildSyntheticLedger(
   projectRoot: string,
-  dataset: PerformanceDataset,
+  dataset: Pick<PerformanceDataset, "nodes" | "edges">,
+  events: readonly LifecycleEvent[] = [],
 ): LedgerOperation {
   const harnessRoot = harnessRootFor(projectRoot);
   const artifactDigests: string[] = [];
@@ -149,7 +160,8 @@ export function buildSyntheticLedger(
     dataset.edges.length === 0
       ? ""
       : `${dataset.edges.map((edge) => canonicalizeJson(edge)).join("\n")}\n`;
-  const eventContent = "";
+  const eventContent =
+    events.length === 0 ? "" : `${events.map((event) => canonicalizeJson(event)).join("\n")}\n`;
   const edgeFile = edgeShardRelativePath(LEDGER_MONTH, LEDGER_OPERATION_ID);
   const eventFile = eventShardRelativePath(LEDGER_MONTH, LEDGER_OPERATION_ID);
   const edgeAbsolute = resolveHarnessPath(harnessRoot, edgeFile);
@@ -179,6 +191,125 @@ export function buildSyntheticLedger(
   mkdirSync(join(manifestAbsolute, ".."), { recursive: true });
   writeFileSync(manifestAbsolute, `${canonicalizeJson(manifest)}\n`, "utf8");
   return manifest;
+}
+
+function padded(value: number, width = 5): string {
+  return String(value).padStart(width, "0");
+}
+
+function finding(index: number): NodeRecord {
+  const group = index % 20;
+  const content = {
+    protocol_version: "1.0.0",
+    record_kind: "node" as const,
+    id: `finding_m2-${padded(index)}`,
+    type: "Finding" as const,
+    revision: 1,
+    status: "proposed" as const,
+    source: "audit" as const,
+    provenance: {
+      iteration_id: "iteration_perf",
+      actor: "m2-performance-fixture",
+      timestamp: "2026-08-16T00:00:00.000Z",
+    },
+    confidence: 1,
+    extensions: {
+      "harness.finding": {
+        origin: "audit",
+        blocking: false,
+        violates: [],
+        blocks: [],
+        evidence: [],
+        rule: `audit/m2-rule-${padded(group, 2)}`,
+        scope_prefix: `project/performance/component-${padded(group, 2)}`,
+        severity: "warning",
+        actionability: "human_review",
+        subject_ids: [`code_m${padded(index % 4_000)}`],
+        subject_digests: [],
+      },
+    },
+  };
+  return { ...content, digest: contentDigest(content) } as NodeRecord;
+}
+
+function m2Edge(
+  sequence: number,
+  type: EdgeRecord["type"],
+  sourceId: string,
+  targetId: string,
+): EdgeRecord {
+  const content = {
+    protocol_version: "1.0.0",
+    record_kind: "edge" as const,
+    id: `edge_m2-${padded(sequence, 6)}`,
+    type,
+    source_id: sourceId,
+    target_id: targetId,
+    status: "accepted" as const,
+    source: "scanner" as const,
+    provenance: {
+      iteration_id: "iteration_perf",
+      actor: "m2-performance-fixture",
+      timestamp: "2026-08-16T00:00:00.000Z",
+    },
+    confidence: 1,
+  };
+  return { ...content, digest: contentDigest(content) } as EdgeRecord;
+}
+
+/**
+ * Derive the exact M2 scale from the deterministic M1 corpus. The first
+ * 9,000 records contain 500 Requirements, 500 Decisions, 4,000 Components
+ * and 4,000 CodeArtifacts; 1,000 governed Findings complete the 10k nodes.
+ */
+export function loadM2Dataset(): M2PerformanceDataset {
+  const base = loadDataset().nodes.slice(0, 9_000);
+  const findings = Array.from({ length: 1_000 }, (_, index) => finding(index));
+  const edges: EdgeRecord[] = [];
+  const push = (type: EdgeRecord["type"], sourceId: string, targetId: string): void => {
+    edges.push(m2Edge(edges.length + 1, type, sourceId, targetId));
+  };
+  for (let index = 0; index < 500; index += 1) {
+    push("ADDRESSES", `decision_d${padded(index)}`, `requirement_r${padded(index)}`);
+    push("ADDRESSES", `decision_d${padded(index)}`, `requirement_r${padded((index + 1) % 500)}`);
+  }
+  for (let index = 0; index < 4_000; index += 1) {
+    push("SHAPES", `decision_d${padded(index % 500)}`, `component_c${padded(index)}`);
+    push("REALIZES", `code_m${padded(index)}`, `component_c${padded(index)}`);
+  }
+  const strides = [7, 131, 1_021, 2_047, 3_001];
+  for (let index = 0; index < 4_000; index += 1) {
+    for (const stride of strides) {
+      push("DERIVES_FROM", `code_m${padded(index)}`, `code_m${padded((index + stride) % 4_000)}`);
+    }
+    if (index < 1_000) {
+      push("DERIVES_FROM", `code_m${padded(index)}`, `code_m${padded((index + 3_503) % 4_000)}`);
+    }
+  }
+  const eventTypes: LifecycleEvent["event_type"][] = [
+    "OperationStarted",
+    "GateCompleted",
+    "EvaluationCompleted",
+    "FindingCreated",
+    "OperationCompleted",
+  ];
+  const events = Array.from({ length: 20_000 }, (_, index) => ({
+    protocol_version: "1.0.0",
+    record_kind: "event" as const,
+    event_id: `event_m2-${padded(index + 1, 6)}`,
+    event_type: eventTypes[index % eventTypes.length] as LifecycleEvent["event_type"],
+    project_id: "project_perf",
+    iteration_id: "iteration_perf",
+    workflow_operation_id: "workflow-op_perfdata",
+    ledger_operation_id: LEDGER_OPERATION_ID,
+    sequence: index + 1,
+    timestamp: LEDGER_TIMESTAMP,
+    payload: { fixture: "m2", ordinal: index + 1 },
+  })) as LifecycleEvent[];
+  if (base.length + findings.length !== 10_000 || edges.length !== 30_000) {
+    throw new Error("M2 performance fixture cardinality drifted");
+  }
+  return { nodes: [...base, ...findings], edges, events, findings };
 }
 
 export { DATASET_DIR, GENERATOR_SCRIPT, LEDGER_BASELINE };

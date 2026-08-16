@@ -2,14 +2,16 @@ import { createServer, type Server } from "node:http";
 
 import {
   GRAPH_DATABASE_RELATIVE_PATH,
+  LedgerCorruptionError,
   harnessRootFor,
+  replayLedger,
   resolveHarnessPath,
 } from "@universal-harness-internal/core";
 import { checkGraphCache, rebuildGraphCache } from "@universal-harness-internal/graph";
 import { FileEventStream, type EventStreamPort } from "@universal-harness-internal/runtime";
 
 import { DashboardProblem } from "./problem.js";
-import { createDashboardReadApi } from "./read-api.js";
+import { createDashboardReadApi, type DashboardReadApi } from "./read-api.js";
 import { createDashboardRouter } from "./router.js";
 import { DashboardSessionStore } from "./session.js";
 import { unavailableDashboardWriteApi, type DashboardWriteApi } from "./write-api.js";
@@ -63,19 +65,47 @@ function originFor(host: string, port: number): string {
   return `http://${host.includes(":") ? `[${host}]` : host}:${String(port)}`;
 }
 
-function prepareCache(projectRoot: string): void {
+function prepareCache(projectRoot: string): DashboardProblem | undefined {
   const databasePath = resolveHarnessPath(
     harnessRootFor(projectRoot),
     GRAPH_DATABASE_RELATIVE_PATH,
   );
-  const check = checkGraphCache(databasePath);
-  if (
-    check.status === "missing" ||
-    check.status === "unsupported_version" ||
-    check.status === "inconsistent"
-  ) {
-    rebuildGraphCache({ projectRoot, databasePath }).database.close();
+  try {
+    // Validate authoritative shards even when the disposable cache is healthy;
+    // a Dashboard must never serve a stale projection over a corrupt Ledger.
+    replayLedger(harnessRootFor(projectRoot));
+    const check = checkGraphCache(databasePath);
+    if (check.status !== "ok") {
+      rebuildGraphCache({ projectRoot, databasePath }).database.close();
+    }
+    return undefined;
+  } catch (error) {
+    return new DashboardProblem(
+      503,
+      error instanceof LedgerCorruptionError ? "ledger_corrupt" : "authoritative_state_unavailable",
+      "Service Unavailable",
+      error instanceof LedgerCorruptionError
+        ? "the authoritative Ledger failed integrity validation"
+        : "the authoritative project state could not be materialized",
+    );
   }
+}
+
+function unavailableReadApi(problem: DashboardProblem): DashboardReadApi {
+  const reject = (): never => {
+    throw problem;
+  };
+  return {
+    project: reject,
+    nodes: reject,
+    edges: reject,
+    neighborhood: reject,
+    path: reject,
+    iteration: reject,
+    evidence: reject,
+    findingGroups: reject,
+    semanticProposals: reject,
+  };
 }
 
 /** Start the loopback-only Dashboard server and mint a one-use browser URL. */
@@ -100,7 +130,7 @@ export async function startDashboardServer(
       "Dashboard port must be an integer in 0..65535",
     );
   }
-  prepareCache(options.projectRoot);
+  const startupProblem = prepareCache(options.projectRoot);
   const sessions = new DashboardSessionStore();
   const shutdown = new AbortController();
   const routing: { handler?: ReturnType<typeof createDashboardRouter> } = {};
@@ -115,9 +145,15 @@ export async function startDashboardServer(
   routing.handler = createDashboardRouter({
     origin,
     sessions,
-    readApi: createDashboardReadApi(options.projectRoot),
+    readApi:
+      startupProblem === undefined
+        ? createDashboardReadApi(options.projectRoot)
+        : unavailableReadApi(startupProblem),
     eventStream: options.eventStream ?? new FileEventStream(options.projectRoot),
-    writeApi: options.writeApi ?? unavailableDashboardWriteApi(),
+    writeApi:
+      startupProblem === undefined
+        ? (options.writeApi ?? unavailableDashboardWriteApi())
+        : unavailableDashboardWriteApi(),
     shutdownSignal: shutdown.signal,
   });
   let closed = false;

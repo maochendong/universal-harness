@@ -1,5 +1,6 @@
 import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
+import { join } from "node:path";
 
 const forbiddenBrands = [
   ["Code", "Buddy"].join(""),
@@ -44,6 +45,23 @@ for (const file of files) {
 }
 
 findings.push(...violations("git history", git("log", "--all", "--format=fuller", "-p")));
+
+const cliManifest = JSON.parse(readFileSync("packages/cli/package.json", "utf8"));
+for (const required of [
+  "@universal-harness-internal/dashboard",
+  "@universal-harness-internal/adapter-gate-llm-judge",
+]) {
+  if (cliManifest.dependencies?.[required] === undefined) {
+    findings.push(`packages/cli/package.json: missing M2 runtime dependency ${required}`);
+  }
+}
+for (const asset of ["dashboard.html", "dashboard.css", "dashboard.js"]) {
+  const path = join("packages", "dashboard", "assets", asset);
+  const content = readFileSync(path, "utf8");
+  if (/\b(?:https?:)?\/\//u.test(content)) {
+    findings.push(`${path}: Dashboard assets must not load remote resources`);
+  }
+}
 
 if (findings.length > 0) {
   console.error([...new Set(findings)].join("\n"));
