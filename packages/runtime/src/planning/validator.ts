@@ -3,6 +3,7 @@ import {
   hasIndependentValue,
   independentValueSignature,
   type TaskAcceptanceCriterion,
+  type TaskAcceptanceAssertion,
   type TaskSpecification,
 } from "./task.js";
 
@@ -23,6 +24,10 @@ export const PLANNING_ERROR_KINDS = [
   "missing_gate",
   "dependency_cycle",
   "no_independent_value",
+  "atomic_acceptance_required",
+  "uncovered_test",
+  "task_too_large",
+  "dag_limit_exceeded",
 ] as const;
 
 export type PlanningErrorKind = (typeof PLANNING_ERROR_KINDS)[number];
@@ -175,6 +180,73 @@ function readTaskSpecification(raw: unknown, index: number): TaskSpecification {
   if (requiredGates.length === 0) {
     throw new PlanningError("missing_gate", `task ${id}: every task requires at least one gate`);
   }
+  let assertions: readonly TaskAcceptanceAssertion[] | undefined;
+  if (raw.assertions !== undefined) {
+    if (!Array.isArray(raw.assertions) || raw.assertions.length === 0) {
+      throw new PlanningError(
+        "invalid_specification",
+        `task ${id}: assertions must be a non-empty array when present`,
+      );
+    }
+    const seenAssertionIds = new Set<string>();
+    assertions = raw.assertions.map((rawAssertion, assertionIndex) => {
+      if (!isPlainObject(rawAssertion)) {
+        throw new PlanningError(
+          "invalid_specification",
+          `task ${id}: assertion[${String(assertionIndex)}] must be an object`,
+        );
+      }
+      const assertionId = rawAssertion.assertion_id;
+      if (typeof assertionId !== "string" || !IDENTIFIER_REGEX.test(assertionId)) {
+        throw new PlanningError(
+          "invalid_specification",
+          `task ${id}: assertion_id must match ${IDENTIFIER_PATTERN}`,
+        );
+      }
+      if (seenAssertionIds.has(assertionId)) {
+        throw new PlanningError(
+          "invalid_specification",
+          `task ${id}: duplicate assertion id ${assertionId}`,
+        );
+      }
+      seenAssertionIds.add(assertionId);
+      const testIds = readStringList(rawAssertion.test_ids, "assertion.test_ids", id);
+      const assertionGateIds = readStringList(
+        rawAssertion.required_gate_ids,
+        "assertion.required_gate_ids",
+        id,
+      );
+      const evidenceRequirements = readStringList(
+        rawAssertion.evidence_requirements,
+        "assertion.evidence_requirements",
+        id,
+      );
+      if (
+        testIds.length === 0 ||
+        assertionGateIds.length === 0 ||
+        evidenceRequirements.length === 0
+      ) {
+        throw new PlanningError(
+          "invalid_specification",
+          `task ${id}: every assertion requires tests, gates and evidence`,
+        );
+      }
+      for (const gateId of assertionGateIds) {
+        if (!requiredGates.includes(gateId)) {
+          throw new PlanningError(
+            "missing_gate",
+            `task ${id}: assertion ${assertionId} requires gate ${gateId} outside task.required_gates`,
+          );
+        }
+      }
+      return {
+        assertion_id: assertionId,
+        test_ids: testIds,
+        required_gate_ids: assertionGateIds,
+        evidence_requirements: evidenceRequirements,
+      };
+    });
+  }
   return {
     id,
     objective: raw.objective,
@@ -189,6 +261,7 @@ function readTaskSpecification(raw: unknown, index: number): TaskSpecification {
       description: criterion.description,
       verification: criterion.verification,
     })),
+    ...(assertions === undefined ? {} : { assertions }),
     required_gates: requiredGates,
   };
 }

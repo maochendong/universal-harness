@@ -45,6 +45,14 @@ function taskSpec(overrides: Record<string, unknown>): Record<string, unknown> {
     risk: "medium",
     budget: { steps: 8, tokens: 4000 },
     acceptance: [{ description: "the output verifies", verification: "gate:test" }],
+    assertions: [
+      {
+        assertion_id: "assertion_output",
+        test_ids: ["test_01"],
+        required_gate_ids: ["gate:test"],
+        evidence_requirements: ["test_result"],
+      },
+    ],
     required_gates: ["gate:test"],
     ...overrides,
   };
@@ -71,6 +79,7 @@ function scenarioInput(name: string, impactSet: NodeRecord): PlanGenerationInput
           expected_outputs: ["requirement_01", "code_01", "test_01"],
           capabilities: ["fs.read", "fs.write", "test.run"],
           tools: ["tool:fs", "tool:test-runner"],
+          assertions: undefined,
         }),
       ],
     };
@@ -222,6 +231,44 @@ describe("generateExecutionPlan", () => {
         PLAN_CONTEXT,
       ),
     ).toThrow(PlanningError);
+  });
+
+  it("refuses agent execution without atomic assertions covering every accepted test", () => {
+    const { impactSet, approvedDigest } = approvedImpactSet();
+    const input = scenarioInput("single-loop", impactSet);
+    const withoutAssertions = input.proposal.map((task) => {
+      const copy = { ...(task as Record<string, unknown>) };
+      delete copy.assertions;
+      return copy;
+    });
+    expect(() =>
+      generateExecutionPlan(
+        impactSet,
+        approvedDigest,
+        { ...input, proposal: withoutAssertions },
+        PLAN_CONTEXT,
+      ),
+    ).toThrowError(expect.objectContaining({ kind: "atomic_acceptance_required" }));
+
+    const inventedTest = input.proposal.map((task) => ({
+      ...(task as Record<string, unknown>),
+      assertions: [
+        {
+          assertion_id: "assertion_output",
+          test_ids: ["test_missing"],
+          required_gate_ids: ["gate:test"],
+          evidence_requirements: ["test_result"],
+        },
+      ],
+    }));
+    expect(() =>
+      generateExecutionPlan(
+        impactSet,
+        approvedDigest,
+        { ...input, proposal: inventedTest },
+        PLAN_CONTEXT,
+      ),
+    ).toThrowError(expect.objectContaining({ kind: "uncovered_test" }));
   });
 
   it("rejects unauthorized capability expansion", () => {

@@ -81,6 +81,21 @@ afterEach(cleanupDirectories);
 
 const INTENT = "add the first capability";
 
+function atomicAssertions(
+  taskId: string,
+  acceptedTestIds: readonly string[],
+  gateIds: readonly string[],
+) {
+  return [
+    {
+      assertion_id: `assertion_${taskId.slice("task_".length)}`,
+      test_ids: [...acceptedTestIds],
+      required_gate_ids: [...gateIds],
+      evidence_requirements: ["gate_evidence"],
+    },
+  ];
+}
+
 describe("worktree code binding", () => {
   it("does not change when a Git-ignored gate output is created", () => {
     const projectRoot = makeRepo({
@@ -1019,7 +1034,7 @@ describe("phase orchestrator", { timeout: 30000 }, () => {
     if (!bootstrapped.ok) throw new Error(bootstrapped.error.message);
     const projectRoot = bootstrapped.value.projectRoot;
     const fake = recordingExecutor();
-    const planTasks: PlanTasksPort = ({ requirements, impactPaths, gateIds }) => {
+    const planTasks: PlanTasksPort = ({ requirements, impactPaths, acceptedTestIds, gateIds }) => {
       const requirementId = requirements[0]?.id ?? "requirement_none";
       const spec = (
         id: string,
@@ -1038,6 +1053,7 @@ describe("phase orchestrator", { timeout: 30000 }, () => {
         acceptance: [
           { description: `${objective} done`, verification: "mandatory gate suite passes" },
         ],
+        assertions: atomicAssertions(id, acceptedTestIds, gateIds),
         required_gates: [...gateIds],
       });
       return [
@@ -1169,7 +1185,7 @@ describe("phase orchestrator", { timeout: 30000 }, () => {
     const projectRoot = bootstrapped.value.projectRoot;
     const calls: string[] = [];
     let blockGamma = true;
-    const planTasks: PlanTasksPort = ({ requirements, impactPaths, gateIds }) => {
+    const planTasks: PlanTasksPort = ({ requirements, impactPaths, acceptedTestIds, gateIds }) => {
       const requirementId = requirements[0]?.id ?? "requirement_none";
       const spec = (id: string, dependencies: readonly string[]): TaskSpecification => ({
         id,
@@ -1182,6 +1198,7 @@ describe("phase orchestrator", { timeout: 30000 }, () => {
         risk: "low",
         budget: { steps: 30, tokens: 120000 },
         acceptance: [{ description: `${id} done`, verification: "mandatory gate suite passes" }],
+        assertions: atomicAssertions(id, acceptedTestIds, gateIds),
         required_gates: [...gateIds],
       });
       return [
@@ -1245,7 +1262,7 @@ describe("phase orchestrator", { timeout: 30000 }, () => {
     if (!bootstrapped.ok) throw new Error(bootstrapped.error.message);
     const projectRoot = bootstrapped.value.projectRoot;
     const calls: string[] = [];
-    const planTasks: PlanTasksPort = ({ requirements, impactPaths, gateIds }) => {
+    const planTasks: PlanTasksPort = ({ requirements, impactPaths, acceptedTestIds, gateIds }) => {
       const requirementId = requirements[0]?.id ?? "requirement_none";
       const spec = (id: string, dependencies: readonly string[]): TaskSpecification => ({
         id,
@@ -1258,6 +1275,7 @@ describe("phase orchestrator", { timeout: 30000 }, () => {
         risk: "low",
         budget: { steps: 30, tokens: 120000 },
         acceptance: [{ description: `${id} done`, verification: "mandatory gate suite passes" }],
+        assertions: atomicAssertions(id, acceptedTestIds, gateIds),
         required_gates: [...gateIds],
       });
       return [
@@ -1433,7 +1451,7 @@ describe("phase orchestrator", { timeout: 30000 }, () => {
     // Iteration 1 plans a task that implements nothing the graph knows, so
     // its requirement keeps a traceability gap; iteration 2 wires it.
     const requirementIds: string[] = [];
-    const planTasks: PlanTasksPort = ({ requirements, impactPaths, gateIds }) => {
+    const planTasks: PlanTasksPort = ({ requirements, impactPaths, acceptedTestIds, gateIds }) => {
       const requirementId = requirements[0]?.id ?? "requirement_none";
       requirementIds.push(requirementId);
       const first = requirementIds.length === 1;
@@ -1451,6 +1469,11 @@ describe("phase orchestrator", { timeout: 30000 }, () => {
           risk: "low",
           budget: { steps: 30, tokens: 120000 },
           acceptance: [{ description: "work done", verification: "mandatory gate suite passes" }],
+          assertions: atomicAssertions(
+            first ? "task_unwired" : "task_wiring",
+            acceptedTestIds,
+            gateIds,
+          ),
           required_gates: [...gateIds],
         },
       ];
@@ -1562,7 +1585,7 @@ describe("phase orchestrator", { timeout: 30000 }, () => {
     );
     if (!bootstrapped.ok) throw new Error(bootstrapped.error.message);
     const projectRoot = bootstrapped.value.projectRoot;
-    const planTasks: PlanTasksPort = ({ impactPaths, gateIds }) => [
+    const planTasks: PlanTasksPort = ({ impactPaths, acceptedTestIds, gateIds }) => [
       {
         id: "task_unwired",
         objective: "unwired work",
@@ -1574,6 +1597,7 @@ describe("phase orchestrator", { timeout: 30000 }, () => {
         risk: "low",
         budget: { steps: 30, tokens: 120000 },
         acceptance: [{ description: "work done", verification: "mandatory gate suite passes" }],
+        assertions: atomicAssertions("task_unwired", acceptedTestIds, gateIds),
         required_gates: [...gateIds],
       },
     ];
@@ -1727,7 +1751,7 @@ describe("phase orchestrator", { timeout: 30000 }, () => {
     );
     if (!bootstrapped.ok) throw new Error(bootstrapped.error.message);
     const projectRoot = bootstrapped.value.projectRoot;
-    const planTasks: PlanTasksPort = ({ impactPaths, gateIds }) => [
+    const planTasks: PlanTasksPort = ({ impactPaths, acceptedTestIds, gateIds }) => [
       {
         id: "task_unwired",
         objective: "unwired work",
@@ -1739,6 +1763,7 @@ describe("phase orchestrator", { timeout: 30000 }, () => {
         risk: "low",
         budget: { steps: 30, tokens: 120000 },
         acceptance: [{ description: "work done", verification: "mandatory gate suite passes" }],
+        assertions: atomicAssertions("task_unwired", acceptedTestIds, gateIds),
         required_gates: [...gateIds],
       },
     ];

@@ -21,6 +21,16 @@ export interface TaskAcceptanceCriterion {
   readonly verification: string;
 }
 
+/** Atomic, machine-checkable acceptance binding for newly authorized Agent work. */
+export interface TaskAcceptanceAssertion {
+  readonly assertion_id: string;
+  /** Accepted Test graph nodes that prove this assertion. */
+  readonly test_ids: readonly string[];
+  readonly required_gate_ids: readonly string[];
+  /** Evidence kinds that must exist before the assertion can pass. */
+  readonly evidence_requirements: readonly string[];
+}
+
 /**
  * One declarative unit of planned work. `impact_paths` binds the task to
  * explanation paths of the approved ImpactSet it was planned from;
@@ -42,6 +52,8 @@ export interface TaskSpecification {
   readonly risk: TaskRisk;
   readonly budget: TaskBudget;
   readonly acceptance: readonly TaskAcceptanceCriterion[];
+  /** Legacy plans may omit this field, but new Agent plans are refused without it. */
+  readonly assertions?: readonly TaskAcceptanceAssertion[];
   readonly required_gates: readonly string[];
 }
 

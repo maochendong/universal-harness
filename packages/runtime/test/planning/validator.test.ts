@@ -24,6 +24,14 @@ function validTask(overrides?: Record<string, unknown>): Record<string, unknown>
     risk: "medium",
     budget: { steps: 8, tokens: 4000 },
     acceptance: [{ description: "GET /health returns 200", verification: "gate:test" }],
+    assertions: [
+      {
+        assertion_id: "assertion_health",
+        test_ids: ["test_01"],
+        required_gate_ids: ["gate:test"],
+        evidence_requirements: ["test_result"],
+      },
+    ],
     required_gates: ["gate:test"],
     ...overrides,
   };
@@ -88,8 +96,45 @@ describe("validatePlanProposal", () => {
     expectPlanningError([validTask({ required_gates: [] })], "missing_gate");
   });
 
+  it("validates atomic assertion bindings", () => {
+    expectPlanningError(
+      [validTask({ assertions: [{ assertion_id: "assertion_health", test_ids: [] }] })],
+      "invalid_specification",
+    );
+    expectPlanningError(
+      [
+        validTask({
+          assertions: [
+            {
+              assertion_id: "assertion_health",
+              test_ids: ["test_01"],
+              required_gate_ids: ["gate:build"],
+              evidence_requirements: ["test_result"],
+            },
+          ],
+        }),
+      ],
+      "missing_gate",
+    );
+  });
+
   it("rejects unknown gates", () => {
-    expectPlanningError([validTask({ required_gates: ["gate:deploy"] })], "unknown_gate");
+    expectPlanningError(
+      [
+        validTask({
+          required_gates: ["gate:deploy"],
+          assertions: [
+            {
+              assertion_id: "assertion_health",
+              test_ids: ["test_01"],
+              required_gate_ids: ["gate:deploy"],
+              evidence_requirements: ["test_result"],
+            },
+          ],
+        }),
+      ],
+      "unknown_gate",
+    );
   });
 
   it("rejects dependency cycles and self dependencies", () => {

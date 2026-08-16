@@ -263,10 +263,17 @@ export {
   hasIndependentValue,
   independentValueSignature,
   type TaskAcceptanceCriterion,
+  type TaskAcceptanceAssertion,
   type TaskBudget,
   type TaskRisk,
   type TaskSpecification,
 } from "./planning/task.js";
+export {
+  MAX_AGENT_DAG_TASKS,
+  assessTaskSize,
+  assertAgentPlanSize,
+  type TaskSizeAssessment,
+} from "./planning/task-sizing.js";
 export {
   FORBIDDEN_PROPOSAL_KEYS,
   PLANNING_ERROR_KINDS,

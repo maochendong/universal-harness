@@ -1,9 +1,9 @@
 {
   "scenario": "dag",
   "plan": {
-    "id": "plan_ee2a52fb9542e120",
+    "id": "plan_4c44a3bfae26662b",
     "status": "proposed",
-    "digest": "6f256e309da57fec46057ed46ca24f5da0c1e9c9fcc71fd90c906cea5ef5b638"
+    "digest": "7c52c6b22c419aa2a43d6f1aa0e6868a519189fbd5dfaf57683cb11b3820e918"
   },
   "content": {
     "execution_kind": "agent",
@@ -62,6 +62,14 @@
             "verification": "gate:test"
           }
         ],
+        "assertions": [
+          {
+            "assertion_id": "assertion_output",
+            "test_ids": ["test_01"],
+            "required_gate_ids": ["gate:test"],
+            "evidence_requirements": ["test_result"]
+          }
+        ],
         "required_gates": ["gate:build", "gate:test"]
       },
       {
@@ -83,32 +91,40 @@
             "verification": "gate:test"
           }
         ],
+        "assertions": [
+          {
+            "assertion_id": "assertion_output",
+            "test_ids": ["test_01"],
+            "required_gate_ids": ["gate:test"],
+            "evidence_requirements": ["test_result"]
+          }
+        ],
         "required_gates": ["gate:test"]
       }
     ],
-    "content_digest": "ee2a52fb9542e1200fcea6e01d9c9317d1a5ca0f52f1c1cd8390569c83b68d99"
+    "content_digest": "4c44a3bfae26662b7ab83661f226993d5470fe3b262d9cc5631fbad8aba8c965"
   },
   "tasks": [
     {
       "id": "task_implement",
-      "digest": "ce20b5953bd83189119aed078e6f1e3f0a010b945f8112c9a1601799b68234c7"
+      "digest": "a90055cad7e4edbf7a332735e6c8731c5a145c816c1cc9c59840781a02f580e2"
     },
     {
       "id": "task_spec",
-      "digest": "4b8bf22b0b605b0c2b739ccde4739f168cc97c1189049e5fbcda38c961f07b12"
+      "digest": "3d8bf00fea7db54c52369c826a9f392b4435f8058c49aa65d0dbfe7e94271394"
     }
   ],
   "edges": [
     {
-      "id": "edge_4fb1630e68573bea",
+      "id": "edge_9e3156cfcdc22dee",
       "type": "CONTAINS",
-      "source_id": "plan_ee2a52fb9542e120",
+      "source_id": "plan_4c44a3bfae26662b",
       "target_id": "task_implement"
     },
     {
-      "id": "edge_73726a06407eabff",
+      "id": "edge_8cd3030e4795de6a",
       "type": "CONTAINS",
-      "source_id": "plan_ee2a52fb9542e120",
+      "source_id": "plan_4c44a3bfae26662b",
       "target_id": "task_spec"
     },
     {

@@ -7,12 +7,7 @@ import {
 import { assertApprovedImpactSet, readImpactSetContent } from "@universal-harness-internal/graph";
 
 import type { AdapterControlProfile } from "../policy/action.js";
-import {
-  deriveEffectiveRisk,
-  type GovernanceRisk,
-  type PathScope,
-  type TaskComplexity,
-} from "./effective-risk.js";
+import { deriveEffectiveRisk, type GovernanceRisk, type PathScope } from "./effective-risk.js";
 import {
   assessImpactCoverage,
   type ImpactCoverageAssessment,
@@ -25,6 +20,7 @@ import {
   type IntentShape,
 } from "./mode-selector.js";
 import type { TaskSpecification } from "./task.js";
+import { assessTaskSize, assertAgentPlanSize } from "./task-sizing.js";
 import { PlanningError, validatePlanProposal, type PlannerConstraints } from "./validator.js";
 
 /**
@@ -144,6 +140,41 @@ function assertBoundToApprovedImpactSet(
   }
 }
 
+function assertAtomicAgentAcceptance(
+  tasks: readonly TaskSpecification[],
+  acceptedTestIds: readonly string[],
+): void {
+  const accepted = new Set(acceptedTestIds);
+  const covered = new Set<string>();
+  for (const task of tasks) {
+    if (task.assertions === undefined || task.assertions.length === 0) {
+      throw new PlanningError(
+        "atomic_acceptance_required",
+        `agent task ${task.id} has only legacy acceptance criteria and must be replanned`,
+      );
+    }
+    for (const assertion of task.assertions) {
+      for (const testId of assertion.test_ids) {
+        if (!accepted.has(testId)) {
+          throw new PlanningError(
+            "uncovered_test",
+            `assertion ${assertion.assertion_id} references unaccepted test ${testId}`,
+          );
+        }
+        covered.add(testId);
+      }
+    }
+  }
+  for (const testId of acceptedTestIds) {
+    if (!covered.has(testId)) {
+      throw new PlanningError(
+        "uncovered_test",
+        `accepted test ${testId} is not covered by any task assertion`,
+      );
+    }
+  }
+}
+
 function nodeRecord(
   context: PlanContext,
   spec: {
@@ -243,6 +274,15 @@ export function generateExecutionPlan(
     })),
     forecastPaths: forecasts,
   });
+  if (input.executionKind === "agent") {
+    assertAtomicAgentAcceptance(
+      validatedTasks,
+      impactContent.entries
+        .filter((entry) => entry.node_type === "Test")
+        .map((entry) => entry.node_id),
+    );
+    assertAgentPlanSize(validatedTasks);
+  }
   const riskRank: Readonly<Record<GovernanceRisk, number>> = {
     low: 0,
     medium: 1,
@@ -254,8 +294,7 @@ export function generateExecutionPlan(
     "low",
   );
   const tasks = validatedTasks.map((task) => {
-    const size = task.acceptance.length + task.expected_outputs.length;
-    const taskComplexity: TaskComplexity = size > 8 ? "large" : size > 3 ? "medium" : "small";
+    const taskComplexity = assessTaskSize(task).class;
     return {
       ...task,
       risk: deriveEffectiveRisk({

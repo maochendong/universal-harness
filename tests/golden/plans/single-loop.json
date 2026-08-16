@@ -1,9 +1,9 @@
 {
   "scenario": "single-loop",
   "plan": {
-    "id": "plan_f26429149d09f988",
+    "id": "plan_ccc3b7f0c3946bad",
     "status": "proposed",
-    "digest": "8879219426475dc29048ec79be42eab1a1cec13648cbfc33645c81b2d139b9ab"
+    "digest": "d0139e1469f139810628e15536d66941ef11f4f0c5157919245caecce0dabf5c"
   },
   "content": {
     "execution_kind": "agent",
@@ -64,22 +64,30 @@
             "verification": "gate:test"
           }
         ],
+        "assertions": [
+          {
+            "assertion_id": "assertion_output",
+            "test_ids": ["test_01"],
+            "required_gate_ids": ["gate:test"],
+            "evidence_requirements": ["test_result"]
+          }
+        ],
         "required_gates": ["gate:test"]
       }
     ],
-    "content_digest": "f26429149d09f9889e5b79707dedbf818061afb49df331c816cc99a4901c3979"
+    "content_digest": "ccc3b7f0c3946bad537d91f3708afbc13c2bf6eaf70d46509de9bca8922320e3"
   },
   "tasks": [
     {
       "id": "task_deliver",
-      "digest": "b9cffcb90c2cf17025957bb39970f993aad8094fb9cccfdc255c93e65c2fc75a"
+      "digest": "30ac2a6ed8c7d59b68dbf974d99ece17073f6d2303f39e5e869fbb9fee3aeb23"
     }
   ],
   "edges": [
     {
-      "id": "edge_0d9242954fb608fd",
+      "id": "edge_3fead4112978d83d",
       "type": "CONTAINS",
-      "source_id": "plan_f26429149d09f988",
+      "source_id": "plan_ccc3b7f0c3946bad",
       "target_id": "task_deliver"
     }
   ]

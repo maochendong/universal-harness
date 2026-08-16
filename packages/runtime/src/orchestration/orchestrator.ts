@@ -1658,8 +1658,10 @@ export type PlanTasksPort = (input: {
     readonly id: string;
     readonly statement: string;
     readonly acceptance: readonly { readonly description: string; readonly verification: string }[];
+    readonly testIds: readonly string[];
   }[];
   readonly impactPaths: readonly (readonly string[])[];
+  readonly acceptedTestIds: readonly string[];
   readonly gateIds: readonly string[];
 }) => readonly TaskSpecification[];
 
@@ -1678,20 +1680,48 @@ function taskSpecificationsFor(
 ): readonly TaskSpecification[] {
   const content = readImpactSetContent(impactSet);
   const impactPaths = content.entries.map((entry) => [...entry.path]);
-  const requirements = ctx.proposal.requirements.map((requirement) => ({
-    id: requirement.id,
-    statement: requirement.statement,
-    acceptance: requirement.acceptance.map((criterion) => ({ ...criterion })),
+  const acceptedTestIds = content.entries
+    .filter((entry) => entry.node_type === "Test")
+    .map((entry) => entry.node_id)
+    .sort(byId);
+  const acceptedTests = new Set(acceptedTestIds);
+  const testIdsByRequirement = new Map<string, string[]>();
+  const graph = materializeProjectGraph(ctx.deps.projectRoot);
+  try {
+    for (const edge of graph.edges) {
+      if (edge.type !== "VERIFIES" || !acceptedTests.has(edge.source_id)) continue;
+      const existing = testIdsByRequirement.get(edge.target_id) ?? [];
+      existing.push(edge.source_id);
+      testIdsByRequirement.set(edge.target_id, existing);
+    }
+  } finally {
+    graph.close();
+  }
+  const requirements = ctx.proposal.requirements
+    .map((requirement) => ({
+      id: requirement.id,
+      statement: requirement.statement,
+      acceptance: requirement.acceptance.map((criterion) => ({ ...criterion })),
+      testIds: [...(testIdsByRequirement.get(requirement.id) ?? [])].sort(byId),
+    }))
+    .sort((left, right) => byId(left.id, right.id));
+  const assignedTestIds = new Set(requirements.flatMap((requirement) => requirement.testIds));
+  const unassignedTestIds = acceptedTestIds.filter((testId) => !assignedTestIds.has(testId));
+  const clusteredRequirements = requirements.map((requirement, index) => ({
+    ...requirement,
+    testIds:
+      index === 0 ? [...requirement.testIds, ...unassignedTestIds].sort(byId) : requirement.testIds,
   }));
   if (ctx.deps.planTasks !== undefined) {
     return ctx.deps.planTasks({
       goal: ctx.goal,
-      requirements,
+      requirements: clusteredRequirements,
       impactPaths,
+      acceptedTestIds,
       gateIds: [...gateIds],
     });
   }
-  return requirements.map((requirement) => ({
+  return clusteredRequirements.map((requirement) => ({
     id: `task_${contentDigest({ goal: ctx.goal, outputs: [requirement.id] }).slice(0, 16)}`,
     objective: ctx.goal,
     impact_paths: impactPaths.map((path) => [...path]),
@@ -1702,6 +1732,16 @@ function taskSpecificationsFor(
     risk: "low",
     budget: { steps: 30, tokens: 120000 },
     acceptance: requirement.acceptance.map((criterion) => ({ ...criterion })),
+    assertions: requirement.acceptance.map((criterion, index) => ({
+      assertion_id: `assertion_${contentDigest({
+        requirement: requirement.id,
+        criterion,
+        index,
+      }).slice(0, 16)}`,
+      test_ids: [...requirement.testIds],
+      required_gate_ids: [...gateIds],
+      evidence_requirements: ["gate_evidence"],
+    })),
     required_gates: [...gateIds],
   }));
 }
