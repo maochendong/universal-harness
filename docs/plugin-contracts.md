@@ -2,6 +2,14 @@
 
 Universal Harness 的技术栈相关行为全部由插件边界提供：AgentAdapter、Tool Provider、VCS Adapter、Projection Adapter 和 Project Pack。Core 不嵌入任何技术栈或领域知识。所有插件契约由 `packages/plugin-sdk` 定义、由 `packages/conformance` 的共享 Conformance Kit 验证。
 
+## Agent Control Profile 与执行授权
+
+Agent Adapter 必须声明 `control`、`trajectory_visibility`、`usage_metering`、`side_effect_interception`。`delegated + external-only`、unmetered 或不可拦截 Adapter 只能 supervised 运行，并在 RunStarted 前取得绑定该 profile digest 的 ExecutionAuthorization。未知 token/step 不得填零：必须返回 `availability: "unavailable"`、`used: null`、`enforcement: "none"`。
+
+每个 Task 只能收到自己的 ContextBundle 与 CapabilityGrant。Grant 必须绑定 plan、task、context、policy、approval、adapter profile 和 baseline digest；Adapter 返回的 state proposal、usage 与 change summary 都是声明，Harness 会用 Policy、VCS DiffStat、Gate Evidence 和 TaskVerdict 独立校验。Provider 的 `handoff` 终止事实不可改写成 `success`。
+
+ObservationPublisher 是唯一 live side channel。Adapter/Tool 可以发布 RunStarted、5 秒 RunHeartbeat、脱敏 RunOutputSummary、BudgetUpdated 与 RunTerminated；这些事件可丢弃且不得用于授权或完成判定。
+
 ## 1. Plugin Capability Manifest
 
 每个插件以一份 Manifest 自描述（JSON Schema 2020-12 校验）：

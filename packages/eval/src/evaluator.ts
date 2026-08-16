@@ -4,10 +4,7 @@ import {
   validateSchema,
   type FeedbackRecord,
 } from "@universal-harness-internal/core";
-import type {
-  AgentRunOutcome,
-  AgentRunResult,
-} from "@universal-harness-internal/plugin-sdk";
+import type { AgentRunOutcome, AgentRunResult } from "@universal-harness-internal/plugin-sdk";
 
 import {
   EVALUATION_DIMENSIONS,

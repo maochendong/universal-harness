@@ -34,8 +34,11 @@ M1 与 M2 均已完成。M1 的 Task 1–28 和 28 条验收标准已有通过�
 
 ## 已支持的能力
 
+- **严格执行治理**：Agent 任务在 RunStarted 前必须完成 Impact coverage、原子验收、Task-local ContextBundle、完整 CapabilityGrant 与 ExecutionAuthorization 校验；Plan、Context、Policy、批准或 Adapter Profile 任一 digest 漂移都会回到对应上游相位，executor 调用保持为零。
+- **分层完成真相**：Run 保留 Provider 的原始 `handoff`/`partial`/`failed` 事实，Task 是否通过只由逐断言 TaskVerdict 决定，Iteration 是否完成只由 Gate、Evaluation、审计和 Snapshot 决定。CLI 分别输出 `source_commit`、`ledger_commit`、`repository_head`。
+- **旧开放迭代严格迁移**：历史已完成数据继续只读并标记 `legacy_inferred`；缺少新治理绑定的旧开放迭代返回 `migration_required`，追加诊断并从 impact/plan 重建，不改写旧 artifact，也不复用旧批准。
 - **完整迭代闭环**：`harness new` / `adopt` / `iterate` / `resume` / `abort`，以及 `approve`、`finding`、`impact`、`plan`、`run`、`verify`、`eval`、`snapshot`、`audit`、`status`、`doctor`、`graph`（含 `propose-edge`/`approve-edge` 人工补边）等检查与编排命令；交互与非交互（`--json`）双模式，稳定退出码。意图歧义时录入相位产出带显式选项（含 `other` 逃逸）的澄清请求，回答经新一轮需求录入与批准门进入。
-- **统一实时可观测性**：相位、Gate、Run heartbeat/output、预算和批准事件写入可删除的 live spool，并与权威 Ledger 生命周期事件合并；`harness watch [--follow]` 和 Dashboard SSE 使用同一 `EventStreamPort`，Ledger 终态会替代同 observation key 的 live 信号。
+- **统一实时可观测性**：相位、Gate、Run heartbeat/output、预算、终止和批准事件写入可删除的 live spool，并与权威 Ledger 生命周期事件合并；底层 heartbeat 每 5 秒记录，当前命令每 30 秒最多显示一次聚合摘要，状态变化立即显示；`harness status` 在运行中投影 `active_run`，`--json` 的 stdout 始终只保留最终 CommandResult。
 - **本地 Dashboard**：`harness serve [--port <port>]` 只监听 loopback，提供 Graph、Impact、Iteration、Evidence、Findings、Live 六个视图；随机一次性 URL token 交换为 HttpOnly session，写操作要求同源 Origin、session CSRF、actor 与 expected digest，并复用原有 Approval/Resume/Finding 服务。
 - **Finding 治理**：按 rule、scope、severity、actionability 稳定分组，显示计数、样本与 membership digest；`harness finding group <accept|close|supersede> <group-id> --digest <digest>` 全成全败地批量处置，stale-knowledge 在知识源刷新后自动衰减但保留历史。
 - **确定性语义建议**：`harness impact [node-id] --semantic` 使用本地 symbol/import/path/term 索引提出 top-K `MAY_IMPACT` 边；建议与索引、输入和 revision digest 绑定，未经 `harness graph approve-edge` 人审不会进入活动图，Provider 失败会退回结构影响分析。

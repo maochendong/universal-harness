@@ -17,12 +17,13 @@ import {
 /**
  * Generic `harness new` E2E (plan Task 23): one entry command bootstraps the
  * project and drives the full closed loop, pausing only at the mandatory
- * baseline and impact approvals, and lands a completed Snapshot.
+ * baseline, impact and execution-authorization approvals, and lands a
+ * completed Snapshot.
  */
 afterEach(cleanupE2eRoots);
 
 describe("generic new E2E", { timeout: 60000 }, () => {
-  it("runs new -> approve -> resume -> approve -> resume to a completed snapshot", async () => {
+  it("runs new through all approvals to a completed snapshot", async () => {
     const parent = makeTempDir("harness-e2e-new-");
     const newId = sequentialIds();
     const bootstrapHarness = makeHarness(parent, newId);
@@ -45,6 +46,11 @@ describe("generic new E2E", { timeout: 60000 }, () => {
     expect(result.json["status"]).toBe("approval_required");
     data = result.json["data"] as Record<string, unknown>;
     expect(data["object_type"]).toBe("ImpactSet");
+
+    result = await approveAndResume(result, session);
+    expect(result.json["status"]).toBe("approval_required");
+    data = result.json["data"] as Record<string, unknown>;
+    expect(data["object_type"]).toBe("ExecutionAuthorizationSpec");
 
     result = await approveAndResume(result, session);
     expect(result.json["status"]).toBe("ok");

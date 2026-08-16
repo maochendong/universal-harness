@@ -74,6 +74,12 @@ harness iterate "Implement the next change"
 
 `iterate` 在同一个受管项目内运行与 `new` 完全相同的闭环（录入 → 影响分析 → 规划 → 编译 Context → 执行 → 门禁 → 评估 → 修复 → 快照），批准点与暂停规则一致。意图歧义时，迭代会在录入阶段以 `input_required` 挂起并返回带显式选项（含 `other` 逃逸项）的澄清问题；用更明确的意图重新发起即可，回答仍走需求基线批准门。较大的变更会被分解为多个带依赖的小任务（整个计划一次批准），逐任务执行与评估，中断恢复只重跑未完成的任务。
 
+执行 Agent 任务前还会出现 **ExecutionAuthorizationSpec** 批准点。它把 Plan、Impact coverage、每个 Task 的 ContextBundle 与 CapabilityGrant、Policy、基线提交和 Adapter Control Profile 封装成一个不可变 digest。批准后其中任一项变化，旧批准立即失效，必须重新分析或授权。
+
+长运行命令不会保持静默：live spool 每 5 秒记录 heartbeat，终端每 30 秒最多显示一次 task、control profile、elapsed、最近 heartbeat 与预算 availability。`harness status --json` 在 Run 活动期间包含 `active_run`；RunTerminated 后该字段消失。即使使用 `--json`，进度也只写 stderr，stdout 仍是一条最终 JSON。
+
+完成结果中的提交引用含义固定：`source_commit` 是 Gate、Evaluation 与 Snapshot 证明的源码树；`ledger_commit` 是首次包含完成 Ledger 与 Snapshot 的提交；`repository_head` 是命令返回瞬间的 HEAD。
+
 ## 配置真实 Agent 与项目门禁
 
 受管项目可以提交 `.harness/runtime.json`，把真实 Agent 后端、可读写边界和项目自己的测试命令绑定到同一条迭代链。下面的配置使用经版本探针校验的 dsh headless，并把一个仓库内脚本注册为强制项目门禁：

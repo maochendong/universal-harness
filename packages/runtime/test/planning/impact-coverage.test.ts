@@ -25,10 +25,7 @@ describe("assessImpactCoverage", () => {
   it("accepts stable implementation or approved bounded-path coverage", () => {
     const implementation = assessImpactCoverage({
       executionKind: "agent",
-      entries: [
-        ...baseEntries,
-        { node_id: "code_01", node_type: "CodeArtifact", risk: "high" },
-      ],
+      entries: [...baseEntries, { node_id: "code_01", node_type: "CodeArtifact", risk: "high" }],
       forecastPaths: [],
     });
     const boundedPath = assessImpactCoverage({
@@ -39,11 +36,13 @@ describe("assessImpactCoverage", () => {
 
     expect(implementation).toMatchObject({ status: "complete", risk: "high" });
     expect(boundedPath).toMatchObject({ status: "complete", risk: "medium" });
-    expect(assessImpactCoverage({
-      executionKind: "agent",
-      entries: baseEntries,
-      forecastPaths: [{ pattern: "**", scope: "broad", approved: true }],
-    })).toMatchObject({ status: "unknown", risk: "high" });
+    expect(
+      assessImpactCoverage({
+        executionKind: "agent",
+        entries: baseEntries,
+        forecastPaths: [{ pattern: "**", scope: "broad", approved: true }],
+      }),
+    ).toMatchObject({ status: "unknown", risk: "high" });
   });
 
   it("is digest-stable regardless of input order", () => {

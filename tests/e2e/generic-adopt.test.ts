@@ -35,7 +35,7 @@ function makePlainRepo(): string {
 }
 
 describe("generic adopt E2E", { timeout: 60000 }, () => {
-  it("runs adopt -> approve staging -> approve -> resume -> approve -> resume", async () => {
+  it("runs adopt through staging and all iteration approvals", async () => {
     const repo = makePlainRepo();
     const newId = sequentialIds();
     const harness = makeHarness(repo, newId);
@@ -63,6 +63,12 @@ describe("generic adopt E2E", { timeout: 60000 }, () => {
     result = await approveAndResume(result, session);
     expect(result.json["status"]).toBe("approval_required");
     expect((result.json["data"] as Record<string, unknown>)["object_type"]).toBe("ImpactSet");
+
+    result = await approveAndResume(result, session);
+    expect(result.json["status"]).toBe("approval_required");
+    expect((result.json["data"] as Record<string, unknown>)["object_type"]).toBe(
+      "ExecutionAuthorizationSpec",
+    );
 
     result = await approveAndResume(result, session);
     expect(result.json["status"]).toBe("ok");

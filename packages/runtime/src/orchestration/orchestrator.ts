@@ -717,6 +717,10 @@ async function commitVerifiedSourceTree(
   }[],
 ): Promise<string> {
   const taskById = new Map(plan.tasks.map((task) => [task.id, task]));
+  const governedWriteScopes = plan.tasks.flatMap(
+    (task) =>
+      ctx.deps.taskEnvelopeScope?.(task).proposed_write_paths.map(normalizeRepoRelativePath) ?? [],
+  );
   const paths = new Set<string>();
   for (const taskRun of taskRuns) {
     const task = taskById.get(taskRun.taskId);
@@ -741,6 +745,41 @@ async function commitVerifiedSourceTree(
         );
       }
       paths.add(path);
+    }
+  }
+
+  // Verification can deliberately pause for a human repair. Re-read the VCS
+  // truth after the repaired gates pass so an authorized repair is anchored
+  // in the same source commit as Agent-produced changes. This observation is
+  // authoritative over the earlier run report, but never broadens authority:
+  // every current source delta (including both sides of a rename) must still
+  // fall inside a task's approved write scope.
+  if (ctx.deps.vcs !== undefined) {
+    const observed = await ctx.deps.vcs.diffSummary(
+      ctx.deps.projectRoot,
+      ctx.workingState.baseline_commit,
+    );
+    if (!observed.ok) {
+      throw new OrchestrationError(
+        "configuration",
+        `final VCS inspection failed: ${observed.error.message}`,
+      );
+    }
+    for (const file of observed.value.files) {
+      for (const candidate of [
+        file.path,
+        ...(file.previousPath === undefined ? [] : [file.previousPath]),
+      ]) {
+        const path = normalizeRepoRelativePath(candidate);
+        if (path === ".harness" || path.startsWith(".harness/")) continue;
+        if (!isPathWithinScopes(governedWriteScopes, path)) {
+          throw new OrchestrationError(
+            "binding_drift",
+            `verified source path ${path} is outside every governed write scope`,
+          );
+        }
+        paths.add(path);
+      }
     }
   }
 

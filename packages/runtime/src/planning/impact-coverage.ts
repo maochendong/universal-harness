@@ -4,12 +4,7 @@ import type { ExecutionKind } from "./mode-selector.js";
 import type { GovernanceRisk, PathScope } from "./effective-risk.js";
 
 export type ImpactCoverageLayer =
-  | "intent"
-  | "requirement"
-  | "test"
-  | "architecture"
-  | "implementation"
-  | "path";
+  "intent" | "requirement" | "test" | "architecture" | "implementation" | "path";
 
 export interface ImpactCoverageEntry {
   readonly node_id: string;
@@ -70,7 +65,9 @@ function layerFor(type: NodeRecord["type"]): ImpactCoverageLayer | undefined {
 }
 
 export function assessImpactCoverage(input: ImpactCoverageInput): ImpactCoverageAssessment {
-  const entries = [...input.entries].sort((left, right) => left.node_id.localeCompare(right.node_id));
+  const entries = [...input.entries].sort((left, right) =>
+    left.node_id.localeCompare(right.node_id),
+  );
   const forecasts = [...input.forecastPaths].sort((left, right) =>
     left.pattern.localeCompare(right.pattern),
   );
@@ -101,7 +98,8 @@ export function assessImpactCoverage(input: ImpactCoverageInput): ImpactCoverage
     }
   }
   if (missing.some((item) => item === "requirement" || item === "test")) status = "partial";
-  if (broadPath) diagnostics.push("broad approved path scope raises risk and cannot prove coverage");
+  if (broadPath)
+    diagnostics.push("broad approved path scope raises risk and cannot prove coverage");
   if (input.executionKind === "agent" && status !== "complete") {
     diagnostics.push("agent execution requires requirement, test and implementation/path coverage");
   }

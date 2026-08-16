@@ -16,6 +16,14 @@ preview）接为 Universal Harness 的第一个真实执行后端，并给出五
 其 `packages/bundle/headless/README.zh.md`、`docs/architecture.zh.md`、
 `docs/subsystems/persistence.md` 为准。
 
+## 当前强制约束
+
+dsh 作为 `delegated / external-only / unmetered / no interception` Adapter 接入时永远不能 unattended。每次执行前必须由人批准 ExecutionAuthorizationSpec；tokens 与 steps 在 Run、Evaluation、status、Snapshot 中均投影为 `unavailable`，只有 Harness 实测 duration 并强制 timeout。
+
+Harness 每 5 秒写一次 heartbeat，当前命令每 30 秒聚合显示一次；stdout 的最终 JSON 不夹杂进度。dsh 返回 `handoff` 时，RunTerminated 保持 `handoff`，后续 Gate/Evaluation 可以令 TaskVerdict 为 passed、Iteration 为 completed，但任何层都不得回写 Run 原始事实。
+
+执行前后由 Git VCS Adapter 采集真实 DiffStat，包括 rename、未跟踪文本和 binary。实际路径或规模超出批准的 Impact Forecast 时生成 scope drift，阻止源码提交与完成 Snapshot，并回到 impact 重新同步图、分析、批准和计划。
+
 ## 1. 定位与边界
 
 ### 1.1 分层

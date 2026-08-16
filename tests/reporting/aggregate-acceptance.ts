@@ -89,6 +89,7 @@ export const ACCEPTANCE_CRITERIA: readonly AcceptanceCriterion[] = [
   criterion(9, "pnpm test", [
     "packages/runtime/test/planning/mode-selector.test.ts",
     "packages/runtime/test/orchestration",
+    "tests/integration/execution-governance-vertical-loop.test.ts",
   ]),
   criterion(10, "pnpm test", [
     "packages/runtime/test/loop/task-envelope.test.ts",
@@ -133,7 +134,11 @@ export const ACCEPTANCE_CRITERIA: readonly AcceptanceCriterion[] = [
     "tests/fault/approval-cascade-invalidation.test.ts",
     "tests/fault/expired-approval.test.ts",
   ]),
-  criterion(21, "pnpm test", ["packages/runtime/test/snapshot", "tests/e2e"]),
+  criterion(21, "pnpm test", [
+    "packages/runtime/test/snapshot",
+    "tests/e2e",
+    "tests/e2e/delegated-agent-vertical-loop.test.ts",
+  ]),
   criterion(22, "pnpm test && pnpm test:fault", [
     "packages/graph/test/materializer.test.ts",
     "tests/fault/sqlite-corruption.test.ts",

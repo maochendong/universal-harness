@@ -60,7 +60,7 @@ describe("generic iterate E2E", { timeout: 90000 }, () => {
     // Advanced commands report the committed pipeline state.
     const plan = await runJson(["plan"], session);
     expect(plan.json["status"]).toBe("ok");
-    expect((plan.json["data"] as Record<string, unknown>)["mode"]).toBe("direct");
+    expect((plan.json["data"] as Record<string, unknown>)["mode"]).toBe("single-loop");
 
     const impact = await runJson(["impact"], session);
     expect(impact.json["status"]).toBe("ok");

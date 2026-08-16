@@ -4,6 +4,16 @@
 
 M2 的 Finding 分组、语义建议、LLM Judge、Dashboard 与 EventStream 运维见 [M2 运维指南](operations.md)。
 
+## 执行治理、迁移与长运行观测
+
+Agent 执行入口采用 fail-closed 预检。缺失影响路径、原子验收、Task-local Context、CapabilityGrant 或 ExecutionAuthorization 时不会调用 Provider。当前结构完整但尚未批准时返回 `approval_required`；旧开放迭代结构不完整时返回 `migration_required`，并把精确原因追加到 `.harness/artifacts/migrations/`。
+
+迁移记录与 blocked checkpoint 在同一个 Ledger 事务中提交。执行 `harness resume <workflow-operation-id>` 后，Harness 稳定回到 `impact` 或 `plan`，重建失效的下游 artifact。旧文件保持原字节、只读可审计；重复 resume 不会复制 migration、Approval、Grant 或 Run。不要通过手改 WorkingState 或复制旧 approval digest 绕过迁移。
+
+当前命令的聚合进度写 stderr，最终人类输出或 JSON 写 stdout。live spool 每 5 秒记录 heartbeat，终端每 30 秒最多显示一次摘要；另一个终端可运行 `harness watch --follow`，或用 `harness status --json` 查看 `active_run`。live spool 可删除、可截断，不参与完成判定。
+
+status、Snapshot 与后续 checkpoint 使用同一个 live blocker 投影：approve/reject/supersede、passed TaskVerdict、closed/superseded Finding 会消除对应 blocker；defer 始终保留 pending blocker。
+
 ## 1. 批准点总表
 
 M1 的治理原则是 Agent 提案、Harness 决策。以下每个批准点都会暂停编排，直到人工作出 Decision。**M1 不提供批量批准**：每个批准请求绑定一个对象及其内容摘要（digest），必须逐一显式解决；`approve` 一次只解决一个请求。

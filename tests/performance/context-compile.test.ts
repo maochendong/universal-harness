@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   compileContextBundle,
+  type BundleBindings,
   type ContextCandidate,
   type SourceTier,
 } from "../../packages/runtime/src/index.js";
@@ -39,8 +40,10 @@ const BINDINGS = {
   requirement_baseline_digest: "a".repeat(64),
   policy_digest: "b".repeat(64),
   plan_digest: "c".repeat(64),
+  impact_coverage_digest: "e".repeat(64),
+  task_digest: "f".repeat(64),
   approval_digests: ["d".repeat(64)],
-};
+} satisfies BundleBindings;
 
 describe("single-task context bundle compile performance", () => {
   it("keeps compile p95 below three seconds and reproduces the exact manifest", () => {

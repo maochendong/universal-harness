@@ -1,0 +1,77 @@
+{
+  "profile": {
+    "control": "delegated",
+    "trajectory_visibility": "external-only",
+    "usage_metering": false,
+    "side_effect_interception": false
+  },
+  "impact_entries": [
+    { "node_id": "intent_01", "node_type": "Intent", "risk": "medium" },
+    { "node_id": "requirement_01", "node_type": "Requirement", "risk": "medium" },
+    { "node_id": "requirement_02", "node_type": "Requirement", "risk": "high" },
+    { "node_id": "test_01", "node_type": "Test", "risk": "medium" },
+    { "node_id": "test_02", "node_type": "Test", "risk": "high" },
+    { "node_id": "test_03", "node_type": "Test", "risk": "medium" }
+  ],
+  "forecast_paths": [
+    { "pattern": "src", "scope": "bounded", "approved": true },
+    { "pattern": "assets", "scope": "bounded", "approved": true }
+  ],
+  "approved_write_paths": ["src", "assets"],
+  "changed_paths": [
+    "src/change-01.ts",
+    "src/change-02.ts",
+    "src/change-03.ts",
+    "src/change-04.ts",
+    "src/change-05.ts",
+    "src/change-06.ts",
+    "src/change-07.ts",
+    "src/change-08.ts",
+    "src/change-09.ts",
+    "src/change-10.ts",
+    "src/change-11.ts",
+    "src/change-12.ts",
+    "src/change-13.ts",
+    "src/change-14.ts",
+    "src/change-15.ts",
+    "src/change-16.ts",
+    "src/change-17.ts",
+    "src/change-18.ts",
+    "src/change-19.ts",
+    "src/change-20.ts",
+    "src/change-21.ts",
+    "src/change-22.ts",
+    "src/change-23.ts",
+    "src/change-24.ts",
+    "src/change-25.ts",
+    "src/change-26.ts",
+    "src/change-27.ts",
+    "src/change-28.ts"
+  ],
+  "rename": { "from": "src/legacy-name.ts", "to": "src/current-name.ts" },
+  "binary_path": "assets/index.bin",
+  "scope_drift_path": "outside.txt",
+  "tasks": [
+    {
+      "task_id": "task_01",
+      "run_id": "run_01",
+      "assertion_id": "assertion_01",
+      "test_id": "test_01",
+      "gate_id": "gate_unit"
+    },
+    {
+      "task_id": "task_02",
+      "run_id": "run_02",
+      "assertion_id": "assertion_02",
+      "test_id": "test_02",
+      "gate_id": "gate_integration"
+    },
+    {
+      "task_id": "task_03",
+      "run_id": "run_03",
+      "assertion_id": "assertion_03",
+      "test_id": "test_03",
+      "gate_id": "gate_security"
+    }
+  ]
+}

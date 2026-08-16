@@ -35,7 +35,7 @@ async function approve(session: Session, requestId: string): Promise<void> {
 }
 
 describe("generic resume E2E", { timeout: 90000 }, () => {
-  it("resumes through both approval points without duplicating authority", async () => {
+  it("resumes through every approval point without duplicating authority", async () => {
     const parent = makeTempDir("harness-e2e-resume-");
     const newId = sequentialIds();
 
@@ -71,15 +71,28 @@ describe("generic resume E2E", { timeout: 90000 }, () => {
     expect(field(result, "request_id")).toBe(impactRequest);
     expect(readdirSync(requestsDirectory)).toHaveLength(2);
 
-    // Approve the impact set; the pipeline runs to the completed snapshot.
+    // Approve the impact set; execution still waits for its own bound
+    // authorization and repeated resume must not duplicate that request.
     await approve(session, impactRequest);
+    result = await runJson(["resume", workflowOperationId], session);
+    expect(result.exitCode).toBe(EXIT_CODES.approvalRequired);
+    const authorizationRequest = field(result, "request_id");
+    expect(authorizationRequest).not.toBe(impactRequest);
+    expect(field(result, "object_type")).toBe("ExecutionAuthorizationSpec");
+
+    result = await runJson(["resume", workflowOperationId], session);
+    expect(field(result, "request_id")).toBe(authorizationRequest);
+    expect(readdirSync(requestsDirectory)).toHaveLength(3);
+
+    // Only the explicit execution authorization lets the Agent run.
+    await approve(session, authorizationRequest);
     result = await runJson(["resume", workflowOperationId], session);
     expect(result.json["status"]).toBe("ok");
     expect(typeof field(result, "snapshot_id")).toBe("string");
 
-    // No duplicated authority or side effects: exactly two requests, one
+    // No duplicated authority or side effects: exactly three requests, one
     // executor call, one run, one snapshot.
-    expect(readdirSync(requestsDirectory)).toHaveLength(2);
+    expect(readdirSync(requestsDirectory)).toHaveLength(3);
     expect(harness.executorCalls).toHaveLength(1);
     expect(readdirSync(join(projectRoot, ".harness", "artifacts", "runs"))).toHaveLength(1);
     expect(readdirSync(join(projectRoot, ".harness", "artifacts", "snapshots"))).toHaveLength(1);
