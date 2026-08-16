@@ -125,6 +125,13 @@ export {
   type CommittedCheckpoint,
 } from "./workflow/checkpoint.js";
 export {
+  liveBlockerMessages,
+  reconcileLiveBlockers,
+  type LiveBlocker,
+  type LiveBlockerKind,
+  type LiveBlockerReconciliationInput,
+} from "./workflow/blockers.js";
+export {
   WorkflowEngine,
   WorkflowError,
   buildRunInterruptedRecord,

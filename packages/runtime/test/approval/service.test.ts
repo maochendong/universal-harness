@@ -197,6 +197,9 @@ describe("ApprovalService.resolveDecision", () => {
     const workingState = engine.getWorkingState(workflowOperationId);
     expect(workingState?.approval_digests).toHaveLength(1);
     expect(workingState?.approval_digests).toEqual([sha256Hex(artifact.content)]);
+    expect(workingState?.blockers).not.toContain(
+      `approval request ${outcome.request_id} awaiting a decision`,
+    );
 
     await expect(
       service.resolveDecision({
@@ -209,7 +212,7 @@ describe("ApprovalService.resolveDecision", () => {
   });
 
   it("reject closes the proposal while keeping the audit history", async () => {
-    const { projectRoot, service, workflowOperationId, now } = await setup("d");
+    const { projectRoot, engine, service, workflowOperationId, now } = await setup("d");
     const outcome = await service.requestApproval(makeRequestInput(workflowOperationId));
     await resume(projectRoot, "d", workflowOperationId, now);
 
@@ -222,10 +225,13 @@ describe("ApprovalService.resolveDecision", () => {
 
     expect(service.pendingRequests(workflowOperationId)).toEqual([]);
     expect(service.getRequest(workflowOperationId, outcome.request_id)).toBeDefined();
+    expect(engine.getWorkingState(workflowOperationId)?.blockers).not.toContain(
+      `approval request ${outcome.request_id} awaiting a decision`,
+    );
   });
 
   it("defer keeps the request pending and resumable", async () => {
-    const { projectRoot, service, workflowOperationId, now } = await setup("e");
+    const { projectRoot, engine, service, workflowOperationId, now } = await setup("e");
     const outcome = await service.requestApproval(makeRequestInput(workflowOperationId));
     await resume(projectRoot, "e", workflowOperationId, now);
 
@@ -239,6 +245,9 @@ describe("ApprovalService.resolveDecision", () => {
     expect(service.pendingRequests(workflowOperationId).map((r) => r.request_id)).toEqual([
       outcome.request_id,
     ]);
+    expect(engine.getWorkingState(workflowOperationId)?.blockers).toContain(
+      `approval request ${outcome.request_id} awaiting a decision`,
+    );
   });
 
   it("never lets the proposing actor resolve its own request", async () => {

@@ -1,5 +1,7 @@
 import { contentDigest } from "@universal-harness-internal/core";
 
+import { liveBlockerMessages, type LiveBlockerReconciliationInput } from "./blockers.js";
+
 /**
  * Authoritative WorkingState (design 10.2). The Workflow Engine is the only
  * writer: adapters receive a read view and return a typed
@@ -79,6 +81,8 @@ export interface WorkingStateProposal {
   readonly add_open_questions?: readonly string[];
   readonly add_blockers?: readonly string[];
   readonly clear_blockers?: readonly string[];
+  /** Authoritative lifecycle facts used to recompute the compatibility list. */
+  readonly reconcile_blockers?: Omit<LiveBlockerReconciliationInput, "blocker_messages">;
   readonly set_next_action?: string;
   readonly complete_task_ids?: readonly string[];
   readonly add_pending_task_ids?: readonly string[];
@@ -197,10 +201,13 @@ export function applyWorkingStateProposal(
       ...state.open_questions,
       ...(proposal.add_open_questions ?? []),
     ]),
-    blockers: uniqueStrings([
-      ...state.blockers.filter((blocker) => !clearBlockers.has(blocker)),
-      ...(proposal.add_blockers ?? []),
-    ]),
+    blockers: liveBlockerMessages({
+      blocker_messages: uniqueStrings([
+        ...state.blockers.filter((blocker) => !clearBlockers.has(blocker)),
+        ...(proposal.add_blockers ?? []),
+      ]),
+      ...proposal.reconcile_blockers,
+    }),
     ...(proposal.set_next_action === undefined ? {} : { next_action: proposal.set_next_action }),
     completed_task_ids: [...completed],
     pending_task_ids: pending,

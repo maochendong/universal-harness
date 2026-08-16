@@ -4,6 +4,7 @@ import {
   WorkingStateError,
   applyWorkingStateProposal,
   isWorkingState,
+  reconcileLiveBlockers,
   workingStateDigest,
   type WorkingState,
 } from "../../src/index.js";
@@ -36,6 +37,53 @@ function baseState(): WorkingState {
 }
 
 describe("typed WorkingState proposals", () => {
+  it("reconciles typed blocker lifecycles into one stable compatibility projection", () => {
+    const live = reconcileLiveBlockers({
+      blocker_messages: [
+        "approval request approval_old awaiting a decision",
+        "task task_passed did not complete: prior agent failure",
+        "blocking finding finding_closed",
+        "waiting on the user",
+      ],
+      pending_approval_ids: ["approval_new"],
+      resolved_approval_ids: ["approval_old"],
+      passed_task_ids: ["task_passed"],
+      inactive_finding_ids: ["finding_closed"],
+      blocking_finding_ids: ["finding_live"],
+    });
+
+    expect(live.map((blocker) => blocker.message)).toEqual([
+      "approval request approval_new awaiting a decision",
+      "blocking finding finding_live",
+      "waiting on the user",
+    ]);
+    expect(live.map((blocker) => blocker.identity)).toEqual([
+      "approval:approval_new",
+      "finding:finding_live",
+      expect.stringMatching(/^other:/),
+    ]);
+  });
+
+  it("keeps deferred approvals and drops recovery blockers only for terminal iterations", () => {
+    const messages = [
+      "approval request approval_pending awaiting a decision",
+      "recovered from an interrupted process; resuming from the last committed checkpoint",
+    ];
+    expect(
+      reconcileLiveBlockers({
+        blocker_messages: messages,
+        pending_approval_ids: ["approval_pending"],
+      }).map((blocker) => blocker.message),
+    ).toEqual(messages);
+    expect(
+      reconcileLiveBlockers({
+        blocker_messages: messages,
+        pending_approval_ids: ["approval_pending"],
+        terminal_iteration: true,
+      }).map((blocker) => blocker.message),
+    ).toEqual(["approval request approval_pending awaiting a decision"]);
+  });
+
   it("applies additions deterministically and deduplicates", () => {
     const state = baseState();
     const next = applyWorkingStateProposal(state, {

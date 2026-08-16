@@ -126,6 +126,7 @@ const MODEL_PROPOSAL_KEYS = new Set([
   "add_open_questions",
   "add_blockers",
   "clear_blockers",
+  "reconcile_blockers",
   "set_next_action",
   "complete_task_ids",
   "add_pending_task_ids",

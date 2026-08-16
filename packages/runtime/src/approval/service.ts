@@ -328,7 +328,13 @@ export class ApprovalService {
     const artifact = approvalDecisionArtifact(record);
     await this.engine().commitCheckpoint(request.workflow_operation_id, {
       boundary: "approval",
-      proposal: { add_approval_digests: [sha256Hex(artifact.content)] },
+      proposal: {
+        add_approval_digests: [sha256Hex(artifact.content)],
+        reconcile_blockers:
+          record.decision === "defer"
+            ? { pending_approval_ids: [request.request_id] }
+            : { resolved_approval_ids: [request.request_id] },
+      },
       artifacts: [artifact],
     });
     return record;
@@ -378,6 +384,11 @@ export class ApprovalService {
       proposal: {
         phase: request.resume_phase,
         set_next_action: resumeCommandFor(request.workflow_operation_id),
+        add_blockers: [`approval request ${reissued.request_id} awaiting a decision`],
+        reconcile_blockers: {
+          pending_approval_ids: [reissued.request_id],
+          resolved_approval_ids: [request.request_id],
+        },
       },
       artifacts: [approvalRequestArtifact(reissued)],
       events: [

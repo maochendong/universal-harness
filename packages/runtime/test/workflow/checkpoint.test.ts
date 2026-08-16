@@ -69,6 +69,37 @@ describe("checkpoint serialization discipline", () => {
 });
 
 describe("checkpoint read-back", () => {
+  it("persists only blockers still live under authoritative lifecycle facts", async () => {
+    const projectRoot = makeProjectRoot();
+    const engine = new WorkflowEngine(makeDeps(projectRoot, { newId: phaseIds("live") }));
+    const started = await engine.startOperation(makeStartInput());
+    const id = started.operation.workflow_operation_id;
+    await engine.commitCheckpoint(id, {
+      boundary: "task",
+      proposal: {
+        add_blockers: [
+          "task task_done did not complete: old failure",
+          "blocking finding finding_closed",
+          "waiting on the user",
+        ],
+      },
+    });
+    const checkpoint = await engine.commitCheckpoint(id, {
+      boundary: "task",
+      proposal: {
+        reconcile_blockers: {
+          passed_task_ids: ["task_done"],
+          inactive_finding_ids: ["finding_closed"],
+        },
+      },
+    });
+
+    const repository = new LedgerRepository({ projectRoot, readBaseline: () => BASELINE });
+    const latest = latestValidCheckpoint(harnessRootFor(projectRoot), repository.operations(), id);
+    expect(latest?.record.checkpoint_id).toBe(checkpoint.checkpoint_id);
+    expect(latest?.workingState.blockers).toEqual(["waiting on the user"]);
+  });
+
   it("chains checkpoints through previous_checkpoint_id", async () => {
     const projectRoot = makeProjectRoot();
     const engine = new WorkflowEngine(makeDeps(projectRoot, { newId: phaseIds("chain") }));

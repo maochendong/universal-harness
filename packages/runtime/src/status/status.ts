@@ -25,6 +25,7 @@ import {
   supersededRequestId,
 } from "../approval/request.js";
 import { latestValidCheckpoint } from "../workflow/checkpoint.js";
+import { liveBlockerMessages } from "../workflow/blockers.js";
 import type { BudgetUse } from "../workflow/working-state.js";
 import { projectFindingGroups, type FindingGroupProjection } from "../finding/groups.js";
 
@@ -160,17 +161,6 @@ function derivePendingApprovals(
 }
 
 /**
- * Working-state blocker strings created when an operation blocked on an
- * approval request (`approval request <id> awaiting a decision`). Once the
- * request is resolved the checkpoint's working state may still carry the
- * string, so status derivation must drop it instead of reporting a phantom
- * blocker next to an empty pending-approval list.
- */
-const APPROVAL_BLOCKER_PATTERN = /^approval request (\S+) awaiting a decision$/;
-const TASK_RUN_FAILURE_BLOCKER_PATTERN = /^task (\S+) did not complete:/;
-const TRANSIENT_RECOVERY_BLOCKER_PATTERN = /^recovered from an interrupted process/;
-
-/**
  * A Finding only holds its iteration when its bound subject says so. Gate and
  * cascade findings predate the flag, so a missing `harness.finding` extension
  * (or a missing flag) defaults to blocking; only an explicit
@@ -196,23 +186,15 @@ function deriveBlockers(
       .filter((node) => node.type === "Task" && node.status === "accepted")
       .map((node) => node.id),
   );
-  // A terminal iteration passed its gates, audit, and evaluation before the
-  // snapshot was allowed to complete, so the transient process-recovery
-  // blocker string its working state may still carry is a phantom left by a
-  // since-resumed block, never a live blocker.
-  const liveWorkingStateBlockers = workingStateBlockers.filter((blocker) => {
-    if (
-      (iterationState === "completed" || iterationState === "aborted") &&
-      TRANSIENT_RECOVERY_BLOCKER_PATTERN.test(blocker)
-    ) {
-      return false;
-    }
-    const approvalMatch = APPROVAL_BLOCKER_PATTERN.exec(blocker);
-    if (approvalMatch !== null && resolvedApprovalIds.has(approvalMatch[1] ?? "")) return false;
-    const taskMatch = TASK_RUN_FAILURE_BLOCKER_PATTERN.exec(blocker);
-    return taskMatch === null || !acceptedTaskIds.has(taskMatch[1] ?? "");
-  });
-  const blockers = new Set(liveWorkingStateBlockers);
+  const blockingFindingIds = new Set<string>();
+  const inactiveFindingIds = new Set(
+    nodes
+      .filter(
+        (node) =>
+          node.type === "Finding" && node.status !== "proposed" && node.status !== "accepted",
+      )
+      .map((node) => node.id),
+  );
   const warnings = new Set<string>();
   if (iterationId !== undefined) {
     const nodeById = new Map(nodes.map((node) => [node.id, node]));
@@ -221,12 +203,23 @@ function deriveBlockers(
       const finding = nodeById.get(edge.source_id);
       if (finding === undefined) continue;
       if (finding.status === "proposed" || finding.status === "accepted") {
-        if (findingIsBlocking(finding)) blockers.add(`blocking finding ${finding.id}`);
+        if (findingIsBlocking(finding)) blockingFindingIds.add(finding.id);
         else warnings.add(`warning finding ${finding.id}`);
       }
     }
   }
-  return { blockers: [...blockers].sort(byId), warnings: [...warnings].sort(byId) };
+  const blockers = liveBlockerMessages({
+    blocker_messages: workingStateBlockers,
+    pending_approval_ids: derivePendingApprovals(nodes, edges).filter(
+      (requestId) => !resolvedApprovalIds.has(requestId),
+    ),
+    resolved_approval_ids: [...resolvedApprovalIds],
+    passed_task_ids: [...acceptedTaskIds],
+    blocking_finding_ids: [...blockingFindingIds],
+    inactive_finding_ids: [...inactiveFindingIds],
+    terminal_iteration: iterationState === "completed" || iterationState === "aborted",
+  });
+  return { blockers, warnings: [...warnings].sort(byId) };
 }
 
 /**

@@ -2650,13 +2650,6 @@ async function phaseExecute(ctx: PipelineContext): Promise<PhaseStep> {
     throw error;
   }
   const grantDigests = [...authority.grants.values()].map((grant) => grant.digest).sort();
-  const taskBlockersToClear = new Set<string>();
-  const rememberTaskBlockers = (taskId: string): void => {
-    const prefix = `task ${taskId} did not complete:`;
-    for (const blocker of ctx.workingState.blockers) {
-      if (blocker.startsWith(prefix)) taskBlockersToClear.add(blocker);
-    }
-  };
   let lastRun: { readonly runId: string; readonly result: AgentRunResult } | undefined;
   for (const task of tasks) {
     const completed = loadCompletedRun(ctx, task.id);
@@ -2670,7 +2663,6 @@ async function phaseExecute(ctx: PipelineContext): Promise<PhaseStep> {
       );
       if (!failedEvaluation) {
         await commitRunFact(ctx, completed.runId, completed.result);
-        rememberTaskBlockers(task.id);
         lastRun = completed;
         continue;
       }
@@ -2860,7 +2852,6 @@ async function phaseExecute(ctx: PipelineContext): Promise<PhaseStep> {
       });
       return { continue: false, outcome };
     }
-    rememberTaskBlockers(task.id);
   }
   if (lastRun === undefined) {
     throw new OrchestrationError("configuration", "execute phase produced no run");
@@ -2872,7 +2863,6 @@ async function phaseExecute(ctx: PipelineContext): Promise<PhaseStep> {
     proposal: {
       phase: "verify",
       ...(grantDigests.length > 0 ? { add_capability_grants: grantDigests } : {}),
-      ...(taskBlockersToClear.size > 0 ? { clear_blockers: [...taskBlockersToClear].sort() } : {}),
     },
     events: phaseLifecycleEvents({
       phase: "execute",
@@ -4284,6 +4274,19 @@ async function phaseSnapshot(ctx: PipelineContext): Promise<PhaseStep> {
     });
     await commitTaskVerdict(ctx, verdict);
     taskVerdicts.push(verdict);
+  }
+  const passedTaskIds = taskVerdicts
+    .filter((verdict) => verdict.verdict === "passed")
+    .map((verdict) => verdict.task_id);
+  if (passedTaskIds.length > 0) {
+    await ctx.engine.commitCheckpoint(ctx.workflowOperationId, {
+      boundary: PHASE_CHECKPOINT_BOUNDARY.snapshot,
+      proposal: {
+        phase: "snapshot",
+        reconcile_blockers: { passed_task_ids: passedTaskIds },
+      },
+    });
+    refreshWorkingState(ctx);
   }
   if (taskVerdicts.some((verdict) => verdict.verdict !== "passed")) {
     const outcome = await blockWithSnapshot(ctx, {
