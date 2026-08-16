@@ -12,7 +12,6 @@ import {
   ApprovalError,
   WorkflowError,
   abortIteration,
-  createDirectExecutor,
   createGenericInterpreter,
   createRuntimeService,
   driveOpenOperation,
@@ -265,12 +264,25 @@ export function createOrchestratedRuntimeService(
       options.gates === undefined && options.toolRegistry === undefined
         ? createConfiguredGateSuite(projectRoot, runtimeConfig)
         : undefined;
+    const injectedExecutor = options.execute;
     return {
       projectRoot,
       readBaseline: () => gitHead(projectRoot),
       vcs,
       interpret: options.interpret ?? createGenericInterpreter(),
-      execute: options.execute ?? configuredAgent?.execute ?? createDirectExecutor(),
+      ...(injectedExecutor === undefined
+        ? configuredAgent === undefined
+          ? {}
+          : {
+              execution: {
+                kind: "agent" as const,
+                name: configuredAgent.name,
+                deterministic: false,
+                adapter_profile: configuredAgent.adapterProfile,
+                execute: configuredAgent.execute,
+              },
+            }
+        : { execute: injectedExecutor }),
       evaluate:
         options.evaluate ?? createEvalPackagePort(options.now ?? (() => new Date().toISOString())),
       tasksProjection: renderTasksProjection,

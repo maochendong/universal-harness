@@ -6,7 +6,12 @@ import {
 } from "@universal-harness-internal/core";
 import { assertApprovedImpactSet, readImpactSetContent } from "@universal-harness-internal/graph";
 
-import { selectExecutionMode, type ExecutionMode, type IntentShape } from "./mode-selector.js";
+import {
+  selectExecutionMode,
+  type ExecutionKind,
+  type ExecutionMode,
+  type IntentShape,
+} from "./mode-selector.js";
 import type { TaskSpecification } from "./task.js";
 import { PlanningError, validatePlanProposal, type PlannerConstraints } from "./validator.js";
 
@@ -31,6 +36,7 @@ export interface PlanSharedContext {
 /** Canonical, metadata-free ExecutionPlan content. */
 export interface ExecutionPlanContent {
   readonly content_digest: string;
+  readonly execution_kind: ExecutionKind;
   readonly mode: ExecutionMode;
   readonly mode_reason: string;
   readonly restricted: boolean;
@@ -47,6 +53,7 @@ export interface PlanContext {
 }
 
 export interface PlanGenerationInput {
+  readonly executionKind: ExecutionKind;
   readonly intentShape: IntentShape;
   readonly hasExistingGraph: boolean;
   readonly deterministicWork: boolean;
@@ -202,12 +209,14 @@ export function generateExecutionPlan(
   const tasks = validatePlanProposal(input.proposal, input.constraints);
   assertBoundToApprovedImpactSet(tasks, impactSet);
   const selection = selectExecutionMode({
+    executionKind: input.executionKind,
     intentShape: input.intentShape,
     hasExistingGraph: input.hasExistingGraph,
     deterministicWork: input.deterministicWork,
     taskCount: tasks.length,
   });
   const base = {
+    execution_kind: input.executionKind,
     mode: selection.mode,
     mode_reason: selection.reason,
     restricted: selection.restricted,

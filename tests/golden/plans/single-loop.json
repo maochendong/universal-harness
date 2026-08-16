@@ -1,13 +1,14 @@
 {
   "scenario": "single-loop",
   "plan": {
-    "id": "plan_bdda61125a60fd19",
+    "id": "plan_20d19e8feb48b948",
     "status": "proposed",
-    "digest": "940d53d43ba5abf44e910750a66953cda37b1b165dcefe1a82b6223089ae8bf8"
+    "digest": "075601ea9dc5950097e9e096f31cbbf5003aa995ffecd0cdbf78bf1645b256d4"
   },
   "content": {
+    "execution_kind": "agent",
     "mode": "single-loop",
-    "mode_reason": "one bounded goal with one independently reviewable output",
+    "mode_reason": "one bounded agent goal with one independently reviewable output",
     "restricted": false,
     "impact_set_id": "impactset_addc37b0c4bf64aa",
     "impact_set_digest": "addc37b0c4bf64aa6360bba43fda7af1bdd10f17c93597111e0a5effd150822f",
@@ -49,7 +50,7 @@
         "required_gates": ["gate:test"]
       }
     ],
-    "content_digest": "bdda61125a60fd197a473368d9057b9b3f741726cdfc75c777be9600fdc71702"
+    "content_digest": "20d19e8feb48b948e1afd982c5041a3309240949c1966033171dc6c4306e7248"
   },
   "tasks": [
     {
@@ -59,9 +60,9 @@
   ],
   "edges": [
     {
-      "id": "edge_d8250d92548d9cc6",
+      "id": "edge_df1b79c04cbb6c58",
       "type": "CONTAINS",
-      "source_id": "plan_bdda61125a60fd19",
+      "source_id": "plan_20d19e8feb48b948",
       "target_id": "task_deliver"
     }
   ]

@@ -1,11 +1,12 @@
 {
   "scenario": "direct",
   "plan": {
-    "id": "plan_003141e09ca68c25",
+    "id": "plan_b11ac0653ab5d29e",
     "status": "proposed",
-    "digest": "e179baee745e1cffb19ab553ad97bab16c2168964b3588fa3a6ec671f7a082e8"
+    "digest": "c5651d48897ade06b7785983e9fbe374727ec90f40d321596598ba400d02d9e3"
   },
   "content": {
+    "execution_kind": "workflow",
     "mode": "direct",
     "mode_reason": "structured intent with fully deterministic work runs without an agent loop",
     "restricted": false,
@@ -49,7 +50,7 @@
         "required_gates": ["gate:test"]
       }
     ],
-    "content_digest": "003141e09ca68c253a7a71c2613321170348fafdd5b91654c4b8e0a5c4e57eaf"
+    "content_digest": "b11ac0653ab5d29ec900d93810b51cb2ddcf0bcc44af0fd4231b184834798234"
   },
   "tasks": [
     {
@@ -59,9 +60,9 @@
   ],
   "edges": [
     {
-      "id": "edge_30ee46d0f8a0327d",
+      "id": "edge_4b2c6f137c0e0fa7",
       "type": "CONTAINS",
-      "source_id": "plan_003141e09ca68c25",
+      "source_id": "plan_b11ac0653ab5d29e",
       "target_id": "task_apply"
     }
   ]

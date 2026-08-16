@@ -19,7 +19,11 @@ export type ExecutionMode = (typeof EXECUTION_MODES)[number];
 /** How the intent entered requirement capture. */
 export type IntentShape = "structured" | "pack-converted" | "free-text";
 
+export type ExecutionKind = "workflow" | "agent";
+
 export interface ModeSelectionInput {
+  /** Authority boundary that will execute the plan. Agents can never be direct. */
+  readonly executionKind: ExecutionKind;
   readonly intentShape: IntentShape;
   /** Whether the project already has an authoritative graph to plan against. */
   readonly hasExistingGraph: boolean;
@@ -59,6 +63,20 @@ export function selectExecutionMode(input: ModeSelectionInput): ModeSelection {
       reason:
         "free-text intent without an existing graph must complete requirement " +
         "capture through a restricted single loop first",
+    };
+  }
+  if (input.executionKind === "agent") {
+    if (input.taskCount === 1) {
+      return {
+        mode: "single-loop",
+        restricted: false,
+        reason: "one bounded agent goal with one independently reviewable output",
+      };
+    }
+    return {
+      mode: "dag",
+      restricted: false,
+      reason: `${String(input.taskCount)} agent tasks with independent value run in dependency order`,
     };
   }
   const capturableDirectly =

@@ -8,6 +8,7 @@ import {
 
 function input(overrides?: Partial<ModeSelectionInput>): ModeSelectionInput {
   return {
+    executionKind: "workflow",
     intentShape: "structured",
     hasExistingGraph: true,
     deterministicWork: true,
@@ -23,6 +24,15 @@ describe("selectExecutionMode", () => {
       mode: "direct",
       restricted: false,
       reason: "structured intent with fully deterministic work runs without an agent loop",
+    });
+  });
+
+  it("never routes an agent executor to direct even when its task is deterministic", () => {
+    const selection = selectExecutionMode(input({ executionKind: "agent" }));
+    expect(selection).toEqual({
+      mode: "single-loop",
+      restricted: false,
+      reason: "one bounded agent goal with one independently reviewable output",
     });
   });
 

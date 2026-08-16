@@ -141,6 +141,12 @@ import {
   phaseRank,
   type OrchestrationPhase,
 } from "./phases.js";
+import {
+  ExecutionBindingError,
+  assertExecutionBindingCompatible,
+  type ExecutionBinding,
+  type OrchestrationExecutor,
+} from "./execution-binding.js";
 
 /**
  * Phase orchestrator (design sections 2, 10 and 11; plan Task 23). One
@@ -217,8 +223,6 @@ export type IntentInterpreter = (
  * and resume reconciles it with exactly one RunInterrupted plus one successor
  * run. Typed failures belong in the returned result, never in a throw.
  */
-export type OrchestrationExecutor = (envelope: AgentTaskEnvelope) => Promise<AgentRunResult>;
-
 export interface EvaluationPortInput {
   readonly taskId: string;
   readonly iterationId: string;
@@ -298,6 +302,8 @@ export interface OrchestratorDependencies {
   /** Actor recorded for interactively resolved decisions. */
   readonly decisionActor?: string;
   readonly interpret?: IntentInterpreter;
+  readonly execution?: ExecutionBinding;
+  /** Legacy host seam; treated as an unproven delegated Agent binding. */
   readonly execute?: OrchestrationExecutor;
   /**
    * Gate suite for the verify phase. Defaults to the universal ledger
@@ -461,6 +467,24 @@ export function createDirectExecutor(): OrchestrationExecutor {
       ],
       undeclared_writes: [],
     });
+}
+
+function executionBindingFor(deps: OrchestratorDependencies): ExecutionBinding {
+  if (deps.execution !== undefined) return deps.execution;
+  if (deps.execute !== undefined) {
+    return {
+      kind: "agent",
+      name: "legacy-unproven-agent",
+      deterministic: false,
+      execute: deps.execute,
+    };
+  }
+  return {
+    kind: "workflow",
+    name: "built-in-direct-workflow",
+    deterministic: true,
+    execute: createDirectExecutor(),
+  };
 }
 
 /**
@@ -1806,6 +1830,7 @@ async function phasePlan(ctx: PipelineContext, gateIds: readonly string[]): Prom
     impactSet,
     approvedDigest,
     {
+      executionKind: executionBindingFor(deps).kind,
       intentShape: ctx.intentShape,
       hasExistingGraph: true,
       deterministicWork: ctx.deterministicWork,
@@ -2069,7 +2094,16 @@ async function phaseExecute(ctx: PipelineContext): Promise<PhaseStep> {
   // One run per task, in dependency order. A claimed run is final (unless its
   // committed evaluation failed), so a resume re-executes only the tasks that
   // never finished; the phase checkpoint lands once every task has one.
-  const executor = deps.execute ?? createDirectExecutor();
+  const binding = executionBindingFor(deps);
+  try {
+    assertExecutionBindingCompatible(plan.content, binding);
+  } catch (error) {
+    if (error instanceof ExecutionBindingError) {
+      throw new OrchestrationError("binding_drift", error.message);
+    }
+    throw error;
+  }
+  const executor = binding.execute;
   const grantDigests: string[] = [];
   const taskBlockersToClear = new Set<string>();
   const rememberTaskBlockers = (taskId: string): void => {

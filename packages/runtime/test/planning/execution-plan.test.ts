@@ -52,6 +52,7 @@ function taskSpec(overrides: Record<string, unknown>): Record<string, unknown> {
 
 function scenarioInput(name: string, impactSet: NodeRecord): PlanGenerationInput {
   const base = {
+    executionKind: "agent" as const,
     hasExistingGraph: true,
     shared: SHARED_CONTEXT,
     constraints: PLAN_CONSTRAINTS,
@@ -59,6 +60,7 @@ function scenarioInput(name: string, impactSet: NodeRecord): PlanGenerationInput
   if (name === "direct") {
     return {
       ...base,
+      executionKind: "workflow",
       intentShape: "structured",
       deterministicWork: true,
       proposal: [

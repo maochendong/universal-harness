@@ -59,6 +59,7 @@ export interface ConfiguredAgentExecutor {
     readonly proposed_write_paths: readonly string[];
   };
   readonly trajectoryVisibility: "full" | "summarized" | "external-only";
+  readonly adapterProfile: ReturnType<typeof createDshAgentAdapter>["manifest"];
 }
 
 /** Build the project-selected real executor and its immutable task path scope. */
@@ -85,5 +86,6 @@ export function createConfiguredAgentExecutor(
       proposed_write_paths: config.proposed_write_paths,
     },
     trajectoryVisibility: adapter.manifest.trajectory_visibility,
+    adapterProfile: adapter.manifest,
   };
 }

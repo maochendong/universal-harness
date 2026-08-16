@@ -1,13 +1,14 @@
 {
   "scenario": "dag",
   "plan": {
-    "id": "plan_cad22367e2d67090",
+    "id": "plan_ebfeb115a6afe969",
     "status": "proposed",
-    "digest": "0e02f7ac9492281d616a536dc852eede7ea1c60e960294efe34ae80dec56679c"
+    "digest": "7405aed722b26e76868dcd8811878d143d3f04dbedc37527b787ebe568e86589"
   },
   "content": {
+    "execution_kind": "agent",
     "mode": "dag",
-    "mode_reason": "2 tasks with independent value run in dependency order",
+    "mode_reason": "2 agent tasks with independent value run in dependency order",
     "restricted": false,
     "impact_set_id": "impactset_addc37b0c4bf64aa",
     "impact_set_digest": "addc37b0c4bf64aa6360bba43fda7af1bdd10f17c93597111e0a5effd150822f",
@@ -68,7 +69,7 @@
         "required_gates": ["gate:test"]
       }
     ],
-    "content_digest": "cad22367e2d67090b02ef12523794a63ca1be227c0a664e6893e61436d93ce37"
+    "content_digest": "ebfeb115a6afe969f43d3f70ec435c0fdab316a9cc5b8252b74c02f90a935539"
   },
   "tasks": [
     {
@@ -82,15 +83,15 @@
   ],
   "edges": [
     {
-      "id": "edge_9ed94d69ce45fe48",
+      "id": "edge_a201ac17377d5f87",
       "type": "CONTAINS",
-      "source_id": "plan_cad22367e2d67090",
+      "source_id": "plan_ebfeb115a6afe969",
       "target_id": "task_implement"
     },
     {
-      "id": "edge_1038bbf17dacda11",
+      "id": "edge_0b173e43fd29509f",
       "type": "CONTAINS",
-      "source_id": "plan_cad22367e2d67090",
+      "source_id": "plan_ebfeb115a6afe969",
       "target_id": "task_spec"
     },
     {

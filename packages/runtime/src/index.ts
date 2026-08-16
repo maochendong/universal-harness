@@ -14,6 +14,13 @@ import {
 import type { BootstrapDependencies, BootstrapResult } from "./bootstrap/staging.js";
 
 export {
+  ExecutionBindingError,
+  assertExecutionBindingCompatible,
+  type ExecutionBinding,
+  type ExecutionBindingErrorKind,
+  type OrchestrationExecutor,
+} from "./orchestration/execution-binding.js";
+export {
   governanceMigrationReasons,
   projectLegacySnapshotTruth,
   type GovernanceMigrationInput,
@@ -230,6 +237,7 @@ export {
   ModeSelectionError,
   selectExecutionMode,
   type ExecutionMode,
+  type ExecutionKind,
   type IntentShape,
   type ModeSelection,
   type ModeSelectionInput,
@@ -752,7 +760,6 @@ export {
   type IntentInterpreter,
   type InterpretedIntent,
   type OrchestrationErrorKind,
-  type OrchestrationExecutor,
   type OrchestrationOutcome,
   type OrchestratorDependencies,
   type PhaseProgressEvent,
