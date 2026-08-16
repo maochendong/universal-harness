@@ -17,7 +17,9 @@ import {
   createNewProject,
   hashCommitCode,
   hashWorktreeCode,
+  projectSnapshotCommitRefs,
   resolveSnapshotSourceCommit,
+  type SnapshotRecord,
   type SnapshotAnchorError,
 } from "../../src/index.js";
 import {
@@ -101,10 +103,10 @@ describe("snapshot source anchors", () => {
       ...evidenceContent,
       digest: contentDigest(evidenceContent),
     } as unknown as NodeRecord;
-    const snapshot = buildSnapshot({
+    const currentSnapshot = buildSnapshot({
       snapshot_id: snapshotId,
       iteration_id: created.value.iterationId,
-      final_commit: originalCommit,
+      source_commit: originalCommit,
       workflow_operation_id: operation.workflow_operation_id,
       created_at: FIXED_NOW,
       tasks: [{ task_id: "task_snapshot_anchor", required: true, outcome: "success" }],
@@ -118,6 +120,15 @@ describe("snapshot source anchors", () => {
         },
       ],
     });
+    const legacyContent = Object.fromEntries(
+      Object.entries(currentSnapshot).filter(
+        ([key]) => key !== "source_commit" && key !== "digest",
+      ),
+    );
+    const snapshot = {
+      ...legacyContent,
+      digest: contentDigest(legacyContent),
+    } as SnapshotRecord;
     writeTree(projectRoot, { "src/example.ts": "export const answer = 43;\n" });
     git(projectRoot, "add", "src/example.ts");
     git(projectRoot, "commit", "-m", "feat: add later source revision");
@@ -208,5 +219,33 @@ describe("snapshot source anchors", () => {
         now: () => FIXED_NOW,
       }),
     ).rejects.toMatchObject<Partial<SnapshotAnchorError>>({ kind: "anchor_conflict" });
+  });
+
+  it("projects source, first containing ledger commit and current repository head separately", () => {
+    const projectRoot = makeRepo({ "README.md": "# Commit refs\n" });
+    const sourceCommit = headOf(projectRoot);
+    const snapshot = buildSnapshot({
+      snapshot_id: "snapshot_commit-refs",
+      iteration_id: "iteration_commit-refs",
+      source_commit: sourceCommit,
+      workflow_operation_id: "workflow-op_commit-refs",
+      created_at: FIXED_NOW,
+      tasks: [{ task_id: "task_commit-refs", required: true, outcome: "success" }],
+    });
+    writeTree(projectRoot, {
+      ".harness/artifacts/snapshots/snapshot_commit-refs.json": `${canonicalizeJson(snapshot)}\n`,
+    });
+    git(projectRoot, "add", ".harness/artifacts/snapshots/snapshot_commit-refs.json");
+    git(projectRoot, "commit", "-m", "harness: add snapshot");
+    const ledgerCommit = headOf(projectRoot);
+    writeTree(projectRoot, { "README.md": "# Commit refs\n\nLater.\n" });
+    git(projectRoot, "add", "README.md");
+    git(projectRoot, "commit", "-m", "docs: advance repository head");
+
+    expect(projectSnapshotCommitRefs(projectRoot, snapshot)).toEqual({
+      source_commit: sourceCommit,
+      ledger_commit: ledgerCommit,
+      repository_head: headOf(projectRoot),
+    });
   });
 });

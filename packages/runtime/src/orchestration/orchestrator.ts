@@ -361,7 +361,9 @@ export type OrchestrationOutcome =
       /** Commit containing the exact source tree proved by gate evidence. */
       readonly sourceCommit: string;
       /** Commit containing the completed Harness ledger and projections. */
-      readonly finalCommit: string;
+      readonly ledgerCommit: string | null;
+      /** Repository HEAD after source and Ledger commits complete. */
+      readonly repositoryHead: string;
     }
   | { readonly status: "approval_required"; readonly required: ApprovalRequiredOutcome }
   | {
@@ -1621,14 +1623,14 @@ async function blockWithSnapshot(
     readonly resumePhase: OrchestrationPhase;
     readonly input: Omit<
       Parameters<typeof buildSnapshot>[0],
-      "snapshot_id" | "created_at" | "block_reason" | "resume_phase" | "final_commit"
+      "snapshot_id" | "created_at" | "block_reason" | "resume_phase" | "source_commit"
     >;
   },
 ): Promise<OrchestrationOutcome> {
   const partial = {
     ...spec.input,
     snapshot_id: "snapshot_pending",
-    final_commit: ctx.deps.readBaseline(),
+    source_commit: ctx.deps.readBaseline(),
     created_at: nowOf(ctx.deps),
     block_reason: spec.reason,
     resume_phase: spec.resumePhase,
@@ -1637,7 +1639,7 @@ async function blockWithSnapshot(
   const snapshot = buildSnapshot({
     ...spec.input,
     snapshot_id: `snapshot_${sha256Hex(`${ctx.iterationId}:${spec.reason}:${spec.detail}:${blockerSeed}`).slice(0, 16)}`,
-    final_commit: ctx.deps.readBaseline(),
+    source_commit: ctx.deps.readBaseline(),
     created_at: nowOf(ctx.deps),
     block_reason: spec.reason,
     resume_phase: spec.resumePhase,
@@ -4094,7 +4096,7 @@ function snapshotBaseInput(
   }[],
 ): Omit<
   Parameters<typeof buildSnapshot>[0],
-  "snapshot_id" | "created_at" | "block_reason" | "resume_phase" | "final_commit"
+  "snapshot_id" | "created_at" | "block_reason" | "resume_phase" | "source_commit"
 > {
   const profile = executionBindingFor(ctx.deps).adapter_profile;
   return {
@@ -4354,7 +4356,7 @@ async function phaseSnapshot(ctx: PipelineContext): Promise<PhaseStep> {
       })),
     ),
     snapshot_id: `snapshot_${sha256Hex(`${ctx.iterationId}:completed`).slice(0, 16)}`,
-    final_commit: sourceCommit,
+    source_commit: sourceCommit,
     created_at: nowOf(deps),
     execution_plan_id: plan.node.id,
     task_verdicts: taskVerdicts.map(projectTaskVerdict),
@@ -4415,15 +4417,16 @@ async function phaseSnapshot(ctx: PipelineContext): Promise<PhaseStep> {
   await commitIterationNode(ctx, "completed");
   await regenerateTasksProjection(ctx);
   await ctx.engine.advance(ctx.workflowOperationId, "completed");
-  let finalCommit = deps.readBaseline();
+  let ledgerCommit: string | null = null;
   if (deps.vcs !== undefined) {
     const committed = await deps.vcs.commit(deps.projectRoot, {
       message: `harness: record iteration ${ctx.iterationId}`,
       paths: [".harness"],
       identity: HARNESS_COMMIT_IDENTITY,
     });
-    if (committed.ok) finalCommit = committed.value;
+    if (committed.ok) ledgerCommit = committed.value;
   }
+  const repositoryHead = deps.readBaseline();
   return {
     continue: false,
     outcome: {
@@ -4432,7 +4435,8 @@ async function phaseSnapshot(ctx: PipelineContext): Promise<PhaseStep> {
       iterationId: ctx.iterationId,
       snapshotId: snapshot.snapshot_id,
       sourceCommit,
-      finalCommit,
+      ledgerCommit,
+      repositoryHead,
     },
   };
 }

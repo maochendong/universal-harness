@@ -1306,7 +1306,9 @@ describe("phase orchestrator", { timeout: 30000 }, () => {
     if (outcome.status !== "completed") return;
     const snapshot = readLatestSnapshot(projectRoot);
     expect(snapshot?.final_commit).toBe(outcome.sourceCommit);
-    expect(outcome.sourceCommit).not.toBe(outcome.finalCommit);
+    expect(snapshot?.source_commit).toBe(outcome.sourceCommit);
+    expect(outcome.sourceCommit).not.toBe(outcome.ledgerCommit);
+    expect(outcome.ledgerCommit).toBe(outcome.repositoryHead);
     expect(git(projectRoot, "show", `${outcome.sourceCommit}:src/generated.ts`)).toContain(
       "generated = true",
     );

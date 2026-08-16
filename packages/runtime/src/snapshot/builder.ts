@@ -90,8 +90,8 @@ export interface SnapshotImprovementState {
 export interface SnapshotInput {
   readonly snapshot_id: string;
   readonly iteration_id: string;
-  /** Final Git commit the Snapshot anchors to. */
-  readonly final_commit: string;
+  /** Git commit containing the exact source tree proved by gates. */
+  readonly source_commit: string;
   readonly workflow_operation_id: string;
   readonly created_at: string;
   readonly execution_plan_id?: string;
@@ -129,6 +129,8 @@ export interface SnapshotRecord {
   readonly snapshot_id: string;
   readonly iteration_id: string;
   readonly status: SnapshotStatus;
+  readonly source_commit?: string;
+  /** Compatibility alias for pre-hardening readers; always equals source_commit on new records. */
   readonly final_commit: string;
   readonly workflow_operation_id: string;
   readonly created_at: string;
@@ -229,10 +231,10 @@ export function snapshotCompletionBlockers(input: SnapshotInput): readonly strin
 }
 
 function assertCommonShape(input: SnapshotInput): void {
-  if (!FINAL_COMMIT_PATTERN.test(input.final_commit)) {
+  if (!FINAL_COMMIT_PATTERN.test(input.source_commit)) {
     throw new SnapshotError(
       "invalid_snapshot",
-      `final commit ${JSON.stringify(input.final_commit)} is not a lowercase hex commit id; a Snapshot must anchor to a real Git commit`,
+      `source commit ${JSON.stringify(input.source_commit)} is not a lowercase hex commit id; a Snapshot must anchor to a real Git commit`,
     );
   }
   if (input.snapshot_id.trim().length === 0 || input.iteration_id.trim().length === 0) {
@@ -264,7 +266,8 @@ function buildRecord(input: SnapshotInput, status: SnapshotStatus): SnapshotReco
     snapshot_id: input.snapshot_id,
     iteration_id: input.iteration_id,
     status,
-    final_commit: input.final_commit,
+    source_commit: input.source_commit,
+    final_commit: input.source_commit,
     workflow_operation_id: input.workflow_operation_id,
     created_at: input.created_at,
     ...(input.execution_plan_id === undefined

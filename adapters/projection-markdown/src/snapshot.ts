@@ -9,6 +9,7 @@ export interface SnapshotViewInput {
   readonly snapshot_id: string;
   readonly iteration_id: string;
   readonly status: "completed" | "blocked" | "aborted";
+  readonly source_commit?: string;
   readonly final_commit: string;
   readonly workflow_operation_id: string;
   readonly execution_plan_id?: string;
@@ -58,7 +59,7 @@ export function renderSnapshotProjection(snapshot: SnapshotViewInput): Projectio
     "",
     `- Iteration: ${snapshot.iteration_id}`,
     `- Status: ${snapshot.status}`,
-    `- Final commit: ${snapshot.final_commit}`,
+    `- Source commit: ${snapshot.source_commit ?? snapshot.final_commit}`,
     `- Workflow operation: ${snapshot.workflow_operation_id}`,
   ];
   if (snapshot.execution_plan_id !== undefined) {

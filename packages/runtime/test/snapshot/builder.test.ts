@@ -21,7 +21,7 @@ function baseInput(overrides?: Partial<SnapshotInput>): SnapshotInput {
   return {
     snapshot_id: "snapshot_01",
     iteration_id: "iteration_01",
-    final_commit: FINAL_COMMIT,
+    source_commit: FINAL_COMMIT,
     workflow_operation_id: "workflow-op_01",
     created_at: CREATED_AT,
     execution_plan_id: "plan_01",
@@ -91,6 +91,8 @@ describe("buildSnapshot", () => {
     const snapshot = buildSnapshot(baseInput());
     expect(snapshot.status).toBe("completed");
     expect(snapshot.final_commit).toBe(FINAL_COMMIT);
+    expect(snapshot.source_commit).toBe(FINAL_COMMIT);
+    expect(snapshot).not.toHaveProperty("ledger_commit");
     expect(snapshot.run_outcomes).toEqual([{ id: "run_01", outcome: "handoff" }]);
     expect(snapshot.task_verdicts).toEqual([
       { verdict_id: "verdict_01", task_id: "task_01", verdict: "passed" },
@@ -240,11 +242,11 @@ describe("buildSnapshot", () => {
   });
 
   it("requires a real commit anchor", () => {
-    expect(() => buildSnapshot(baseInput({ final_commit: "not-a-commit" }))).toThrowError(
+    expect(() => buildSnapshot(baseInput({ source_commit: "not-a-commit" }))).toThrowError(
       SnapshotError,
     );
     try {
-      buildSnapshot(baseInput({ final_commit: "not-a-commit" }));
+      buildSnapshot(baseInput({ source_commit: "not-a-commit" }));
     } catch (error) {
       expect((error as SnapshotError).kind).toBe("invalid_snapshot");
     }

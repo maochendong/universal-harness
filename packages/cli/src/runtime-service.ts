@@ -17,12 +17,12 @@ import {
   driveOpenOperation,
   parseApprovalDecision,
   previewImpactSet,
+  projectSnapshotCommitRefs,
   proposeSemanticImpactEdges,
   provenQualityTaskIds,
   readLatestExecutionPlan,
   readLatestSnapshot,
   readCurrentOperation,
-  resolveSnapshotSourceCommit,
   readStagedAdoptionPreview,
   resolveApproval,
   resolveFinding,
@@ -171,14 +171,15 @@ function outcomeToResult(
       return {
         command,
         status: "ok",
-        message: `iteration ${outcome.iterationId} completed; snapshot ${outcome.snapshotId} at ${outcome.finalCommit.slice(0, 12)}`,
+        message: `iteration ${outcome.iterationId} completed; snapshot ${outcome.snapshotId} at ${outcome.sourceCommit.slice(0, 12)}`,
         data: {
           ...extra,
           workflow_operation_id: outcome.workflowOperationId,
           iteration_id: outcome.iterationId,
           snapshot_id: outcome.snapshotId,
           source_commit: outcome.sourceCommit,
-          final_commit: outcome.finalCommit,
+          ledger_commit: outcome.ledgerCommit,
+          repository_head: outcome.repositoryHead,
         },
       };
     case "advanced":
@@ -869,6 +870,7 @@ export function createOrchestratedRuntimeService(
           if (error instanceof OrchestrationError && error.kind === "no_open_operation") {
             const snapshot = readLatestSnapshot(request.projectRoot);
             if (snapshot !== undefined) {
+              const commits = projectSnapshotCommitRefs(request.projectRoot, snapshot);
               return {
                 command: "snapshot",
                 status: "ok",
@@ -878,8 +880,9 @@ export function createOrchestratedRuntimeService(
                   status: snapshot.status,
                   iteration_id: snapshot.iteration_id,
                   workflow_operation_id: snapshot.workflow_operation_id,
-                  source_commit: resolveSnapshotSourceCommit(request.projectRoot, snapshot),
-                  final_commit: snapshot.final_commit,
+                  source_commit: commits.source_commit,
+                  ledger_commit: commits.ledger_commit,
+                  repository_head: commits.repository_head,
                   evidence: [...snapshot.evidence],
                   closed_findings: [...snapshot.closed_findings],
                 },

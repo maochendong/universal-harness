@@ -768,6 +768,11 @@ export {
   type SnapshotAnchorErrorKind,
 } from "./snapshot/anchor.js";
 export {
+  locateSnapshotLedgerCommit,
+  projectSnapshotCommitRefs,
+  type SnapshotCommitRefs,
+} from "./snapshot/commit-projection.js";
+export {
   GRAPH_EDIT_ERROR_KINDS,
   GraphEditError,
   approveGraphEdge,

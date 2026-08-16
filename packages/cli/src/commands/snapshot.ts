@@ -1,6 +1,10 @@
 import { execFileSync } from "node:child_process";
 
-import { SnapshotAnchorError, anchorSnapshot } from "@universal-harness-internal/runtime";
+import {
+  SnapshotAnchorError,
+  anchorSnapshot,
+  locateSnapshotLedgerCommit,
+} from "@universal-harness-internal/runtime";
 
 import { commandFailed, usageError } from "../errors.js";
 import { parseCommandArgs, requireProjectRoot, type CommandResult } from "../io.js";
@@ -61,6 +65,11 @@ export async function runSnapshotCommand(
           status: result.status,
           snapshot_id: snapshotId,
           source_commit: result.correction.corrected_source_commit,
+          ledger_commit: locateSnapshotLedgerCommit(projectRoot, snapshotId),
+          repository_head: execFileSync("git", ["rev-parse", "HEAD"], {
+            cwd: projectRoot,
+            encoding: "utf8",
+          }).trim(),
           code_digest: result.correction.code_digest,
           correction_digest: result.correction.digest,
         },

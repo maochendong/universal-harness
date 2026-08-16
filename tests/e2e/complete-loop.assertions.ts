@@ -411,9 +411,13 @@ export async function assertCompleteLoopArtifacts(
   const snapshotData = data(snapshot);
   expect(snapshotData["status"]).toBe("completed");
   expect((snapshotData["evidence"] as readonly unknown[]).length).toBeGreaterThan(0);
-  const finalCommit = snapshotData["final_commit"] as string;
-  expect(finalCommit).toMatch(/^[0-9a-f]{40}$/u);
-  expect(() => git(projectRoot, "merge-base", "--is-ancestor", finalCommit, "HEAD")).not.toThrow();
+  const sourceCommit = snapshotData["source_commit"] as string;
+  const ledgerCommit = snapshotData["ledger_commit"] as string;
+  expect(sourceCommit).toMatch(/^[0-9a-f]{40}$/u);
+  expect(ledgerCommit).toMatch(/^[0-9a-f]{40}$/u);
+  expect(snapshotData["repository_head"]).toBe(git(projectRoot, "rev-parse", "HEAD").trim());
+  expect(snapshotData["final_commit"]).toBeUndefined();
+  expect(() => git(projectRoot, "merge-base", "--is-ancestor", sourceCommit, "HEAD")).not.toThrow();
   // Both graph views materialize from the same authoritative ledger.
   assertGraphViews(projectRoot);
   // Human projections render the captured intent and the execution plan.
@@ -652,6 +656,8 @@ async function runBlockedResumeScenario(
   expect(git(projectRoot, "show", `${sourceCommit}:${REPAIR_TARGETS[spec.stack].path}`)).toContain(
     `repair ${tag}`,
   );
+  expect(resumedData["ledger_commit"]).toBe(resumedData["repository_head"]);
+  expect(resumedData["final_commit"]).toBeUndefined();
   const closed = readJsonFile(join(findingDirectory, "closed.json"));
   expect(closed["status"]).toBe("closed");
 }

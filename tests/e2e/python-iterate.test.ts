@@ -35,7 +35,11 @@ describe("python iterate E2E", { timeout: 90000 }, () => {
       loop.session,
     );
     expect(driven.result.json["status"]).toBe("ok");
-    expect(driven.approved).toEqual(["RequirementBaseline", "ImpactSet"]);
+    expect(driven.approved).toEqual([
+      "RequirementBaseline",
+      "ImpactSet",
+      "ExecutionAuthorizationSpec",
+    ]);
     expect(loop.harness.executorCalls).toHaveLength(2);
 
     const plan = await runJson(["plan"], loop.session);

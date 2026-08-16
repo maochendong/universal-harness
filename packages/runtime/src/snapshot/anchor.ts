@@ -350,6 +350,7 @@ export async function anchorSnapshot(input: AnchorSnapshotInput): Promise<Anchor
 
 /** Resolve the source commit for readers without rewriting the Snapshot. */
 export function resolveSnapshotSourceCommit(projectRoot: string, snapshot: SnapshotRecord): string {
+  if (snapshot.source_commit !== undefined) return snapshot.source_commit;
   const corrections = readCorrections(projectRoot, snapshot.snapshot_id).filter(
     (correction) =>
       correction.snapshot_digest === snapshot.digest &&

@@ -1,6 +1,6 @@
 <!-- harness:projection
 view: snapshot
-generation_digest: 0a8cfb33d10a554f4d1dde48a8743c8465a1ab52259f3addd56705aed824d033
+generation_digest: 3cabdf5987c8c8fa487c9ca2fcf797b792a8aea9661dc97811066696959edd6f
 sources:
 - snapshot_01 r1
 -->
@@ -9,7 +9,7 @@ sources:
 
 - Iteration: iteration_01
 - Status: completed
-- Final commit: 0123456789abcdef0123456789abcdef01234567
+- Source commit: 0123456789abcdef0123456789abcdef01234567
 - Workflow operation: workflow-op_01
 - Execution plan: plan_01
 

@@ -246,6 +246,7 @@ const SNAPSHOT_INPUT: SnapshotViewInput = {
   snapshot_id: "snapshot_01",
   iteration_id: "iteration_01",
   status: "completed",
+  source_commit: "0123456789abcdef0123456789abcdef01234567",
   final_commit: "0123456789abcdef0123456789abcdef01234567",
   workflow_operation_id: "workflow-op_01",
   execution_plan_id: "plan_01",

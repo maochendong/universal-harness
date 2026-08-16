@@ -39,7 +39,11 @@ describe("python adopt E2E", { timeout: 90000 }, () => {
   it("detects the python stack, pins the pack and completes the closed loop", async () => {
     const repo = makeFixtureRepo(spec);
     const loop = await runAdoptLoop(spec, repo, sequentialIds());
-    expect(loop.approved).toEqual(["RequirementBaseline", "ImpactSet"]);
+    expect(loop.approved).toEqual([
+      "RequirementBaseline",
+      "ImpactSet",
+      "ExecutionAuthorizationSpec",
+    ]);
 
     await assertCompleteLoopArtifacts(repo, loop.session, loop.harness, {
       intentFragment: spec.adoptIntent,
