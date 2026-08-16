@@ -283,6 +283,25 @@ export async function resumeWorkflowOperation(
       sequence: 1,
       timestamp,
       contextBundleId: started.context_bundle_id,
+      ...(() => {
+        const execution = started.extensions?.["harness.execution"];
+        if (typeof execution !== "object" || execution === null) return {};
+        const bindings = execution as Record<string, unknown>;
+        return {
+          ...(typeof bindings["context_bundle_digest"] === "string"
+            ? { contextBundleDigest: bindings["context_bundle_digest"] }
+            : {}),
+          ...(typeof bindings["grant_record_digest"] === "string"
+            ? { grantRecordDigest: bindings["grant_record_digest"] }
+            : {}),
+          ...(typeof bindings["authorization_digest"] === "string"
+            ? { authorizationDigest: bindings["authorization_digest"] }
+            : {}),
+          ...(typeof bindings["adapter_profile_digest"] === "string"
+            ? { adapterProfileDigest: bindings["adapter_profile_digest"] }
+            : {}),
+        };
+      })(),
     });
     artifacts.push({
       path: runRecordArtifactPath(successorRunId, 1, "run_started"),

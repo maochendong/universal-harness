@@ -1,4 +1,5 @@
 import { PROTOCOL_VERSION, contentDigest } from "@universal-harness-internal/core";
+import type { BudgetObservation } from "@universal-harness-internal/plugin-sdk";
 
 import type { RunOutcome } from "../loop/outcome.js";
 import type { AdapterControlProfile } from "../policy/action.js";
@@ -89,6 +90,7 @@ export interface SnapshotInput {
   readonly created_at: string;
   readonly execution_plan_id?: string;
   readonly adapter_control_profile?: AdapterControlProfile;
+  readonly adapter_profile_digest?: string;
   readonly tasks: readonly SnapshotTaskResult[];
   readonly runs?: readonly SnapshotRunResult[];
   readonly findings?: readonly SnapshotFindingState[];
@@ -97,6 +99,7 @@ export interface SnapshotInput {
   /** Digests of the approval decisions relied on. */
   readonly approvals?: readonly string[];
   readonly budget?: BudgetUse;
+  readonly budget_observations?: readonly BudgetObservation[];
   /** Redacted trajectory/coverage summaries; never raw provider payloads. */
   readonly trajectory_summary?: string;
   readonly coverage_summary?: string;
@@ -124,8 +127,10 @@ export interface SnapshotRecord {
   readonly created_at: string;
   readonly execution_plan_id?: string;
   readonly adapter_control_profile?: AdapterControlProfile;
+  readonly adapter_profile_digest?: string;
   readonly run_outcomes: readonly { readonly id: string; readonly outcome: string }[];
   readonly budget?: BudgetUse;
+  readonly budget_observations?: readonly BudgetObservation[];
   readonly trajectory_summary?: string;
   readonly coverage_summary?: string;
   readonly approvals: readonly string[];
@@ -216,6 +221,20 @@ function assertCommonShape(input: SnapshotInput): void {
   if (input.workflow_operation_id.trim().length === 0) {
     throw new SnapshotError("invalid_snapshot", "a Snapshot must record its workflow operation id");
   }
+  if (input.adapter_control_profile !== undefined) {
+    const expected = contentDigest(input.adapter_control_profile);
+    if (input.adapter_profile_digest !== expected) {
+      throw new SnapshotError(
+        "invalid_snapshot",
+        `adapter profile digest must match the embedded control profile: expected ${expected}`,
+      );
+    }
+  } else if (input.adapter_profile_digest !== undefined) {
+    throw new SnapshotError(
+      "invalid_snapshot",
+      "adapter profile digest cannot exist without an embedded control profile",
+    );
+  }
 }
 
 function buildRecord(input: SnapshotInput, status: SnapshotStatus): SnapshotRecord {
@@ -234,11 +253,17 @@ function buildRecord(input: SnapshotInput, status: SnapshotStatus): SnapshotReco
     ...(input.adapter_control_profile === undefined
       ? {}
       : { adapter_control_profile: input.adapter_control_profile }),
+    ...(input.adapter_profile_digest === undefined
+      ? {}
+      : { adapter_profile_digest: input.adapter_profile_digest }),
     run_outcomes: [
       ...input.tasks.map((task) => ({ id: task.task_id, outcome: task.outcome })),
       ...(input.runs ?? []).map((run) => ({ id: run.run_id, outcome: run.outcome })),
     ].sort((left, right) => (left.id < right.id ? -1 : left.id > right.id ? 1 : 0)),
     ...(input.budget === undefined ? {} : { budget: input.budget }),
+    ...(input.budget_observations === undefined
+      ? {}
+      : { budget_observations: input.budget_observations }),
     ...(input.trajectory_summary === undefined
       ? {}
       : { trajectory_summary: input.trajectory_summary }),

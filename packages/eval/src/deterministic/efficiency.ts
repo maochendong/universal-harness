@@ -12,6 +12,29 @@ export function scoreEfficiency(context: ScorerContext): DimensionScore {
   const ratios: number[] = [];
   const parts: string[] = [];
 
+  if (run.budget_observations !== undefined) {
+    const unavailable: string[] = [];
+    for (const observation of run.budget_observations) {
+      if (observation.availability === "unavailable" || observation.used === null) {
+        unavailable.push(observation.dimension);
+        continue;
+      }
+      if (observation.limit > 0) ratios.push(observation.used / observation.limit);
+      const suffix = observation.dimension === "duration_ms" ? "ms" : "";
+      parts.push(
+        `${observation.dimension} ${String(observation.used)}/${String(observation.limit)}${suffix}`,
+      );
+    }
+    if (unavailable.length > 0) parts.push(`unavailable fields: ${unavailable.join(", ")}`);
+    const worst = ratios.length === 0 ? 0 : Math.max(...ratios);
+    const percent = Math.round(worst * 1000) / 10;
+    return dimensionScore(context, "efficiency", {
+      available: ratios.length > 0,
+      score: ratios.length > 0 ? clampScore(1 - worst) : null,
+      reason: `worst available budget utilization ${String(percent)}% (${parts.join("; ")})`,
+    });
+  }
+
   if (run.usage.total_tokens !== null && budget.max_tokens > 0) {
     ratios.push(run.usage.total_tokens / budget.max_tokens);
     parts.push(`tokens ${String(run.usage.total_tokens)}/${String(budget.max_tokens)}`);

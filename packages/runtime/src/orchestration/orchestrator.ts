@@ -37,6 +37,7 @@ import type {
   DiffSummary,
   VcsAdapter,
 } from "@universal-harness-internal/plugin-sdk";
+import { observeAgentBudget } from "@universal-harness-internal/plugin-sdk";
 
 import { ApprovalService, type ApprovalIdKind } from "../approval/service.js";
 import { auditGraph, type AuditFinding, type AuditReport } from "../audit/auditor.js";
@@ -254,6 +255,7 @@ export interface EvaluationPortInput {
     readonly max_tokens: number;
     readonly max_duration_ms: number;
   };
+  readonly adapterProfileDigest?: string;
   readonly now: string;
 }
 
@@ -600,6 +602,12 @@ export function createDefaultEvaluationPort(): EvaluationPort {
     const extension = {
       case_id: `case_${input.taskId.slice("task_".length)}`,
       visibility: input.visibility,
+      ...(input.adapterProfileDigest === undefined
+        ? {}
+        : { adapter_profile_digest: input.adapterProfileDigest }),
+      ...(input.run.budget_observations === undefined
+        ? {}
+        : { budget_observations: input.run.budget_observations }),
       checks: ["completion_claim", "containment", "outcome"],
       passed,
     };
@@ -2496,6 +2504,9 @@ async function phaseExecute(ctx: PipelineContext): Promise<PhaseStep> {
         contextBundleDigest: envelope.context_bundle_digest,
         grantRecordDigest: grantRecord.digest,
         authorizationDigest: authority.authorization.digest,
+        ...(authority.authorization.adapter_profile_digest === undefined
+          ? {}
+          : { adapterProfileDigest: authority.authorization.adapter_profile_digest }),
       });
       activeRunId = started.run_id;
       await commitRunNode(ctx, activeRunId);
@@ -2532,6 +2543,14 @@ async function phaseExecute(ctx: PipelineContext): Promise<PhaseStep> {
     } finally {
       clearInterval(heartbeat);
     }
+    result = {
+      ...result,
+      budget_observations: observeAgentBudget({
+        budget: envelope.loop_policy,
+        usage: result.usage,
+        ...(binding.adapter_profile === undefined ? {} : { profile: binding.adapter_profile }),
+      }),
+    };
     let actualChanges: ReturnType<typeof deriveActualRunChanges> | undefined;
     if (deps.vcs !== undefined && beforeDiff !== undefined) {
       const observed = await deps.vcs.diffSummary(
@@ -2616,6 +2635,7 @@ async function phaseExecute(ctx: PipelineContext): Promise<PhaseStep> {
           ]),
     ]);
     lastRun = { runId: activeRunId, result };
+    ctx.run = lastRun;
 
     if (!(result.outcome === "handoff" && result.completion_claimed)) {
       await evaluateTaskRun(ctx, task.id, { runId: activeRunId, result });
@@ -3621,6 +3641,12 @@ async function commitEvaluationGraph(
     ...(typeof extension["coverage"] === "object" && extension["coverage"] !== null
       ? { coverage: extension["coverage"] }
       : {}),
+    ...(typeof extension["adapter_profile_digest"] === "string"
+      ? { adapter_profile_digest: extension["adapter_profile_digest"] }
+      : {}),
+    ...(Array.isArray(extension["budget_observations"])
+      ? { budget_observations: extension["budget_observations"] }
+      : {}),
   };
   appendNode(
     evidenceId,
@@ -3718,6 +3744,15 @@ async function evaluateTaskRun(
         max_tokens: ctx.envelope?.loop_policy.max_tokens ?? 120000,
         max_duration_ms: ctx.envelope?.loop_policy.max_duration_ms ?? 2700000,
       },
+      ...(executionBindingFor(deps).adapter_profile === undefined
+        ? {}
+        : {
+            adapterProfileDigest: contentDigest(
+              executionBindingFor(deps).adapter_profile as NonNullable<
+                ExecutionBinding["adapter_profile"]
+              >,
+            ),
+          }),
       now: nowOf(deps),
     });
     await commitArtifacts(deps, ctx.workflowOperationId, currentAttemptId(ctx), [
@@ -3870,12 +3905,22 @@ function snapshotBaseInput(
   Parameters<typeof buildSnapshot>[0],
   "snapshot_id" | "created_at" | "block_reason" | "resume_phase" | "final_commit"
 > {
+  const profile = executionBindingFor(ctx.deps).adapter_profile;
   return {
     iteration_id: ctx.iterationId,
     workflow_operation_id: ctx.workflowOperationId,
     tasks,
     approvals: ctx.workingState.approval_digests,
     budget: ctx.workingState.budget,
+    ...(profile === undefined
+      ? {}
+      : {
+          adapter_control_profile: profile,
+          adapter_profile_digest: contentDigest(profile),
+        }),
+    ...(ctx.run?.result.budget_observations === undefined
+      ? {}
+      : { budget_observations: ctx.run.result.budget_observations }),
   };
 }
 

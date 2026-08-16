@@ -4,6 +4,7 @@ import {
   readCommittedOperations,
   readManagedManifest,
   resolveHarnessPath,
+  sha256Hex,
   type EdgeRecord,
   type NodeRecord,
 } from "@universal-harness-internal/core";
@@ -16,6 +17,8 @@ import {
 } from "@universal-harness-internal/graph";
 
 import type { ControlLevel } from "../policy/action.js";
+import type { AdapterControlProfile } from "../policy/action.js";
+import type { BudgetObservation } from "@universal-harness-internal/plugin-sdk";
 import {
   readApprovalDecisions,
   readApprovalRequests,
@@ -49,6 +52,8 @@ export interface ProjectStatus {
   readonly iteration?: { readonly id: string; readonly state: string };
   readonly task_progress?: TaskProgress;
   readonly control_level: ControlLevel | "none";
+  readonly adapter_control_profile?: AdapterControlProfile;
+  readonly adapter_profile_digest?: string;
   readonly evaluation_coverage: { readonly evaluated: number; readonly total: number };
   readonly blockers: readonly string[];
   /** Non-blocking findings the iteration should surface but not be held by. */
@@ -57,6 +62,7 @@ export interface ProjectStatus {
   readonly stale_evidence: readonly string[];
   readonly pending_approvals: readonly string[];
   readonly budget?: BudgetUse;
+  readonly budget_observations?: readonly BudgetObservation[];
   readonly next_action: string;
 }
 
@@ -70,6 +76,12 @@ export interface StatusDerivationInput {
    * as graph edges, so callers must supply it explicitly.
    */
   readonly resolvedApprovalIds?: readonly string[];
+  /** Latest committed Snapshot projection; absent for legacy or active projects. */
+  readonly latestSnapshot?: {
+    readonly adapter_control_profile?: AdapterControlProfile;
+    readonly adapter_profile_digest?: string;
+    readonly budget_observations?: readonly BudgetObservation[];
+  };
   readonly workingState?: {
     readonly blockers: readonly string[];
     readonly budget: BudgetUse;
@@ -87,6 +99,10 @@ export interface DerivedStatus {
   readonly stale_evidence: readonly string[];
   readonly pending_approvals: readonly string[];
   readonly budget?: BudgetUse;
+  readonly budget_observations?: readonly BudgetObservation[];
+  readonly control_level: ControlLevel | "none";
+  readonly adapter_control_profile?: AdapterControlProfile;
+  readonly adapter_profile_digest?: string;
   readonly next_action: string;
 }
 
@@ -419,8 +435,46 @@ export function deriveProjectStatus(input: StatusDerivationInput): DerivedStatus
     stale_evidence: staleEvidence,
     pending_approvals: pendingApprovals,
     ...(input.workingState === undefined ? {} : { budget: input.workingState.budget }),
+    ...(input.latestSnapshot?.budget_observations === undefined
+      ? {}
+      : { budget_observations: input.latestSnapshot.budget_observations }),
+    control_level: input.latestSnapshot?.adapter_control_profile?.control ?? "none",
+    ...(input.latestSnapshot?.adapter_control_profile === undefined
+      ? {}
+      : { adapter_control_profile: input.latestSnapshot.adapter_control_profile }),
+    ...(input.latestSnapshot?.adapter_profile_digest === undefined
+      ? {}
+      : { adapter_profile_digest: input.latestSnapshot.adapter_profile_digest }),
     next_action: nextAction,
   };
+}
+
+interface StatusSnapshotProjection {
+  readonly created_at?: string;
+  readonly adapter_control_profile?: AdapterControlProfile;
+  readonly adapter_profile_digest?: string;
+  readonly budget_observations?: readonly BudgetObservation[];
+}
+
+function latestSnapshotProjection(
+  harnessRoot: string,
+  committedArtifactSequences: ReadonlyMap<string, number>,
+): StatusSnapshotProjection | undefined {
+  const directory = resolveHarnessPath(harnessRoot, "artifacts/snapshots");
+  if (!existsSync(directory)) return undefined;
+  const snapshots: Array<{ readonly record: StatusSnapshotProjection; readonly sequence: number }> = [];
+  for (const name of readdirSync(directory).filter((entry) => entry.endsWith(".json")).sort()) {
+    try {
+      const raw = readFileSync(resolveHarnessPath(directory, name), "utf8");
+      const sequence = committedArtifactSequences.get(sha256Hex(raw));
+      if (sequence === undefined) continue;
+      snapshots.push({ record: JSON.parse(raw) as StatusSnapshotProjection, sequence });
+    } catch {
+      // Ledger verification reports corrupt bytes. Status projection simply
+      // refuses to infer control truth from an unreadable compatibility file.
+    }
+  }
+  return snapshots.sort((left, right) => left.sequence - right.sequence).at(-1)?.record;
 }
 
 /**
@@ -491,10 +545,18 @@ export function collectProjectStatus(projectRoot: string): ProjectStatus {
           !supersededApprovalIds.has(request.request_id),
       )
       .map((request) => request.request_id);
+    const committedArtifactSequences = new Map<string, number>();
+    for (const operation of operations) {
+      for (const digest of operation.manifest.artifact_digests) {
+        committedArtifactSequences.set(digest, operation.manifest.sequence);
+      }
+    }
+    const latestSnapshot = latestSnapshotProjection(harnessRoot, committedArtifactSequences);
     const derived = deriveProjectStatus({
       nodes,
       edges,
       resolvedApprovalIds,
+      ...(latestSnapshot === undefined ? {} : { latestSnapshot }),
       ...(checkpoint === undefined
         ? {}
         : {
@@ -523,9 +585,9 @@ export function collectProjectStatus(projectRoot: string): ProjectStatus {
         : {
             next_action: `resolve approval request ${[...artifactPendingApprovals].sort(byId)[0]}`,
           }),
-      control_level: "none",
     };
   } finally {
     database.close();
   }
 }
+import { existsSync, readdirSync, readFileSync } from "node:fs";

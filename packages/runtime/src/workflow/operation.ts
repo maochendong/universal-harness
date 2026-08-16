@@ -282,6 +282,7 @@ export function buildRunStartedRecord(spec: {
   readonly contextBundleDigest?: string;
   readonly grantRecordDigest?: string;
   readonly authorizationDigest?: string;
+  readonly adapterProfileDigest?: string;
 }): RunRecord {
   return buildRunRecord({
     record_kind: "run_started",
@@ -302,6 +303,9 @@ export function buildRunStartedRecord(spec: {
               context_bundle_digest: spec.contextBundleDigest,
               grant_record_digest: spec.grantRecordDigest,
               authorization_digest: spec.authorizationDigest,
+              ...(spec.adapterProfileDigest === undefined
+                ? {}
+                : { adapter_profile_digest: spec.adapterProfileDigest }),
             },
           },
         }),
@@ -879,6 +883,7 @@ export class WorkflowEngine {
       readonly contextBundleDigest?: string;
       readonly grantRecordDigest?: string;
       readonly authorizationDigest?: string;
+      readonly adapterProfileDigest?: string;
     },
   ): Promise<RunRecord> {
     const current = this.requireOperation(workflowOperationId);
@@ -906,6 +911,9 @@ export class WorkflowEngine {
       ...(input.authorizationDigest === undefined
         ? {}
         : { authorizationDigest: input.authorizationDigest }),
+      ...(input.adapterProfileDigest === undefined
+        ? {}
+        : { adapterProfileDigest: input.adapterProfileDigest }),
     });
     await commitWorkflowTransaction(this.deps, {
       ledgerOperationId,

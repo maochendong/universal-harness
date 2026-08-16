@@ -64,5 +64,7 @@ describe("harness status rendering", () => {
     expect(data["warnings"]).toEqual([]);
     expect(data["finding_groups"]).toEqual([]);
     expect(data["finding_group_count"]).toBeUndefined();
+    expect(data["control_level"]).toBe("none");
+    expect(data["budget_observations"]).toBeUndefined();
   });
 });

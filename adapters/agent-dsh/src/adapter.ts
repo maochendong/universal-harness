@@ -5,6 +5,7 @@ import { contentDigest } from "@universal-harness-internal/core";
 import {
   assessUnattendedEligibility,
   buildScrubbedEnvironment,
+  observeAgentBudget,
   type AgentAdapter,
   type AgentEvidenceLocator,
   type AgentRunResult,
@@ -80,6 +81,21 @@ function withDuration(result: AgentRunResult, durationMs: number): AgentRunResul
   return { ...result, usage: { ...result.usage, duration_ms: durationMs } };
 }
 
+function withBudgetObservations(
+  envelope: AgentTaskEnvelope,
+  profile: AgentAdapter["manifest"],
+  result: AgentRunResult,
+): AgentRunResult {
+  return {
+    ...result,
+    budget_observations: observeAgentBudget({
+      budget: envelope.loop_policy,
+      usage: result.usage,
+      profile,
+    }),
+  };
+}
+
 /** Create the supervised dsh headless adapter described by the public AgentAdapter port. */
 export function createDshAgentAdapter(options: DshAgentAdapterOptions): AgentAdapter {
   const executable = options.executable ?? "npx";
@@ -120,10 +136,14 @@ export function createDshAgentAdapter(options: DshAgentAdapterOptions): AgentAda
     async run(envelope: AgentTaskEnvelope, runOptions): Promise<AgentRunResult> {
       if (runOptions.mode === "unattended") {
         const assessment = assessUnattendedEligibility(manifest);
-        return emptyFailure(
-          "correct_block",
-          "policy_denial",
-          `unattended dsh run refused: ${assessment.reasons.join("; ")}`,
+        return withBudgetObservations(
+          envelope,
+          manifest,
+          emptyFailure(
+            "correct_block",
+            "policy_denial",
+            `unattended dsh run refused: ${assessment.reasons.join("; ")}`,
+          ),
         );
       }
 
@@ -138,14 +158,18 @@ export function createDshAgentAdapter(options: DshAgentAdapterOptions): AgentAda
             Math.min(timeoutMs, 30000),
           );
           if (probe.exit_code !== 0 || probe.stdout.trim() !== options.expected_version) {
-            return withDuration(
-              emptyFailure(
-                "failed",
-                "adapter_failure",
-                `dsh contract probe failed: expected ${options.expected_version}, got ` +
-                  `${probe.stdout.trim() || probe.stderr.trim() || String(probe.exit_code)}`,
+            return withBudgetObservations(
+              envelope,
+              manifest,
+              withDuration(
+                emptyFailure(
+                  "failed",
+                  "adapter_failure",
+                  `dsh contract probe failed: expected ${options.expected_version}, got ` +
+                    `${probe.stdout.trim() || probe.stderr.trim() || String(probe.exit_code)}`,
+                ),
+                probe.duration_ms,
               ),
-              probe.duration_ms,
             );
           }
           probePassed = true;
@@ -197,37 +221,37 @@ export function createDshAgentAdapter(options: DshAgentAdapterOptions): AgentAda
         };
 
         if (processResult.timed_out) {
-          return {
+          return withBudgetObservations(envelope, manifest, {
             ...emptyFailure(
               "partial",
               "timeout",
               `dsh exceeded the Harness-enforced duration ceiling of ${String(timeoutMs)} ms`,
             ),
             ...base,
-          };
+          });
         }
         if (processResult.output_truncated) {
-          return {
+          return withBudgetObservations(envelope, manifest, {
             ...emptyFailure(
               "failed",
               "adapter_failure",
               `dsh exceeded the output cap of ${String(maxOutputBytes)} bytes`,
             ),
             ...base,
-          };
+          });
         }
         if (processResult.exit_code !== 0) {
-          return {
+          return withBudgetObservations(envelope, manifest, {
             ...emptyFailure(
               "failed",
               "adapter_failure",
               `dsh exited with code ${String(processResult.exit_code)}: ${processResult.stderr.trim().slice(0, 500)}`,
             ),
             ...base,
-          };
+          });
         }
         if (outsideScope.length > 0) {
-          return {
+          return withBudgetObservations(envelope, manifest, {
             ...emptyFailure(
               "failed",
               "adapter_failure",
@@ -235,16 +259,16 @@ export function createDshAgentAdapter(options: DshAgentAdapterOptions): AgentAda
             ),
             ...base,
             undeclared_writes: outsideScope,
-          };
+          });
         }
         const summary = processResult.stdout.trim();
         if (summary.length === 0) {
-          return {
+          return withBudgetObservations(envelope, manifest, {
             ...emptyFailure("failed", "adapter_failure", "dsh returned empty stdout"),
             ...base,
-          };
+          });
         }
-        return {
+        return withBudgetObservations(envelope, manifest, {
           outcome: "handoff",
           termination_reason: "completion",
           completion_claimed: true,
@@ -260,13 +284,17 @@ export function createDshAgentAdapter(options: DshAgentAdapterOptions): AgentAda
           tool_activity: { total_calls: 0, governed_calls: 0, by_tool: {} },
           ...base,
           undeclared_writes: [],
-        };
+        });
       } catch (error) {
         if (error instanceof ProcessSpawnError) {
-          return emptyFailure(
-            "failed",
-            "adapter_failure",
-            `dsh process could not start: ${error.message}`,
+          return withBudgetObservations(
+            envelope,
+            manifest,
+            emptyFailure(
+              "failed",
+              "adapter_failure",
+              `dsh process could not start: ${error.message}`,
+            ),
           );
         }
         throw error;

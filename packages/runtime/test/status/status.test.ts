@@ -85,6 +85,54 @@ describe("deriveProjectStatus", () => {
     expect(status.budget?.used_steps).toBe(2);
   });
 
+  it("projects a completed delegated profile and unavailable budgets from snapshot truth", () => {
+    const profile = {
+      control: "delegated",
+      trajectory_visibility: "external-only",
+      usage_metering: false,
+      side_effect_interception: false,
+    } as const;
+    const status = deriveProjectStatus({
+      nodes: [makeNode({ id: "iteration_01", type: "Iteration", iterationState: "completed" })],
+      edges: [],
+      latestSnapshot: {
+        adapter_control_profile: profile,
+        adapter_profile_digest: "a".repeat(64),
+        budget_observations: [
+          {
+            dimension: "steps",
+            availability: "unavailable",
+            used: null,
+            limit: 30,
+            enforcement: "none",
+          },
+          {
+            dimension: "tokens",
+            availability: "unavailable",
+            used: null,
+            limit: 120000,
+            enforcement: "none",
+          },
+          {
+            dimension: "duration_ms",
+            availability: "measured",
+            used: 390000,
+            limit: 2700000,
+            enforcement: "harness",
+          },
+        ],
+      },
+    });
+
+    expect(status.control_level).toBe("delegated");
+    expect(status.adapter_profile_digest).toBe("a".repeat(64));
+    expect(status.budget_observations?.[0]).toMatchObject({
+      dimension: "steps",
+      availability: "unavailable",
+      used: null,
+    });
+  });
+
   it("prefers a completed iteration's follow-up over an open one", () => {
     const status = deriveProjectStatus({
       nodes: [

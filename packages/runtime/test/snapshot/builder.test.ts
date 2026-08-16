@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { contentDigest } from "@universal-harness-internal/core";
 
 import {
   SnapshotError,
@@ -9,6 +10,12 @@ import {
 
 const FINAL_COMMIT = "0123456789abcdef0123456789abcdef01234567";
 const CREATED_AT = "2026-08-12T00:00:00.000Z";
+const PROFILE = {
+  control: "delegated",
+  trajectory_visibility: "external-only",
+  usage_metering: false,
+  side_effect_interception: false,
+} as const;
 
 function baseInput(overrides?: Partial<SnapshotInput>): SnapshotInput {
   return {
@@ -18,6 +25,8 @@ function baseInput(overrides?: Partial<SnapshotInput>): SnapshotInput {
     workflow_operation_id: "workflow-op_01",
     created_at: CREATED_AT,
     execution_plan_id: "plan_01",
+    adapter_control_profile: PROFILE,
+    adapter_profile_digest: contentDigest(PROFILE),
     tasks: [
       { task_id: "task_01", required: true, outcome: "success" },
       { task_id: "task_02", required: false, outcome: "partial" },
@@ -43,6 +52,29 @@ function baseInput(overrides?: Partial<SnapshotInput>): SnapshotInput {
     ],
     approvals: ["decision-digest-01"],
     budget: { used_steps: 3, used_tokens: 1200, ceiling_steps: 10, ceiling_tokens: 5000 },
+    budget_observations: [
+      {
+        dimension: "steps",
+        availability: "unavailable",
+        used: null,
+        limit: 10,
+        enforcement: "none",
+      },
+      {
+        dimension: "tokens",
+        availability: "unavailable",
+        used: null,
+        limit: 5000,
+        enforcement: "none",
+      },
+      {
+        dimension: "duration_ms",
+        availability: "measured",
+        used: 15000,
+        limit: 60000,
+        enforcement: "harness",
+      },
+    ],
     unresolved_items: ["non-blocking note"],
     improvement_candidates: [{ candidate_id: "improvement_01", status: "proposed" }],
     ...overrides,
@@ -57,6 +89,8 @@ describe("buildSnapshot", () => {
     expect(snapshot.run_outcomes.map((run) => run.id)).toEqual(["task_01", "task_02"]);
     expect(snapshot.closed_findings).toEqual(["finding_01"]);
     expect(snapshot.evidence).toEqual(["evidence_01"]);
+    expect(snapshot.adapter_profile_digest).toBe(contentDigest(PROFILE));
+    expect(snapshot.budget_observations?.map((entry) => entry.used)).toEqual([null, null, 15000]);
     expect(snapshot.improvement_candidates).toEqual([{ id: "improvement_01", status: "proposed" }]);
     expect(snapshot.digest).toMatch(/^[0-9a-f]{64}$/u);
   });

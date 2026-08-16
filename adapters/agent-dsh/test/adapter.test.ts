@@ -75,6 +75,16 @@ describe("dsh agent adapter", () => {
       summary: "Implemented the greeting module and tests.",
       change_summary: { files_changed: 1, paths: ["src/greeting.ts"] },
       usage: { duration_ms: 25, metering: "unmetered", total_tokens: null },
+      budget_observations: [
+        { dimension: "steps", availability: "unavailable", used: null, enforcement: "none" },
+        { dimension: "tokens", availability: "unavailable", used: null, enforcement: "none" },
+        {
+          dimension: "duration_ms",
+          availability: "measured",
+          used: 25,
+          enforcement: "harness",
+        },
+      ],
       undeclared_writes: [],
     });
     expect(result.evidence.map((entry) => entry.kind)).toEqual(["transcript", "diff"]);

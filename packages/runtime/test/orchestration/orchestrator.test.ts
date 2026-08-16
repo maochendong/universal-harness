@@ -201,6 +201,16 @@ const FIVE_DIMENSION_NAMES = [
   "efficiency",
 ] as const;
 
+const TEST_AGENT_PROFILE = {
+  provider: "test-agent",
+  control: "delegated",
+  trajectory_visibility: "external-only",
+  usage_metering: false,
+  side_effect_interception: false,
+  resume_semantics: "none",
+} as const;
+const TEST_AGENT_PROFILE_DIGEST = contentDigest(TEST_AGENT_PROFILE);
+
 const completeEvaluation: EvaluationPort = (input) => {
   const dimensions = FIVE_DIMENSION_NAMES.map((dimension) => ({
     dimension,
@@ -232,6 +242,12 @@ const completeEvaluation: EvaluationPort = (input) => {
     dimensions,
     mandatory_failures: [],
     passed: true,
+    ...(input.adapterProfileDigest === undefined
+      ? {}
+      : { adapter_profile_digest: input.adapterProfileDigest }),
+    ...(input.run.budget_observations === undefined
+      ? {}
+      : { budget_observations: input.run.budget_observations }),
   };
   const record = {
     protocol_version: "1.0.0",
@@ -402,7 +418,13 @@ describe("phase orchestrator", { timeout: 30000 }, () => {
     const projectRoot = await bootstrapProject("orch-demo", newId);
     const fake = recordingExecutor();
     const deps = makeDeps(projectRoot, newId, {
-      execute: fake.executor,
+      execution: {
+        kind: "agent",
+        name: "test-agent",
+        deterministic: false,
+        adapter_profile: TEST_AGENT_PROFILE,
+        execute: fake.executor,
+      },
       evaluate: completeEvaluation,
     });
 
@@ -455,6 +477,10 @@ describe("phase orchestrator", { timeout: 30000 }, () => {
     const grantDirectory = join(projectRoot, ".harness", "artifacts", "capability-grants");
     expect(readdirSync(authorizationDirectory)).toHaveLength(1);
     expect(readdirSync(grantDirectory)).toHaveLength(1);
+    const authorization = JSON.parse(
+      readFileSync(join(authorizationDirectory, readdirSync(authorizationDirectory)[0] as string), "utf8"),
+    ) as Record<string, unknown>;
+    expect(authorization["adapter_profile_digest"]).toBe(TEST_AGENT_PROFILE_DIGEST);
     const streams = readRunStreams(deps, outcome.workflowOperationId);
     const started = streams[0]?.records[0];
     expect(started?.record_kind).toBe("run_started");
@@ -462,11 +488,24 @@ describe("phase orchestrator", { timeout: 30000 }, () => {
       context_bundle_digest: fake.calls[0]?.context_bundle_digest,
       grant_record_digest: expect.stringMatching(/^[a-f0-9]{64}$/u),
       authorization_digest: expect.stringMatching(/^[a-f0-9]{64}$/u),
+      adapter_profile_digest: TEST_AGENT_PROFILE_DIGEST,
     });
     const snapshot = readLatestSnapshot(projectRoot);
     expect(snapshot?.snapshot_id).toBe(outcome.snapshotId);
     expect(snapshot?.status).toBe("completed");
     expect(snapshot?.evidence.length).toBeGreaterThan(0);
+    expect(snapshot?.adapter_profile_digest).toBe(TEST_AGENT_PROFILE_DIGEST);
+    expect(snapshot?.budget_observations).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ dimension: "steps", availability: "unavailable", used: null }),
+        expect.objectContaining({ dimension: "tokens", availability: "unavailable", used: null }),
+        expect.objectContaining({
+          dimension: "duration_ms",
+          availability: "measured",
+          enforcement: "harness",
+        }),
+      ]),
+    );
 
     // Lifecycle events are strictly ordered and bracket the committed phases.
     const events = lifecycleEventsFor(projectRoot, outcome.workflowOperationId);
@@ -494,6 +533,13 @@ describe("phase orchestrator", { timeout: 30000 }, () => {
     // derived from explicit edges instead of an out-of-band artifact.
     const status = collectProjectStatus(projectRoot);
     expect(status.evaluation_coverage).toEqual({ evaluated: 1, total: 1 });
+    expect(status.control_level).toBe("delegated");
+    expect(status.adapter_profile_digest).toBe(TEST_AGENT_PROFILE_DIGEST);
+    expect(status.budget_observations?.map((entry) => entry.availability)).toEqual([
+      "unavailable",
+      "unavailable",
+      "measured",
+    ]);
     const { database } = materializeLedger({ projectRoot, databasePath: ":memory:" });
     try {
       const nodes = pageNodes(database, { type: "EvaluationCase", limit: 10 }).items;
@@ -504,6 +550,10 @@ describe("phase orchestrator", { timeout: 30000 }, () => {
           expect.objectContaining({ dimension, passed: true }),
         ),
         mandatory_failures: [],
+        adapter_profile_digest: TEST_AGENT_PROFILE_DIGEST,
+        budget_observations: expect.arrayContaining([
+          expect.objectContaining({ dimension: "tokens", availability: "unavailable" }),
+        ]),
         coverage: expect.objectContaining({ ratio: 0.428571 }),
       });
       const edges = pageEdges(database, { limit: 100 }).items;

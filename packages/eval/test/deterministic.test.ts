@@ -190,9 +190,32 @@ describe("scoreEfficiency", () => {
         duration_ms: 15_000,
         metering: "unmetered",
       },
+      budget_observations: [
+        {
+          dimension: "steps",
+          availability: "unavailable",
+          used: null,
+          limit: 10,
+          enforcement: "none",
+        },
+        {
+          dimension: "tokens",
+          availability: "unavailable",
+          used: null,
+          limit: 4000,
+          enforcement: "none",
+        },
+        {
+          dimension: "duration_ms",
+          availability: "measured",
+          used: 15_000,
+          limit: 60_000,
+          enforcement: "harness",
+        },
+      ],
     });
     const score = scoreEfficiency(contextFor({}, fullInput(run)));
-    expect(score.reason).toContain("unmetered");
-    expect(score.score).toBe(0.7);
+    expect(score.reason).toContain("unavailable fields: steps, tokens");
+    expect(score.score).toBe(0.75);
   });
 });

@@ -34,6 +34,8 @@ export interface RunEvaluationInput {
   };
   /** Step-level trajectory; only a `full`-visibility adapter can supply it. */
   readonly trajectory?: readonly TrajectoryStep[];
+  /** Digest bound by ExecutionAuthorization and RunStarted. */
+  readonly adapter_profile_digest?: string;
 }
 
 export interface DimensionScore {

@@ -4,7 +4,10 @@ import {
   validateSchema,
   type FeedbackRecord,
 } from "@universal-harness-internal/core";
-import type { AgentRunOutcome } from "@universal-harness-internal/plugin-sdk";
+import type {
+  AgentRunOutcome,
+  AgentRunResult,
+} from "@universal-harness-internal/plugin-sdk";
 
 import {
   EVALUATION_DIMENSIONS,
@@ -67,6 +70,8 @@ export interface EvaluationEvidenceExtension {
   readonly dimensions: readonly DimensionScore[];
   readonly mandatory_failures: readonly EvaluationDimension[];
   readonly passed: boolean;
+  readonly adapter_profile_digest?: string;
+  readonly budget_observations?: AgentRunResult["budget_observations"];
 }
 
 export interface EvaluationSpec {
@@ -221,6 +226,12 @@ export function evaluateRun(spec: EvaluationSpec): RunEvaluationReport {
     dimensions,
     mandatory_failures: mandatoryFailures,
     passed: mandatoryFailures.length === 0,
+    ...(spec.input.adapter_profile_digest === undefined
+      ? {}
+      : { adapter_profile_digest: spec.input.adapter_profile_digest }),
+    ...(spec.input.run.budget_observations === undefined
+      ? {}
+      : { budget_observations: spec.input.run.budget_observations }),
   };
   const findings = mandatoryFailures.map((dimension) => {
     const deciding = dimensions.find((score) => score.dimension === dimension);

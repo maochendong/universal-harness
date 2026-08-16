@@ -1,4 +1,5 @@
 import type { RUN_OUTCOMES, TERMINATION_REASONS } from "@universal-harness-internal/core";
+import type { BudgetObservation } from "./measurement.js";
 
 /**
  * Agent adapter port contract (design 13.2). An AgentAdapter declares its
@@ -140,6 +141,8 @@ export interface AgentRunResult {
   readonly change_summary: AgentChangeSummary;
   readonly tool_activity: AgentToolActivitySummary;
   readonly usage: AgentUsage;
+  /** Availability-aware Harness projection; absent only on legacy adapter results. */
+  readonly budget_observations?: readonly BudgetObservation[];
   readonly evidence: readonly AgentEvidenceLocator[];
   /** Paths the run changed outside the envelope's proposed write paths. */
   readonly undeclared_writes: readonly string[];

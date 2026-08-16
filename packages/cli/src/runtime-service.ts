@@ -132,7 +132,14 @@ export function createEvalPackagePort(now: () => string): EvaluationPort {
     });
     const report = evaluateRun({
       case: evaluationCase,
-      input: { run: input.run, visibility: input.visibility, budget: input.budget },
+      input: {
+        run: input.run,
+        visibility: input.visibility,
+        budget: input.budget,
+        ...(input.adapterProfileDigest === undefined
+          ? {}
+          : { adapter_profile_digest: input.adapterProfileDigest }),
+      },
       iterationId: input.iterationId,
       clock: now,
     });
