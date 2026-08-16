@@ -27,6 +27,7 @@ import { runPlanCommand } from "./commands/plan.js";
 import { runResumeCommand } from "./commands/resume.js";
 import { runRunCommand } from "./commands/run.js";
 import { runSnapshotCommand } from "./commands/snapshot.js";
+import { runServeCommand } from "./commands/serve.js";
 import { runStatusCommand } from "./commands/status.js";
 import { runVerifyCommand } from "./commands/verify.js";
 import { runWatchCommand } from "./commands/watch.js";
@@ -111,6 +112,11 @@ export interface RunRequest {
   readonly dryRun: boolean;
 }
 
+export interface ServeRequest {
+  readonly projectRoot: string;
+  readonly port: number;
+}
+
 export interface RuntimeService {
   newProject(request: NewProjectRequest): Promise<CommandResult>;
   adoptProject(request: AdoptProjectRequest): Promise<CommandResult>;
@@ -127,6 +133,7 @@ export interface RuntimeService {
   evaluate(request: ProjectRequest): Promise<CommandResult>;
   snapshot(request: ProjectRequest): Promise<CommandResult>;
   audit(request: ProjectRequest): Promise<CommandResult>;
+  serve(request: ServeRequest): Promise<CommandResult>;
 }
 
 function stageUnavailable(
@@ -176,6 +183,8 @@ export function createStubRuntimeService(): RuntimeService {
     snapshot: (request) =>
       Promise.resolve(stageUnavailable("snapshot", "orchestration.snapshot", { ...request })),
     audit: (request) => Promise.resolve(stageUnavailable("audit", "audit.run", { ...request })),
+    serve: (request) =>
+      Promise.resolve(stageUnavailable("serve", "dashboard.serve", { ...request })),
   };
 }
 
@@ -249,6 +258,7 @@ Automation and recovery:
 
 Inspection:
   status                          Show project state, cache health and next action
+  serve [--port <port>]           Start the loopback Dashboard
   watch                           Stream lifecycle events live (add --follow to tail)
   doctor                          Diagnose environment, Git, layout and cache issues
   graph sync                      Rebuild the SQLite graph cache from the ledger
@@ -352,6 +362,12 @@ improvements.
 Show the managed project identity, committed ledger operation count, graph
 cache health and the last ledger operation for the current project.
 `,
+  serve: `Usage: harness serve [--port <0..65535>] [--json]
+
+Start the local Dashboard on 127.0.0.1. Port 0 (the default) selects a
+random available port. The one-use URL exchanges its token for an HttpOnly
+session cookie and is printed exactly once.
+`,
   watch: `Usage: harness watch [--json] [--lines <n>] [--follow]
 
 Stream the project lifecycle event stream (.harness/events) as human-
@@ -446,6 +462,8 @@ async function dispatch(args: readonly string[], context: CommandContext): Promi
       return runAuditCommand(rest, context);
     case "status":
       return runStatusCommand(rest, context);
+    case "serve":
+      return runServeCommand(rest, context);
     case "watch":
       return runWatchCommand(rest, context);
     case "doctor":

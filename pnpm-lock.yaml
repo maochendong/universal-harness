@@ -113,6 +113,9 @@ importers:
       '@universal-harness-internal/core':
         specifier: workspace:*
         version: link:../core
+      '@universal-harness-internal/dashboard':
+        specifier: workspace:*
+        version: link:../dashboard
       '@universal-harness-internal/eval':
         specifier: workspace:*
         version: link:../eval
@@ -177,6 +180,22 @@ importers:
       ajv-formats:
         specifier: 'catalog:'
         version: 3.0.1(ajv@8.20.0)
+
+  packages/dashboard:
+    dependencies:
+      '@universal-harness-internal/core':
+        specifier: workspace:*
+        version: link:../core
+      '@universal-harness-internal/graph':
+        specifier: workspace:*
+        version: link:../graph
+      '@universal-harness-internal/runtime':
+        specifier: workspace:*
+        version: link:../runtime
+    devDependencies:
+      '@universal-harness-internal/adapter-vcs-git':
+        specifier: workspace:*
+        version: link:../../adapters/vcs-git
 
   packages/eval:
     dependencies:

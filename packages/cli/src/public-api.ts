@@ -34,5 +34,6 @@ export {
   type ProjectRequest,
   type ResumeRequest,
   type RunRequest,
+  type ServeRequest,
   type RuntimeService,
 } from "./router.js";

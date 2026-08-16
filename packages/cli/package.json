@@ -46,6 +46,7 @@
     "@universal-harness-internal/adapter-projection-markdown": "workspace:*",
     "@universal-harness-internal/adapter-vcs-git": "workspace:*",
     "@universal-harness-internal/core": "workspace:*",
+    "@universal-harness-internal/dashboard": "workspace:*",
     "@universal-harness-internal/eval": "workspace:*",
     "@universal-harness-internal/graph": "workspace:*",
     "@universal-harness-internal/runtime": "workspace:*"

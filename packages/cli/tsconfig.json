@@ -4,6 +4,7 @@
   "include": ["src/**/*.ts"],
   "references": [
     { "path": "../core" },
+    { "path": "../dashboard" },
     { "path": "../graph" },
     { "path": "../runtime" },
     { "path": "../eval" },

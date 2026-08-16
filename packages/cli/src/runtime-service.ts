@@ -3,6 +3,7 @@ import { createInterface } from "node:readline";
 import { resolve } from "node:path";
 
 import { createGitVcsAdapter } from "@universal-harness-internal/adapter-vcs-git";
+import { startDashboardServer } from "@universal-harness-internal/dashboard";
 import { renderTasksProjection } from "@universal-harness-internal/adapter-projection-markdown";
 import { defineEvaluationCase, evaluateRun } from "@universal-harness-internal/eval";
 import {
@@ -53,6 +54,7 @@ import type {
   ProjectRequest,
   ResumeRequest,
   RunRequest,
+  ServeRequest,
   RuntimeService,
 } from "./router.js";
 import { createConfiguredAgentExecutor } from "./project-agent.js";
@@ -551,6 +553,24 @@ export function createOrchestratedRuntimeService(
           },
         };
       }),
+
+    serve: async (request: ServeRequest): Promise<CommandResult> => {
+      const server = await startDashboardServer({
+        projectRoot: request.projectRoot,
+        port: request.port,
+      });
+      return {
+        command: "serve",
+        status: "ok",
+        message: `Dashboard listening at ${server.bootstrapUrl}`,
+        data: {
+          host: server.host,
+          port: server.port,
+          origin: server.origin,
+          bootstrap_url: server.bootstrapUrl,
+        },
+      };
+    },
 
     approve: async (request: ApproveRequest): Promise<CommandResult> =>
       guard("approve", async () => {

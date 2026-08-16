@@ -99,6 +99,7 @@ describe("harness CLI help and version", () => {
       "snapshot",
       "audit",
       "status",
+      "serve",
       "doctor",
       "graph",
     ]) {

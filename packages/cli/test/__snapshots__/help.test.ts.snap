@@ -25,6 +25,7 @@ Automation and recovery:
 
 Inspection:
   status                          Show project state, cache health and next action
+  serve [--port <port>]           Start the loopback Dashboard
   watch                           Stream lifecycle events live (add --follow to tail)
   doctor                          Diagnose environment, Git, layout and cache issues
   graph sync                      Rebuild the SQLite graph cache from the ledger
@@ -67,6 +68,7 @@ Automation and recovery:
 
 Inspection:
   status                          Show project state, cache health and next action
+  serve [--port <port>]           Start the loopback Dashboard
   watch                           Stream lifecycle events live (add --follow to tail)
   doctor                          Diagnose environment, Git, layout and cache issues
   graph sync                      Rebuild the SQLite graph cache from the ledger
@@ -109,6 +111,7 @@ Automation and recovery:
 
 Inspection:
   status                          Show project state, cache health and next action
+  serve [--port <port>]           Start the loopback Dashboard
   watch                           Stream lifecycle events live (add --follow to tail)
   doctor                          Diagnose environment, Git, layout and cache issues
   graph sync                      Rebuild the SQLite graph cache from the ledger
@@ -258,6 +261,15 @@ cache health and the last ledger operation for the current project.
 `;
 
 exports[`harness CLI help and version > prints per-command help 16`] = `
+"Usage: harness serve [--port <0..65535>] [--json]
+
+Start the local Dashboard on 127.0.0.1. Port 0 (the default) selects a
+random available port. The one-use URL exchanges its token for an HttpOnly
+session cookie and is printed exactly once.
+"
+`;
+
+exports[`harness CLI help and version > prints per-command help 17`] = `
 "Usage: harness doctor [--json]
 
 Diagnose the runtime environment, Git availability, managed project layout
@@ -265,7 +277,7 @@ and graph cache health. Exits non-zero when any check fails.
 "
 `;
 
-exports[`harness CLI help and version > prints per-command help 17`] = `
+exports[`harness CLI help and version > prints per-command help 18`] = `
 "Usage: harness graph <sync|query|check|reconcile|backfill-evaluations|project-tasks|propose-edge|approve-edge> [options]
 
   sync          Rebuild the disposable SQLite cache from the authoritative ledger
