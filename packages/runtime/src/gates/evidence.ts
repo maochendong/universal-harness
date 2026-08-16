@@ -131,6 +131,7 @@ export function buildGateEvidence(spec: GateEvidenceSpec): GateEvidenceRecord {
     provisional: spec.provisional === true,
     created_at: spec.createdAt,
     extensions: {
+      ...(spec.outcome.extensions ?? {}),
       [GATE_EVIDENCE_EXTENSION_KEY]: extensionOf(spec.outcome, spec.bindings),
     },
   };

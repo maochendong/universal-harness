@@ -78,6 +78,12 @@ importers:
         specifier: workspace:*
         version: link:../../packages/plugin-sdk
 
+  adapters/gate-llm-judge:
+    dependencies:
+      '@universal-harness-internal/core':
+        specifier: workspace:*
+        version: link:../../packages/core
+
   adapters/projection-markdown:
     dependencies:
       '@universal-harness-internal/core':
@@ -107,6 +113,9 @@ importers:
       '@universal-harness-internal/adapter-agent-manual':
         specifier: workspace:*
         version: link:../../adapters/agent-manual
+      '@universal-harness-internal/adapter-gate-llm-judge':
+        specifier: workspace:*
+        version: link:../../adapters/gate-llm-judge
       '@universal-harness-internal/adapter-projection-markdown':
         specifier: workspace:*
         version: link:../../adapters/projection-markdown

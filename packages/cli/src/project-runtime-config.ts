@@ -2,8 +2,13 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { normalizeRepoRelativePath } from "@universal-harness-internal/runtime";
+import {
+  JudgeTransportError,
+  validateJudgeEndpoint,
+} from "@universal-harness-internal/adapter-gate-llm-judge";
 
-export const PROJECT_RUNTIME_CONFIG_VERSION = 1 as const;
+export const PROJECT_RUNTIME_CONFIG_VERSION = 2 as const;
+export const SUPPORTED_PROJECT_RUNTIME_CONFIG_VERSIONS = [1, 2] as const;
 export const PROJECT_RUNTIME_CONFIG_PATH = ".harness/runtime.json" as const;
 
 const DEFAULT_DSH_ENV = [
@@ -49,10 +54,27 @@ export interface ProjectGateCommandConfig {
   readonly timeout_ms: number;
 }
 
+export interface ProjectJudgeGateConfig {
+  readonly gate_id: string;
+  readonly name: string;
+  readonly subject_id: string;
+  readonly requested_mandatory: boolean;
+  readonly endpoint: string;
+  readonly model: string;
+  readonly prompt_version: string;
+  readonly api_key_env: string;
+  readonly env_allowlist: readonly string[];
+  readonly timeout_ms: number;
+  readonly seed?: number;
+  /** Test-only escape hatch; production endpoints remain HTTPS-only. */
+  readonly allow_loopback_http?: boolean;
+}
+
 export interface ProjectRuntimeConfig {
-  readonly runtime_config_version: 1;
+  readonly runtime_config_version: 1 | 2;
   readonly agent?: ProjectAgentConfig;
   readonly gates: readonly ProjectGateCommandConfig[];
+  readonly judge_gates?: readonly ProjectJudgeGateConfig[];
 }
 
 function fail(message: string): never {
@@ -64,6 +86,16 @@ function object(value: unknown, context: string): Record<string, unknown> {
     fail(`${context} must be an object`);
   }
   return value as Record<string, unknown>;
+}
+
+function exactKeys(
+  record: Record<string, unknown>,
+  allowed: readonly string[],
+  context: string,
+): void {
+  for (const key of Object.keys(record)) {
+    if (!allowed.includes(key)) fail(`${context} contains unknown field ${key}`);
+  }
 }
 
 function string(value: unknown, context: string): string {
@@ -145,6 +177,77 @@ function parseGate(value: unknown, index: number): ProjectGateCommandConfig {
   };
 }
 
+function parseJudgeGate(value: unknown, index: number): ProjectJudgeGateConfig {
+  const context = `judge_gates[${String(index)}]`;
+  const record = object(value, context);
+  exactKeys(
+    record,
+    [
+      "gate_id",
+      "name",
+      "subject_id",
+      "requested_mandatory",
+      "endpoint",
+      "model",
+      "prompt_version",
+      "api_key_env",
+      "env_allowlist",
+      "timeout_ms",
+      "seed",
+      "allow_loopback_http",
+    ],
+    context,
+  );
+  const gateId = string(record.gate_id, `${context}.gate_id`);
+  const subjectId = string(record.subject_id, `${context}.subject_id`);
+  if (!gateId.startsWith("gate_") || !IDENTIFIER.test(gateId)) {
+    fail(`${context}.gate_id must be a gate_ identifier`);
+  }
+  if (!IDENTIFIER.test(subjectId)) fail(`${context}.subject_id must be an identifier`);
+  if (typeof record.requested_mandatory !== "boolean") {
+    fail(`${context}.requested_mandatory must be a boolean`);
+  }
+  const timeout = record.timeout_ms;
+  if (!Number.isInteger(timeout) || (timeout as number) < 1 || (timeout as number) > 300000) {
+    fail(`${context}.timeout_ms must be an integer between 1 and 300000`);
+  }
+  const apiKeyEnv = string(record.api_key_env, `${context}.api_key_env`);
+  if (!ENV_NAME.test(apiKeyEnv)) fail(`${context}.api_key_env is invalid`);
+  const allowLoopbackHttp = record.allow_loopback_http;
+  if (allowLoopbackHttp !== undefined && typeof allowLoopbackHttp !== "boolean") {
+    fail(`${context}.allow_loopback_http must be a boolean`);
+  }
+  const endpoint = string(record.endpoint, `${context}.endpoint`);
+  try {
+    validateJudgeEndpoint(endpoint, {
+      ...(allowLoopbackHttp === undefined ? {} : { allowLoopbackHttp }),
+    });
+  } catch (error) {
+    const detail = error instanceof JudgeTransportError ? error.message : String(error);
+    fail(`${context}.endpoint is invalid: ${detail}`);
+  }
+  const allowlist = envList(record.env_allowlist, [], `${context}.env_allowlist`);
+  if (!allowlist.includes(apiKeyEnv)) fail(`${context}.env_allowlist must contain api_key_env`);
+  const seed = record.seed;
+  if (seed !== undefined && (!Number.isSafeInteger(seed) || (seed as number) < 0)) {
+    fail(`${context}.seed must be a non-negative safe integer`);
+  }
+  return {
+    gate_id: gateId,
+    name: string(record.name, `${context}.name`),
+    subject_id: subjectId,
+    requested_mandatory: record.requested_mandatory,
+    endpoint,
+    model: string(record.model, `${context}.model`),
+    prompt_version: string(record.prompt_version, `${context}.prompt_version`),
+    api_key_env: apiKeyEnv,
+    env_allowlist: allowlist,
+    timeout_ms: timeout as number,
+    ...(seed === undefined ? {} : { seed: seed as number }),
+    ...(allowLoopbackHttp === undefined ? {} : { allow_loopback_http: allowLoopbackHttp }),
+  };
+}
+
 /** Read and strictly normalize the optional committed project runtime configuration. */
 export function readProjectRuntimeConfig(projectRoot: string): ProjectRuntimeConfig {
   const absolute = join(projectRoot, PROJECT_RUNTIME_CONFIG_PATH);
@@ -156,9 +259,10 @@ export function readProjectRuntimeConfig(projectRoot: string): ProjectRuntimeCon
     fail(`${PROJECT_RUNTIME_CONFIG_PATH} is not valid JSON`);
   }
   const record = object(raw, "project runtime config");
-  if (record.runtime_config_version !== PROJECT_RUNTIME_CONFIG_VERSION) {
+  if (!SUPPORTED_PROJECT_RUNTIME_CONFIG_VERSIONS.includes(record.runtime_config_version as 1 | 2)) {
     fail(`unsupported runtime_config_version: ${JSON.stringify(record.runtime_config_version)}`);
   }
+  const version = record.runtime_config_version as 1 | 2;
   const gatesRaw = record.gates ?? [];
   if (!Array.isArray(gatesRaw)) fail("gates must be an array");
   const gates = gatesRaw.map(parseGate);
@@ -167,9 +271,20 @@ export function readProjectRuntimeConfig(projectRoot: string): ProjectRuntimeCon
     if (ids.has(gate.gate_id)) fail(`gate ${gate.gate_id} is declared twice`);
     ids.add(gate.gate_id);
   }
+  if (version === 1 && record.judge_gates !== undefined) {
+    fail("judge_gates requires runtime_config_version 2");
+  }
+  const judgesRaw = version === 2 ? (record.judge_gates ?? []) : [];
+  if (!Array.isArray(judgesRaw)) fail("judge_gates must be an array");
+  const judgeGates = judgesRaw.map(parseJudgeGate);
+  for (const gate of judgeGates) {
+    if (ids.has(gate.gate_id)) fail(`gate ${gate.gate_id} is declared twice`);
+    ids.add(gate.gate_id);
+  }
   return {
-    runtime_config_version: PROJECT_RUNTIME_CONFIG_VERSION,
+    runtime_config_version: version,
     ...(record.agent === undefined ? {} : { agent: parseAgent(record.agent) }),
     gates,
+    ...(version === 1 ? {} : { judge_gates: judgeGates }),
   };
 }

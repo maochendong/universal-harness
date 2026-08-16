@@ -5,6 +5,8 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { runGate } from "@universal-harness-internal/runtime";
+import { createNewProject, runGateSuite } from "@universal-harness-internal/runtime";
+import { createGitVcsAdapter } from "@universal-harness-internal/adapter-vcs-git";
 
 import {
   createConfiguredAgentExecutor,
@@ -31,6 +33,87 @@ afterEach(() => {
 });
 
 describe("project runtime configuration", () => {
+  it("reads v2 Judge gates while v1 remains a zero-Judge configuration", () => {
+    const v1 = projectWithConfig({ runtime_config_version: 1, gates: [] });
+    expect(readProjectRuntimeConfig(v1)).toEqual({ runtime_config_version: 1, gates: [] });
+
+    const v2 = projectWithConfig({
+      runtime_config_version: 2,
+      gates: [],
+      judge_gates: [
+        {
+          gate_id: "gate_semantic_review",
+          name: "Semantic code review",
+          subject_id: "test_semantic_review",
+          requested_mandatory: true,
+          endpoint: "https://judge.example.com/v1/chat/completions",
+          model: "reviewer-v1",
+          prompt_version: "2026-08-16",
+          api_key_env: "JUDGE_API_KEY",
+          env_allowlist: ["JUDGE_API_KEY"],
+          timeout_ms: 30000,
+          seed: 42,
+        },
+      ],
+    });
+    expect(readProjectRuntimeConfig(v2)).toEqual({
+      runtime_config_version: 2,
+      gates: [],
+      judge_gates: [
+        {
+          gate_id: "gate_semantic_review",
+          name: "Semantic code review",
+          subject_id: "test_semantic_review",
+          requested_mandatory: true,
+          endpoint: "https://judge.example.com/v1/chat/completions",
+          model: "reviewer-v1",
+          prompt_version: "2026-08-16",
+          api_key_env: "JUDGE_API_KEY",
+          env_allowlist: ["JUDGE_API_KEY"],
+          timeout_ms: 30000,
+          seed: 42,
+        },
+      ],
+    });
+  });
+
+  it.each([
+    [
+      "insecure endpoint",
+      {
+        endpoint: "http://judge.example.com/v1/chat/completions",
+        env_allowlist: ["JUDGE_API_KEY"],
+      },
+    ],
+    [
+      "private endpoint",
+      { endpoint: "https://169.254.169.254/latest", env_allowlist: ["JUDGE_API_KEY"] },
+    ],
+    [
+      "secret outside allowlist",
+      { endpoint: "https://judge.example.com/v1/chat/completions", env_allowlist: [] },
+    ],
+  ])("rejects Judge %s", (_name, override) => {
+    const root = projectWithConfig({
+      runtime_config_version: 2,
+      gates: [],
+      judge_gates: [
+        {
+          gate_id: "gate_semantic_review",
+          name: "Semantic code review",
+          subject_id: "test_semantic_review",
+          requested_mandatory: false,
+          model: "reviewer-v1",
+          prompt_version: "2026-08-16",
+          api_key_env: "JUDGE_API_KEY",
+          timeout_ms: 30000,
+          ...override,
+        },
+      ],
+    });
+    expect(() => readProjectRuntimeConfig(root)).toThrow(/judge_gates/u);
+  });
+
   it("loads deterministic Agent scope and project gate commands", () => {
     const root = projectWithConfig({
       runtime_config_version: 1,
@@ -95,6 +178,7 @@ describe("project runtime configuration", () => {
       ],
     });
     const calls: Array<{ executable: string; args: readonly string[] }> = [];
+    let judgeCalls = 0;
     const suite = createConfiguredGateSuite(root, readProjectRuntimeConfig(root), {
       spawnProcess: (executable, options) => {
         calls.push({ executable, args: options.args });
@@ -107,6 +191,12 @@ describe("project runtime configuration", () => {
           output_truncated: false,
           duration_ms: 50,
         });
+      },
+      judgeTransport: {
+        fetch: () => {
+          judgeCalls += 1;
+          return Promise.reject(new Error("v1 must never call Judge"));
+        },
       },
     });
     const gate = suite.gates.find((candidate) => candidate.gate_id === "gate_atlas_maven_test");
@@ -121,9 +211,103 @@ describe("project runtime configuration", () => {
     expect(outcome.artifact_hashes[".harness/raw-traces/gates/gate_atlas_maven_test.log"]).toMatch(
       /^[a-f0-9]{64}$/u,
     );
+    expect(judgeCalls).toBe(0);
     expect(
       existsSync(join(root, ".harness", "raw-traces", "gates", "gate_atlas_maven_test.log")),
     ).toBe(true);
+  });
+
+  it("runs a configured Judge as advisory without approved Policy and records secret-free Evidence", async () => {
+    const parent = realpathSync(mkdtempSync(join(tmpdir(), "harness-project-judge-")));
+    roots.push(parent);
+    const created = await createNewProject(
+      { parentDirectory: parent, name: "judge-project", intent: "review this change" },
+      { vcs: createGitVcsAdapter() },
+    );
+    if (!created.ok) throw new Error(created.error.message);
+    const root = created.value.projectRoot;
+    const config = {
+      runtime_config_version: 2 as const,
+      gates: [],
+      judge_gates: [
+        {
+          gate_id: "gate_semantic_review",
+          name: "Semantic review",
+          subject_id: "test_semantic_review",
+          requested_mandatory: true,
+          endpoint: "https://judge.example.com/v1/chat/completions",
+          model: "reviewer-v1",
+          prompt_version: "v1",
+          api_key_env: "JUDGE_KEY",
+          env_allowlist: ["JUDGE_KEY"],
+          timeout_ms: 1000,
+        },
+      ],
+    };
+    const suite = createConfiguredGateSuite(root, config, {
+      ambientEnvironment: { JUDGE_KEY: "secret-value" },
+      reviewBundle: () => ({
+        baseline_commit: "a".repeat(40),
+        source_commit: "b".repeat(40),
+        code_digest: "c".repeat(64),
+        changed_paths: ["src/app.ts"],
+        diff: "+export const value = 1;",
+        acceptance_criteria: ["value is reviewed"],
+        related_records: [],
+        deterministic_gates: [],
+        line_counts: { "src/app.ts": 1 },
+      }),
+      judgeTransport: {
+        fetch: () =>
+          Promise.resolve(
+            new Response(
+              JSON.stringify({
+                choices: [
+                  {
+                    message: {
+                      content: JSON.stringify({
+                        verdict: "warn",
+                        confidence: 0.8,
+                        reasons: [{ code: "review", message: "inspect value" }],
+                      }),
+                    },
+                  },
+                ],
+              }),
+              { status: 200 },
+            ),
+          ),
+      },
+    });
+    const judge = suite.gates.find((gate) => gate.gate_id === "gate_semantic_review");
+    if (judge === undefined) throw new Error("Judge gate missing");
+    expect(judge.mandatory).toBe(false);
+
+    const outcome = await runGateSuite(suite.registry, {
+      iterationId: created.value.iterationId,
+      repositoryId: "repository_judge",
+      gates: [judge],
+      bindings: {
+        artifact_digests: ["a".repeat(64)],
+        code_digests: ["b".repeat(64)],
+        evaluation_case_digests: [],
+        policy_digest: "c".repeat(64),
+      },
+      clock: () => "2026-08-16T00:00:00.000Z",
+    });
+    expect(outcome.completed_allowed).toBe(true);
+    expect(outcome.findings).toHaveLength(1);
+    expect(outcome.findings[0]?.extensions?.["harness.finding"]).toMatchObject({
+      blocking: false,
+    });
+    expect(outcome.results[0]?.evidence.extensions?.["harness.llm-judge"]).toMatchObject({
+      model: "reviewer-v1",
+      requested_mandatory: true,
+      effective_mandatory: false,
+      policy_diagnostics: ["blocking_policy_missing"],
+      normalized_response: { verdict: "warn" },
+    });
+    expect(JSON.stringify(outcome)).not.toContain("secret-value");
   });
 
   it("selects dsh as the configured orchestration executor", async () => {

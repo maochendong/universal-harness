@@ -12,6 +12,7 @@
     { "path": "../../adapters/agent-manual" },
     { "path": "../../adapters/agent-command" },
     { "path": "../../adapters/agent-dsh" },
+    { "path": "../../adapters/gate-llm-judge" },
     { "path": "../../adapters/vcs-git" },
     { "path": "../../adapters/projection-markdown" }
   ]

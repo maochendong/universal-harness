@@ -86,6 +86,8 @@ export interface GateOutcome {
   readonly artifact_hashes: Readonly<Record<string, string>>;
   readonly output_digest: string;
   readonly error?: string;
+  /** Producer-specific, schema-keyed evidence metadata already stripped of secrets. */
+  readonly extensions?: Readonly<Record<string, unknown>>;
 }
 
 function invalid(message: string): GateError {
@@ -162,6 +164,7 @@ function outcomeOf(
     readonly log_summary: string;
     readonly artifact_hashes: Readonly<Record<string, string>>;
     readonly error?: string;
+    readonly extensions?: Readonly<Record<string, unknown>>;
   },
 ): GateOutcome {
   const outcome: GateOutcome = {
@@ -182,8 +185,10 @@ function outcomeOf(
       log_summary: fields.log_summary,
       artifact_hashes: fields.artifact_hashes,
       ...(fields.error === undefined ? {} : { error: fields.error }),
+      ...(fields.extensions === undefined ? {} : { extensions: fields.extensions }),
     }),
     ...(fields.error === undefined ? {} : { error: fields.error }),
+    ...(fields.extensions === undefined ? {} : { extensions: fields.extensions }),
   };
   return outcome;
 }
@@ -237,6 +242,7 @@ export async function runGate(
       summary,
       log_summary: typeof output.log_summary === "string" ? output.log_summary : "",
       artifact_hashes: readArtifactHashes(output.artifacts),
+      ...(isPlainObject(output.extensions) ? { extensions: output.extensions } : {}),
     });
   } catch (error) {
     if (error instanceof ToolError) {

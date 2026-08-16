@@ -351,6 +351,7 @@ export {
   type GrantRequest,
   type GrantedTool,
 } from "./policy/capability-grant.js";
+export { resolveLlmJudgeMandatory, type LlmJudgeMandatoryResolution } from "./policy/llm-judge.js";
 export {
   assertWithinRepositoryBoundary,
   isPathWithinScopes,
