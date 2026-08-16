@@ -387,15 +387,33 @@ export {
   type MergedPolicy,
 } from "./policy/evaluator.js";
 export {
+  bindCapabilityGrantAuthorization,
+  createCapabilityGrantSpec,
   grantDenialReason,
   issueGrant,
   narrowGrant,
   type CapabilityGrant,
+  type CapabilityGrantBinding,
+  type CapabilityGrantRecord,
+  type CapabilityGrantSpec,
   type GrantBudget,
   type GrantNarrowing,
   type GrantRequest,
   type GrantedTool,
 } from "./policy/capability-grant.js";
+export {
+  authorizationSpecDigest,
+  buildExecutionAuthorizationRecord,
+  type ExecutionAuthorizationRecord,
+  type ExecutionAuthorizationSpec,
+} from "./policy/execution-authorization.js";
+export {
+  ExecutionPreflightError,
+  prepareExecutionPreflight,
+  type ExecutionPreflightErrorKind,
+  type ExecutionPreflightInput,
+  type PreparedExecutionPreflight,
+} from "./policy/execution-preflight.js";
 export { resolveLlmJudgeMandatory, type LlmJudgeMandatoryResolution } from "./policy/llm-judge.js";
 export {
   assertWithinRepositoryBoundary,

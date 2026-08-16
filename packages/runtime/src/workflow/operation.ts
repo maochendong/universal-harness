@@ -279,6 +279,9 @@ export function buildRunStartedRecord(spec: {
   readonly sequence: number;
   readonly timestamp: string;
   readonly contextBundleId: string;
+  readonly contextBundleDigest?: string;
+  readonly grantRecordDigest?: string;
+  readonly authorizationDigest?: string;
 }): RunRecord {
   return buildRunRecord({
     record_kind: "run_started",
@@ -289,6 +292,19 @@ export function buildRunStartedRecord(spec: {
     sequence: spec.sequence,
     timestamp: spec.timestamp,
     context_bundle_id: spec.contextBundleId,
+    ...(spec.contextBundleDigest === undefined ||
+    spec.grantRecordDigest === undefined ||
+    spec.authorizationDigest === undefined
+      ? {}
+      : {
+          extensions: {
+            "harness.execution": {
+              context_bundle_digest: spec.contextBundleDigest,
+              grant_record_digest: spec.grantRecordDigest,
+              authorization_digest: spec.authorizationDigest,
+            },
+          },
+        }),
   });
 }
 
@@ -857,7 +873,13 @@ export class WorkflowEngine {
   /** Open a run for a task; only legal while the operation is executing. */
   async startRun(
     workflowOperationId: string,
-    input: { readonly taskId: string; readonly contextBundleId: string },
+    input: {
+      readonly taskId: string;
+      readonly contextBundleId: string;
+      readonly contextBundleDigest?: string;
+      readonly grantRecordDigest?: string;
+      readonly authorizationDigest?: string;
+    },
   ): Promise<RunRecord> {
     const current = this.requireOperation(workflowOperationId);
     if (current.state !== "running" && current.state !== "repairing") {
@@ -875,6 +897,15 @@ export class WorkflowEngine {
       sequence: 1,
       timestamp: this.now(),
       contextBundleId: input.contextBundleId,
+      ...(input.contextBundleDigest === undefined
+        ? {}
+        : { contextBundleDigest: input.contextBundleDigest }),
+      ...(input.grantRecordDigest === undefined
+        ? {}
+        : { grantRecordDigest: input.grantRecordDigest }),
+      ...(input.authorizationDigest === undefined
+        ? {}
+        : { authorizationDigest: input.authorizationDigest }),
     });
     await commitWorkflowTransaction(this.deps, {
       ledgerOperationId,

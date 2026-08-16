@@ -35,6 +35,7 @@ import {
   readApprovalDecisions,
   readApprovalRequests,
   readCurrentOperation,
+  readRunStreams,
   readLatestSnapshot,
   resolveApproval,
   resolveFinding,
@@ -337,7 +338,19 @@ async function approveAndResume(
     decision: "approve",
     actor: "human:reviewer",
   });
-  return resumeIteration(deps, workflowOperationId, undefined);
+  const resumed = await resumeIteration(deps, workflowOperationId, undefined);
+  if (
+    resumed.status === "approval_required" &&
+    resumed.required.object_type === "ExecutionAuthorizationSpec"
+  ) {
+    await resolveApproval(deps, {
+      requestId: resumed.required.request_id,
+      decision: "approve",
+      actor: "human:reviewer",
+    });
+    return resumeIteration(deps, workflowOperationId, undefined);
+  }
+  return resumed;
 }
 
 describe("phase orchestrator", { timeout: 30000 }, () => {
@@ -413,12 +426,43 @@ describe("phase orchestrator", { timeout: 30000 }, () => {
     if (outcome.status !== "approval_required") return;
     expect(outcome.required.object_type).toBe("ImpactSet");
 
+    await resolveApproval(deps, {
+      requestId: outcome.required.request_id,
+      decision: "approve",
+      actor: "human:reviewer",
+    });
+    outcome = await resumeIteration(deps, outcome.required.workflow_operation_id, undefined);
+    expect(outcome.status).toBe("approval_required");
+    if (outcome.status !== "approval_required") return;
+    expect(outcome.required.object_type).toBe("ExecutionAuthorizationSpec");
+    expect(fake.calls).toHaveLength(0);
+    expect(approvalRequestsFor(projectRoot, outcome.required.workflow_operation_id)).toHaveLength(
+      3,
+    );
+
     outcome = await approveAndResume(deps, outcome);
     expect(outcome.status).toBe("completed");
     if (outcome.status !== "completed") return;
 
     // The executor ran exactly once; the snapshot is anchored and committed.
     expect(fake.calls).toHaveLength(1);
+    const authorizationDirectory = join(
+      projectRoot,
+      ".harness",
+      "artifacts",
+      "execution-authorizations",
+    );
+    const grantDirectory = join(projectRoot, ".harness", "artifacts", "capability-grants");
+    expect(readdirSync(authorizationDirectory)).toHaveLength(1);
+    expect(readdirSync(grantDirectory)).toHaveLength(1);
+    const streams = readRunStreams(deps, outcome.workflowOperationId);
+    const started = streams[0]?.records[0];
+    expect(started?.record_kind).toBe("run_started");
+    expect(started?.extensions?.["harness.execution"]).toMatchObject({
+      context_bundle_digest: fake.calls[0]?.context_bundle_digest,
+      grant_record_digest: expect.stringMatching(/^[a-f0-9]{64}$/u),
+      authorization_digest: expect.stringMatching(/^[a-f0-9]{64}$/u),
+    });
     const snapshot = readLatestSnapshot(projectRoot);
     expect(snapshot?.snapshot_id).toBe(outcome.snapshotId);
     expect(snapshot?.status).toBe("completed");
@@ -1079,8 +1123,8 @@ describe("phase orchestrator", { timeout: 30000 }, () => {
     if (outcome.status !== "completed") return;
 
     // The whole plan was covered by exactly the baseline and impact set
-    // approvals -- no per-task approval requests.
-    expect(approvalRequestsFor(projectRoot, outcome.workflowOperationId)).toHaveLength(2);
+    // approvals plus exactly one plan-level execution authorization -- never per-task approvals.
+    expect(approvalRequestsFor(projectRoot, outcome.workflowOperationId)).toHaveLength(3);
 
     // Envelopes went out in dependency order.
     expect(fake.calls.map((envelope) => envelope.task_id)).toEqual([
@@ -1999,7 +2043,7 @@ describe("phase orchestrator", { timeout: 30000 }, () => {
   it("keeps a deferred interactive decision resumable and continues in the same session", async () => {
     const newId = sequentialIds();
     const projectRoot = await bootstrapProject("orch-interactive", newId);
-    const answers: (string | null)[] = [null, "approve", "approve"];
+    const answers: (string | null)[] = [null, "approve", "approve", "approve"];
     const prompter: ApprovalPrompter = {
       prompt: () => Promise.resolve(answers.shift() ?? null),
     };
@@ -2016,7 +2060,7 @@ describe("phase orchestrator", { timeout: 30000 }, () => {
     const workflowOperationId = outcome.required.workflow_operation_id;
 
     // The next session approves the pending baseline request, then the new
-    // impact request, and the pipeline runs to completion in one drive.
+    // impact and plan-execution requests, and the pipeline completes in one drive.
     outcome = await resumeIteration(deps, workflowOperationId, undefined);
     expect(outcome.status).toBe("completed");
     expect(answers).toHaveLength(0);

@@ -1,4 +1,4 @@
-import { contentDigest } from "@universal-harness-internal/core";
+import { PROTOCOL_VERSION, contentDigest, validateSchema } from "@universal-harness-internal/core";
 
 import { PolicyError, type PolicyAction } from "./action.js";
 import { policyNumber, policyStrings, type EffectivePolicy } from "./decision.js";
@@ -60,6 +60,32 @@ export interface GrantNarrowing {
   readonly state_fields?: readonly string[];
   readonly tools?: readonly GrantedTool[];
   readonly budget?: GrantBudget;
+}
+
+export interface CapabilityGrantSpec extends Omit<CapabilityGrant, "digest"> {
+  readonly plan_digest: string;
+  readonly context_bundle_digest: string;
+  readonly adapter_profile_digest?: string;
+  readonly baseline_commit: string;
+  readonly spec_digest: string;
+}
+
+export interface CapabilityGrantBinding {
+  readonly planDigest: string;
+  readonly contextBundleDigest: string;
+  readonly adapterProfileDigest?: string;
+  readonly baselineCommit: string;
+}
+
+export interface CapabilityGrantRecord {
+  readonly protocol_version: string;
+  readonly record_kind: "capability_grant";
+  readonly grant_record_id: string;
+  readonly iteration_id: string;
+  readonly spec: CapabilityGrantSpec;
+  readonly authorization_digest: string;
+  readonly issued_at: string;
+  readonly digest: string;
 }
 
 function sortedUnique(values: readonly string[]): readonly string[] {
@@ -192,6 +218,65 @@ export function issueGrant(request: GrantRequest, effective: EffectivePolicy): C
     effective_policy_digest: effective.digest,
   };
   return { ...grant, digest: grantDigest(grant) };
+}
+
+/** Build the authorization-free portion first so no grant/authorization digest cycle can form. */
+export function createCapabilityGrantSpec(
+  request: GrantRequest,
+  effective: EffectivePolicy,
+  binding: CapabilityGrantBinding,
+): CapabilityGrantSpec {
+  const grant = issueGrant(request, effective);
+  const base = {
+    grant_id: grant.grant_id,
+    task_id: grant.task_id,
+    issued_by: grant.issued_by,
+    capabilities: grant.capabilities,
+    read_paths: grant.read_paths,
+    write_paths: grant.write_paths,
+    state_fields: grant.state_fields,
+    tools: grant.tools,
+    phase: grant.phase,
+    budget: grant.budget,
+    approval_digests: grant.approval_digests,
+    effective_policy_digest: grant.effective_policy_digest,
+    plan_digest: binding.planDigest,
+    context_bundle_digest: binding.contextBundleDigest,
+    ...(binding.adapterProfileDigest === undefined
+      ? {}
+      : { adapter_profile_digest: binding.adapterProfileDigest }),
+    baseline_commit: binding.baselineCommit,
+  };
+  return { ...base, spec_digest: contentDigest(base) };
+}
+
+export function bindCapabilityGrantAuthorization(
+  spec: CapabilityGrantSpec,
+  binding: {
+    readonly grantRecordId: string;
+    readonly iterationId: string;
+    readonly authorizationDigest: string;
+    readonly issuedAt: string;
+  },
+): CapabilityGrantRecord {
+  const base = {
+    protocol_version: PROTOCOL_VERSION,
+    record_kind: "capability_grant" as const,
+    grant_record_id: binding.grantRecordId,
+    iteration_id: binding.iterationId,
+    spec,
+    authorization_digest: binding.authorizationDigest,
+    issued_at: binding.issuedAt,
+  };
+  const record = { ...base, digest: contentDigest(base) };
+  const validation = validateSchema("runtime", record);
+  if (!validation.valid) {
+    throw new PolicyError(
+      "invalid_action",
+      `invalid capability grant record: ${validation.errors.map((issue) => issue.message).join("; ")}`,
+    );
+  }
+  return record;
 }
 
 function assertSetNarrowing(

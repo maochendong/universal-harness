@@ -72,7 +72,11 @@ import {
   type ContextCandidate,
 } from "../context/compiler.js";
 import { selectTaskNeighborhood } from "../context/selector.js";
-import { TaskBundleBindingError, assertTaskBundleBinding } from "../context/task-bundles.js";
+import {
+  TaskBundleBindingError,
+  assertTaskBundleBinding,
+  readContextBundleManifest,
+} from "../context/task-bundles.js";
 import { normalizeGateDefinition, type GateDefinition } from "../gates/provider.js";
 import { evidenceBindingsOf, type GateEvidenceRecord } from "../gates/evidence.js";
 import { findingClosableBy, type CurrentEvidenceState } from "../gates/freshness.js";
@@ -91,7 +95,20 @@ import {
   type ObservationPublisherPort,
   type ObservationStreamIdentity,
 } from "../observability/publisher.js";
-import { issueGrant } from "../policy/capability-grant.js";
+import {
+  bindCapabilityGrantAuthorization,
+  createCapabilityGrantSpec,
+  type CapabilityGrantRecord,
+  type CapabilityGrantSpec,
+} from "../policy/capability-grant.js";
+import {
+  buildExecutionAuthorizationRecord,
+  type ExecutionAuthorizationRecord,
+} from "../policy/execution-authorization.js";
+import {
+  ExecutionPreflightError,
+  prepareExecutionPreflight,
+} from "../policy/execution-preflight.js";
 import { mergePolicyLayers } from "../policy/evaluator.js";
 import { isPathWithinScopes, normalizeRepoRelativePath } from "../policy/path-boundary.js";
 import { explainCodeDigestMismatch, hashCommitCode, hashWorktreeCode } from "../snapshot/anchor.js";
@@ -683,7 +700,8 @@ async function commitVerifiedSourceTree(
         `run result references task ${taskRun.taskId}, which is absent from the accepted plan`,
       );
     }
-    const declaredScope = buildEnvelope(ctx, task).envelope.proposed_write_paths;
+    const declaredScope =
+      ctx.deps.taskEnvelopeScope?.(task).proposed_write_paths.map(normalizeRepoRelativePath) ?? [];
     for (const candidate of taskRun.result.change_summary.paths) {
       const path = normalizeRepoRelativePath(candidate);
       if (
@@ -1875,6 +1893,14 @@ async function phasePlan(ctx: PipelineContext, gateIds: readonly string[]): Prom
   const approvedDigest = readImpactSetContent(impactSet).content_digest;
   const specifications = taskSpecificationsFor(ctx, impactSet, gateIds);
   const executionBinding = executionBindingFor(deps);
+  const forecastPaths = [
+    ...new Set(
+      specifications.flatMap((task) => deps.taskEnvelopeScope?.(task).proposed_write_paths ?? []),
+    ),
+  ]
+    .map(normalizeRepoRelativePath)
+    .sort()
+    .map((pattern) => ({ pattern, scope: "bounded" as const, approved: true }));
   const records = generateExecutionPlan(
     impactSet,
     approvedDigest,
@@ -1892,9 +1918,16 @@ async function phasePlan(ctx: PipelineContext, gateIds: readonly string[]): Prom
         (specification) => specification as unknown as Record<string, unknown>,
       ),
       constraints: { allowedCapabilities: [], knownTools: [], knownGates: gateIds },
-      ...(executionBinding.adapter_profile === undefined
+      ...(executionBinding.adapter_profile === undefined && forecastPaths.length === 0
         ? {}
-        : { governance: { adapterProfile: executionBinding.adapter_profile } }),
+        : {
+            governance: {
+              forecastPaths,
+              ...(executionBinding.adapter_profile === undefined
+                ? {}
+                : { adapterProfile: executionBinding.adapter_profile }),
+            },
+          }),
     },
     { iterationId: ctx.iterationId, actor: "workflow-engine", timestamp: nowOf(deps) },
   );
@@ -2040,9 +2073,187 @@ async function phaseContext(ctx: PipelineContext): Promise<PhaseStep> {
   return { continue: true };
 }
 
+interface PlanExecutionAuthority {
+  readonly authorization: ExecutionAuthorizationRecord;
+  readonly grants: ReadonlyMap<string, CapabilityGrantRecord>;
+}
+
+function authorizationArtifactPath(authorizationId: string): string {
+  return `artifacts/execution-authorizations/${authorizationId}.json`;
+}
+
+function grantRecordArtifactPath(grantRecordId: string): string {
+  return `artifacts/capability-grants/${grantRecordId}.json`;
+}
+
+async function authorizePlanExecution(
+  ctx: PipelineContext,
+  plan: { readonly node: NodeRecord; readonly content: ExecutionPlanContent },
+  tasks: readonly TaskSpecification[],
+  binding: ExecutionBinding,
+): Promise<
+  | { readonly status: "authorized"; readonly authority: PlanExecutionAuthority }
+  | { readonly status: "required"; readonly required: ApprovalRequiredOutcome }
+  | { readonly status: "rejected" }
+> {
+  const profile = binding.adapter_profile;
+  const adapterProfileDigest = profile === undefined ? undefined : contentDigest(profile);
+  const policy = effectivePolicy();
+  const grants = tasks.map((task) => {
+    const bundle = ctx.bundles.get(task.id);
+    if (bundle === undefined) {
+      throw new ExecutionPreflightError(
+        "missing_binding",
+        `task ${task.id} has no committed context bundle`,
+      );
+    }
+    const scope = ctx.deps.taskEnvelopeScope?.(task) ?? {
+      allowed_read_paths: [],
+      proposed_write_paths: [],
+    };
+    const approvalDigests = readContextBundleManifest(bundle).bindings.approval_digests;
+    const spec = createCapabilityGrantSpec(
+      {
+        grant_id: `grant_${contentDigest({ task: task.id, iteration: ctx.iterationId }).slice(0, 16)}`,
+        task_id: task.id,
+        capabilities: task.capabilities,
+        read_paths: scope.allowed_read_paths,
+        write_paths: scope.proposed_write_paths,
+        tools: task.tools.map((name) => ({ name })),
+        phase: "execute",
+        budget: task.budget,
+        approval_digests: approvalDigests,
+      },
+      policy,
+      {
+        planDigest: plan.content.content_digest,
+        contextBundleDigest: bundle.digest,
+        ...(adapterProfileDigest === undefined ? {} : { adapterProfileDigest }),
+        baselineCommit: ctx.workingState.baseline_commit,
+      },
+    );
+    return { task, bundle, scope, spec };
+  });
+  const opaqueDelegated =
+    binding.kind === "agent" &&
+    (profile === undefined ||
+      profile.control === "manual" ||
+      (profile.control === "delegated" &&
+        (!profile.usage_metering ||
+          !profile.side_effect_interception ||
+          profile.trajectory_visibility === "external-only")));
+  const impactSet = ctx.impactSet ?? loadFrozenImpactSet(ctx);
+  if (impactSet === undefined) {
+    throw new ExecutionPreflightError("missing_binding", "execution has no frozen ImpactSet");
+  }
+  const authorizationId = `authorization_${plan.content.content_digest.slice(0, 16)}`;
+  const prepared = prepareExecutionPreflight({
+    authorizationId,
+    iterationId: ctx.iterationId,
+    planDigest: plan.content.content_digest,
+    tasks: grants.map(({ task }) => ({
+      taskId: task.id,
+      taskDigest: contentDigest(task),
+      risk: task.risk,
+    })),
+    impactSetDigest: readImpactSetContent(impactSet).content_digest,
+    impactCoverageDigest: plan.content.impact_coverage.digest,
+    impactCoverageStatus: plan.content.impact_coverage.status,
+    bundles: grants.map(({ bundle }) => bundle),
+    grantSpecs: grants.map(({ spec }) => spec),
+    policyDigest: policy.digest,
+    ...(adapterProfileDigest === undefined ? {} : { adapterProfileDigest }),
+    baselineCommit: ctx.workingState.baseline_commit,
+    requiresWrite: grants.some(({ scope }) => scope.proposed_write_paths.length > 0),
+    opaqueDelegated,
+  });
+
+  const authorizationPath = authorizationArtifactPath(authorizationId);
+  const storedAuthorization = readJsonArtifact<ExecutionAuthorizationRecord>(
+    ctx.deps,
+    authorizationPath,
+  );
+  if (
+    storedAuthorization !== undefined &&
+    storedAuthorization.extensions["harness.authorization"].spec_digest ===
+      prepared.authorizationSpec.spec_digest
+  ) {
+    const storedGrants = new Map<string, CapabilityGrantRecord>();
+    for (const { task, spec } of grants) {
+      const recordId = `grantrecord_${spec.spec_digest.slice(0, 16)}`;
+      const record = readJsonArtifact<CapabilityGrantRecord>(
+        ctx.deps,
+        grantRecordArtifactPath(recordId),
+      );
+      if (
+        record === undefined ||
+        record.spec.spec_digest !== spec.spec_digest ||
+        record.authorization_digest !== storedAuthorization.digest
+      ) {
+        throw new ExecutionPreflightError(
+          "binding_drift",
+          `stored grant record for ${task.id} does not match its authorization`,
+        );
+      }
+      storedGrants.set(task.id, record);
+    }
+    return {
+      status: "authorized",
+      authority: { authorization: storedAuthorization, grants: storedGrants },
+    };
+  }
+
+  let approvalDigest: string;
+  if (binding.kind === "agent") {
+    const approval = await ensureApproval(ctx, {
+      objectId: authorizationId,
+      objectType: "ExecutionAuthorizationSpec",
+      objectDigest: prepared.authorizationSpec.spec_digest,
+      risk: prepared.authorizationSpec.effective_risk,
+      reason: `authorize ${String(tasks.length)} task(s) for ${binding.name}`,
+      resumePhase: "execute",
+    });
+    if (approval.status !== "approved") return approval;
+    approvalDigest = approval.approvalDigest;
+  } else {
+    approvalDigest = contentDigest({
+      authority: "harness-control-plane",
+      authorization_spec_digest: prepared.authorizationSpec.spec_digest,
+    });
+  }
+  const authorization = buildExecutionAuthorizationRecord(
+    prepared.authorizationSpec,
+    approvalDigest,
+    prepared.supervised,
+  );
+  const grantRecords = new Map<string, CapabilityGrantRecord>();
+  for (const { task, spec } of grants) {
+    const record = bindCapabilityGrantAuthorization(spec, {
+      grantRecordId: `grantrecord_${spec.spec_digest.slice(0, 16)}`,
+      iterationId: ctx.iterationId,
+      authorizationDigest: authorization.digest,
+      issuedAt: nowOf(ctx.deps),
+    });
+    grantRecords.set(task.id, record);
+  }
+  await commitArtifacts(ctx.deps, ctx.workflowOperationId, currentAttemptId(ctx), [
+    { path: authorizationPath, content: `${canonicalizeJson(authorization)}\n` },
+    ...[...grantRecords.values()].map((record) => ({
+      path: grantRecordArtifactPath(record.grant_record_id),
+      content: `${canonicalizeJson(record)}\n`,
+    })),
+  ]);
+  return {
+    status: "authorized",
+    authority: { authorization, grants: grantRecords },
+  };
+}
+
 function buildEnvelope(
   ctx: PipelineContext,
   task: TaskSpecification,
+  grantRecord: CapabilityGrantRecord,
+  authorization: ExecutionAuthorizationRecord,
 ): {
   readonly envelope: TaskEnvelope;
   readonly grantDigest: string;
@@ -2070,23 +2281,7 @@ function buildEnvelope(
   }
   const policy = effectivePolicy();
   const loopPolicy = resolveLoopPolicy(policy);
-  const scope = ctx.deps.taskEnvelopeScope?.(task) ?? {
-    allowed_read_paths: [],
-    proposed_write_paths: [],
-  };
-  const grant = issueGrant(
-    {
-      grant_id: `grant_${contentDigest({ task: task.id, iteration: ctx.iterationId }).slice(0, 16)}`,
-      task_id: task.id,
-      capabilities: [],
-      read_paths: scope.allowed_read_paths,
-      write_paths: scope.proposed_write_paths,
-      phase: "execute",
-      budget: { steps: loopPolicy.max_steps, tokens: loopPolicy.max_tokens },
-      approval_digests: ctx.workingState.approval_digests,
-    },
-    policy,
-  );
+  const grant = grantRecord.spec;
   const envelope = buildTaskEnvelope({
     task_id: task.id,
     plan_id: plan.node.id,
@@ -2106,9 +2301,11 @@ function buildEnvelope(
     proposed_write_paths: grant.write_paths,
     state_read_fields: [],
     state_proposal_fields: [],
-    tools: [],
-    risk: "low",
-    required_approval_digests: ctx.workingState.approval_digests,
+    tools: grant.tools,
+    risk: task.risk,
+    required_approval_digests: [
+      ...new Set([...grant.approval_digests, authorization.approval_digest]),
+    ].sort(),
     external_side_effect: "forbidden",
     idempotency_scope: `iteration/${ctx.iterationId}/task/${task.id}`,
     loop_policy: loopPolicy,
@@ -2116,7 +2313,7 @@ function buildEnvelope(
     input_digest: bundle.digest,
     stale_input_behavior: "recompile",
   });
-  return { envelope, grantDigest: grant.digest };
+  return { envelope, grantDigest: grantRecord.digest };
 }
 
 /**
@@ -2208,7 +2405,48 @@ async function phaseExecute(ctx: PipelineContext): Promise<PhaseStep> {
     throw error;
   }
   const executor = binding.execute;
-  const grantDigests: string[] = [];
+  let authority: PlanExecutionAuthority;
+  try {
+    const authorization = await authorizePlanExecution(ctx, plan, tasks, binding);
+    if (authorization.status === "required") {
+      return {
+        continue: false,
+        outcome: { status: "approval_required", required: authorization.required },
+      };
+    }
+    if (authorization.status === "rejected") {
+      return {
+        continue: false,
+        outcome: await rejectOperation(ctx, "execution authorization rejected"),
+      };
+    }
+    authority = authorization.authority;
+  } catch (error) {
+    if (error instanceof ExecutionPreflightError && error.kind === "impact_coverage_incomplete") {
+      await ctx.engine.block(ctx.workflowOperationId, {
+        reason: "missing_input",
+        detail: error.message,
+        proposal: { phase: "impact", set_next_action: resumeCommandFor(ctx.workflowOperationId) },
+      });
+      refreshWorkingState(ctx);
+      return {
+        continue: false,
+        outcome: {
+          status: "blocked",
+          workflowOperationId: ctx.workflowOperationId,
+          iterationId: ctx.iterationId,
+          reason: "missing_input",
+          detail: error.message,
+          resumeCommand: resumeCommandFor(ctx.workflowOperationId),
+        },
+      };
+    }
+    if (error instanceof ExecutionPreflightError) {
+      throw new OrchestrationError("binding_drift", error.message);
+    }
+    throw error;
+  }
+  const grantDigests = [...authority.grants.values()].map((grant) => grant.digest).sort();
   const taskBlockersToClear = new Set<string>();
   const rememberTaskBlockers = (taskId: string): void => {
     const prefix = `task ${taskId} did not complete:`;
@@ -2235,10 +2473,13 @@ async function phaseExecute(ctx: PipelineContext): Promise<PhaseStep> {
       }
     }
 
-    const built = buildEnvelope(ctx, task);
+    const grantRecord = authority.grants.get(task.id);
+    if (grantRecord === undefined) {
+      throw new OrchestrationError("binding_drift", `task ${task.id} has no authorized grant`);
+    }
+    const built = buildEnvelope(ctx, task, grantRecord, authority.authorization);
     const envelope = built.envelope;
     ctx.envelope = envelope;
-    grantDigests.push(built.grantDigest);
     // A run left open by an interrupted process was reconciled by resume into
     // exactly one successor run; attach to it instead of opening a duplicate.
     const runId = loadOpenRunId(ctx, task.id);
@@ -2249,6 +2490,9 @@ async function phaseExecute(ctx: PipelineContext): Promise<PhaseStep> {
       const started = await ctx.engine.startRun(ctx.workflowOperationId, {
         taskId: task.id,
         contextBundleId: envelope.context_bundle_id,
+        contextBundleDigest: envelope.context_bundle_digest,
+        grantRecordDigest: grantRecord.digest,
+        authorizationDigest: authority.authorization.digest,
       });
       activeRunId = started.run_id;
       await commitRunNode(ctx, activeRunId);
