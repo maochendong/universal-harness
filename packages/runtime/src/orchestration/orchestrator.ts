@@ -1826,11 +1826,12 @@ async function phasePlan(ctx: PipelineContext, gateIds: readonly string[]): Prom
   ctx.impactSet = impactSet;
   const approvedDigest = readImpactSetContent(impactSet).content_digest;
   const specifications = taskSpecificationsFor(ctx, impactSet, gateIds);
+  const executionBinding = executionBindingFor(deps);
   const records = generateExecutionPlan(
     impactSet,
     approvedDigest,
     {
-      executionKind: executionBindingFor(deps).kind,
+      executionKind: executionBinding.kind,
       intentShape: ctx.intentShape,
       hasExistingGraph: true,
       deterministicWork: ctx.deterministicWork,
@@ -1843,6 +1844,9 @@ async function phasePlan(ctx: PipelineContext, gateIds: readonly string[]): Prom
         (specification) => specification as unknown as Record<string, unknown>,
       ),
       constraints: { allowedCapabilities: [], knownTools: [], knownGates: gateIds },
+      ...(executionBinding.adapter_profile === undefined
+        ? {}
+        : { governance: { adapterProfile: executionBinding.adapter_profile } }),
     },
     { iterationId: ctx.iterationId, actor: "workflow-engine", timestamp: nowOf(deps) },
   );

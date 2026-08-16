@@ -6,6 +6,18 @@ import {
 } from "@universal-harness-internal/core";
 import { assertApprovedImpactSet, readImpactSetContent } from "@universal-harness-internal/graph";
 
+import type { AdapterControlProfile } from "../policy/action.js";
+import {
+  deriveEffectiveRisk,
+  type GovernanceRisk,
+  type PathScope,
+  type TaskComplexity,
+} from "./effective-risk.js";
+import {
+  assessImpactCoverage,
+  type ImpactCoverageAssessment,
+  type PathForecast,
+} from "./impact-coverage.js";
 import {
   selectExecutionMode,
   type ExecutionKind,
@@ -37,6 +49,7 @@ export interface PlanSharedContext {
 export interface ExecutionPlanContent {
   readonly content_digest: string;
   readonly execution_kind: ExecutionKind;
+  readonly impact_coverage: ImpactCoverageAssessment;
   readonly mode: ExecutionMode;
   readonly mode_reason: string;
   readonly restricted: boolean;
@@ -61,6 +74,11 @@ export interface PlanGenerationInput {
   /** Untrusted planner output; validated before anything is planned. */
   readonly proposal: readonly unknown[];
   readonly constraints: PlannerConstraints;
+  readonly governance?: {
+    /** Only paths independently approved by the control plane may set `approved`. */
+    readonly forecastPaths?: readonly PathForecast[];
+    readonly adapterProfile?: AdapterControlProfile;
+  };
 }
 
 export interface ExecutionPlanRecords {
@@ -73,6 +91,13 @@ function digestContent(content: Omit<ExecutionPlanContent, "content_digest">): s
   // contentDigest canonicalizes key order, so the whole metadata-free base
   // object digests identically regardless of construction order.
   return contentDigest(content);
+}
+
+function approvedPathScope(forecasts: readonly PathForecast[]): PathScope {
+  const approved = forecasts.filter((forecast) => forecast.approved);
+  if (approved.some((forecast) => forecast.scope === "broad")) return "broad";
+  if (approved.some((forecast) => forecast.scope === "bounded")) return "bounded";
+  return "exact";
 }
 
 /** Every approved ImpactSet entry path, canonicalized for binding checks. */
@@ -206,7 +231,45 @@ export function generateExecutionPlan(
   context: PlanContext,
 ): ExecutionPlanRecords {
   assertApprovedImpactSet(impactSet, approvedContentDigest);
-  const tasks = validatePlanProposal(input.proposal, input.constraints);
+  const validatedTasks = validatePlanProposal(input.proposal, input.constraints);
+  const impactContent = readImpactSetContent(impactSet);
+  const forecasts = input.governance?.forecastPaths ?? [];
+  const impactCoverage = assessImpactCoverage({
+    executionKind: input.executionKind,
+    entries: impactContent.entries.map((entry) => ({
+      node_id: entry.node_id,
+      node_type: entry.node_type,
+      risk: entry.risk,
+    })),
+    forecastPaths: forecasts,
+  });
+  const riskRank: Readonly<Record<GovernanceRisk, number>> = {
+    low: 0,
+    medium: 1,
+    high: 2,
+    critical: 3,
+  };
+  const impactRisk = impactContent.entries.reduce<GovernanceRisk>(
+    (current, entry) => (riskRank[entry.risk] > riskRank[current] ? entry.risk : current),
+    "low",
+  );
+  const tasks = validatedTasks.map((task) => {
+    const size = task.acceptance.length + task.expected_outputs.length;
+    const taskComplexity: TaskComplexity = size > 8 ? "large" : size > 3 ? "medium" : "small";
+    return {
+      ...task,
+      risk: deriveEffectiveRisk({
+        declaredTaskRisk: task.risk,
+        impactRisk,
+        coverageRisk: impactCoverage.risk,
+        pathScope: approvedPathScope(forecasts),
+        taskComplexity,
+        ...(input.governance?.adapterProfile === undefined
+          ? {}
+          : { adapterProfile: input.governance.adapterProfile }),
+      }),
+    };
+  });
   assertBoundToApprovedImpactSet(tasks, impactSet);
   const selection = selectExecutionMode({
     executionKind: input.executionKind,
@@ -217,6 +280,7 @@ export function generateExecutionPlan(
   });
   const base = {
     execution_kind: input.executionKind,
+    impact_coverage: impactCoverage,
     mode: selection.mode,
     mode_reason: selection.reason,
     restricted: selection.restricted,

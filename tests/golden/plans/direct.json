@@ -1,12 +1,29 @@
 {
   "scenario": "direct",
   "plan": {
-    "id": "plan_b11ac0653ab5d29e",
+    "id": "plan_420bc521edba1023",
     "status": "proposed",
-    "digest": "c5651d48897ade06b7785983e9fbe374727ec90f40d321596598ba400d02d9e3"
+    "digest": "6319d2d8af3d19f8cb3a7af63ff7fee19c14d54214be0ccac8209c1a013880c9"
   },
   "content": {
     "execution_kind": "workflow",
+    "impact_coverage": {
+      "execution_kind": "workflow",
+      "entries": [
+        { "node_id": "code_01", "node_type": "CodeArtifact", "risk": "high" },
+        { "node_id": "component_01", "node_type": "Component", "risk": "medium" },
+        { "node_id": "decision_01", "node_type": "Decision", "risk": "medium" },
+        { "node_id": "requirement_01", "node_type": "Requirement", "risk": "medium" },
+        { "node_id": "test_01", "node_type": "Test", "risk": "medium" }
+      ],
+      "covered_layers": ["requirement", "test", "architecture", "implementation"],
+      "missing_layers": [],
+      "forecast_paths": [],
+      "diagnostics": [],
+      "status": "complete",
+      "risk": "high",
+      "digest": "fed8eb4d6325d7d9593ae86271ac299345eb13f704ef6788b8c62b2b9e13bebe"
+    },
     "mode": "direct",
     "mode_reason": "structured intent with fully deterministic work runs without an agent loop",
     "restricted": false,
@@ -36,7 +53,7 @@
         "capabilities": ["fs.read", "fs.write", "test.run"],
         "tools": ["tool:fs", "tool:test-runner"],
         "dependencies": [],
-        "risk": "medium",
+        "risk": "high",
         "budget": {
           "steps": 8,
           "tokens": 4000
@@ -50,19 +67,19 @@
         "required_gates": ["gate:test"]
       }
     ],
-    "content_digest": "b11ac0653ab5d29ec900d93810b51cb2ddcf0bcc44af0fd4231b184834798234"
+    "content_digest": "420bc521edba10231ab234f27eb12c7ae5742036c7dce8a882f971031bc6166f"
   },
   "tasks": [
     {
       "id": "task_apply",
-      "digest": "96842983c35dbad53e41edca0714456f0ab614101f3b007dae048a986cbb8731"
+      "digest": "92749558b8e95929093b78990d85d1cad27b82d1a9fc4326292dbca6a0845ed3"
     }
   ],
   "edges": [
     {
-      "id": "edge_4b2c6f137c0e0fa7",
+      "id": "edge_03d5613dc77f3012",
       "type": "CONTAINS",
-      "source_id": "plan_b11ac0653ab5d29e",
+      "source_id": "plan_420bc521edba1023",
       "target_id": "task_apply"
     }
   ]

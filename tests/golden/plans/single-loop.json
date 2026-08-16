@@ -1,12 +1,29 @@
 {
   "scenario": "single-loop",
   "plan": {
-    "id": "plan_20d19e8feb48b948",
+    "id": "plan_f26429149d09f988",
     "status": "proposed",
-    "digest": "075601ea9dc5950097e9e096f31cbbf5003aa995ffecd0cdbf78bf1645b256d4"
+    "digest": "8879219426475dc29048ec79be42eab1a1cec13648cbfc33645c81b2d139b9ab"
   },
   "content": {
     "execution_kind": "agent",
+    "impact_coverage": {
+      "execution_kind": "agent",
+      "entries": [
+        { "node_id": "code_01", "node_type": "CodeArtifact", "risk": "high" },
+        { "node_id": "component_01", "node_type": "Component", "risk": "medium" },
+        { "node_id": "decision_01", "node_type": "Decision", "risk": "medium" },
+        { "node_id": "requirement_01", "node_type": "Requirement", "risk": "medium" },
+        { "node_id": "test_01", "node_type": "Test", "risk": "medium" }
+      ],
+      "covered_layers": ["requirement", "test", "architecture", "implementation"],
+      "missing_layers": [],
+      "forecast_paths": [],
+      "diagnostics": [],
+      "status": "complete",
+      "risk": "high",
+      "digest": "7614d2dc75ec9da6e044d28116b5f768c20d743c86bd540242a8191c2e91f384"
+    },
     "mode": "single-loop",
     "mode_reason": "one bounded agent goal with one independently reviewable output",
     "restricted": false,
@@ -36,7 +53,7 @@
         "capabilities": ["fs.read", "fs.write"],
         "tools": ["tool:fs"],
         "dependencies": [],
-        "risk": "medium",
+        "risk": "high",
         "budget": {
           "steps": 8,
           "tokens": 4000
@@ -50,19 +67,19 @@
         "required_gates": ["gate:test"]
       }
     ],
-    "content_digest": "20d19e8feb48b948e1afd982c5041a3309240949c1966033171dc6c4306e7248"
+    "content_digest": "f26429149d09f9889e5b79707dedbf818061afb49df331c816cc99a4901c3979"
   },
   "tasks": [
     {
       "id": "task_deliver",
-      "digest": "448ac58c32b0705b928609cbcd4650b9685fd5b34aab12cba8062d0d33cd46b6"
+      "digest": "b9cffcb90c2cf17025957bb39970f993aad8094fb9cccfdc255c93e65c2fc75a"
     }
   ],
   "edges": [
     {
-      "id": "edge_df1b79c04cbb6c58",
+      "id": "edge_0d9242954fb608fd",
       "type": "CONTAINS",
-      "source_id": "plan_20d19e8feb48b948",
+      "source_id": "plan_f26429149d09f988",
       "target_id": "task_deliver"
     }
   ]

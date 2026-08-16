@@ -243,6 +243,22 @@ export {
   type ModeSelectionInput,
 } from "./planning/mode-selector.js";
 export {
+  assessImpactCoverage,
+  type ImpactCoverageAssessment,
+  type ImpactCoverageEntry,
+  type ImpactCoverageInput,
+  type ImpactCoverageLayer,
+  type PathForecast,
+} from "./planning/impact-coverage.js";
+export {
+  GOVERNANCE_RISKS,
+  deriveEffectiveRisk,
+  type EffectiveRiskInput,
+  type GovernanceRisk,
+  type PathScope,
+  type TaskComplexity,
+} from "./planning/effective-risk.js";
+export {
   TASK_RISKS,
   hasIndependentValue,
   independentValueSignature,

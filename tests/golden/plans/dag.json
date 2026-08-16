@@ -1,12 +1,29 @@
 {
   "scenario": "dag",
   "plan": {
-    "id": "plan_ebfeb115a6afe969",
+    "id": "plan_ee2a52fb9542e120",
     "status": "proposed",
-    "digest": "7405aed722b26e76868dcd8811878d143d3f04dbedc37527b787ebe568e86589"
+    "digest": "6f256e309da57fec46057ed46ca24f5da0c1e9c9fcc71fd90c906cea5ef5b638"
   },
   "content": {
     "execution_kind": "agent",
+    "impact_coverage": {
+      "execution_kind": "agent",
+      "entries": [
+        { "node_id": "code_01", "node_type": "CodeArtifact", "risk": "high" },
+        { "node_id": "component_01", "node_type": "Component", "risk": "medium" },
+        { "node_id": "decision_01", "node_type": "Decision", "risk": "medium" },
+        { "node_id": "requirement_01", "node_type": "Requirement", "risk": "medium" },
+        { "node_id": "test_01", "node_type": "Test", "risk": "medium" }
+      ],
+      "covered_layers": ["requirement", "test", "architecture", "implementation"],
+      "missing_layers": [],
+      "forecast_paths": [],
+      "diagnostics": [],
+      "status": "complete",
+      "risk": "high",
+      "digest": "7614d2dc75ec9da6e044d28116b5f768c20d743c86bd540242a8191c2e91f384"
+    },
     "mode": "dag",
     "mode_reason": "2 agent tasks with independent value run in dependency order",
     "restricted": false,
@@ -34,7 +51,7 @@
         "capabilities": ["fs.read", "fs.write"],
         "tools": ["tool:fs"],
         "dependencies": ["task_spec"],
-        "risk": "medium",
+        "risk": "high",
         "budget": {
           "steps": 8,
           "tokens": 4000
@@ -55,7 +72,7 @@
         "capabilities": ["fs.read"],
         "tools": ["tool:fs"],
         "dependencies": [],
-        "risk": "medium",
+        "risk": "high",
         "budget": {
           "steps": 8,
           "tokens": 4000
@@ -69,29 +86,29 @@
         "required_gates": ["gate:test"]
       }
     ],
-    "content_digest": "ebfeb115a6afe969f43d3f70ec435c0fdab316a9cc5b8252b74c02f90a935539"
+    "content_digest": "ee2a52fb9542e1200fcea6e01d9c9317d1a5ca0f52f1c1cd8390569c83b68d99"
   },
   "tasks": [
     {
       "id": "task_implement",
-      "digest": "2f17088a1a5ca6a37055e8d00a349b1bfc496142de5a787c730ecea4a8b39e2b"
+      "digest": "ce20b5953bd83189119aed078e6f1e3f0a010b945f8112c9a1601799b68234c7"
     },
     {
       "id": "task_spec",
-      "digest": "6f5340d33ab8ae47359221a7db341221c03a5caf1a5820dc3f46ba8309c842ac"
+      "digest": "4b8bf22b0b605b0c2b739ccde4739f168cc97c1189049e5fbcda38c961f07b12"
     }
   ],
   "edges": [
     {
-      "id": "edge_a201ac17377d5f87",
+      "id": "edge_4fb1630e68573bea",
       "type": "CONTAINS",
-      "source_id": "plan_ebfeb115a6afe969",
+      "source_id": "plan_ee2a52fb9542e120",
       "target_id": "task_implement"
     },
     {
-      "id": "edge_0b173e43fd29509f",
+      "id": "edge_73726a06407eabff",
       "type": "CONTAINS",
-      "source_id": "plan_ebfeb115a6afe969",
+      "source_id": "plan_ee2a52fb9542e120",
       "target_id": "task_spec"
     },
     {

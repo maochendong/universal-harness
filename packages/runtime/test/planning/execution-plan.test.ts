@@ -316,4 +316,38 @@ describe("generateExecutionPlan", () => {
       content.tasks.map((task) => task.id).sort(),
     );
   });
+
+  it("elevates planner task risk to the maximum impact and adapter risk", () => {
+    const { impactSet, approvedDigest } = approvedImpactSet();
+    const input = scenarioInput("single-loop", impactSet);
+    const proposal = input.proposal.map((task) => ({
+      ...(task as Record<string, unknown>),
+      risk: "low",
+    }));
+    const records = generateExecutionPlan(
+      impactSet,
+      approvedDigest,
+      {
+        ...input,
+        proposal,
+        governance: {
+          forecastPaths: [{ pattern: "backend/src", scope: "bounded", approved: true }],
+          adapterProfile: {
+            control: "delegated",
+            trajectory_visibility: "external-only",
+            usage_metering: false,
+            side_effect_interception: false,
+          },
+        },
+      },
+      PLAN_CONTEXT,
+    );
+    const content = readExecutionPlanContent(records.plan);
+    expect(content.tasks[0]?.risk).toBe("high");
+    expect(content.impact_coverage).toMatchObject({
+      status: "complete",
+      covered_layers: expect.arrayContaining(["requirement", "test", "implementation", "path"]),
+      forecast_paths: [{ pattern: "backend/src", scope: "bounded", approved: true }],
+    });
+  });
 });
