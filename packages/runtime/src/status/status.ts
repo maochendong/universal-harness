@@ -28,6 +28,8 @@ import { latestValidCheckpoint } from "../workflow/checkpoint.js";
 import { liveBlockerMessages } from "../workflow/blockers.js";
 import type { BudgetUse } from "../workflow/working-state.js";
 import { projectFindingGroups, type FindingGroupProjection } from "../finding/groups.js";
+import { projectActiveRun, type ActiveRunProjection } from "../observability/active-run.js";
+import { readLiveObservations } from "../observability/live-spool.js";
 
 /**
  * Project status (design 11.2 `harness status`, plan Task 22). The report is
@@ -55,6 +57,7 @@ export interface ProjectStatus {
   readonly control_level: ControlLevel | "none";
   readonly adapter_control_profile?: AdapterControlProfile;
   readonly adapter_profile_digest?: string;
+  readonly active_run?: ActiveRunProjection;
   readonly evaluation_coverage: EvaluationCoverage;
   readonly blockers: readonly string[];
   /** Non-blocking findings the iteration should surface but not be held by. */
@@ -632,6 +635,7 @@ export function collectProjectStatus(projectRoot: string): ProjectStatus {
             },
           }),
     });
+    const activeRun = projectActiveRun(readLiveObservations(projectRoot));
     return {
       project_root: projectRoot,
       name: manifest.name,
@@ -640,6 +644,7 @@ export function collectProjectStatus(projectRoot: string): ProjectStatus {
       last_ledger_operation: lastOperation?.manifest.ledger_operation_id ?? "none",
       graph_cache: cache.status,
       ...derived,
+      ...(activeRun === undefined ? {} : { active_run: activeRun }),
       pending_approvals: [
         ...new Set([...derived.pending_approvals, ...artifactPendingApprovals]),
       ].sort(byId),

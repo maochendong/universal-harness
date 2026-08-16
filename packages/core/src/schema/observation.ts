@@ -11,6 +11,7 @@ export const OBSERVATION_EVENT_TYPES = [
   "RunStarted",
   "RunHeartbeat",
   "RunOutputSummary",
+  "RunTerminated",
   "BudgetUpdated",
   "ApprovalRequired",
 ] as const;

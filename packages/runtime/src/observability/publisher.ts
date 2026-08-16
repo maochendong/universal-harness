@@ -47,6 +47,7 @@ export interface ObservationPublisherPort {
   runStarted(runId: string, payload?: Record<string, unknown>): ObservationEvent;
   runHeartbeat(runId: string, payload?: Record<string, unknown>): ObservationEvent | undefined;
   runOutput(runId: string, chunk: string, options?: RunOutputOptions): ObservationEvent | undefined;
+  runTerminated(runId: string, payload?: Record<string, unknown>): ObservationEvent;
   budgetUpdated(payload: Record<string, unknown>): ObservationEvent;
   approvalRequired(payload: Record<string, unknown>): ObservationEvent;
 }
@@ -316,6 +317,15 @@ export class ObservationPublisher implements ObservationPublisherPort {
       logicalKey("budget_updated", [this.identity.attemptId, contentDigest(payload)]),
       payload,
     );
+  }
+
+  runTerminated(runId: string, payload: Record<string, unknown> = {}): ObservationEvent {
+    this.heartbeatAt.delete(runId);
+    this.outputs.delete(runId);
+    return this.publish("RunTerminated", logicalKey("run_terminated", [runId]), {
+      run_id: runId,
+      ...payload,
+    });
   }
 
   approvalRequired(payload: Record<string, unknown>): ObservationEvent {

@@ -40,6 +40,7 @@
         { "const": "RunStarted", "type": "string" },
         { "const": "RunHeartbeat", "type": "string" },
         { "const": "RunOutputSummary", "type": "string" },
+        { "const": "RunTerminated", "type": "string" },
         { "const": "BudgetUpdated", "type": "string" },
         { "const": "ApprovalRequired", "type": "string" }
       ]

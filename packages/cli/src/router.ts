@@ -13,6 +13,7 @@ import {
   type CommandResult,
 } from "./io.js";
 import { createOrchestratedRuntimeService } from "./runtime-service.js";
+import { LiveProgressReporter } from "./live-progress.js";
 import { runAbortCommand } from "./commands/abort.js";
 import { runAdoptCommand } from "./commands/adopt.js";
 import { runApproveCommand } from "./commands/approve.js";
@@ -208,7 +209,23 @@ export function createDefaultRuntimeService(cwd: string, io: CliIo, json = false
     const suffix = event.paused_status === undefined ? "" : ` (${event.paused_status})`;
     io.writeStderr(`${event.type} ${event.phase}${suffix}\n`);
   };
-  return createOrchestratedRuntimeService({ cwd, io, onPhaseProgress });
+  const liveProgress = new LiveProgressReporter();
+  return createOrchestratedRuntimeService({
+    cwd,
+    io,
+    onPhaseProgress,
+    onObservation: (event) => {
+      const summary = liveProgress.observe(event);
+      if (summary === undefined) return;
+      if (json) {
+        io.writeStderr(
+          `${canonicalizeJson({ type: "live_progress", timestamp: event.timestamp, summary })}\n`,
+        );
+      } else {
+        io.writeStderr(`${summary}\n`);
+      }
+    },
+  });
 }
 
 export interface CommandContext {

@@ -2713,6 +2713,35 @@ async function phaseExecute(ctx: PipelineContext): Promise<PhaseStep> {
       ctx.observations.runStarted(activeRunId, {
         task_id: task.id,
         executor: "agent",
+        ...(binding.adapter_profile === undefined
+          ? {}
+          : { adapter_control_profile: binding.adapter_profile }),
+        ...(authority.authorization.adapter_profile_digest === undefined
+          ? {}
+          : { adapter_profile_digest: authority.authorization.adapter_profile_digest }),
+        budget_observations: [
+          {
+            dimension: "steps",
+            availability: "unavailable",
+            used: null,
+            limit: envelope.loop_policy.max_steps,
+            enforcement: "none",
+          },
+          {
+            dimension: "tokens",
+            availability: "unavailable",
+            used: null,
+            limit: envelope.loop_policy.max_tokens,
+            enforcement: "none",
+          },
+          {
+            dimension: "duration_ms",
+            availability: "measured",
+            used: 0,
+            limit: envelope.loop_policy.max_duration_ms,
+            enforcement: "harness",
+          },
+        ],
       }),
     );
     observe(ctx, () => ctx.observations.runHeartbeat(activeRunId, { task_id: task.id }));
@@ -2793,6 +2822,7 @@ async function phaseExecute(ctx: PipelineContext): Promise<PhaseStep> {
         total_tokens: result.usage.total_tokens,
         duration_ms: result.usage.duration_ms,
         metering: result.usage.metering,
+        budget_observations: result.budget_observations,
       }),
     );
     await ctx.engine.terminateRun(ctx.workflowOperationId, {
@@ -2805,6 +2835,14 @@ async function phaseExecute(ctx: PipelineContext): Promise<PhaseStep> {
           ? "adapter_failure"
           : result.termination_reason,
     });
+    observe(ctx, () =>
+      ctx.observations.runTerminated(activeRunId, {
+        task_id: task.id,
+        outcome: result.outcome,
+        termination_reason: result.termination_reason,
+        ...(actualChanges === undefined ? {} : { diff_stat: actualChanges.change_summary }),
+      }),
+    );
     await commitArtifacts(deps, ctx.workflowOperationId, currentAttemptId(ctx), [
       {
         path: runResultArtifactPath(activeRunId),

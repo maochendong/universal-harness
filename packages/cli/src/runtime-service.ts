@@ -11,6 +11,8 @@ import {
   OrchestrationError,
   ApprovalError,
   WorkflowError,
+  FileLiveSpool,
+  ObservationPublisher,
   abortIteration,
   createGenericInterpreter,
   createRuntimeService,
@@ -41,7 +43,12 @@ import {
 } from "@universal-harness-internal/runtime";
 import type { SemanticSeedProvider } from "@universal-harness-internal/plugin-sdk";
 import { materializeLedger, pageEdges, pageNodes } from "@universal-harness-internal/graph";
-import { contentDigest, type EdgeRecord, type NodeRecord } from "@universal-harness-internal/core";
+import {
+  contentDigest,
+  type EdgeRecord,
+  type NodeRecord,
+  type ObservationEvent,
+} from "@universal-harness-internal/core";
 
 import type { GateDefinition, ToolRegistry } from "@universal-harness-internal/runtime";
 
@@ -98,6 +105,8 @@ export interface OrchestratedServiceOptions {
    * output until the final result.
    */
   readonly onPhaseProgress?: (event: PhaseProgressEvent) => void;
+  /** Receives the same disposable observation appended to the live spool. */
+  readonly onObservation?: (event: ObservationEvent) => void;
   readonly semanticProvider?: SemanticSeedProvider;
 }
 
@@ -273,6 +282,26 @@ export function createOrchestratedRuntimeService(
         ? createConfiguredGateSuite(projectRoot, runtimeConfig)
         : undefined;
     const injectedExecutor = options.execute;
+    const createObservationPublisher =
+      options.onObservation === undefined
+        ? undefined
+        : (
+            identity: Parameters<
+              NonNullable<OrchestratorDependencies["createObservationPublisher"]>
+            >[0],
+          ) => {
+            const spool = new FileLiveSpool(projectRoot);
+            return new ObservationPublisher(
+              {
+                append: (input) => {
+                  const event = spool.append(input);
+                  options.onObservation?.(event);
+                  return event;
+                },
+              },
+              identity,
+            );
+          };
     return {
       projectRoot,
       readBaseline: () => gitHead(projectRoot),
@@ -318,6 +347,7 @@ export function createOrchestratedRuntimeService(
       ...(options.onPhaseProgress === undefined
         ? {}
         : { onPhaseProgress: options.onPhaseProgress }),
+      ...(createObservationPublisher === undefined ? {} : { createObservationPublisher }),
       decisionActor: actor,
     };
   };

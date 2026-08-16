@@ -870,6 +870,7 @@ export {
 export {
   FileLiveSpool,
   LiveSpoolError,
+  readLiveObservations,
   type LiveSpoolOptions,
   type ObservationInput,
 } from "./observability/live-spool.js";
@@ -882,6 +883,7 @@ export {
   type ObservationStreamIdentity,
   type RunOutputOptions,
 } from "./observability/publisher.js";
+export { projectActiveRun, type ActiveRunProjection } from "./observability/active-run.js";
 
 /**
  * Runtime orchestration service (design section 11.1). The CLI shell injects

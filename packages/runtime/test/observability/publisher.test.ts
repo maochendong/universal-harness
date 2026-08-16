@@ -63,6 +63,7 @@ describe("ObservationPublisher", () => {
       proposed_by: "agent",
     });
     publisher.phasePaused("execute", "approval_required");
+    publisher.runTerminated("run_01", { outcome: "handoff" });
 
     const page = await new FileEventStream(projectRoot).read({ limit: 50 });
     expect(page.items.map((item) => item.event.event_type)).toEqual([
@@ -75,11 +76,12 @@ describe("ObservationPublisher", () => {
       "GateCompleted",
       "ApprovalRequired",
       "PhasePaused",
+      "RunTerminated",
     ]);
     expect(completed.observation_key).toBe(
       gateCompletionObservationKey("workflow_01", "attempt_01", "gate_test"),
     );
-    expect(page.items.map((item) => item.event.sequence)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9]);
+    expect(page.items.map((item) => item.event.sequence)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
   });
 
   it("throttles output, emits at 8 KiB or two seconds, and bounds the summary", async () => {

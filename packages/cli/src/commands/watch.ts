@@ -60,6 +60,7 @@ const EVENT_STYLES: Record<string, EventStyle> = {
   RunStarted: { icon: "▶", color: CYAN },
   RunHeartbeat: { icon: "·", color: GRAY },
   RunOutputSummary: { icon: "…", color: GRAY },
+  RunTerminated: { icon: "■", color: GREEN },
   BudgetUpdated: { icon: "◆", color: BLUE },
 };
 

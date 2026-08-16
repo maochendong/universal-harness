@@ -43,17 +43,23 @@ export interface LiveSpoolOptions {
 }
 
 function observations(directory: string): ObservationEvent[] {
-  let files: string[];
-  try {
-    files = readdirSync(directory)
-      .filter((name) => name.endsWith(".jsonl"))
-      .sort();
-  } catch {
-    return [];
-  }
+  const files: string[] = [];
+  const visit = (current: string): void => {
+    try {
+      for (const entry of readdirSync(current, { withFileTypes: true })) {
+        const path = join(current, entry.name);
+        if (entry.isDirectory()) visit(path);
+        else if (entry.name.endsWith(".jsonl")) files.push(path);
+      }
+    } catch {
+      // A missing or concurrently rotated spool is simply empty live state.
+    }
+  };
+  visit(directory);
+  files.sort();
   const events: ObservationEvent[] = [];
   for (const file of files) {
-    for (const line of readFileSync(join(directory, file), "utf8").split("\n")) {
+    for (const line of readFileSync(file, "utf8").split("\n")) {
       if (line === "") continue;
       try {
         const record = JSON.parse(line) as unknown;
@@ -66,6 +72,10 @@ function observations(directory: string): ObservationEvent[] {
     }
   }
   return events.sort((left, right) => left.sequence - right.sequence);
+}
+
+export function readLiveObservations(projectRoot: string): ObservationEvent[] {
+  return observations(join(projectRoot, ".harness", "cache", "event-stream"));
 }
 
 function lastSequence(directory: string): number {
