@@ -2,7 +2,9 @@
 
 日期：2026-08-17
 
-状态：实施中
+状态：已完成
+
+完成日期：2026-08-17
 
 设计依据：[Harness Graph-native 驱动模型文档设计](../specs/2026-08-17-harness-graph-model-documentation-design.md)
 
@@ -151,3 +153,12 @@ pnpm test
 ```text
 docs(plan): complete graph model documentation rollout
 ```
+
+## 7. 完成结果
+
+- README 已增加中英双语 Graph-native 驱动总图、五个职责域中文解释、影响传播边界、Event 分流和完整文档链接。
+- `docs/graph-driven-harness-model.md` 已覆盖 26 类 Node、31 类 Edge、15 类 Lifecycle Event、11 类 Observation Event、17 条传播规则和端到端反馈闭环。
+- `tests/e2e/graph-model-documentation.test.ts` 已把文档清单和规则参数绑定到代码权威常量，6 个断言全部通过。
+- `pnpm format:check`、`pnpm lint`、`pnpm typecheck` 全部通过。
+- 完整 `pnpm test` 通过：216 个测试文件、1328 个测试成功。
+- README 与完整模型文档中的 Mermaid 均通过 Mermaid CLI 11.16.0 实际解析并生成 SVG；未向仓库增加 Mermaid 或浏览器依赖。
