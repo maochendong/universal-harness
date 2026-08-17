@@ -50,6 +50,13 @@ describe("Dashboard assets", () => {
     expect(css).toContain(":focus-visible");
     expect(css).toContain("prefers-reduced-motion: reduce");
     expect(css).toMatch(/@media\s*\(max-width:/u);
+    expect(html).toContain('id="copy-status"');
+    expect(html).toContain('role="status"');
+    expect(javascript).toContain("navigator.clipboard.writeText");
+    expect(javascript).toContain("复制完整摘要");
+    for (const component of [".business-heading", ".business-badges", ".audit-details"]) {
+      expect(css).toContain(component);
+    }
   });
 
   it("serves authenticated local assets with strict types and cache policies", async () => {

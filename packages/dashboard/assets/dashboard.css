@@ -79,6 +79,17 @@ select {
   outline: 2px solid var(--signal);
   outline-offset: 4px;
 }
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
 
 .masthead {
   position: sticky;
@@ -584,6 +595,134 @@ h2 {
   color: var(--paper-muted);
   font: 0.55rem/1 var(--mono);
   text-transform: uppercase;
+}
+.business-heading {
+  min-width: 0;
+}
+.node-card .business-heading,
+.record-button .business-heading {
+  grid-column: 1 / -1;
+}
+.business-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem 0.65rem;
+  margin-bottom: 0.65rem;
+  font: 0.55rem/1.2 var(--mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.business-type,
+.business-status {
+  color: var(--signal);
+}
+.technical-type,
+.technical-status {
+  color: var(--paper-muted);
+}
+.technical-type::before,
+.technical-status::before {
+  content: "/ ";
+  color: var(--rule-bright);
+}
+.business-title {
+  display: block;
+  margin: 0;
+  color: var(--paper);
+  font: 500 1.08rem/1.28 var(--display);
+  overflow-wrap: anywhere;
+}
+.node-inspector .business-title,
+.dossier .business-title {
+  font-size: clamp(1.55rem, 3vw, 2.4rem);
+}
+.business-description {
+  max-width: 68ch;
+  margin: 0.55rem 0 0;
+  color: var(--paper-muted);
+  font: 0.76rem/1.65 var(--body);
+}
+.business-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  padding: 0;
+  margin: 0.85rem 0 0;
+  list-style: none;
+}
+.business-badge {
+  display: inline-flex;
+  gap: 0.4rem;
+  align-items: baseline;
+  padding: 0.34rem 0.48rem;
+  border: 1px solid var(--rule-bright);
+  color: var(--paper-muted);
+  font: 0.55rem/1.2 var(--mono);
+}
+.business-badge b {
+  color: var(--paper);
+  font-weight: 650;
+}
+.business-badge[data-tone="positive"] {
+  border-color: rgba(100, 226, 210, 0.56);
+}
+.business-badge[data-tone="warning"] {
+  border-color: rgba(240, 189, 88, 0.7);
+}
+.business-badge[data-tone="critical"] {
+  border-color: rgba(255, 93, 87, 0.82);
+}
+.business-badge[data-tone="critical"]::before {
+  content: "!";
+  color: var(--danger);
+  font-weight: 800;
+}
+.audit-details {
+  margin-top: 1.5rem;
+  border-top: 1px solid var(--rule-bright);
+}
+.audit-summary {
+  padding: 0.8rem 0;
+  color: var(--paper-muted);
+  font: 0.6rem/1.4 var(--mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.audit-table {
+  display: grid;
+  grid-template-columns: minmax(5.5rem, 8rem) minmax(0, 1fr);
+  margin: 0;
+  border-top: 1px solid var(--rule);
+}
+.audit-table dt,
+.audit-table dd {
+  margin: 0;
+  padding: 0.65rem 0;
+  border-bottom: 1px solid var(--rule);
+  font: 0.62rem/1.5 var(--mono);
+  overflow-wrap: anywhere;
+}
+.audit-table dt {
+  color: var(--paper-muted);
+}
+.audit-digest {
+  display: grid;
+  gap: 0.6rem;
+}
+.digest-full {
+  user-select: all;
+  color: var(--paper-muted);
+  overflow-wrap: anywhere;
+}
+.digest-copy {
+  width: fit-content;
+  padding: 0.4rem 0;
+  border: 0;
+  border-bottom: 1px solid var(--signal);
+  color: var(--paper);
+  background: transparent;
+  font: 0.58rem/1 var(--mono);
 }
 .node-inspector,
 .dossier {

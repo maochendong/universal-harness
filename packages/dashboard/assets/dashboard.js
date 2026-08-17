@@ -1,4 +1,4 @@
-/* global document, window, location, fetch, URLSearchParams, EventSource, FormData, setInterval */
+/* global document, window, location, fetch, URLSearchParams, EventSource, FormData, navigator, setInterval */
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
 
@@ -74,6 +74,101 @@ function short(value, length = 18) {
   return text.length > length ? `${text.slice(0, length)}…` : text;
 }
 
+function presentationFor(presentations, record, digest = record?.digest) {
+  if (!presentations || !record?.id) return undefined;
+  return presentations[`${record.id}@${digest || "live"}`];
+}
+
+function technicalPresentation(record, digest = record?.digest) {
+  return {
+    entity_id: record?.id || "unknown_entity",
+    binding_digest: digest || null,
+    title_zh: record?.id || "未知对象",
+    description_zh: "业务描述暂未提供；以下保留原始技术记录。",
+    type_label_zh: record?.type || "未知类型",
+    status_label_zh: record?.status || "未知状态",
+    technical_type: record?.type || "Unknown",
+    technical_status: record?.status || "unknown",
+    badges: [],
+    fallback: true,
+  };
+}
+
+function businessBadges(presentation) {
+  const list = node("ul", "business-badges");
+  for (const badge of presentation?.badges || []) {
+    const item = node("li", "business-badge");
+    item.dataset.tone = badge.tone || "neutral";
+    item.append(node("span", "business-badge-label", badge.label_zh), node("b", "", badge.value));
+    list.append(item);
+  }
+  return list;
+}
+
+function businessHeading(presentation, titleTag = "strong") {
+  const wrapper = node("div", "business-heading");
+  const meta = node("div", "business-meta");
+  meta.append(
+    node("span", "business-type", presentation.type_label_zh),
+    node("span", "technical-type", presentation.technical_type),
+    node("span", "business-status", presentation.status_label_zh),
+    node("span", "technical-status", presentation.technical_status),
+  );
+  wrapper.append(
+    meta,
+    node(titleTag, "business-title", presentation.title_zh),
+    node("p", "business-description", presentation.description_zh),
+  );
+  if (presentation.badges?.length) wrapper.append(businessBadges(presentation));
+  return wrapper;
+}
+
+function copyFeedback(message) {
+  const output = $("#copy-status");
+  if (output) output.textContent = message;
+}
+
+async function copyDigest(button, digest, title) {
+  try {
+    if (!navigator.clipboard || typeof navigator.clipboard.writeText !== "function") {
+      throw new Error("clipboard unavailable");
+    }
+    await navigator.clipboard.writeText(digest);
+    copyFeedback(`已复制“${title}”的完整摘要。`);
+    button.textContent = "已复制";
+  } catch {
+    const details = button.closest("details");
+    if (details) details.open = true;
+    copyFeedback(`无法自动复制“${title}”的摘要；完整值已显示，可手动选择。`);
+  }
+}
+
+function auditDetails(presentation, fields = []) {
+  const details = node("details", "audit-details");
+  const digest = presentation.binding_digest;
+  const summary = node(
+    "summary",
+    "audit-summary",
+    digest ? `审计信息 · ${short(digest, 12)}` : "审计信息",
+  );
+  const table = node("dl", "audit-table");
+  for (const [label, value] of fields) table.append(...pair(label, value));
+  if (digest) {
+    const term = node("dt", "", "DIGEST");
+    const value = node("dd", "audit-digest");
+    const code = node("code", "digest-full", digest);
+    code.tabIndex = 0;
+    const copy = node("button", "digest-copy", "复制完整摘要");
+    copy.type = "button";
+    copy.setAttribute("aria-label", `复制“${presentation.title_zh}”的完整摘要`);
+    copy.addEventListener("click", () => void copyDigest(copy, digest, presentation.title_zh));
+    value.append(code, copy);
+    table.append(term, value);
+  }
+  details.append(summary, table);
+  return details;
+}
+
 function setText(selector, value) {
   const element = $(selector);
   if (element) element.textContent = String(value ?? "—");
@@ -139,15 +234,12 @@ function graphQuery(cursor) {
   return query;
 }
 
-function graphCard(record) {
+function graphCard(record, presentations) {
   const button = node("button", "node-card");
   button.type = "button";
-  button.append(
-    node("span", "kind", record.type),
-    node("strong", "", record.id),
-    node("span", "status", record.status),
-  );
-  button.addEventListener("click", () => inspectNode(record));
+  const presentation = presentationFor(presentations, record) || technicalPresentation(record);
+  button.append(businessHeading(presentation));
+  button.addEventListener("click", () => inspectNode(record, presentation));
   return button;
 }
 
@@ -162,7 +254,7 @@ async function loadGraph({ append = false } = {}) {
     if (!page.items.length && !append)
       status("graph", "No nodes match the selected filters.", "empty");
     else {
-      for (const record of page.items) register.append(graphCard(record));
+      for (const record of page.items) register.append(graphCard(record, page.presentations));
       status("graph", `${page.items.length} nodes loaded · expand one for its immediate field`);
     }
     model.graphCursor = page.next_cursor;
@@ -176,24 +268,20 @@ function pair(label, value) {
   return [node("dt", "", label), node("dd", "", value ?? "—")];
 }
 
-async function inspectNode(record) {
+async function inspectNode(record, presentation) {
   const inspector = $("#graph-inspector");
   clear(inspector);
   inspector.append(
     node("span", "crosshair"),
-    node("p", "eyebrow", `${record.type} / REV ${record.revision}`),
-    node("h3", "inspector-title", record.id),
+    businessHeading(presentation, "h3"),
+    auditDetails(presentation, [
+      ["ID", record.id],
+      ["REVISION", record.revision],
+      ["SOURCE", record.source],
+      ["ITERATION", record.provenance?.iteration_id],
+      ["LOCATOR", record.locator],
+    ]),
   );
-  const table = node("dl", "data-table");
-  for (const [label, value] of [
-    ["STATUS", record.status],
-    ["SOURCE", record.source],
-    ["ITERATION", record.provenance?.iteration_id],
-    ["DIGEST", record.digest],
-    ["LOCATOR", record.locator],
-  ])
-    table.append(...pair(label, value));
-  inspector.append(table);
   status("graph", `Expanding one-hop neighborhood for ${record.id}…`);
   try {
     const field = await api(`/api/v1/graph/neighborhood/${encodeURIComponent(record.id)}?depth=1`);
