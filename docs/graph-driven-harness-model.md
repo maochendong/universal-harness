@@ -4,6 +4,13 @@
 
 ## 0. 一张图理解完整 Harness 驱动模型
 
+![Universal Harness Graph-native 驱动模型完整版](assets/graph-driven-model-full.svg)
+
+_如果上方 SVG 未渲染（例如纯文本阅读器），展开下面的 Mermaid 源码或继续阅读后文的 Node、Edge 和 Event 表格，语义完全等价。_
+
+<details>
+<summary>Mermaid 源码（文字降级，与 SVG 等价）</summary>
+
 ```mermaid
 flowchart TB
   subgraph NODE_GRAPH["① 权威 Node Graph / 26 类节点"]
@@ -51,6 +58,8 @@ flowchart TB
   SQLITE --> READERS
 ```
 
+</details>
+
 这张图分四层阅读：
 
 1. **Node Graph** 定义 Harness 当前知道什么，以及需求、设计、执行、证据和反馈分别由谁负责。
@@ -58,7 +67,7 @@ flowchart TB
 3. **Event 驱动**记录状态怎样变化。Lifecycle Event 证明已经提交的事实，Observation Event 展示此刻发生的事情。
 4. **存储与读取**保持完成真相清晰：Ledger 是唯一权威来源；Live Spool 是可删除的实时观察；SQLite 是可确定性重建的查询缓存。
 
-若当前 Markdown 阅读器中的 Mermaid 无法渲染，后续 Node、Edge 和 Event 表格包含同一模型的完整文字降级，不会丢失语义。
+若当前 Markdown 阅读器中的 Mermaid 无法渲染，可先查看上方的 SVG 总览图，或展开 Mermaid 源码；后续 Node、Edge 和 Event 表格包含同一模型的完整文字降级，不会丢失语义。
 
 ## 1. Node：Harness 当前知道什么
 

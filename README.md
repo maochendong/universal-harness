@@ -43,6 +43,11 @@ _Impact 视图展示 `case_docs` 到 `evidence_evaluation_docs` 的受治理最�
 
 Harness 不是让 Agent 在代码仓库中自由循环，而是用类型化 Node 表达工程事实、用 Edge 约束依赖与影响、用 Event 证明状态变化，再由 Policy、Approval、Gate 和 Evidence 控制每一步是否可以继续。
 
+![Graph-native 驱动模型总览](docs/assets/graph-model-overview.svg)
+
+<details>
+<summary>Mermaid 源码（文字降级，与 SVG 等价）</summary>
+
 ```mermaid
 flowchart TB
   AUTH["① 权威上下文<br/>项目 Project · 仓库 Repository · 迭代 Iteration<br/><br/>确定所有记录、授权与快照属于哪里"]
@@ -74,6 +79,8 @@ flowchart TB
   SQLITE --> READERS
   OBSERVATION -->|"读取时合并"| READERS
 ```
+
+</details>
 
 ### 图中五个职责域
 

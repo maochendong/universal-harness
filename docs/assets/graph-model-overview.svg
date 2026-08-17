@@ -1,0 +1,165 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1180 840" font-family="PingFang SC, Hiragino Sans GB, Microsoft YaHei, Noto Sans CJK SC, sans-serif">
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#94A3B8"/>
+    </marker>
+  </defs>
+  <rect x="0" y="0" width="1180" height="840" fill="#F8FAFC"/>
+
+  <text x="590" y="38" text-anchor="middle" font-size="17" font-weight="600" fill="#0F172A">Universal Harness · Graph-native 驱动模型总览</text>
+  <text x="590" y="60" text-anchor="middle" font-size="11.5" fill="#64748B">Node 表达工程事实 · Edge 约束依赖与影响 · Event 证明状态变化 · Policy / Approval / Gate / Evidence 控制每一步是否可以继续</text>
+
+  <!-- ===== 带1 五个职责域 ===== -->
+  <!-- ① 权威上下文 -->
+  <g>
+    <rect x="20" y="104" width="220" height="136" rx="10" fill="#FFFFFF" stroke="#64748B" stroke-width="1.5"/>
+    <rect x="20" y="104" width="220" height="4" rx="2" fill="#64748B"/>
+    <text x="34" y="130" font-size="13" font-weight="600" fill="#475569">① 权威上下文</text>
+    <text x="34" y="150" font-size="10.5" fill="#334155">Project · Repository · Iteration</text>
+    <text x="34" y="176" font-size="10" fill="#64748B">确定所有记录、授权与快照</text>
+    <text x="34" y="190" font-size="10" fill="#64748B">属于哪个项目、仓库和迭代</text>
+  </g>
+  <!-- ② 意图与设计 -->
+  <g>
+    <rect x="252" y="104" width="220" height="136" rx="10" fill="#FFFFFF" stroke="#2563EB" stroke-width="1.5"/>
+    <rect x="252" y="104" width="220" height="4" rx="2" fill="#2563EB"/>
+    <text x="266" y="130" font-size="13" font-weight="600" fill="#2563EB">② 意图与设计</text>
+    <text x="266" y="150" font-size="10.5" fill="#334155">Intent · Requirement · Constraint</text>
+    <text x="266" y="166" font-size="10.5" fill="#334155">Decision · Component · CodeArtifact</text>
+    <text x="266" y="190" font-size="10" fill="#64748B">把「为什么改」逐级映射</text>
+    <text x="266" y="204" font-size="10" fill="#64748B">到设计和代码</text>
+  </g>
+  <!-- ③ 影响与治理 -->
+  <g>
+    <rect x="484" y="104" width="220" height="136" rx="10" fill="#FFFFFF" stroke="#7C3AED" stroke-width="1.5"/>
+    <rect x="484" y="104" width="220" height="4" rx="2" fill="#7C3AED"/>
+    <text x="498" y="130" font-size="13" font-weight="600" fill="#7C3AED">③ 影响与治理</text>
+    <text x="498" y="150" font-size="10.5" fill="#334155">ImpactSet · ExecutionPlan · Task</text>
+    <text x="498" y="166" font-size="10.5" fill="#334155">Policy · ApprovalRequest · Approval</text>
+    <text x="498" y="182" font-size="10.5" fill="#334155">ToolDefinition · ContextBundle</text>
+    <text x="498" y="204" font-size="10" fill="#64748B">计算波及范围，执行前收窄权限</text>
+  </g>
+  <!-- ④ 执行与验证 -->
+  <g>
+    <rect x="716" y="104" width="220" height="136" rx="10" fill="#FFFFFF" stroke="#059669" stroke-width="1.5"/>
+    <rect x="716" y="104" width="220" height="4" rx="2" fill="#059669"/>
+    <text x="730" y="130" font-size="13" font-weight="600" fill="#059669">④ 执行与验证</text>
+    <text x="730" y="150" font-size="10.5" fill="#334155">Run · Gate · Checkpoint</text>
+    <text x="730" y="166" font-size="10.5" fill="#334155">Evidence · Test · EvaluationCase</text>
+    <text x="730" y="190" font-size="10" fill="#64748B">用真实门禁和证据</text>
+    <text x="730" y="204" font-size="10" fill="#64748B">确立完成事实</text>
+  </g>
+  <!-- ⑤ 反馈修复 -->
+  <g>
+    <rect x="948" y="104" width="220" height="136" rx="10" fill="#FFFFFF" stroke="#D97706" stroke-width="1.5"/>
+    <rect x="948" y="104" width="220" height="4" rx="2" fill="#D97706"/>
+    <text x="962" y="130" font-size="13" font-weight="600" fill="#D97706">⑤ 反馈修复</text>
+    <text x="962" y="150" font-size="10.5" fill="#334155">Finding · RootCauseAnalysis</text>
+    <text x="962" y="166" font-size="10.5" fill="#334155">ImprovementCandidate</text>
+    <text x="962" y="190" font-size="10" fill="#64748B">把失败路由回真正拥有</text>
+    <text x="962" y="204" font-size="10" fill="#64748B">修改权的上游层</text>
+  </g>
+
+  <!-- 域间箭头（顶部弧线） -->
+  <path d="M240,104 C240,84 264,84 264,104" fill="none" stroke="#94A3B8" stroke-width="1.5" marker-end="url(#a)"/>
+  <text x="252" y="80" text-anchor="middle" font-size="10" fill="#475569">CONTAINS / DERIVES_FROM</text>
+  <path d="M472,104 C472,84 496,84 496,104" fill="none" stroke="#94A3B8" stroke-width="1.5" marker-end="url(#a)"/>
+  <text x="484" y="80" text-anchor="middle" font-size="10" fill="#475569">Change Seed</text>
+  <path d="M704,104 C704,84 728,84 728,104" fill="none" stroke="#94A3B8" stroke-width="1.5" marker-end="url(#a)"/>
+  <text x="716" y="80" text-anchor="middle" font-size="10" fill="#475569">批准后的 Plan + Context</text>
+  <path d="M936,104 C936,84 960,84 960,104" fill="none" stroke="#94A3B8" stroke-width="1.5" marker-end="url(#a)"/>
+  <text x="948" y="80" text-anchor="middle" font-size="10" fill="#475569">失败或审计缺口</text>
+  <!-- ⑤→③ 回环 -->
+  <path d="M1058,240 C1058,270 594,270 594,240" fill="none" stroke="#D97706" stroke-width="1.5" stroke-dasharray="5 3" marker-end="url(#a)"/>
+  <text x="826" y="288" text-anchor="middle" font-size="10" fill="#B45309">TRIGGERS 新 ImpactSet，重新进入影响分析</text>
+
+  <!-- ===== 带2 纵向闭环相位条 ===== -->
+  <g font-size="12.5" font-weight="600">
+    <rect x="20"  y="306" width="132" height="44" rx="22" fill="#EEF2FF" stroke="#C7D2FE"/><text x="86"  y="324" text-anchor="middle" fill="#3730A3">录入 Capture</text><text x="86"  y="339" text-anchor="middle" font-size="9" font-weight="400" fill="#818CF8">记录意图与需求</text>
+    <rect x="164" y="306" width="132" height="44" rx="22" fill="#EEF2FF" stroke="#C7D2FE"/><text x="230" y="324" text-anchor="middle" fill="#3730A3">影响 Impact</text><text x="230" y="339" text-anchor="middle" font-size="9" font-weight="400" fill="#818CF8">Change Seed 传播</text>
+    <rect x="308" y="306" width="132" height="44" rx="22" fill="#EEF2FF" stroke="#C7D2FE"/><text x="374" y="324" text-anchor="middle" fill="#3730A3">计划 Plan</text><text x="374" y="339" text-anchor="middle" font-size="9" font-weight="400" fill="#818CF8">声明式任务分解</text>
+    <rect x="452" y="306" width="132" height="44" rx="22" fill="#EEF2FF" stroke="#C7D2FE"/><text x="518" y="324" text-anchor="middle" fill="#3730A3">上下文 Context</text><text x="518" y="339" text-anchor="middle" font-size="9" font-weight="400" fill="#818CF8">最小受预算约束</text>
+    <rect x="596" y="306" width="132" height="44" rx="22" fill="#EEF2FF" stroke="#C7D2FE"/><text x="662" y="324" text-anchor="middle" fill="#3730A3">执行 Execute</text><text x="662" y="339" text-anchor="middle" font-size="9" font-weight="400" fill="#818CF8">受控能力内执行</text>
+    <rect x="740" y="306" width="132" height="44" rx="22" fill="#EEF2FF" stroke="#C7D2FE"/><text x="806" y="324" text-anchor="middle" fill="#3730A3">验证 Verify</text><text x="806" y="339" text-anchor="middle" font-size="9" font-weight="400" fill="#818CF8">门禁与证据</text>
+    <rect x="884" y="306" width="132" height="44" rx="22" fill="#EEF2FF" stroke="#C7D2FE"/><text x="950" y="324" text-anchor="middle" fill="#3730A3">评估 Evaluate</text><text x="950" y="339" text-anchor="middle" font-size="9" font-weight="400" fill="#818CF8">多维结果评估</text>
+    <rect x="1028" y="306" width="132" height="44" rx="22" fill="#FEF3C7" stroke="#FCD34D"/><text x="1094" y="324" text-anchor="middle" fill="#92400E">快照 Snapshot</text><text x="1094" y="339" text-anchor="middle" font-size="9" font-weight="400" fill="#D97706">完成状态锚定</text>
+  </g>
+  <g stroke="#94A3B8" stroke-width="1.5">
+    <line x1="152" y1="328" x2="164" y2="328" marker-end="url(#a)"/>
+    <line x1="296" y1="328" x2="308" y2="328" marker-end="url(#a)"/>
+    <line x1="440" y1="328" x2="452" y2="328" marker-end="url(#a)"/>
+    <line x1="584" y1="328" x2="596" y2="328" marker-end="url(#a)"/>
+    <line x1="728" y1="328" x2="740" y2="328" marker-end="url(#a)"/>
+    <line x1="872" y1="328" x2="884" y2="328" marker-end="url(#a)"/>
+    <line x1="1016" y1="328" x2="1028" y2="328" marker-end="url(#a)"/>
+  </g>
+  <path d="M1094,350 C1094,376 86,376 86,350" fill="none" stroke="#F59E0B" stroke-width="1.5" stroke-dasharray="5 3" marker-end="url(#a)"/>
+  <text x="590" y="392" text-anchor="middle" font-size="10" fill="#B45309">↺ 快照未通过则生成 blocked 状态并路由到上游相位，重新受治理地迭代</text>
+
+  <!-- ===== 带3 Edge 语义（左） + 执行产出（右） ===== -->
+  <g>
+    <rect x="20" y="410" width="560" height="70" rx="10" fill="#FFFFFF" stroke="#7C3AED" stroke-width="1.5"/>
+    <text x="36" y="434" font-size="12.5" font-weight="600" fill="#7C3AED">Edge 语义 · 17 条影响传播关系</text>
+    <text x="36" y="452" font-size="10.5" fill="#334155">每条规则固定：传播方向 · 默认风险 · 是否允许推理边</text>
+    <text x="36" y="468" font-size="10" fill="#64748B">按 ID 稳定排序的确定性 BFS，默认深度 ≤ 6；另有 14 条非传播结构关系服务完整性、查询与审计</text>
+  </g>
+  <line x1="300" y1="410" x2="252" y2="352" stroke="#94A3B8" stroke-width="1.5" marker-end="url(#a)"/>
+  <text x="292" y="386" font-size="10" fill="#475569">约束 Impact</text>
+
+  <g>
+    <rect x="720" y="410" width="380" height="70" rx="10" fill="#FFFFFF" stroke="#059669" stroke-width="1.5"/>
+    <text x="736" y="434" font-size="12.5" font-weight="600" fill="#059669">执行与验证产出</text>
+    <text x="736" y="452" font-size="10.5" fill="#334155">Run · Gate · Test · EvaluationCase · Evidence</text>
+    <text x="736" y="468" font-size="10" fill="#64748B">Agent 自述不能替代门禁与证据</text>
+  </g>
+  <line x1="830" y1="352" x2="890" y2="410" stroke="#94A3B8" stroke-width="1.5" marker-end="url(#a)"/>
+
+  <!-- ===== 带4 双事件流 ===== -->
+  <g>
+    <rect x="360" y="516" width="380" height="90" rx="10" fill="#FFFFFF" stroke="#2563EB" stroke-width="1.5"/>
+    <text x="376" y="540" font-size="12.5" font-weight="600" fill="#1D4ED8">Lifecycle Event · 权威治理事实</text>
+    <text x="376" y="558" font-size="9.5" fill="#475569">OperationStarted · PlanAccepted · ContextCompiled</text>
+    <text x="376" y="572" font-size="9.5" fill="#475569">ApprovalRequired · GateCompleted · EvaluationCompleted</text>
+    <text x="376" y="586" font-size="9.5" fill="#475569">FindingCreated / Closed / Superseded · OperationCompleted</text>
+  </g>
+  <g>
+    <rect x="780" y="516" width="380" height="90" rx="10" fill="#FFFFFF" stroke="#D97706" stroke-width="1.5"/>
+    <text x="796" y="540" font-size="12.5" font-weight="600" fill="#B45309">Observation Event · 实时运行信号</text>
+    <text x="796" y="558" font-size="9.5" fill="#475569">PhaseStarted / Completed / Paused · GateStarted</text>
+    <text x="796" y="572" font-size="9.5" fill="#475569">RunStarted · RunHeartbeat · RunOutputSummary · RunTerminated</text>
+    <text x="796" y="586" font-size="9.5" fill="#475569">BudgetUpdated · ApprovalRequired（实时通知）</text>
+  </g>
+  <path d="M910,480 L910,492 L550,492 L550,516" fill="none" stroke="#94A3B8" stroke-width="1.5" marker-end="url(#a)"/>
+  <line x1="970" y1="480" x2="970" y2="516" stroke="#94A3B8" stroke-width="1.5" marker-end="url(#a)"/>
+
+  <!-- ===== 带5 三层存储 ===== -->
+  <g>
+    <rect x="60" y="646" width="240" height="72" rx="10" fill="#FFFFFF" stroke="#0891B2" stroke-width="1.5"/>
+    <text x="180" y="672" text-anchor="middle" font-size="12.5" font-weight="600" fill="#0E7490">SQLite Projection</text>
+    <text x="180" y="690" text-anchor="middle" font-size="9.5" fill="#64748B">可确定性重建的查询缓存</text>
+    <text x="180" y="704" text-anchor="middle" font-size="9.5" fill="#64748B">删除后由 Ledger 重建</text>
+  </g>
+  <g>
+    <rect x="450" y="646" width="280" height="72" rx="10" fill="#0F172A" stroke="#0F172A"/>
+    <text x="590" y="672" text-anchor="middle" font-size="12.5" font-weight="600" fill="#F8FAFC">Git-native Ledger</text>
+    <text x="590" y="690" text-anchor="middle" font-size="9.5" fill="#94A3B8">Ledger 是唯一权威来源 · append-only</text>
+    <text x="590" y="704" text-anchor="middle" font-size="9.5" fill="#94A3B8">可重放 · 可验证</text>
+  </g>
+  <g>
+    <rect x="850" y="646" width="240" height="72" rx="10" fill="#FFFFFF" stroke="#F59E0B" stroke-width="1.5"/>
+    <text x="970" y="672" text-anchor="middle" font-size="12.5" font-weight="600" fill="#B45309">Live Spool</text>
+    <text x="970" y="690" text-anchor="middle" font-size="9.5" fill="#64748B">Live Spool 是可删除的实时观察</text>
+    <text x="970" y="704" text-anchor="middle" font-size="9.5" fill="#64748B">丢失不影响权威事实</text>
+  </g>
+  <line x1="550" y1="606" x2="585" y2="646" stroke="#94A3B8" stroke-width="1.5" marker-end="url(#a)"/>
+  <line x1="970" y1="606" x2="970" y2="646" stroke="#94A3B8" stroke-width="1.5" marker-end="url(#a)"/>
+  <line x1="450" y1="682" x2="300" y2="682" stroke="#94A3B8" stroke-width="1.5" marker-end="url(#a)"/>
+
+  <!-- ===== 带6 读取方 ===== -->
+  <rect x="20" y="760" width="1140" height="46" rx="23" fill="#FFFFFF" stroke="#CBD5E1" stroke-width="1.5"/>
+  <text x="590" y="789" text-anchor="middle" font-size="12.5" font-weight="600" fill="#334155">Dashboard · Markdown Projection · Audit · Resume · Snapshot</text>
+  <line x1="180" y1="718" x2="180" y2="760" stroke="#94A3B8" stroke-width="1.5" marker-end="url(#a)"/>
+  <line x1="590" y1="718" x2="590" y2="760" stroke="#94A3B8" stroke-width="1.5" marker-end="url(#a)"/>
+  <line x1="970" y1="718" x2="970" y2="760" stroke="#94A3B8" stroke-width="1.5" marker-end="url(#a)"/>
+  <text x="1042" y="744" font-size="10" fill="#B45309">读取时合并</text>
+</svg>
