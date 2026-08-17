@@ -2,7 +2,9 @@
 
 日期：2026-08-17
 
-状态：实施中
+状态：已完成
+
+完成日期：2026-08-17
 
 设计依据：[README Dashboard 效果截图设计](../specs/2026-08-17-readme-dashboard-screenshot-design.md)
 
@@ -96,3 +98,12 @@ git diff --check
 - 将设计和实施计划状态改为“已实施 / 已完成”，写入完成日期。
 - 提交截图、README、测试和状态更新。
 - 保持工作区干净；推送远端需要用户明确授权。
+
+## 7. 实施结果
+
+- 已从 `atlas-mvp` 的真实 Observatory Overview 捕获 PNG，最终尺寸为 1425×891，页面不含浏览器框、访问 token 或调试信息。
+- 截图前已确认 Overview 权威状态加载完成，Iteration Signal、Graph Cache、Control 等区域齐全，浏览器 console error 数量为 0。
+- README 已增加独立 `Dashboard 效果` 区域，使用稳定相对路径、中文替代文本和真实数据图注。
+- 文档契约测试通过：`tests/e2e/graph-model-documentation.test.ts` 共 7 项测试全部通过。
+- `pnpm format:check`、`pnpm lint`、`pnpm typecheck` 均通过。
+- 完整回归通过：216 个测试文件、1329 项测试全部通过。
