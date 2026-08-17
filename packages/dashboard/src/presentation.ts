@@ -651,12 +651,32 @@ export function presentEvent(source: object): BusinessPresentation {
       typeof payload.summary === "string" && payload.summary.trim() !== ""
         ? payload.summary.trim().replace(/\s+/gu, " ")
         : "Agent 已产生新的输出摘要。";
+    const stream =
+      payload.stream === "stderr"
+        ? "错误输出"
+        : payload.stream === "mixed"
+          ? "标准输出 + 错误输出"
+          : "标准输出";
+    const bytes = typeof payload.bytes_observed === "number" ? payload.bytes_observed : undefined;
     return present(
       "执行输出摘要",
       summary,
-      "已更新",
-      [],
-      ["event.payload.run_id", "event.payload.summary"],
+      payload.final === true ? "已完成" : "已更新",
+      [
+        { label_zh: "输出来源", value: stream, tone: "neutral" },
+        ...(bytes === undefined
+          ? []
+          : [{ label_zh: "已观察", value: `${String(bytes)} bytes`, tone: "neutral" as const }]),
+        ...(payload.truncated === true
+          ? [{ label_zh: "摘要", value: "已截断", tone: "warning" as const }]
+          : []),
+      ],
+      [
+        "event.payload.run_id",
+        "event.payload.summary",
+        "event.payload.stream",
+        "event.payload.bytes_observed",
+      ],
       typeof payload.summary !== "string",
     );
   }
@@ -667,19 +687,62 @@ export function presentEvent(source: object): BusinessPresentation {
         : typeof payload.used_tokens === "number"
           ? payload.used_tokens
           : undefined;
+    const observations = Array.isArray(payload.budget_observations)
+      ? (payload.budget_observations as Array<Record<string, unknown>>)
+      : [];
+    const observation = (dimension: string): Record<string, unknown> | undefined =>
+      observations.find((entry) => entry.dimension === dimension);
+    const tokenObservation = observation("tokens");
+    const stepObservation = observation("steps");
+    const durationObservation = observation("duration_ms");
+    const tokenValue =
+      tokenObservation?.availability === "unavailable"
+        ? "未计量"
+        : typeof tokenObservation?.used === "number"
+          ? String(tokenObservation.used)
+          : tokens === undefined
+            ? "未计量"
+            : String(tokens);
+    const stepValue =
+      stepObservation?.availability === "unavailable"
+        ? "未计量"
+        : typeof stepObservation?.used === "number"
+          ? String(stepObservation.used)
+          : "未计量";
+    const duration =
+      typeof durationObservation?.used === "number"
+        ? durationObservation.used
+        : typeof payload.duration_ms === "number"
+          ? payload.duration_ms
+          : undefined;
+    const provider = typeof payload.provider === "string" ? payload.provider : "当前 Agent 后端";
+    const unavailable = tokenValue === "未计量" && stepValue === "未计量";
+    const description = unavailable
+      ? `${provider} 未提供可靠的 Token 与 Step 计量；${
+          duration === undefined
+            ? "Harness 仍会强制运行时长上限。"
+            : `Harness 已测量运行时长 ${String(duration)} ms。`
+        }`
+      : tokens === undefined
+        ? "执行预算发生变化。"
+        : `当前累计使用 ${String(tokens)} tokens。`;
     return present(
       "执行预算已更新",
-      tokens === undefined ? "执行预算发生变化。" : `当前累计使用 ${String(tokens)} tokens。`,
+      description,
       "已更新",
       [
         {
-          label_zh: "Token 用量",
-          value: tokens === undefined ? "未计量" : String(tokens),
+          label_zh: "Token",
+          value: tokenValue,
           tone: "neutral",
         },
+        { label_zh: "Step", value: stepValue, tone: "neutral" },
+        ...(duration === undefined
+          ? []
+          : [{ label_zh: "时长", value: `${String(duration)} ms`, tone: "positive" as const }]),
       ],
-      ["event.payload.total_tokens"],
-      tokens === undefined,
+      ["event.payload.total_tokens", "event.payload.budget_observations"],
+      observations.length === 0 && tokens === undefined,
     );
   }
   if (eventType === "ApprovalRequired") {

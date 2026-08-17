@@ -393,9 +393,7 @@ describe("Dashboard server", () => {
     const firstApproval = approvalBody.data.items[0];
     if (firstApproval === undefined) throw new Error("Approval fixture missing");
     expect(
-      approvalBody.data.presentations[
-        `${firstApproval.request_id}@${firstApproval.object_digest}`
-      ],
+      approvalBody.data.presentations[`${firstApproval.request_id}@${firstApproval.object_digest}`],
     ).toMatchObject({
       entity_id: firstApproval.request_id,
       binding_digest: firstApproval.object_digest,

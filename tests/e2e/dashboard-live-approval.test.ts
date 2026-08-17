@@ -139,6 +139,43 @@ const test = base.extend<{ dashboard: LiveDashboardFixture }>({
 });
 
 test.describe("Dashboard live approval journey", () => {
+  test("renders a readable dsh output tail with stream provenance", async ({ dashboard }) => {
+    const { page, workflowOperationId } = dashboard;
+    const liveId = "live:dsh-output:1";
+    const frame = {
+      id: liveId,
+      source: "live",
+      authoritative: false,
+      event: {
+        event_type: "RunOutputSummary",
+        timestamp: "2026-08-17T00:00:00.000Z",
+        observation_key: "dsh_output_01",
+        workflow_operation_id: workflowOperationId,
+        payload: {
+          run_id: "run_dsh_01",
+          summary: "编译后端模块\n运行集成测试\n12/12 passed",
+          stream: "mixed",
+          bytes_observed: 1_484,
+          truncated: false,
+          final: false,
+        },
+      },
+      presentations: {},
+    };
+    await page.route("**/events", (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: "text/event-stream",
+        headers: { "cache-control": "no-cache" },
+        body: `id: ${liveId}\nevent: RunOutputSummary\ndata: ${JSON.stringify(frame)}\n\n`,
+      }),
+    );
+
+    await page.getByRole("link", { name: /Live/u }).click();
+    await expect(page.getByLabel("Agent output tail")).toContainText("运行集成测试");
+    await expect(page.getByText("mixed · 1484 bytes", { exact: true })).toBeVisible();
+  });
+
   test("loads the authoritative approval queue after the live event was missed", async ({
     dashboard,
   }) => {

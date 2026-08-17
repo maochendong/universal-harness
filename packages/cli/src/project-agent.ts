@@ -80,7 +80,11 @@ export function createConfiguredAgentExecutor(
   });
   return {
     name: "agent-dsh",
-    execute: (envelope) => adapter.run(envelope, { mode: "supervised" }),
+    execute: (envelope, runOptions) =>
+      adapter.run(envelope, {
+        mode: "supervised",
+        ...(runOptions?.onOutput === undefined ? {} : { on_output: runOptions.onOutput }),
+      }),
     scope: {
       allowed_read_paths: config.allowed_read_paths,
       proposed_write_paths: config.proposed_write_paths,

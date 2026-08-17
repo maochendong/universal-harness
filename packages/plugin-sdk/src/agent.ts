@@ -158,9 +158,16 @@ export interface AgentResumeContext {
   readonly prior_evidence: readonly AgentEvidenceLocator[];
 }
 
+/** Incremental provider process output; observational and never authoritative. */
+export interface AgentRunOutput {
+  readonly stream: "stdout" | "stderr";
+  readonly chunk: string;
+}
+
 export interface AgentRunOptions {
   readonly mode: AgentRunMode;
   readonly resume?: AgentResumeContext;
+  readonly on_output?: (output: AgentRunOutput) => void;
 }
 
 export interface AgentAdapter {

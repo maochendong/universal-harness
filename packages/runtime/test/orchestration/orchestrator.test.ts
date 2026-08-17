@@ -14,7 +14,11 @@ import { afterEach, describe, expect, it } from "vitest";
 import { createGitVcsAdapter } from "@universal-harness-internal/adapter-vcs-git";
 import { renderTasksProjection } from "@universal-harness-internal/adapter-projection-markdown";
 import { materializeLedger, pageEdges, pageNodes } from "@universal-harness-internal/graph";
-import type { AgentRunResult, AgentTaskEnvelope } from "@universal-harness-internal/plugin-sdk";
+import type {
+  AgentRunOutput,
+  AgentRunResult,
+  AgentTaskEnvelope,
+} from "@universal-harness-internal/plugin-sdk";
 
 import {
   OrchestrationError,
@@ -48,6 +52,7 @@ import {
   type EvaluationPort,
   type GateDefinition,
   type OrchestrationOutcome,
+  type OrchestrationExecutor,
   type OrchestratorDependencies,
   type PhaseProgressEvent,
   type PlanTasksPort,
@@ -162,7 +167,7 @@ describe("worktree code binding", () => {
 
 interface FakeExecutor {
   readonly calls: readonly AgentTaskEnvelope[];
-  readonly executor: (envelope: AgentTaskEnvelope) => Promise<AgentRunResult>;
+  readonly executor: OrchestrationExecutor;
 }
 
 function claimedResult(envelope: AgentTaskEnvelope, note: string): AgentRunResult {
@@ -276,12 +281,14 @@ const completeEvaluation: EvaluationPort = (input) => {
 
 function recordingExecutor(
   behavior?: (envelope: AgentTaskEnvelope, call: number) => AgentRunResult,
+  outputs: readonly AgentRunOutput[] = [],
 ): FakeExecutor {
   const calls: AgentTaskEnvelope[] = [];
   return {
     calls,
-    executor: (envelope) => {
+    executor: (envelope, options) => {
       calls.push(envelope);
+      for (const output of outputs) options?.onOutput?.(output);
       const result =
         behavior === undefined
           ? claimedResult(envelope, "default")
@@ -416,7 +423,9 @@ describe("phase orchestrator", { timeout: 30000 }, () => {
   it("runs a full iteration from intent to a completed snapshot, pausing only for approvals", async () => {
     const newId = sequentialIds();
     const projectRoot = await bootstrapProject("orch-demo", newId);
-    const fake = recordingExecutor();
+    const fake = recordingExecutor(undefined, [
+      { stream: "stdout", chunk: `dsh progress ${"x".repeat(8_192)}\n` },
+    ]);
     const deps = makeDeps(projectRoot, newId, {
       execution: {
         kind: "agent",
@@ -538,6 +547,23 @@ describe("phase orchestrator", { timeout: 30000 }, () => {
     ).items.filter((item) => item.event.event_type === "GateCompleted");
     expect(streamedGates).toHaveLength(1);
     expect(streamedGates[0]).toMatchObject({ source: "ledger", authoritative: true });
+    const streamedOutput = (
+      await new FileEventStream(projectRoot).read({ limit: 500 })
+    ).items.filter((item) => item.event.event_type === "RunOutputSummary");
+    expect(streamedOutput).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          source: "live",
+          authoritative: false,
+          event: expect.objectContaining({
+            payload: expect.objectContaining({ stream: "stdout", final: false }),
+          }),
+        }),
+        expect.objectContaining({
+          event: expect.objectContaining({ payload: expect.objectContaining({ final: true }) }),
+        }),
+      ]),
+    );
 
     // Evaluation evidence is graph-native: the accepted case evaluates both
     // the Task and its concrete Run, so status coverage and task freshness are

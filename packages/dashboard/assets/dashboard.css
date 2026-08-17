@@ -1136,6 +1136,28 @@ h2 {
 .live-event .business-badges {
   margin-top: 0.55rem;
 }
+.live-output-tail,
+.live-output-meta {
+  grid-column: 3;
+}
+.live-output-tail {
+  max-height: 13rem;
+  margin: 0.65rem 0 0;
+  padding: 0.8rem;
+  overflow: auto;
+  border-left: 2px solid var(--signal);
+  color: var(--paper);
+  background: var(--ink);
+  font: 0.62rem/1.55 var(--mono);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.live-output-meta {
+  margin: 0.35rem 0 0;
+  color: var(--paper-muted);
+  font: 0.52rem/1.4 var(--mono);
+  text-transform: uppercase;
+}
 .approval-bay {
   align-self: start;
   min-height: 30rem;
@@ -1429,6 +1451,10 @@ h2 {
   .live-event .live-copy {
     grid-column: 3;
   }
+  .live-output-tail,
+  .live-output-meta {
+    grid-column: 3;
+  }
   .footer {
     display: none;
   }
@@ -1468,6 +1494,10 @@ h2 {
     grid-template-columns: 4rem minmax(0, 1fr);
   }
   .live-event > :nth-child(n + 3) {
+    grid-column: 2;
+  }
+  .live-output-tail,
+  .live-output-meta {
     grid-column: 2;
   }
   .node-card,

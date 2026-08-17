@@ -120,13 +120,18 @@ export function createDshAgentAdapter(options: DshAgentAdapterOptions): AgentAda
   } as const;
   let probePassed = false;
 
-  const runProcess = (args: readonly string[], timeoutMs: number): Promise<ProcessRunResult> =>
+  const runProcess = (
+    args: readonly string[],
+    timeoutMs: number,
+    onOutput?: NonNullable<Parameters<AgentAdapter["run"]>[1]["on_output"]>,
+  ): Promise<ProcessRunResult> =>
     spawnProcess(executable, {
       args,
       cwd: worktree,
       env: environment,
       timeout_ms: timeoutMs,
       max_output_bytes: maxOutputBytes,
+      ...(onOutput === undefined ? {} : { on_output: onOutput }),
     });
 
   return {
@@ -179,6 +184,7 @@ export function createDshAgentAdapter(options: DshAgentAdapterOptions): AgentAda
         const processResult = await runProcess(
           [...launcherArgs, "--profile", "headless", renderDshTask(envelope)],
           timeoutMs,
+          runOptions.on_output,
         );
         const after = await options.inspector.inspect(worktree);
         const newlyChanged = after.changed_paths

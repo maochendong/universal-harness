@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { StringDecoder } from "node:string_decoder";
 
 /**
  * Minimized plugin subprocess execution (design 14, plan Task 24 step 3). A
@@ -39,6 +40,13 @@ export interface PluginSubprocessOptions {
   readonly timeout_ms: number;
   /** Combined stdout+stderr capture cap in bytes. */
   readonly max_output_bytes: number;
+  /** Disposable, best-effort observation of output accepted under the cap. */
+  readonly on_output?: (output: PluginSubprocessOutput) => void;
+}
+
+export interface PluginSubprocessOutput {
+  readonly stream: "stdout" | "stderr";
+  readonly chunk: string;
 }
 
 export interface PluginSubprocessResult {
@@ -92,8 +100,22 @@ export function runPluginSubprocess(
     let timedOut = false;
     let settled = false;
 
+    const decoders = {
+      stdout: new StringDecoder("utf8"),
+      stderr: new StringDecoder("utf8"),
+    };
+    const observe = (stream: PluginSubprocessOutput["stream"], chunk: string): void => {
+      if (chunk === "" || options.on_output === undefined) return;
+      try {
+        options.on_output({ stream, chunk });
+      } catch {
+        // Output observation is explicitly disposable and cannot affect the
+        // governed process result.
+      }
+    };
+
     const collect =
-      (chunks: Buffer[]) =>
+      (stream: PluginSubprocessOutput["stream"], chunks: Buffer[]) =>
       (chunk: Buffer): void => {
         if (captured + chunk.length > options.max_output_bytes) {
           if (!truncated) {
@@ -105,6 +127,7 @@ export function runPluginSubprocess(
         }
         captured += chunk.length;
         chunks.push(chunk);
+        observe(stream, decoders[stream].write(chunk));
       };
 
     const timer = setTimeout(() => {
@@ -112,8 +135,8 @@ export function runPluginSubprocess(
       child.kill("SIGTERM");
     }, options.timeout_ms);
 
-    child.stdout.on("data", collect(stdoutChunks));
-    child.stderr.on("data", collect(stderrChunks));
+    child.stdout.on("data", collect("stdout", stdoutChunks));
+    child.stderr.on("data", collect("stderr", stderrChunks));
     child.on("error", (error: NodeJS.ErrnoException) => {
       if (settled) return;
       settled = true;
@@ -130,6 +153,8 @@ export function runPluginSubprocess(
       if (settled) return;
       settled = true;
       clearTimeout(timer);
+      observe("stdout", decoders.stdout.end());
+      observe("stderr", decoders.stderr.end());
       resolve({
         exit_code: exitCode,
         signal,

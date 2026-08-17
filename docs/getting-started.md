@@ -76,7 +76,7 @@ harness iterate "Implement the next change"
 
 执行 Agent 任务前还会出现 **ExecutionAuthorizationSpec** 批准点。它把 Plan、Impact coverage、每个 Task 的 ContextBundle 与 CapabilityGrant、Policy、基线提交和 Adapter Control Profile 封装成一个不可变 digest。批准后其中任一项变化，旧批准立即失效，必须重新分析或授权。
 
-长运行命令不会保持静默：live spool 每 5 秒记录 heartbeat，终端每 30 秒最多显示一次 task、control profile、elapsed、最近 heartbeat 与预算 availability。`harness status --json` 在 Run 活动期间包含 `active_run`；RunTerminated 后该字段消失。即使使用 `--json`，进度也只写 stderr，stdout 仍是一条最终 JSON。
+长运行命令不会保持静默：live spool 每 5 秒记录 heartbeat；受管 Agent 子进程产生 stdout/stderr 时，还会写入经过脱敏、节流和限长的 `RunOutputSummary`。终端每 30 秒最多显示一次 task、control profile、elapsed、最近 heartbeat 与预算 availability，Dashboard Live 页展示输出尾部、来源流、累计字节与截断状态。`harness status --json` 在 Run 活动期间包含 `active_run`；RunTerminated 后该字段消失。即使使用 `--json`，进度也只写 stderr，stdout 仍是一条最终 JSON。dsh headless 未提供可靠 token/step 时，两项保持 `unavailable`，Harness 不做估算；duration 仍由 Harness 测量和强制。
 
 完成结果中的提交引用含义固定：`source_commit` 是 Gate、Evaluation 与 Snapshot 证明的源码树；`ledger_commit` 是首次包含完成 Ledger 与 Snapshot 的提交；`repository_head` 是命令返回瞬间的 HEAD。
 
@@ -111,6 +111,7 @@ harness iterate "Implement the next change"
 - `proposed_write_paths` 不能包含 `.git` 或 `.harness`；每个任务的 Capability Grant 只会进一步收窄该范围。
 - dsh 凭据从显式环境变量白名单注入，不写入配置或 Ledger。当前默认需要 `DEEPSEEK_API_KEY`。
 - 每次验证都会保存项目门禁日志的摘要和 SHA-256 Evidence；Agent transcript 与前后仓库摘要保存在 `.harness/raw-traces/`，不作为权威状态提交。
+- Dashboard 的 `08 Approvals` 从已提交 ApprovalRequest/ApprovalDecision artifact 重建待审批队列；即使页面在审批事件之后才打开，也可按原始对象 digest 决策并恢复工作流。
 - dsh 版本、退出码和失败映射的实测契约见 [dsh headless 本机契约](dsh-headless-contract.md)。
 
 ## 接管已有项目

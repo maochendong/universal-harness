@@ -1,10 +1,18 @@
 import type {
   AgentProviderManifest,
+  AgentRunOutput,
   AgentRunResult,
   AgentTaskEnvelope,
 } from "@universal-harness-internal/plugin-sdk";
 
-export type OrchestrationExecutor = (envelope: AgentTaskEnvelope) => Promise<AgentRunResult>;
+export interface OrchestrationExecutorOptions {
+  readonly onOutput?: (output: AgentRunOutput) => void;
+}
+
+export type OrchestrationExecutor = (
+  envelope: AgentTaskEnvelope,
+  options?: OrchestrationExecutorOptions,
+) => Promise<AgentRunResult>;
 
 export interface ExecutionBinding {
   readonly kind: "workflow" | "agent";

@@ -621,11 +621,26 @@ function appendLiveItem(item) {
     title_zh: item.event.event_type,
     description_zh: liveSummary(item.event),
   };
+  const heading = businessHeading(presentation);
   row.append(
     node("time", "", liveTime(item.event.timestamp)),
     node("span", "live-source", item.authoritative ? "LEDGER" : "LIVE"),
-    businessHeading(presentation),
+    heading,
   );
+  if (item.event.event_type === "RunOutputSummary") {
+    const payload = item.event.payload || {};
+    const output = node("pre", "live-output-tail", payload.summary || "No output summary.");
+    output.setAttribute("aria-label", "Agent output tail");
+    const stream = payload.stream || "stdout";
+    const observed = Number.isFinite(payload.bytes_observed)
+      ? `${payload.bytes_observed} bytes`
+      : "bytes unknown";
+    const flags = [stream, observed];
+    if (payload.truncated) flags.push("tail truncated");
+    if (payload.final) flags.push("final flush");
+    const meta = node("p", "live-output-meta", flags.join(" · "));
+    row.append(output, meta);
+  }
   if (previous) previous.replaceWith(row);
   else register.prepend(row);
   model.liveByKey.set(key, row);
@@ -697,9 +712,7 @@ function renderApproval(approval, presentation, options) {
     actions.append(button);
   }
   form.append(label, actions);
-  form.addEventListener("submit", (event) =>
-    void decideApproval(event, approval, { card, view }),
-  );
+  form.addEventListener("submit", (event) => void decideApproval(event, approval, { card, view }));
   card.append(form);
 }
 
@@ -718,7 +731,7 @@ async function decideApproval(event, approval, options) {
         actor,
       },
     );
-    model.pendingApprovals.delete(approval.request_id);
+    if (result.decision !== "defer") model.pendingApprovals.delete(approval.request_id);
     const card = options.card;
     clear(card);
     card.append(node("p", "eyebrow", "DECISION RECORDED"), node("h4", "", result.decision));
@@ -739,6 +752,7 @@ async function decideApproval(event, approval, options) {
     }
     status(options.view, `Decision ${result.decision} committed by ${actor}`);
     await loadOverview();
+    if (result.decision === "defer" && options.view === "approvals") await loadApprovals();
   } catch (error) {
     status(
       options.view,
@@ -747,7 +761,10 @@ async function decideApproval(event, approval, options) {
         : error.message,
       "error",
     );
-    if (error.status === 409) await loadOverview();
+    if (error.status === 409) {
+      await loadOverview();
+      if (options.view === "approvals") await loadApprovals();
+    }
   }
 }
 
@@ -797,11 +814,7 @@ async function loadApprovals() {
     for (const approval of page.items) {
       const card = node("article", "approval-card approval-queue-card");
       const presentation =
-        presentationFor(
-          page.presentations,
-          { id: approval.request_id },
-          approval.object_digest,
-        ) ||
+        presentationFor(page.presentations, { id: approval.request_id }, approval.object_digest) ||
         technicalPresentation(
           {
             id: approval.request_id,

@@ -98,7 +98,7 @@ harness serve --port 43123
 
 命令只监听 `127.0.0.1`。它输出一次带随机 token 的 bootstrap URL；首次访问把 token 交换为进程内 HttpOnly、SameSite=Strict session cookie，然后重定向到无 token URL。不要把 bootstrap URL 发到日志、工单或聊天中。
 
-Dashboard 提供 Graph、Impact、Iteration、Evidence、Findings 和 Live 视图。页面不加载 CDN、远程脚本或远程字体。批准、恢复和 Finding 组处置必须同时满足 session、同源 Origin、session CSRF、actor 与 expected digest；冲突返回 409。
+Dashboard 提供 Overview、Graph、Impact、Iteration、Evidence、Findings、Live 和 Approvals 视图。Approvals 直接读取 Ledger 已提交的 ApprovalRequest/ApprovalDecision：approve/reject 移出队列，defer 保持 pending，被重新签发的旧请求由 supersedes 关系退役，因此它不依赖 Live EventSource 的在线时机。页面不加载 CDN、远程脚本或远程字体。批准、恢复和 Finding 组处置必须同时满足 session、同源 Origin、session CSRF、actor 与 expected digest；冲突返回 409。
 
 使用 `Ctrl-C` 或 `SIGTERM` 关闭服务。服务会停止接受新写请求、终止 SSE、等待当前 HTTP/Ledger 操作结束，再关闭数据库与监听 socket。
 
@@ -108,6 +108,7 @@ Dashboard 提供 Graph、Impact、Iteration、Evidence、Findings 和 Live 视�
 - `harness watch --follow` 与 Dashboard `/events` 合并 live 和 Ledger。相同 observation key 的 Ledger 事件替代 live 事件。
 - cursor 已被轮转时 SSE 发送 `stream_reset`；客户端必须重新获取 REST 快照后再订阅，不能猜测缺失终态。
 - Dashboard 重启后从 Ledger 恢复历史；没有权威终态的旧 live Run 显示 unknown。
+- dsh stdout/stderr 增量输出只以脱敏、节流、限长的 `RunOutputSummary` 进入 live spool；原始 transcript 留在 `.harness/raw-traces/`。输出摘要可丢失且不构成完成证据，token/step 不可观测时必须显示 unavailable。
 - 可在停止相关进程后把 live spool 移到项目外备份；删除它不会改变 `resume`、`status`、`snapshot` 或 `audit`。
 
 ## 7. 缓存与故障矩阵

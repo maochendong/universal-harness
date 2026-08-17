@@ -19,9 +19,8 @@ import {
   buildApprovalDecision,
   buildApprovalRequest,
   proposedByOf,
-  readApprovalDecisions,
+  readPendingApprovalRequests,
   readApprovalRequests,
-  supersededRequestId,
   type ApprovalDecision,
   type ApprovalDecisionRecord,
   type ApprovalRequestRecord,
@@ -142,26 +141,10 @@ export class ApprovalService {
    * terminally decided request drops out.
    */
   pendingRequests(workflowOperationId: string): ApprovalRequestRecord[] {
-    const requests = this.requests(workflowOperationId);
-    const decisions = readApprovalDecisions(
+    return readPendingApprovalRequests(
       harnessRootFor(this.deps.projectRoot),
       ledgerRepositoryFor(this.workflowDeps()).operations(),
-      workflowOperationId,
-    );
-    const superseded = new Set<string>();
-    for (const request of requests) {
-      const supersedes = supersededRequestId(request);
-      if (supersedes !== undefined) superseded.add(supersedes);
-    }
-    const terminal = new Set<string>();
-    for (const decision of decisions) {
-      if (decision.decision === "approve" || decision.decision === "reject") {
-        terminal.add(decision.request_id);
-      }
-    }
-    return requests.filter(
-      (request) => !superseded.has(request.request_id) && !terminal.has(request.request_id),
-    );
+    ).filter((request) => request.workflow_operation_id === workflowOperationId);
   }
 
   /** The single next request to resolve; M1 resolves strictly one at a time. */

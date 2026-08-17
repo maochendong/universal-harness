@@ -36,6 +36,8 @@ export interface ObservationPublisherOptions {
 
 export interface RunOutputOptions {
   readonly flush?: boolean;
+  readonly final?: boolean;
+  readonly stream?: "stdout" | "stderr";
 }
 
 export interface ObservationPublisherPort {
@@ -58,6 +60,7 @@ interface OutputState {
   totalBytes: number;
   pendingBytes: number;
   lastPublishedAt: number;
+  readonly streams: Set<"stdout" | "stderr">;
 }
 
 function logicalKey(kind: string, parts: readonly string[]): string {
@@ -243,6 +246,7 @@ export class ObservationPublisher implements ObservationPublisherPort {
       totalBytes: 0,
       pendingBytes: 0,
       lastPublishedAt: now,
+      streams: new Set(),
     });
     this.heartbeatAt.delete(runId);
     return this.publish("RunStarted", logicalKey("run_started", [runId]), {
@@ -271,10 +275,13 @@ export class ObservationPublisher implements ObservationPublisherPort {
     const state = this.outputs.get(runId);
     if (state === undefined) throw new Error(`run ${runId} must start before publishing output`);
     const bytes = Buffer.byteLength(chunk, "utf8");
-    state.hash.update(chunk, "utf8");
-    state.rawTail += chunk;
-    state.totalBytes += bytes;
-    state.pendingBytes += bytes;
+    if (bytes > 0) {
+      state.streams.add(options.stream ?? "stdout");
+      state.hash.update(chunk, "utf8");
+      state.rawTail += chunk;
+      state.totalBytes += bytes;
+      state.pendingBytes += bytes;
+    }
     const now = this.nowMs();
     if (
       options.flush !== true &&
@@ -307,6 +314,9 @@ export class ObservationPublisher implements ObservationPublisherPort {
         output_digest: state.hash.copy().digest("hex"),
         bytes_observed: state.totalBytes,
         truncated: bounded.truncated || scrubbed.truncated,
+        stream:
+          state.streams.size > 1 ? "mixed" : (state.streams.values().next().value ?? "stdout"),
+        final: options.final === true,
       },
     );
   }

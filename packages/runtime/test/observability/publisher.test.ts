@@ -106,6 +106,22 @@ describe("ObservationPublisher", () => {
     expect(threshold?.payload["output_digest"]).toMatch(/^[a-f0-9]{64}$/u);
   });
 
+  it("labels stdout, stderr and mixed summaries and marks the final flush", () => {
+    const { publisher, advance } = fixture();
+
+    publisher.runStarted("run_01");
+    expect(publisher.runOutput("run_01", "compiling\n", { stream: "stdout" })).toBeUndefined();
+    advance(2_000);
+    const mixed = publisher.runOutput("run_01", "warning\n", { stream: "stderr" });
+    expect(mixed?.payload).toMatchObject({ stream: "mixed", final: false });
+    const final = publisher.runOutput("run_01", "done\n", {
+      stream: "stdout",
+      flush: true,
+      final: true,
+    });
+    expect(final?.payload).toMatchObject({ stream: "mixed", final: true });
+  });
+
   it("redacts exact secrets split across chunks, URL credentials and common token forms", async () => {
     const { projectRoot, publisher, advance } = fixture();
 

@@ -2891,8 +2891,16 @@ async function phaseExecute(ctx: PipelineContext): Promise<PhaseStep> {
     // A throw here is a process-level crash: no terminal record is written and
     // resume reconciles the open run. Typed failures come back as results.
     let result: AgentRunResult;
+    let observedOutput = false;
     try {
-      result = await executor(envelope as AgentTaskEnvelope);
+      result = await executor(envelope as AgentTaskEnvelope, {
+        onOutput: (output) => {
+          observedOutput = true;
+          observe(ctx, () =>
+            ctx.observations.runOutput(activeRunId, output.chunk, { stream: output.stream }),
+          );
+        },
+      });
     } finally {
       clearInterval(heartbeat);
     }
@@ -2951,11 +2959,19 @@ async function phaseExecute(ctx: PipelineContext): Promise<PhaseStep> {
         ],
       };
     }
-    observe(ctx, () => ctx.observations.runOutput(activeRunId, result.summary, { flush: true }));
+    observe(ctx, () =>
+      ctx.observations.runOutput(activeRunId, observedOutput ? "" : result.summary, {
+        flush: true,
+        final: true,
+      }),
+    );
     observe(ctx, () =>
       ctx.observations.budgetUpdated({
         run_id: activeRunId,
         task_id: task.id,
+        ...(binding.adapter_profile === undefined
+          ? {}
+          : { provider: binding.adapter_profile.provider }),
         input_tokens: result.usage.input_tokens,
         output_tokens: result.usage.output_tokens,
         total_tokens: result.usage.total_tokens,

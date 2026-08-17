@@ -9,6 +9,43 @@ import { cleanupDirectories, makeTempDir } from "../../agent-command/test/helper
 afterEach(cleanupDirectories);
 
 describe("dsh agent adapter", () => {
+  it("forwards task stdout and stderr while excluding the version probe", async () => {
+    const observed: Array<{ stream: string; chunk: string }> = [];
+    const adapter = createDshAgentAdapter({
+      executable: "npx",
+      launcher_args: ["--no-install", "@deepseek-ai/dsh"],
+      expected_version: "0.1.0-rc.6",
+      worktree: makeTempDir("harness-dsh-worktree-"),
+      evidence_dir: makeTempDir("harness-dsh-evidence-"),
+      inspector: {
+        inspect: () => Promise.resolve({ head: null, changed_paths: [], digest: "a".repeat(64) }),
+      },
+      spawnProcess: (_executable, options) => {
+        const probe = options.args.at(-1) === "--version";
+        options.on_output?.({
+          stream: probe ? "stdout" : "stderr",
+          chunk: probe ? "0.1.0-rc.6\n" : "working on tests\n",
+        });
+        return Promise.resolve({
+          exit_code: 0,
+          signal: null,
+          stdout: probe ? "0.1.0-rc.6\n" : "done\n",
+          stderr: "",
+          timed_out: false,
+          output_truncated: false,
+          duration_ms: 2,
+        });
+      },
+    });
+
+    await adapter.run(fixtureEnvelope(), {
+      mode: "supervised",
+      on_output: (output) => observed.push(output),
+    });
+
+    expect(observed).toEqual([{ stream: "stderr", chunk: "working on tests\n" }]);
+  });
+
   it("turns a successful headless run into a verifiable handoff", async () => {
     const calls: Array<{ executable: string; args: readonly string[] }> = [];
     const runner: DshProcessRunner = (executable, options) => {

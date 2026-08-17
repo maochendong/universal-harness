@@ -543,6 +543,63 @@ describe("Dashboard business presentation", () => {
     }
   });
 
+  it("explains streamed output provenance and unavailable dsh budget dimensions", () => {
+    expect(
+      presentEvent({
+        id: "live:stream_01:output",
+        source: "live",
+        authoritative: false,
+        event: {
+          event_type: "RunOutputSummary",
+          payload: {
+            run_id: "run_01",
+            summary: "正在运行测试。",
+            stream: "mixed",
+            bytes_observed: 12_345,
+            truncated: true,
+            final: false,
+          },
+        },
+      }),
+    ).toMatchObject({
+      badges: [
+        { label_zh: "输出来源", value: "标准输出 + 错误输出" },
+        { label_zh: "已观察", value: "12345 bytes" },
+        { label_zh: "摘要", value: "已截断" },
+        { label_zh: "来源", value: "实时信号" },
+      ],
+    });
+
+    expect(
+      presentEvent({
+        id: "live:stream_01:budget",
+        source: "live",
+        authoritative: false,
+        event: {
+          event_type: "BudgetUpdated",
+          payload: {
+            provider: "dsh",
+            duration_ms: 2_500,
+            budget_observations: [
+              { dimension: "steps", availability: "unavailable", used: null },
+              { dimension: "tokens", availability: "unavailable", used: null },
+              { dimension: "duration_ms", availability: "measured", used: 2_500 },
+            ],
+          },
+        },
+      }),
+    ).toMatchObject({
+      description_zh: "dsh 未提供可靠的 Token 与 Step 计量；Harness 已测量运行时长 2500 ms。",
+      badges: [
+        { label_zh: "Token", value: "未计量" },
+        { label_zh: "Step", value: "未计量" },
+        { label_zh: "时长", value: "2500 ms" },
+        { label_zh: "来源", value: "实时信号" },
+      ],
+      fallback: false,
+    });
+  });
+
   it("marks unknown protocol values as fallback even when business text is available", () => {
     expect(
       presentNode({
