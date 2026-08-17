@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -12,6 +12,12 @@ import { describe, expect, it } from "vitest";
 const repositoryRoot = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const modelDocumentPath = join(repositoryRoot, "docs", "graph-driven-harness-model.md");
 const readmePath = join(repositoryRoot, "README.md");
+const dashboardScreenshotPath = join(
+  repositoryRoot,
+  "docs",
+  "assets",
+  "harness-observatory-overview.png",
+);
 
 function modelDocument(): string {
   return readFileSync(modelDocumentPath, "utf8");
@@ -138,5 +144,20 @@ describe("Graph-native model documentation", () => {
     expect(markdown).toContain(
       "[完整 Graph-native 模型与传播规则](docs/graph-driven-harness-model.md)",
     );
+  });
+
+  it("shows the real atlas-mvp Observatory overview without publishing a local session token", () => {
+    const markdown = readme();
+
+    expect(existsSync(dashboardScreenshotPath)).toBe(true);
+    expect(readFileSync(dashboardScreenshotPath).subarray(0, 8)).toEqual(
+      Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+    );
+    expect(markdown).toContain("## Dashboard 效果");
+    expect(markdown).toContain(
+      "![Harness Observatory Dashboard：atlas-mvp 项目 Overview](docs/assets/harness-observatory-overview.png)",
+    );
+    expect(markdown).toContain("基于 atlas-mvp 真实 Harness 数据的本地 Observatory Dashboard");
+    expect(markdown).not.toMatch(/[?&]token=/u);
   });
 });

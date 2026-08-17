@@ -23,6 +23,12 @@ Universal Harness 是一个 Graph-native、Provider-neutral 的工程 Harness，
 
 M1 与 M2 均已完成。M1 的 Task 1–28 和 28 条验收标准已有通过证据；M2 又交付了 Finding 治理、可选 LLM Judge、确定性语义建议、本地 Dashboard 与统一实时事件流。请从 [快速开始](docs/getting-started.md) 运行第一次闭环，并在 [M2 运维指南](docs/operations.md) 中查看新增能力。
 
+## Dashboard 效果
+
+![Harness Observatory Dashboard：atlas-mvp 项目 Overview](docs/assets/harness-observatory-overview.png)
+
+_基于 atlas-mvp 真实 Harness 数据的本地 Observatory Dashboard。_
+
 ## Graph-native 驱动模型
 
 <!-- graph-model:readme-overview:start -->
