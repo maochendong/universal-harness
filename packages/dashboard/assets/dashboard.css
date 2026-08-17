@@ -1347,6 +1347,9 @@ h2 {
   .live-layout {
     grid-template-columns: 1fr;
   }
+  .neighbor-list {
+    grid-template-columns: 1fr;
+  }
   .instrument-wide {
     grid-column: auto;
   }

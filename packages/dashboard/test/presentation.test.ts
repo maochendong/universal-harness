@@ -264,6 +264,33 @@ describe("Dashboard business presentation", () => {
     });
   });
 
+  it("names every governed approval object used by the runtime in Chinese", () => {
+    const labels = {
+      AdoptionBaseline: "接管基线",
+      ExecutionAuthorizationSpec: "执行授权方案",
+      ImpactSet: "影响范围",
+      ImprovementCandidate: "改进候选",
+      RequirementBaseline: "需求基线",
+    };
+
+    for (const [objectType, label] of Object.entries(labels)) {
+      expect(
+        presentApproval({
+          request_id: `approval_${objectType}`,
+          object_type: objectType,
+          object_digest: "6".repeat(64),
+          reason: "确认受治理对象。",
+          risk: "medium",
+          allowed_decisions: ["approve", "reject", "defer"],
+        }),
+      ).toMatchObject({
+        title_zh: `批准${label}`,
+        technical_type: objectType,
+        fallback: false,
+      });
+    }
+  });
+
   it("covers every current node, relation, and persisted status with a stable Chinese label", () => {
     const nodeLabels = {
       Project: "项目",

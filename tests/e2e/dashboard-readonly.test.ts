@@ -270,6 +270,54 @@ test.describe("Dashboard read-only journey", () => {
       .locator('[data-panel="graph"]')
       .evaluate((element) => getComputedStyle(element).animationDuration);
     expect(Number.parseFloat(duration)).toBeLessThanOrEqual(0.001);
+    const firstNode = page
+      .getByRole("button")
+      .filter({ hasText: /Project|Repository/u })
+      .first();
+    await firstNode.click();
+    await expect(page.getByText(/Neighborhood loaded/u)).toBeVisible();
+    const neighborColumns = await page
+      .locator(".neighbor-list")
+      .evaluate((element) => getComputedStyle(element).gridTemplateColumns);
+    expect(neighborColumns.trim().split(/\s+/u)).toHaveLength(1);
+    const graphOverflow = await page
+      .locator('[data-panel="graph"]')
+      .evaluate((element) => element.scrollWidth > element.clientWidth);
+    expect(graphOverflow).toBe(false);
+  });
+
+  test("copies a full digest by keyboard and reports the manual fallback", async ({
+    dashboard,
+  }) => {
+    const { page, server } = dashboard;
+    await page.context().grantPermissions(["clipboard-read", "clipboard-write"], {
+      origin: server.origin,
+    });
+    await page.getByRole("link", { name: /Graph/u }).click();
+    const firstNode = page
+      .getByRole("button")
+      .filter({ hasText: /Project|Repository/u })
+      .first();
+    await firstNode.click();
+    await expect(page.getByText(/Neighborhood loaded/u)).toBeVisible();
+    const inspector = page.locator("#graph-inspector");
+    await inspector.getByText(/审计信息 ·/u).click();
+    const digest = await inspector.locator(".digest-full").textContent();
+    expect(digest).toMatch(/^[a-f0-9]{64}$/u);
+    const copy = inspector.getByRole("button", { name: /复制.+完整摘要/u });
+    await copy.focus();
+    await expect(copy).toBeFocused();
+    await page.keyboard.press("Enter");
+    await expect(page.locator("#copy-status")).toContainText("已复制");
+    await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe(digest);
+
+    await page.evaluate(() => {
+      Object.defineProperty(navigator, "clipboard", { configurable: true, value: undefined });
+    });
+    await copy.click();
+    await expect(page.locator("#copy-status")).toContainText("无法自动复制");
+    await expect(inspector.locator(".digest-full")).toBeVisible();
+    await expect(inspector.locator(".digest-full")).toHaveAttribute("tabindex", "0");
   });
 
   test("falls back to technical graph fields when an older server omits presentations", async ({

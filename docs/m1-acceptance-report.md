@@ -2,7 +2,7 @@
 
 本文件由 `scripts/generate-acceptance-report.mjs` 从各测试套件的结构化输出生成；结果区禁止人工改写（实施计划 Task 28）。验收标准原文引用自已批准的设计文档第 17 节。
 
-- 生成基线 commit：`d3f6506`
+- 生成基线 commit：`efec3b9`
 - 输入套件：main, security, fault, performance, e2e（`.reports/acceptance/*.json`）
 - 汇总：28/28 通过；failed 0，blocked 0，not_run 0
 
@@ -10,9 +10,9 @@
 
 | AC | 验收标准（设计第 17 节） | 测试命令 | Evidence | 结果 | Commit |
 |---|---|---|---|---|---|
-| AC-1 | 一次 `harness new ... --intent ...` 调用可以完成首次 Iteration，只在强制 Input、Approval 或 External Authorization 时暂停。 | `pnpm test:e2e` | tests/e2e/generic-new.test.ts<br>tests/e2e/java-new.test.ts<br>tests/e2e/node-new.test.ts<br>tests/e2e/python-new.test.ts | passed | 57cf4eb |
-| AC-2 | 一次 `harness adopt ... --intent ...` 调用可以批准 Baseline，并按相同暂停规则完成所请求 Iteration。 | `pnpm test:e2e` | tests/e2e/generic-adopt.test.ts<br>tests/e2e/java-adopt.test.ts<br>tests/e2e/node-adopt.test.ts<br>tests/e2e/python-adopt.test.ts<br>tests/integration/adopt-preview.test.ts | passed | 57cf4eb |
-| AC-3 | `harness iterate ...` 为后续变更运行相同完整闭环。 | `pnpm test:e2e` | tests/e2e/generic-iterate.test.ts<br>tests/e2e/java-iterate.test.ts<br>tests/e2e/node-iterate.test.ts<br>tests/e2e/python-iterate.test.ts | passed | 57cf4eb |
+| AC-1 | 一次 `harness new ... --intent ...` 调用可以完成首次 Iteration，只在强制 Input、Approval 或 External Authorization 时暂停。 | `pnpm test:e2e` | tests/e2e/generic-new.test.ts<br>tests/e2e/java-new.test.ts<br>tests/e2e/node-new.test.ts<br>tests/e2e/python-new.test.ts | passed | ca21e48 |
+| AC-2 | 一次 `harness adopt ... --intent ...` 调用可以批准 Baseline，并按相同暂停规则完成所请求 Iteration。 | `pnpm test:e2e` | tests/e2e/generic-adopt.test.ts<br>tests/e2e/java-adopt.test.ts<br>tests/e2e/node-adopt.test.ts<br>tests/e2e/python-adopt.test.ts<br>tests/integration/adopt-preview.test.ts | passed | ca21e48 |
+| AC-3 | `harness iterate ...` 为后续变更运行相同完整闭环。 | `pnpm test:e2e` | tests/e2e/generic-iterate.test.ts<br>tests/e2e/java-iterate.test.ts<br>tests/e2e/node-iterate.test.ts<br>tests/e2e/python-iterate.test.ts | passed | ca21e48 |
 | AC-4 | Iteration/Operation State 映射确定且 `blocked` 保存 `resume_state`；交互中断按 `defer` 保存 Proposal，非交互批准点返回结构化 ApprovalRequest 与可恢复 `workflow_operation_id`；Resume 为未终止 Run 追加唯一 `RunInterrupted` 和 `RESUMES` 关系，不产生重复 Node、Terminal Record、Evidence、Commit 或 External Side Effect。 | `pnpm test && pnpm test:fault` | packages/runtime/test/workflow/checkpoint.test.ts<br>packages/runtime/test/workflow/operation.test.ts<br>packages/runtime/test/workflow/resume.test.ts<br>packages/runtime/test/workflow/state-machine.test.ts<br>packages/runtime/test/workflow/working-state.test.ts<br>tests/e2e/generic-resume.test.ts<br>tests/fault/process-kill.test.ts<br>tests/fault/workflow-resume.test.ts | passed | 022f578 |
 | AC-5 | 相同 Repository 和 Configuration 产生相同、带 Repository 限定的扫描 Node ID、Edge 和 Digest；不同 Ledger Operation 分片可安全 Git Merge，相同 `ledger_operation_id` 摘要冲突、Revision 分叉或 Baseline 不兼容会被阻塞。 | `pnpm test` | packages/core/test/identity/canonical-json.property.test.ts<br>packages/core/test/identity/canonical-json.test.ts<br>packages/core/test/identity/locator.property.test.ts<br>packages/core/test/identity/locator.test.ts<br>packages/core/test/identity/node-id.test.ts<br>packages/core/test/identity/rename.property.test.ts<br>packages/core/test/identity/rename.test.ts<br>packages/core/test/ledger/event-store.test.ts<br>packages/core/test/ledger/golden.test.ts<br>packages/core/test/ledger/layout.test.ts<br>packages/core/test/ledger/lock.test.ts<br>packages/core/test/ledger/repository.test.ts<br>packages/core/test/ledger/transaction.test.ts<br>packages/graph/test/integrity.property.test.ts | passed | 068cf90 |
 | AC-6 | Artifact Graph 与 Execution Graph Query 从同一 Authority Ledger 物化，并保持相互可追溯。 | `pnpm test` | packages/graph/test/graph-views.test.ts | passed | b1b9dd6 |
@@ -36,22 +36,22 @@
 | AC-24 | Generic、Node、Python 和 Java Pack 通过各自 Fixture。 | `pnpm test` | packages/conformance/test/packs.conformance.test.ts<br>packs/generic/test/generic-pack.test.ts<br>packs/java/test/java-pack.test.ts<br>packs/node/test/node-pack.test.ts<br>packs/python/test/python-pack.test.ts | passed | c12831a |
 | AC-25 | Linux、macOS 和 Windows CI 通过。 | `pnpm verify` | .github/workflows/ci.yml | passed | 5cc2252 |
 | AC-26 | Pack/CLI Upgrade 保留 Project Override，失败 Migration 回滚。 | `pnpm test` | packages/runtime/test/packs/migration.test.ts<br>packages/runtime/test/packs/resolver.test.ts<br>packages/runtime/test/packs/upgrade.test.ts | passed | c12831a |
-| AC-27 | Graph 与 Context Performance 硬阈值通过，并生成 Ledger Commit 与 Projection Generation 的可复现基线。 | `pnpm test:performance` | tests/performance/context-compile.test.ts<br>tests/performance/dataset.test.ts<br>tests/performance/impact.test.ts<br>tests/performance/ledger-commit.test.ts<br>tests/performance/m2-dashboard.test.ts<br>tests/performance/m2-finding-semantic.test.ts<br>tests/performance/projection-generation.test.ts<br>tests/performance/sqlite-rebuild.test.ts | passed | 7762ab3 |
+| AC-27 | Graph 与 Context Performance 硬阈值通过，并生成 Ledger Commit 与 Projection Generation 的可复现基线。 | `pnpm test:performance` | tests/performance/context-compile.test.ts<br>tests/performance/dataset.test.ts<br>tests/performance/impact.test.ts<br>tests/performance/ledger-commit.test.ts<br>tests/performance/m2-dashboard.test.ts<br>tests/performance/m2-finding-semantic.test.ts<br>tests/performance/projection-generation.test.ts<br>tests/performance/sqlite-rebuild.test.ts | passed | ca21e48 |
 | AC-28 | Repository Content、Package Metadata、Example、Fixture、Generated Provider Projection 和 Git History 保持独立，不包含原产品品牌、路径或业务领域示例；Provider Mirror 可复现、限定在受管路径且未经批准不覆盖用户配置。 | `pnpm verify` | scripts/check-standalone.mjs | passed | 2502b2f |
 
 ## 性能基线（AC-27）
 
 | Metric | p50 (ms) | p95 (ms) | max (ms) | 规模 | 环境 |
 |---|---|---|---|---|---|
-| ledger_transaction_commit | 28.34 | 30.55 | 34.37 | {"operations":40,"artifacts_per_operation":1,"edges_per_operation":1,"events_per_operation":1} | darwin ci=false |
-| m2_dashboard./api/v1/graph/nodes?limit=100 | 2.99 | 5 | 5 | {"nodes":10000,"edges":30000,"events":20000,"findings":1000} | darwin ci=false |
-| m2_dashboard./api/v1/graph/edges?limit=100 | 2.35 | 2.71 | 2.71 | {"nodes":10000,"edges":30000,"events":20000,"findings":1000} | darwin ci=false |
-| m2_dashboard./api/v1/graph/neighborhood/requirement_r00000?depth=2&direction=both | 2.49 | 3.34 | 3.34 | {"nodes":10000,"edges":30000,"events":20000,"findings":1000} | darwin ci=false |
-| m2_finding_groups | 1.41 | 2.13 | 3 | {"findings":1000,"groups":20} | darwin ci=false |
-| m2_semantic_top_k | 71.01 | 80.88 | 80.88 | {"indexed_nodes":10000,"top_k":10} | darwin ci=false |
-| projection_generation.architecture_full | 10444.19 | 15696.48 | 15696.48 | {"full":{"nodes":20000,"edges":100000,"renders":3},"affected_slice":{"nodes":2050,"edges":3722,"renders":15}} | darwin ci=false |
-| projection_generation.architecture_affected_slice | 8.57 | 10.45 | 10.45 | {"full":{"nodes":20000,"edges":100000,"renders":3},"affected_slice":{"nodes":2050,"edges":3722,"renders":15}} | darwin ci=false |
-| projection_generation.prd_full | 11.8 | 11.8 | 11.8 | {"full":{"nodes":20000,"edges":100000,"renders":3},"affected_slice":{"nodes":2050,"edges":3722,"renders":15}} | darwin ci=false |
+| ledger_transaction_commit | 26.63 | 50.29 | 101.71 | {"operations":40,"artifacts_per_operation":1,"edges_per_operation":1,"events_per_operation":1} | darwin ci=false |
+| m2_dashboard./api/v1/graph/nodes?limit=100 | 6.27 | 7.86 | 7.86 | {"nodes":10000,"edges":30000,"events":20000,"findings":1000} | darwin ci=false |
+| m2_dashboard./api/v1/graph/edges?limit=100 | 3.39 | 3.98 | 3.98 | {"nodes":10000,"edges":30000,"events":20000,"findings":1000} | darwin ci=false |
+| m2_dashboard./api/v1/graph/neighborhood/requirement_r00000?depth=2&direction=both | 3.09 | 4.15 | 4.15 | {"nodes":10000,"edges":30000,"events":20000,"findings":1000} | darwin ci=false |
+| m2_finding_groups | 1.72 | 2.86 | 3.82 | {"findings":1000,"groups":20} | darwin ci=false |
+| m2_semantic_top_k | 80.04 | 95.51 | 95.51 | {"indexed_nodes":10000,"top_k":10} | darwin ci=false |
+| projection_generation.architecture_full | 12701.94 | 16978.02 | 16978.02 | {"full":{"nodes":20000,"edges":100000,"renders":3},"affected_slice":{"nodes":2050,"edges":3722,"renders":15}} | darwin ci=false |
+| projection_generation.architecture_affected_slice | 15.52 | 53.51 | 53.51 | {"full":{"nodes":20000,"edges":100000,"renders":3},"affected_slice":{"nodes":2050,"edges":3722,"renders":15}} | darwin ci=false |
+| projection_generation.prd_full | 29.11 | 29.11 | 29.11 | {"full":{"nodes":20000,"edges":100000,"renders":3},"affected_slice":{"nodes":2050,"edges":3722,"renders":15}} | darwin ci=false |
 
 ## 发布声明
 

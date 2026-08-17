@@ -150,9 +150,13 @@ const PHASE_LABELS: Readonly<Record<string, string>> = {
 };
 
 const APPROVAL_OBJECT_LABELS: Readonly<Record<string, string>> = {
+  AdoptionBaseline: "接管基线",
   AgentPlan: "Agent 执行计划",
+  ExecutionAuthorizationSpec: "执行授权方案",
   ImpactSet: "影响范围",
+  ImprovementCandidate: "改进候选",
   IterationPlan: "迭代计划",
+  RequirementBaseline: "需求基线",
   ToolInvocation: "工具调用",
 };
 

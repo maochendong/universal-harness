@@ -2,7 +2,9 @@
 
 日期：2026-08-17
 
-状态：待实施
+状态：已完成
+
+完成日期：2026-08-17
 
 设计依据：[M2 Dashboard 中文业务展示层设计](../specs/2026-08-17-m2-dashboard-chinese-business-presentation-design.md)
 
@@ -310,3 +312,29 @@ test(dashboard): prove Chinese presentation compatibility
 5. Approval/Finding/Resume 写操作仍只绑定原始 digest，并有 E2E 实证。
 6. Dashboard 聚焦测试、Playwright、`pnpm verify` 与 `pnpm test:release` 全绿。
 7. `.superpowers/` 讨论临时文件未进入产品提交。
+
+## 11. 完成记录
+
+### 提交
+
+- `5ea465b` `feat(dashboard): add deterministic Chinese presentations`
+- `c99458c` `feat(dashboard): expose business presentation sidecars`
+- `632301e` `feat(dashboard): describe live governance events in Chinese`
+- `c436aa3` `feat(dashboard): add business-first entity components`
+- `1660fa1` `feat(dashboard): make read views business-first`
+- `efec3b9` `feat(dashboard): make live approvals business-readable`
+- `test(dashboard): prove Chinese presentation compatibility`（本计划收尾提交）
+
+### 验证证据
+
+- Dashboard 包测试：6 个文件、31/31 测试通过。
+- Dashboard Playwright：8/8 通过，覆盖七个视图、旧 Server 回退、390px 响应式、键盘复制反馈、剪贴板降级和 digest-bound Approval。
+- `pnpm verify`：215/215 测试文件、1322/1322 测试通过；Standalone 扫描 695 个文件和 Git 历史通过。
+- `pnpm test:release`：Security 67/67、Fault 78/78、Performance 12/12、跨栈 E2E 31/31、Dashboard E2E 8/8、离线 Pack smoke 全部通过；验收报告 M1 28/28、M2 13/13。
+- 人工视觉检查：1440×900 的 Live/Approval 双栏与 390×844 的 Graph 单栏均无横向溢出；控制台无 warning/error。
+
+### 实施中补强
+
+- 补齐 `AdoptionBaseline`、`RequirementBaseline`、`ExecutionAuthorizationSpec` 与 `ImprovementCandidate` 等运行时审批对象的中文名称。
+- 将 `.superpowers/` 纳入 Git 与 Prettier 忽略，防止讨论临时文件进入产品提交或破坏门禁。
+- 将 Vitest 全仓并发上限设为 4，并为执行两套真实 Git 漂移场景的语义编辑集成测试设置 15 秒局部超时，消除资源竞争导致的非确定性门禁失败。

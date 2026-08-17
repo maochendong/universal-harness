@@ -1,6 +1,7 @@
 coverage/
 dist/
 docs/
+.superpowers/
 node_modules/
 pnpm-lock.yaml
 # Golden Markdown projections must stay byte-exact; Prettier reflow would

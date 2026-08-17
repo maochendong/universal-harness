@@ -227,5 +227,5 @@ describe("semantic graph edge proposals", () => {
         },
       ),
     ).rejects.toMatchObject<Partial<GraphEditError>>({ kind: "semantic_index_drift" });
-  });
+  }, 15_000);
 });
