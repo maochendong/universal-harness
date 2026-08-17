@@ -23,6 +23,70 @@ Universal Harness 是一个 Graph-native、Provider-neutral 的工程 Harness，
 
 M1 与 M2 均已完成。M1 的 Task 1–28 和 28 条验收标准已有通过证据；M2 又交付了 Finding 治理、可选 LLM Judge、确定性语义建议、本地 Dashboard 与统一实时事件流。请从 [快速开始](docs/getting-started.md) 运行第一次闭环，并在 [M2 运维指南](docs/operations.md) 中查看新增能力。
 
+## Graph-native 驱动模型
+
+<!-- graph-model:readme-overview:start -->
+
+Harness 不是让 Agent 在代码仓库中自由循环，而是用类型化 Node 表达工程事实、用 Edge 约束依赖与影响、用 Event 证明状态变化，再由 Policy、Approval、Gate 和 Evidence 控制每一步是否可以继续。
+
+```mermaid
+flowchart TB
+  AUTH["① 权威上下文<br/>项目 Project · 仓库 Repository · 迭代 Iteration<br/><br/>确定所有记录、授权与快照属于哪里"]
+  DESIGN["② 意图与设计<br/>意图 Intent · 需求 Requirement · 约束 Constraint<br/>决策 Decision · 组件 Component · 代码产物 CodeArtifact<br/><br/>把为什么改逐级映射到设计和代码"]
+  GOVERN["③ 影响与治理<br/>影响集 ImpactSet · 执行计划 ExecutionPlan · 任务 Task · 策略 Policy<br/>批准请求 ApprovalRequest · 批准 Approval<br/>工具定义 ToolDefinition · 上下文包 ContextBundle<br/><br/>计算波及范围并在执行前收窄权限"]
+  EXECUTE["④ 执行与验证<br/>运行 Run · 门禁 Gate · 检查点 Checkpoint<br/>证据 Evidence · 测试 Test · 评估用例 EvaluationCase<br/><br/>用真实门禁和证据确立完成事实"]
+  FEEDBACK["⑤ 反馈修复<br/>发现 Finding · 根因分析 RootCauseAnalysis<br/>改进候选 ImprovementCandidate<br/><br/>把失败路由回真正拥有修改权的上游层"]
+
+  AUTH -->|"CONTAINS / DERIVES_FROM"| DESIGN
+  DESIGN -->|"Change Seed"| GOVERN
+  GOVERN -->|"批准后的 Plan + Context"| EXECUTE
+  EXECUTE -->|"失败或审计缺口"| FEEDBACK
+  FEEDBACK -->|"TRIGGERS 新 ImpactSet"| GOVERN
+
+  PHASES["录入 Capture → 影响 Impact → 计划 Plan → 上下文 Context<br/>→ 执行 Execute → 验证 Verify → 评估 Evaluate → 快照 Snapshot ↺"]
+  EDGES["Edge 语义<br/>17 条影响传播关系：方向 + 默认风险 + 推理边许可<br/>14 条非传播结构关系：完整性 + 查询 + 审计"]
+  LIFECYCLE["Lifecycle Event / 权威治理事实<br/>→ Git-native Ledger"]
+  OBSERVATION["Observation Event / 实时运行信号<br/>→ Live Spool"]
+  SQLITE["SQLite Projection<br/>可确定性重建的查询缓存"]
+  READERS["Dashboard · Projection · Audit · Resume · Snapshot"]
+
+  DESIGN --> PHASES
+  EDGES -->|"约束 Impact"| PHASES
+  PHASES --> EXECUTE
+  EXECUTE --> LIFECYCLE
+  EXECUTE --> OBSERVATION
+  LIFECYCLE --> READERS
+  LIFECYCLE --> SQLITE
+  SQLITE --> READERS
+  OBSERVATION -->|"读取时合并"| READERS
+```
+
+### 图中五个职责域
+
+| 职责域         | 它是什么                                                                                                                                      | 怎样驱动下一步                                                             |
+| -------------- | --------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
+| **权威上下文** | `Project`、`Repository`、`Iteration` 确定当前工作属于哪个项目、仓库和迭代，是记录、授权、恢复与快照的归属根。                                 | 为后续 Node、Event 和 Ledger transaction 提供稳定身份与基线。              |
+| **意图与设计** | `Intent`、`Requirement`、`Constraint`、`Decision`、`Component`、`CodeArtifact` 把自然语言目标变成可追踪的需求、设计和实现对象。               | 任一权威对象变化都会成为 Change Seed，由关系规则计算影响范围。             |
+| **影响与治理** | `ImpactSet` 固化解释路径和风险；`ExecutionPlan` / `Task` 描述工作；Policy、Approval、ToolDefinition、ContextBundle 在执行前收窄能力。         | 只有已批准、覆盖完整且 digest 未漂移的计划与上下文才能进入执行。           |
+| **执行与验证** | `Run` 保存 Provider 的真实 outcome；Gate、Test、EvaluationCase 和 Evidence 共同决定 Task 与 Iteration 是否真的完成；Checkpoint 提供幂等恢复。 | 通过则进入审计和 Snapshot；失败则产生 Finding，不能用 Agent 自述绕过门禁。 |
+| **反馈修复**   | `Finding` 把失败或审计缺口结构化，`RootCauseAnalysis` 确定根因和归属层，`ImprovementCandidate` 提出可评审修改。                               | 改进通过 `TRIGGERS` 产生新 ImpactSet，回到 Impact 重新分析、批准和计划。   |
+
+### 影响传播为什么只走 17 类关系
+
+17 条影响传播关系为每种可穿越 Edge 固定 **传播方向、默认风险、是否允许推理边**。Impact Engine 从 Change Seed 开始执行按 ID 稳定排序的 BFS，只保留确定性最短解释路径；默认最大深度为 6，硬上限为 10。路径经过 high-risk 关系会提升风险；经过 proposed 或低置信度推理边只能进入 `inspect`，等待人审。
+
+另有 14 条非传播结构关系用于表达生成、执行、证据、包含、批准和恢复事实。它们仍参与端点完整性、Graph 查询、Dashboard 邻域和审计，但不会被 Impact BFS 自动穿越，避免 Run 历史、容器或批准记录造成无界影响扩散。
+
+### Event 和完成真相为什么必须分流
+
+- **Lifecycle Event** 记录已经提交的治理事实，随 append-only Git-native Ledger 保存，可重放、可验证，并用于 Resume、Audit、Projection 和 Snapshot。
+- **Observation Event** 记录当前相位、Gate、Run heartbeat、输出摘要、预算与等待批准状态，进入 Live Spool，只服务实时体验。
+- Ledger 是唯一权威来源；Live Spool 是可删除的实时观察；SQLite 是可确定性重建的查询缓存。读取层可以合并三者展示，但不能把实时通知或缓存状态升级为完成事实。
+
+完整的 26 类 Node、31 类 Edge、15 类 Lifecycle Event、11 类 Observation Event、17 条传播规则参数、合法端点说明和端到端示例，见 [完整 Graph-native 模型与传播规则](docs/graph-driven-harness-model.md)。
+
+<!-- graph-model:readme-overview:end -->
+
 ## 核心设计思路
 
 - **Git 是唯一权威存储**：所有权威状态以原子事务写入 Git-native Ledger（append-only、可安全合并的分片）；SQLite 只是可随时删除并确定性重建的查询缓存。
@@ -54,6 +118,7 @@ M1 与 M2 均已完成。M1 的 Task 1–28 和 28 条验收标准已有通过�
 
 ## 文档
 
+- [完整 Graph-native 模型与传播规则](docs/graph-driven-harness-model.md)
 - [快速开始](docs/getting-started.md)
 - [接管已有项目](docs/adopting-a-project.md)
 - [运维与恢复](docs/operations-and-recovery.md)

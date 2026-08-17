@@ -11,9 +11,14 @@ import { describe, expect, it } from "vitest";
 
 const repositoryRoot = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const modelDocumentPath = join(repositoryRoot, "docs", "graph-driven-harness-model.md");
+const readmePath = join(repositoryRoot, "README.md");
 
 function modelDocument(): string {
   return readFileSync(modelDocumentPath, "utf8");
+}
+
+function readme(): string {
+  return readFileSync(readmePath, "utf8");
 }
 
 function markedSection(markdown: string, name: string): string {
@@ -114,5 +119,24 @@ describe("Graph-native model documentation", () => {
     expect(markdown).toContain("Live Spool 是可删除的实时观察");
     expect(markdown).toContain("SQLite 是可确定性重建的查询缓存");
     expect(markdown).toContain("Mermaid 无法渲染");
+  });
+
+  it("gives README readers a Chinese graph-driven overview and a path to full semantics", () => {
+    const markdown = readme();
+    const overview = markedSection(markdown, "readme-overview");
+
+    expect(markdown).toContain("## Graph-native 驱动模型");
+    expect(overview).toContain("```mermaid");
+    for (const type of NODE_TYPES) expect(overview).toContain(type);
+    expect(overview).toContain("17 条影响传播关系");
+    expect(overview).toContain("14 条非传播结构关系");
+    expect(overview).toContain("Lifecycle Event");
+    expect(overview).toContain("Observation Event");
+    expect(overview).toContain("Ledger 是唯一权威来源");
+    expect(overview).toContain("Live Spool 是可删除的实时观察");
+    expect(overview).toContain("SQLite 是可确定性重建的查询缓存");
+    expect(markdown).toContain(
+      "[完整 Graph-native 模型与传播规则](docs/graph-driven-harness-model.md)",
+    );
   });
 });
