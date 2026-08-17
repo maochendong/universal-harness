@@ -2,7 +2,7 @@
 
 日期：2026-08-17
 
-状态：已完成
+状态：扩展实施中
 
 完成日期：2026-08-17
 
@@ -10,7 +10,7 @@
 
 ## 1. 目标
 
-从当前 `atlas-mvp` Harness Observatory Overview 捕获一张约 1440×900 的桌面首屏 PNG，保存到 `docs/assets/harness-observatory-overview.png`，并在 README 项目简介之后、Graph-native 驱动模型之前增加独立产品效果区域。
+从当前 `atlas-mvp` Harness Observatory 捕获 Overview、Graph 和 Impact 三张约 1440×900 的桌面首屏 PNG，并在 README 项目简介之后、Graph-native 驱动模型之前组成独立产品效果区域。
 
 ## 2. 执行规则
 
@@ -107,3 +107,38 @@ git diff --check
 - 文档契约测试通过：`tests/e2e/graph-model-documentation.test.ts` 共 7 项测试全部通过。
 - `pnpm format:check`、`pnpm lint`、`pnpm typecheck` 均通过。
 - 完整回归通过：216 个测试文件、1329 项测试全部通过。
+
+## 8. Task 4：扩展 Graph 与 Impact 真实视图
+
+**新增文件**
+
+- `docs/assets/harness-observatory-graph.png`
+- `docs/assets/harness-observatory-impact.png`
+
+**测试先行**
+
+- 扩展既有 README 文档契约，要求两张图片存在、具有 PNG 签名，并通过固定相对路径嵌入 README。
+- 要求中文替代文本和图注分别解释 Graph 关系邻域与 Impact 最短路径。
+- 先运行聚焦测试，确认因两张资产尚不存在而失败。
+
+**捕获状态**
+
+- Graph：Artifact 视图选择 `case_docs`，等待 `3 EDGES / 4 NODES` 邻域加载完成。
+- Impact：FROM 为 `case_docs`、TO 为 `evidence_evaluation_docs`，等待 `1 governed relationships explain this path`。
+- 两页均确认 console error 为空，再以统一桌面视口捕获首屏。
+
+**README 排列**
+
+- 保留 Overview 为第一张。
+- Graph 与 Impact 依次追加在后，每张图下添加简短中文说明。
+
+**验证**
+
+```text
+pnpm vitest run tests/e2e/graph-model-documentation.test.ts
+pnpm format:check
+pnpm lint
+pnpm typecheck
+pnpm test
+git diff --check
+```

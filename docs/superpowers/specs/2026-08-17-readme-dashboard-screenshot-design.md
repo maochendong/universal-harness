@@ -1,26 +1,30 @@
 # README Dashboard 效果截图设计
 
 日期：2026-08-17  
-状态：已实施
+状态：扩展实施中
 
 完成日期：2026-08-17
 
+扩展日期：2026-08-17
+
 ## 1. 目标
 
-在 Universal Harness README 的项目简介与 Graph-native 驱动模型之间增加一张本地 Observatory Dashboard 的真实效果截图，让读者先看到可用产品，再理解底层图驱动模型。
+在 Universal Harness README 的项目简介与 Graph-native 驱动模型之间增加一组本地 Observatory Dashboard 的真实效果截图，让读者先看到可用产品，再从 Overview、Graph 和 Impact 三个层次理解底层图驱动模型。
 
 截图使用当前 `atlas-mvp` 受管项目的真实 Harness 数据，展示 Universal Harness dogfood 结果，不把 README 绑定到临时访问地址或本地会话凭据。
 
 ## 2. 截图范围
 
-- 页面：Harness Observatory 的 Overview 视图。
+- 页面：Harness Observatory 的 Overview、Graph 和 Impact 视图。
 - 视口：约 1440×900 的桌面宽屏首屏。
-- 内容：品牌导航、项目标题、核心指标、迭代流水线、Graph Cache 和 Control 状态卡片。
+- Overview 内容：品牌导航、项目标题、核心指标、迭代流水线、Graph Cache 和 Control 状态卡片。
+- Graph 内容：选择 `case_docs` 后展示其 3 条关系边和 4 个相邻节点，体现 Node、Edge、Evidence、Run 与 Task 的可读邻域。
+- Impact 内容：查询 `case_docs` 到 `evidence_evaluation_docs`，展示 `SUPPORTS` 关系构成的受治理最短解释路径。
 - 保留：`atlas-mvp` 项目名和真实指标。
 - 排除：浏览器边框、地址栏、一次性 token、调试面板、控制台输出和页面外的桌面内容。
 - 捕获条件：页面完成加载，权威状态已显示，且浏览器控制台没有错误。
 
-不使用完整长页面截图，也不增加 Graph 等第二张截图，避免 README 过长。
+三张图片均只保留首屏，不使用完整长页面截图；Graph 与 Impact 必须展示已加载的真实关系，不提交空状态。
 
 ## 3. 仓库交付
 
@@ -28,6 +32,8 @@
 
 ```text
 docs/assets/harness-observatory-overview.png
+docs/assets/harness-observatory-graph.png
+docs/assets/harness-observatory-impact.png
 ```
 
 README 在 M1/M2 状态说明之后、`## Graph-native 驱动模型` 之前增加：
@@ -38,6 +44,14 @@ README 在 M1/M2 状态说明之后、`## Graph-native 驱动模型` 之前增�
 ![Harness Observatory Dashboard：atlas-mvp 项目 Overview](docs/assets/harness-observatory-overview.png)
 
 _基于 atlas-mvp 真实 Harness 数据的本地 Observatory Dashboard。_
+
+![Harness Observatory Dashboard：atlas-mvp 项目 Graph 邻域](docs/assets/harness-observatory-graph.png)
+
+_Graph 视图展开评估用例 `case_docs`，展示它与 Evidence、Run、Task 的真实关系邻域。_
+
+![Harness Observatory Dashboard：atlas-mvp 项目 Impact 路径](docs/assets/harness-observatory-impact.png)
+
+_Impact 视图展示 `case_docs` 到 `evidence_evaluation_docs` 的受治理最短解释路径。_
 ```
 
 图片使用相对路径，不链接 `127.0.0.1` 或带 token 的 bootstrap URL。读者通过现有 `harness serve` 文档启动自己的本地 Dashboard。
@@ -53,14 +67,14 @@ _基于 atlas-mvp 真实 Harness 数据的本地 Observatory Dashboard。_
 
 扩展 `tests/e2e/graph-model-documentation.test.ts` 的 README 文档契约，验证：
 
-1. `docs/assets/harness-observatory-overview.png` 存在；
-2. 文件具有 PNG 签名字节；
+1. 三张 `docs/assets/harness-observatory-*.png` 图片均存在；
+2. 三个文件均具有 PNG 签名字节；
 3. README 包含 `## Dashboard 效果`；
 4. README 使用固定相对路径和有意义的中文替代文本；
-5. README 图注明确说明 `atlas-mvp` 是真实 Harness 数据；
+5. README 图注明确说明 `atlas-mvp` 是真实 Harness 数据，并解释 Graph 邻域与 Impact 路径；
 6. README 不包含 Dashboard bootstrap token 或本地 tokenized URL。
 
-人工检查截图尺寸接近 1440×900、文字可读、首屏内容完整且没有浏览器框。完成后运行：
+人工检查三张截图尺寸接近 1440×900、文字可读、首屏内容完整且没有浏览器框。完成后运行：
 
 ```text
 pnpm vitest run tests/e2e/graph-model-documentation.test.ts
@@ -80,9 +94,9 @@ pnpm test
 
 ## 7. 验收标准
 
-1. README 项目简介之后出现独立 Dashboard 效果区域。
-2. 截图只包含 Observatory Overview 页面首屏，无浏览器框和敏感凭据。
-3. 图片展示 `atlas-mvp` 真实 Harness 数据，图注解释其 dogfood 性质。
-4. 图片在 GitHub 和离线 Markdown 中均可由相对路径显示。
-5. 文档测试可以检测图片缺失、错误路径、缺少替代文本或意外 tokenized URL。
+1. README 项目简介之后出现独立 Dashboard 效果区域，并按 Overview、Graph、Impact 顺序展示。
+2. 截图只包含 Observatory 对应页面首屏，无浏览器框和敏感凭据。
+3. 图片展示 `atlas-mvp` 真实 Harness 数据；Graph 已展开关系邻域，Impact 已查询真实路径。
+4. 三张图片在 GitHub 和离线 Markdown 中均可由相对路径显示。
+5. 文档测试可以检测任一图片缺失、错误路径、缺少替代文本或意外 tokenized URL。
 6. 定向测试、格式、Lint、TypeScript 和完整测试通过。
