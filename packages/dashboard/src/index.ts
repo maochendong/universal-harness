@@ -7,6 +7,19 @@ export { DashboardSessionStore, type DashboardSession } from "./session.js";
 export { DashboardProblem, type ProblemDetails } from "./problem.js";
 export { createDashboardReadApi, type DashboardPage, type DashboardReadApi } from "./read-api.js";
 export {
+  presentApproval,
+  presentEdge,
+  presentEvent,
+  presentFindingGroup,
+  presentNode,
+  presentSemanticProposal,
+  presentationKey,
+  presentationMap,
+  type BusinessPresentation,
+  type BusinessPresentationBadge,
+  type PresentationMap,
+} from "./presentation.js";
+export {
   DASHBOARD_ASSET_NAMES,
   loadDashboardAsset,
   type DashboardAsset,
