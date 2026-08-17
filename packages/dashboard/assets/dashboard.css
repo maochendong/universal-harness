@@ -1104,15 +1104,14 @@ h2 {
 }
 .live-event {
   display: grid;
-  grid-template-columns: 5.5rem 4.4rem 9rem minmax(0, 1fr);
+  grid-template-columns: 5.5rem 4.4rem minmax(0, 1fr);
   gap: 0.8rem;
-  align-items: baseline;
+  align-items: start;
   padding: 0.85rem 0.6rem;
   border-bottom: 1px solid var(--rule);
   font: 0.59rem/1.45 var(--mono);
 }
-.live-event time,
-.live-event .live-copy {
+.live-event time {
   color: var(--paper-muted);
 }
 .live-event .live-source {
@@ -1121,9 +1120,21 @@ h2 {
 .live-event.is-authoritative .live-source {
   color: var(--signal);
 }
-.live-event strong {
-  color: var(--paper);
-  overflow-wrap: anywhere;
+.live-event .business-heading {
+  min-width: 0;
+}
+.live-event .business-meta {
+  margin-bottom: 0.35rem;
+}
+.live-event .business-title {
+  font: 650 0.76rem/1.35 var(--body);
+}
+.live-event .business-description {
+  margin-top: 0.3rem;
+  font-size: 0.66rem;
+}
+.live-event .business-badges {
+  margin-top: 0.55rem;
 }
 .approval-bay {
   align-self: start;
@@ -1155,9 +1166,12 @@ h2 {
   font-size: 0.75rem;
   line-height: 1.6;
 }
-.approval-card h4 {
+.approval-card .business-title {
   margin: 0 0 1.5rem;
   font: 400 1.6rem/1.1 var(--display);
+}
+.approval-card .audit-details {
+  margin-top: 1.2rem;
 }
 .approval-field {
   display: grid;

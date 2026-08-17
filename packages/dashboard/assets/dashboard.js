@@ -609,11 +609,22 @@ function appendLiveItem(item) {
   const key = liveKey(item);
   const previous = model.liveByKey.get(key);
   const row = node("li", `live-event ${item.authoritative ? "is-authoritative" : "is-live"}`);
+  const presentation = presentationFor(item.presentations, item, null) || {
+    ...technicalPresentation(
+      {
+        id: item.id,
+        type: item.event.event_type,
+        status: item.authoritative ? "authoritative" : "live",
+      },
+      null,
+    ),
+    title_zh: item.event.event_type,
+    description_zh: liveSummary(item.event),
+  };
   row.append(
     node("time", "", liveTime(item.event.timestamp)),
     node("span", "live-source", item.authoritative ? "LEDGER" : "LIVE"),
-    node("strong", "", item.event.event_type),
-    node("span", "live-copy", liveSummary(item.event)),
+    businessHeading(presentation),
   );
   if (previous) previous.replaceWith(row);
   else register.prepend(row);
@@ -637,26 +648,35 @@ async function approvalDetails(item) {
     workflow_operation_id: item.event.workflow_operation_id,
   };
   model.approvalById.set(requestId, merged);
-  renderApproval(merged);
+  const presentation =
+    presentationFor(item.presentations, { id: requestId }, payload.object_digest) ||
+    technicalPresentation(
+      {
+        id: requestId,
+        type: payload.object_type || "ApprovalRequest",
+        status: "pending",
+      },
+      payload.object_digest,
+    );
+  renderApproval(merged, presentation);
 }
 
-function approvalField(label, value) {
-  const wrapper = node("div", "approval-field");
-  wrapper.append(node("span", "", label), node("strong", "", value || "—"));
-  return wrapper;
-}
-
-function renderApproval(approval) {
+function renderApproval(approval, presentation) {
   const card = $("#approval-card");
   clear(card);
+  const authoritativeAuditPresentation = {
+    ...presentation,
+    binding_digest: approval.object_digest || null,
+  };
   card.append(
-    node("p", "eyebrow", approval.risk ? `${approval.risk} risk` : "approval required"),
-    node("h4", "", approval.object_type || "Governed object"),
-    approvalField("REQUEST", approval.request_id),
-    approvalField("OBJECT", approval.object_id),
-    approvalField("DIGEST", approval.object_digest),
-    approvalField("REQUEST ACTOR", approval.proposed_by || "unknown"),
-    node("p", "approval-reason", approval.reason || "A governed decision is required."),
+    businessHeading(presentation, "h4"),
+    auditDetails(authoritativeAuditPresentation, [
+      ["REQUEST", approval.request_id],
+      ["OBJECT", approval.object_id],
+      ["OBJECT TYPE", approval.object_type],
+      ["REQUEST ACTOR", approval.proposed_by || "unknown"],
+      ["WORKFLOW", approval.workflow_operation_id],
+    ]),
   );
   const form = node("form", "approval-form");
   const label = node("label", "");
