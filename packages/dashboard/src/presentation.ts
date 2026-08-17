@@ -509,20 +509,21 @@ export function presentSemanticProposal(source: PresentationSource): BusinessPre
   };
 }
 
-export function presentEvent(source: PresentationSource): BusinessPresentation {
+export function presentEvent(source: object): BusinessPresentation {
+  const record = source as Readonly<Record<string, unknown>>;
   const event =
-    typeof source.event === "object" && source.event !== null && !Array.isArray(source.event)
-      ? (source.event as Record<string, unknown>)
+    typeof record.event === "object" && record.event !== null && !Array.isArray(record.event)
+      ? (record.event as Record<string, unknown>)
       : {};
   const payload =
     typeof event.payload === "object" && event.payload !== null && !Array.isArray(event.payload)
       ? (event.payload as Record<string, unknown>)
       : {};
-  const entityId = typeof source.id === "string" ? source.id : "unknown_event";
+  const entityId = typeof record.id === "string" ? record.id : "unknown_event";
   const eventType = typeof event.event_type === "string" ? event.event_type : "UnknownEvent";
   const phase = typeof payload.phase === "string" ? payload.phase : "unknown";
   const phaseLabel = PHASE_LABELS[phase] ?? `未知阶段 / ${phase}`;
-  const authoritative = source.authoritative === true;
+  const authoritative = record.authoritative === true;
   const sourceLabel = authoritative ? "权威账本" : "实时信号";
   const present = (
     title: string,

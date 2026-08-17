@@ -96,6 +96,22 @@ describe("Dashboard SSE", () => {
     expect(reads).toBe(1);
     expect(response.writes.join("")).toContain("id: cursor_02");
     expect(response.writes.join("")).toContain("event: RunHeartbeat");
+    const dataLine = response.writes.join("").match(/^data: (.+)$/mu)?.[1];
+    if (dataLine === undefined) throw new Error("SSE data frame missing");
+    const frame = JSON.parse(dataLine) as {
+      id: string;
+      event: { event_type: string };
+      presentations: Record<string, unknown>;
+    };
+    expect(frame).toMatchObject({
+      id: "live:stream_01:2",
+      event: { event_type: "RunHeartbeat" },
+    });
+    expect(frame.presentations["live:stream_01:2@live"]).toMatchObject({
+      entity_id: "live:stream_01:2",
+      binding_digest: null,
+      technical_type: "RunHeartbeat",
+    });
     response.emit("drain");
     await running;
 
@@ -121,6 +137,58 @@ describe("Dashboard SSE", () => {
     expect(response.writes.join("")).toContain("event: stream_reset");
     expect(response.writes.join("")).toContain('"reason":"cursor_evicted"');
     expect(response.ended).toBe(true);
+  });
+
+  it("adds a digest-bound Approval presentation without changing the event payload", async () => {
+    const digest = "a".repeat(64);
+    const approval = item(1, "ApprovalRequired");
+    const approvalItem = {
+      ...approval,
+      event: {
+        ...approval.event,
+        event_type: "ApprovalRequired" as const,
+        payload: {
+          request_id: "approval_request_01",
+          object_id: "impact_set_01",
+          object_type: "ImpactSet",
+          object_digest: digest,
+          reason: "确认影响范围。",
+          risk: "high",
+          allowed_decisions: ["approve", "reject", "defer"],
+        },
+      },
+    };
+    const response = new ResponseDouble();
+    const abort = new AbortController();
+    let reads = 0;
+    const port: EventStreamPort = {
+      read: () => {
+        reads += 1;
+        if (reads === 1) return Promise.resolve({ items: [approvalItem], cursor: "cursor_01" });
+        abort.abort();
+        return Promise.resolve({ items: [] });
+      },
+      subscribe: () => ({ [Symbol.asyncIterator]: async function* () {} }),
+    };
+
+    await streamDashboardEvents({ response, eventStream: port, signal: abort.signal });
+    const dataLine = response.writes.join("").match(/^data: (.+)$/mu)?.[1];
+    if (dataLine === undefined) throw new Error("Approval SSE data frame missing");
+    const frame = JSON.parse(dataLine) as {
+      event: { payload: { object_digest: string } };
+      presentations: Record<string, unknown>;
+    };
+
+    expect(frame.event.payload.object_digest).toBe(digest);
+    expect(frame.presentations[`approval_request_01@${digest}`]).toMatchObject({
+      entity_id: "approval_request_01",
+      binding_digest: digest,
+      title_zh: "批准影响范围",
+      technical_type: "ImpactSet",
+    });
+    expect(frame.presentations["live:stream_01:1@live"]).toMatchObject({
+      technical_type: "ApprovalRequired",
+    });
   });
 
   it("sends heartbeat comments while idle and cleans up immediately on disconnect", async () => {

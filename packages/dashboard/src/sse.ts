@@ -1,5 +1,6 @@
 import type { EventStreamItem, EventStreamPort } from "@universal-harness-internal/runtime";
 
+import { presentApproval, presentEvent, presentationMap } from "./presentation.js";
 import { DASHBOARD_SECURITY_HEADERS } from "./problem.js";
 
 const DEFAULT_HEARTBEAT_MS = 10_000;
@@ -83,7 +84,18 @@ async function write(response: SseResponse, signal: AbortSignal, frame: string):
 }
 
 function eventFrame(item: EventStreamItem, cursor: string): string {
-  return `id: ${cursor}\nevent: ${item.event.event_type}\ndata: ${JSON.stringify(item)}\n\n`;
+  const presentations = [presentEvent(item)];
+  if (
+    item.event.event_type === "ApprovalRequired" &&
+    typeof item.event.payload === "object" &&
+    item.event.payload !== null
+  ) {
+    presentations.push(presentApproval(item.event.payload));
+  }
+  return `id: ${cursor}\nevent: ${item.event.event_type}\ndata: ${JSON.stringify({
+    ...item,
+    presentations: presentationMap(presentations),
+  })}\n\n`;
 }
 
 /**
