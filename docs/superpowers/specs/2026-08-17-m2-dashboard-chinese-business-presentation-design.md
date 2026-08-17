@@ -1,7 +1,7 @@
 # M2 Dashboard 中文业务展示层设计
 
 日期：2026-08-17  
-状态：待书面复核  
+状态：已确认
 范围：M2 Dashboard 的 Graph、Impact、Iterations、Evidence、Findings、Live 与 Approval；不修改 Ledger Schema
 
 ## 1. 决策摘要
