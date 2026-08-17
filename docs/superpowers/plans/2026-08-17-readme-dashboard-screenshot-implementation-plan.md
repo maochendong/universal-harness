@@ -2,7 +2,7 @@
 
 日期：2026-08-17
 
-状态：扩展实施中
+状态：已完成
 
 完成日期：2026-08-17
 
@@ -142,3 +142,12 @@ pnpm typecheck
 pnpm test
 git diff --check
 ```
+
+## 9. 扩展实施结果
+
+- Graph 截图已在 `case_docs` 邻域加载后捕获，画面同时展示筛选控制、`3 EDGES / 4 NODES` 关系摘要以及 Evidence、Run、Task 相邻节点。
+- Impact 截图已在 `case_docs` 到 `evidence_evaluation_docs` 路径查询完成后捕获，画面展示 `SUPPORTS` 关系和最短解释路径。
+- 两张截图均为 1440×900 PNG，页面 console error 数量为 0，不含浏览器框、访问 token 或调试信息。
+- README 已按 Overview、Graph、Impact 顺序展示三张真实视图，并为新增图片提供中文替代文本与说明。
+- 用户已完成人工图片检查；文档契约测试 7/7、格式检查、Lint、TypeScript 均通过。
+- 完整回归通过：216 个测试文件、1329 项测试全部通过。
