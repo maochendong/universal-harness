@@ -20,10 +20,20 @@ import {
 import { collectProjectStatus, projectFindingGroups } from "@universal-harness-internal/runtime";
 
 import { DashboardProblem } from "./problem.js";
+import {
+  presentEdge,
+  presentFindingGroup,
+  presentNode,
+  presentSemanticProposal,
+  presentationMap,
+  type BusinessPresentation,
+  type PresentationMap,
+} from "./presentation.js";
 
 export interface DashboardPage<T> {
   readonly items: readonly T[];
   readonly next_cursor?: string;
+  readonly presentations: PresentationMap;
 }
 
 export interface DashboardReadApi {
@@ -50,10 +60,26 @@ export interface DashboardReadApi {
   }): DashboardPage<unknown>;
 }
 
-function page<T>(value: { readonly items: T[]; readonly nextCursor?: string }): DashboardPage<T> {
+function page<T>(
+  value: { readonly items: T[]; readonly nextCursor?: string },
+  presentations: readonly BusinessPresentation[] = [],
+): DashboardPage<T> {
   return {
     items: value.items,
     ...(value.nextCursor === undefined ? {} : { next_cursor: value.nextCursor }),
+    presentations: presentationMap(presentations),
+  };
+}
+
+function graphResponse<T extends { readonly nodes: NodeRecord[]; readonly edges: EdgeRecord[] }>(
+  value: T,
+): T & { readonly presentations: PresentationMap } {
+  return {
+    ...value,
+    presentations: presentationMap([
+      ...value.nodes.map((item) => presentNode(item)),
+      ...value.edges.map((item) => presentEdge(item)),
+    ]),
   };
 }
 
@@ -127,12 +153,20 @@ export function createDashboardReadApi(projectRoot: string): DashboardReadApi {
     nodes: (query) =>
       withPorts((ports) => {
         const { view, ...pageQuery } = query;
-        return page(selected(ports, view).pageNodes(pageQuery));
+        const result = selected(ports, view).pageNodes(pageQuery);
+        return page(
+          result,
+          result.items.map((item) => presentNode(item)),
+        );
       }),
     edges: (query) =>
       withPorts((ports) => {
         const { view, ...pageQuery } = query;
-        return page(selected(ports, view).pageEdges(pageQuery));
+        const result = selected(ports, view).pageEdges(pageQuery);
+        return page(
+          result,
+          result.items.map((item) => presentEdge(item)),
+        );
       }),
     neighborhood: (nodeId, options) =>
       withPorts((ports) => {
@@ -144,7 +178,7 @@ export function createDashboardReadApi(projectRoot: string): DashboardReadApi {
             `graph node ${nodeId} does not exist`,
           );
         }
-        return ports.graph.neighborhood(nodeId, options);
+        return graphResponse(ports.graph.neighborhood(nodeId, options));
       }),
     path: (sourceId, targetId, options) =>
       withPorts((ports) => {
@@ -168,7 +202,7 @@ export function createDashboardReadApi(projectRoot: string): DashboardReadApi {
             `no graph path exists from ${sourceId} to ${targetId}`,
           );
         }
-        return result;
+        return graphResponse(result);
       }),
     iteration: (iterationId) =>
       withPorts((ports) => {
@@ -181,14 +215,43 @@ export function createDashboardReadApi(projectRoot: string): DashboardReadApi {
             `iteration ${iterationId} does not exist`,
           );
         }
+        const graph = ports.graph.neighborhood(iterationId, { depth: 3, direction: "both" });
+        const evaluations = ports.evaluation.page({ iterationId, limit: 500 }).items;
         return {
           iteration,
-          graph: ports.graph.neighborhood(iterationId, { depth: 3, direction: "both" }),
-          evaluations: ports.evaluation.page({ iterationId, limit: 500 }).items,
+          graph,
+          evaluations,
+          presentations: presentationMap([
+            presentNode(iteration),
+            ...graph.nodes.map((item) => presentNode(item)),
+            ...graph.edges.map((item) => presentEdge(item)),
+            ...evaluations.map((item) =>
+              presentNode({
+                id: item.evidenceId,
+                digest: item.evidenceDigest,
+                type: "Evidence",
+                status: item.status,
+                summary: item.passed ? "评估已通过。" : "评估未通过。",
+                extensions: {
+                  "harness.evaluation": {
+                    passed: item.passed,
+                    freshness: item.fresh ? "fresh" : "stale",
+                    provisional: item.provisional,
+                  },
+                },
+              }),
+            ),
+          ]),
         };
       }),
     evidence: (query) =>
-      withPorts((ports) => page(ports.graph.pageNodes({ ...query, type: "Evidence" }))),
+      withPorts((ports) => {
+        const result = ports.graph.pageNodes({ ...query, type: "Evidence" });
+        return page(
+          result,
+          result.items.map((item) => presentNode(item)),
+        );
+      }),
     findingGroups: (query) =>
       withPorts((ports) => {
         const findings: NodeRecord[] = [];
@@ -211,11 +274,12 @@ export function createDashboardReadApi(projectRoot: string): DashboardReadApi {
         return {
           items,
           ...(groups.length > limit && last !== undefined ? { next_cursor: last.group_id } : {}),
+          presentations: presentationMap(items.map((item) => presentFindingGroup(item))),
         };
       }),
     semanticProposals: (query) => {
       const limit = query.limit ?? 50;
-      if (!existsSync(semanticProposalDirectory)) return { items: [] };
+      if (!existsSync(semanticProposalDirectory)) return { items: [], presentations: {} };
       const proposals = readdirSync(semanticProposalDirectory)
         .filter((name) => name.endsWith(".json"))
         .sort()
@@ -258,6 +322,7 @@ export function createDashboardReadApi(projectRoot: string): DashboardReadApi {
       return {
         items,
         ...(proposals.length > limit && last !== undefined ? { next_cursor: last.edge_id } : {}),
+        presentations: presentationMap(items.map((item) => presentSemanticProposal(item))),
       };
     },
   };

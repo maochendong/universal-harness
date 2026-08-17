@@ -431,15 +431,16 @@ export function presentEdge(source: PresentationSource): BusinessPresentation {
   };
 }
 
-export function presentFindingGroup(source: PresentationSource): BusinessPresentation {
-  const entityId = typeof source.group_id === "string" ? source.group_id : "unknown_finding_group";
-  const digest = typeof source.membership_digest === "string" ? source.membership_digest : null;
-  const rule = typeof source.rule === "string" ? source.rule : "unknown_rule";
-  const scope = typeof source.scope_prefix === "string" ? source.scope_prefix : "unknown";
-  const severity = typeof source.severity === "string" ? source.severity : "unknown";
-  const actionability = typeof source.actionability === "string" ? source.actionability : "unknown";
-  const openCount = typeof source.open_count === "number" ? source.open_count : 0;
-  const memberCount = typeof source.member_count === "number" ? source.member_count : openCount;
+export function presentFindingGroup(source: object): BusinessPresentation {
+  const record = source as Readonly<Record<string, unknown>>;
+  const entityId = typeof record.group_id === "string" ? record.group_id : "unknown_finding_group";
+  const digest = typeof record.membership_digest === "string" ? record.membership_digest : null;
+  const rule = typeof record.rule === "string" ? record.rule : "unknown_rule";
+  const scope = typeof record.scope_prefix === "string" ? record.scope_prefix : "unknown";
+  const severity = typeof record.severity === "string" ? record.severity : "unknown";
+  const actionability = typeof record.actionability === "string" ? record.actionability : "unknown";
+  const openCount = typeof record.open_count === "number" ? record.open_count : 0;
+  const memberCount = typeof record.member_count === "number" ? record.member_count : openCount;
   const ruleLabel = FINDING_RULE_LABELS[rule] ?? `未知规则 / ${rule}`;
   const severityLabel = SEVERITY_LABELS[severity] ?? { value: severity, tone: "neutral" as const };
   const actionabilityLabel = ACTIONABILITY_LABELS[actionability] ?? {
