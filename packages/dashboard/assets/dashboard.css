@@ -766,16 +766,40 @@ h2 {
   color: var(--paper-muted);
 }
 .neighbor-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.65rem;
+  margin-top: 1.5rem;
+}
+.neighbor-card {
+  min-width: 0;
+  padding: 0.8rem;
+  border: 1px solid var(--rule-bright);
+}
+.neighbor-card .business-description {
+  font-size: 0.68rem;
+}
+.neighbor-relations {
   display: flex;
   flex-wrap: wrap;
   gap: 0.45rem;
-  margin-top: 1.5rem;
+  margin-top: 1rem;
 }
-.neighbor-list span {
-  padding: 0.4rem 0.55rem;
-  border: 1px solid var(--rule-bright);
+.relation-chip {
+  display: inline-flex;
+  gap: 0.45rem;
+  align-items: baseline;
+  padding: 0.45rem 0.6rem;
+  border-left: 2px solid var(--oxide);
+  background: var(--panel);
+}
+.relation-chip strong {
+  color: var(--paper);
+  font: 650 0.65rem/1 var(--body);
+}
+.relation-chip span {
   color: var(--paper-muted);
-  font: 0.58rem/1 var(--mono);
+  font: 0.53rem/1 var(--mono);
 }
 .text-button {
   margin-top: 1rem;
@@ -823,11 +847,11 @@ h2 {
   margin-top: 2rem;
 }
 
-.semantic-proposal .approval-command {
-  display: block;
-  overflow-wrap: anywhere;
-  margin-top: 0.75rem;
-  color: var(--paper-muted);
+.semantic-proposal .business-title {
+  font-size: 1.45rem;
+}
+.semantic-proposal .audit-table dd {
+  user-select: text;
 }
 .trace-output {
   min-height: 17rem;
@@ -845,12 +869,35 @@ h2 {
   max-width: 18rem;
   padding: 0.8rem;
   border: 1px solid var(--signal);
-  font: 0.63rem/1.4 var(--mono);
   overflow-wrap: anywhere;
 }
+.trace-node .business-title {
+  font-size: 0.95rem;
+}
+.trace-node .business-description,
+.trace-node .business-badges {
+  display: none;
+}
 .trace-edge {
+  display: grid;
+  gap: 0.3rem;
+  min-width: 5rem;
   color: var(--oxide);
-  font: 0.58rem/1 var(--mono);
+  text-align: center;
+}
+.trace-edge::before,
+.trace-edge::after {
+  color: var(--oxide);
+  content: "→";
+  font: 0.7rem/1 var(--mono);
+}
+.trace-edge strong {
+  color: var(--paper);
+  font: 650 0.65rem/1 var(--body);
+}
+.trace-edge small {
+  color: var(--paper-muted);
+  font: 0.52rem/1 var(--mono);
 }
 .dossier h3 {
   margin: 0 0 1.5rem;
@@ -887,9 +934,9 @@ h2 {
 }
 .evidence-row {
   display: grid;
-  grid-template-columns: 3rem minmax(12rem, 1.5fr) repeat(3, minmax(7rem, 0.7fr));
+  grid-template-columns: 3rem minmax(0, 1fr);
   gap: 1rem;
-  align-items: center;
+  align-items: start;
   padding: 1.1rem;
   background: var(--ink-soft);
 }
@@ -904,6 +951,11 @@ h2 {
 .evidence-row span {
   color: var(--paper-muted);
   font: 0.58rem/1.4 var(--mono);
+}
+.evidence-row .audit-details {
+  grid-column: 2;
+  width: 100%;
+  margin-top: 0.4rem;
 }
 .digest {
   overflow: hidden;
@@ -978,9 +1030,12 @@ h2 {
   text-transform: uppercase;
 }
 .finding-card h3 {
-  margin: 1.5rem 0 0.6rem;
+  margin: 0;
   font: 400 1.7rem/1.05 var(--display);
   overflow-wrap: anywhere;
+}
+.finding-card .audit-details {
+  margin-right: 3.8rem;
 }
 .finding-card p {
   color: var(--paper-muted);

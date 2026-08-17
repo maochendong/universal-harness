@@ -287,10 +287,26 @@ async function inspectNode(record, presentation) {
     const field = await api(`/api/v1/graph/neighborhood/${encodeURIComponent(record.id)}?depth=1`);
     const neighbors = node("div", "neighbor-list");
     for (const neighbor of field.nodes.filter((item) => item.id !== record.id)) {
-      neighbors.append(node("span", "", `${neighbor.type} · ${neighbor.id}`));
+      const neighborPresentation =
+        presentationFor(field.presentations, neighbor) || technicalPresentation(neighbor);
+      const item = node("article", "neighbor-card");
+      item.append(businessHeading(neighborPresentation));
+      neighbors.append(item);
+    }
+    const relations = node("div", "neighbor-relations");
+    for (const edge of field.edges) {
+      const edgePresentation =
+        presentationFor(field.presentations, edge) || technicalPresentation(edge);
+      const relation = node("div", "relation-chip");
+      relation.append(
+        node("strong", "", edgePresentation.type_label_zh),
+        node("span", "", edgePresentation.technical_type),
+      );
+      relations.append(relation);
     }
     inspector.append(
       node("p", "plot-label", `${field.edges.length} EDGES / ${field.nodes.length} NODES`),
+      relations,
       neighbors,
     );
     status("graph", `Neighborhood loaded for ${record.id}`);
@@ -313,9 +329,22 @@ async function traceImpact(event) {
     );
     const line = node("div", "trace-path");
     path.nodes.forEach((item, index) => {
-      line.append(node("span", "trace-node", `${item.type} / ${item.id}`));
+      const itemPresentation =
+        presentationFor(path.presentations, item) || technicalPresentation(item);
+      const pathNode = node("article", "trace-node");
+      pathNode.append(businessHeading(itemPresentation));
+      line.append(pathNode);
       const edge = path.edges[index];
-      if (edge) line.append(node("span", "trace-edge", `— ${edge.type} →`));
+      if (edge) {
+        const edgePresentation =
+          presentationFor(path.presentations, edge) || technicalPresentation(edge);
+        const pathEdge = node("span", "trace-edge");
+        pathEdge.append(
+          node("strong", "", edgePresentation.type_label_zh),
+          node("small", "", edgePresentation.technical_type),
+        );
+        line.append(pathEdge);
+      }
     });
     output.append(line);
     status("impact", `${path.edges.length} governed relationships explain this path`);
@@ -336,11 +365,20 @@ async function loadSemanticProposals() {
     }
     for (const proposal of page.items) {
       const card = node("article", "evidence-card semantic-proposal");
+      const presentation =
+        presentationFor(page.presentations, { id: proposal.edge_id }, proposal.preview_digest) ||
+        technicalPresentation(
+          { id: proposal.edge_id, type: "SemanticProposal", status: "pending" },
+          proposal.preview_digest,
+        );
       card.append(
-        node("span", "kind", `SCORE ${(proposal.score / 1_000_000).toFixed(3)}`),
-        node("strong", "", `${proposal.source_node_id} → ${proposal.candidate_node_id}`),
-        node("p", "", proposal.reason),
-        node("code", "approval-command", proposal.approve_command),
+        businessHeading(presentation, "h3"),
+        auditDetails(presentation, [
+          ["SOURCE", proposal.source_node_id],
+          ["TARGET", proposal.candidate_node_id],
+          ["SCORE", (proposal.score / 1_000_000).toFixed(3)],
+          ["APPROVE", proposal.approve_command],
+        ]),
       );
       output.append(card);
     }
@@ -350,14 +388,11 @@ async function loadSemanticProposals() {
   }
 }
 
-function iterationButton(record) {
+function iterationButton(record, presentations) {
   const button = node("button", "record-button");
   button.type = "button";
-  button.append(
-    node("span", "kind", `REV ${record.revision}`),
-    node("strong", "", record.id),
-    node("span", "status", record.iteration_state || record.status),
-  );
+  const presentation = presentationFor(presentations, record) || technicalPresentation(record);
+  button.append(businessHeading(presentation));
   button.addEventListener("click", () => openIteration(record.id));
   return button;
 }
@@ -370,7 +405,7 @@ async function loadIterations({ append = false } = {}) {
   status("iterations", "Loading iteration register…");
   try {
     const page = await api(`/api/v1/graph/nodes?${query}`);
-    for (const record of page.items) list.append(iterationButton(record));
+    for (const record of page.items) list.append(iterationButton(record, page.presentations));
     model.iterationCursor = page.next_cursor;
     $("#iteration-more").hidden = !model.iterationCursor;
     status(
@@ -391,7 +426,10 @@ async function openIteration(id) {
   status("iterations", `Reading ${id}…`);
   try {
     const record = await api(`/api/v1/iterations/${encodeURIComponent(id)}`);
-    detail.append(node("p", "eyebrow", "ITERATION DOSSIER"), node("h3", "", record.iteration.id));
+    const presentation =
+      presentationFor(record.presentations, record.iteration) ||
+      technicalPresentation(record.iteration);
+    detail.append(node("p", "eyebrow", "ITERATION DOSSIER"), businessHeading(presentation, "h3"));
     const grid = node("div", "dossier-grid");
     for (const [label, value] of [
       ["STATE", record.iteration.iteration_state],
@@ -402,15 +440,15 @@ async function openIteration(id) {
       cell.append(node("span", "", label), node("strong", "", value));
       grid.append(cell);
     }
-    const table = node("dl", "data-table");
-    for (const [label, value] of [
-      ["REVISION", record.iteration.revision],
-      ["SOURCE", record.iteration.source],
-      ["DIGEST", record.iteration.digest],
-      ["TIMESTAMP", record.iteration.provenance?.timestamp],
-    ])
-      table.append(...pair(label, value));
-    detail.append(grid, table);
+    detail.append(
+      grid,
+      auditDetails(presentation, [
+        ["ID", record.iteration.id],
+        ["REVISION", record.iteration.revision],
+        ["SOURCE", record.iteration.source],
+        ["TIMESTAMP", record.iteration.provenance?.timestamp],
+      ]),
+    );
     status("iterations", `${id} loaded with ${record.graph.edges.length} related edges`);
   } catch (error) {
     detail.append(node("p", "", "Iteration could not be loaded."));
@@ -428,20 +466,18 @@ function evidenceQuery(cursor) {
   return query;
 }
 
-function evidenceRow(record, index) {
+function evidenceRow(record, index, presentations) {
   const row = node("article", "evidence-row");
-  const extension =
-    record.extensions?.["harness.evaluation"] || record.extensions?.["harness.gate"] || {};
+  const presentation = presentationFor(presentations, record) || technicalPresentation(record);
   row.append(
     node("span", "ordinal", String(index + 1).padStart(2, "0")),
-    node("strong", "", record.id),
-    node("span", "", `${record.status} / ${record.source}`),
-    node(
-      "span",
-      "",
-      extension.passed === undefined ? "VERDICT —" : extension.passed ? "PASSED" : "FAILED",
-    ),
-    node("span", "digest", short(record.digest, 24)),
+    businessHeading(presentation),
+    auditDetails(presentation, [
+      ["ID", record.id],
+      ["REVISION", record.revision],
+      ["SOURCE", record.source],
+      ["ITERATION", record.provenance?.iteration_id],
+    ]),
   );
   return row;
 }
@@ -455,7 +491,9 @@ async function loadEvidence({ append = false } = {}) {
       `/api/v1/evidence?${evidenceQuery(append ? model.evidenceCursor : undefined)}`,
     );
     const offset = list.children.length;
-    page.items.forEach((record, index) => list.append(evidenceRow(record, offset + index)));
+    page.items.forEach((record, index) =>
+      list.append(evidenceRow(record, offset + index, page.presentations)),
+    );
     model.evidenceCursor = page.next_cursor;
     $("#evidence-more").hidden = !model.evidenceCursor;
     status(
@@ -470,16 +508,23 @@ async function loadEvidence({ append = false } = {}) {
   }
 }
 
-function findingCard(group) {
+function findingCard(group, presentations) {
   const card = node("article", "finding-card");
   card.classList.add(`severity-${group.severity}`);
-  const header = node("header");
-  header.append(node("span", "", group.severity), node("span", "", group.actionability));
+  const presentation =
+    presentationFor(presentations, { id: group.group_id }, group.membership_digest) ||
+    technicalPresentation(
+      { id: group.group_id, type: "FindingGroup", status: group.actionability },
+      group.membership_digest,
+    );
   card.append(
-    header,
-    node("h3", "", group.rule),
-    node("p", "", group.scope_prefix),
-    node("p", "digest", `DIGEST ${short(group.membership_digest, 30)}`),
+    businessHeading(presentation, "h3"),
+    auditDetails(presentation, [
+      ["GROUP ID", group.group_id],
+      ["RULE", group.rule],
+      ["SCOPE", group.scope_prefix],
+      ["MEMBERS", group.member_count],
+    ]),
     node("strong", "finding-count", group.open_count),
   );
   card.title = (group.samples || []).join("\n");
@@ -494,7 +539,7 @@ async function loadFindings({ append = false } = {}) {
   status("findings", "Projecting Finding groups…");
   try {
     const page = await api(`/api/v1/finding-groups?${query}`);
-    for (const group of page.items) list.append(findingCard(group));
+    for (const group of page.items) list.append(findingCard(group, page.presentations));
     model.findingCursor = page.next_cursor;
     $("#finding-more").hidden = !model.findingCursor;
     status(
