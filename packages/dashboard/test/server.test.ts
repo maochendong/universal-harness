@@ -12,7 +12,11 @@ import {
   type NodeRecord,
 } from "@universal-harness-internal/core";
 import { rebuildGraphCache } from "@universal-harness-internal/graph";
-import { createNewProject } from "@universal-harness-internal/runtime";
+import {
+  approvalRequestArtifact,
+  buildApprovalRequest,
+  createNewProject,
+} from "@universal-harness-internal/runtime";
 
 import { startDashboardServer, type DashboardServer } from "../src/index.js";
 
@@ -91,6 +95,22 @@ async function managedProject(): Promise<string> {
       "harness.copy": { summary: "登录能力缺少验证证据。" },
     },
   });
+  const approvalRequest = buildApprovalRequest({
+    requestId: "approval_request_dashboard_01",
+    workflowOperationId: created.value.workflowOperationId,
+    objectId: created.value.repositoryNodeId,
+    objectType: "RequirementBaseline",
+    objectDigest: "a".repeat(64),
+    baselineDigest: "b".repeat(64),
+    policyDigest: "c".repeat(64),
+    impactPath: [created.value.repositoryNodeId, "requirement_dashboard_01"],
+    risk: "high",
+    reason: "确认 Dashboard 权威审批队列能够在错过实时事件后恢复。",
+    allowedDecisions: ["approve", "reject", "defer"],
+    createdAt: timestamp,
+    resumePhase: "capture",
+    proposedBy: "agent:dashboard-fixture",
+  });
   await new LedgerRepository({
     projectRoot: created.value.projectRoot,
     readBaseline: () => created.value.headCommit,
@@ -100,10 +120,13 @@ async function managedProject(): Promise<string> {
     workflow_operation_id: created.value.workflowOperationId,
     attempt_id: "attempt_dashboard_read_fixture",
     expected_baseline: created.value.headCommit,
-    artifacts: [evidence, finding].map((node) => ({
-      path: `artifacts/dashboard-fixtures/${node.id}.json`,
-      content: `${canonicalizeJson(node)}\n`,
-    })),
+    artifacts: [
+      ...[evidence, finding].map((node) => ({
+        path: `artifacts/dashboard-fixtures/${node.id}.json`,
+        content: `${canonicalizeJson(node)}\n`,
+      })),
+      approvalRequestArtifact(approvalRequest),
+    ],
   });
   const { mkdirSync, writeFileSync } = await import("node:fs");
   const proposalDirectory = resolveHarnessPath(
@@ -345,6 +368,40 @@ describe("Dashboard server", () => {
     expect(
       semanticBody.data.presentations[`${firstProposal.edge_id}@${firstProposal.preview_digest}`],
     ).toMatchObject({ type_label_zh: "语义候选", status_label_zh: "待批准" });
+
+    const approvals = await fetch(`${server.origin}/api/v1/approvals?limit=20`, {
+      headers: { cookie },
+    });
+    expect(approvals.status).toBe(200);
+    const approvalBody = (await approvals.json()) as {
+      data: {
+        items: {
+          request_id: string;
+          object_digest: string;
+          workflow_operation_id: string;
+        }[];
+        presentations: Record<string, unknown>;
+      };
+    };
+    expect(approvalBody.data.items).toEqual([
+      expect.objectContaining({
+        request_id: "approval_request_dashboard_01",
+        object_digest: "a".repeat(64),
+        workflow_operation_id: expect.any(String),
+      }),
+    ]);
+    const firstApproval = approvalBody.data.items[0];
+    if (firstApproval === undefined) throw new Error("Approval fixture missing");
+    expect(
+      approvalBody.data.presentations[
+        `${firstApproval.request_id}@${firstApproval.object_digest}`
+      ],
+    ).toMatchObject({
+      entity_id: firstApproval.request_id,
+      binding_digest: firstApproval.object_digest,
+      type_label_zh: "审批请求",
+      status_label_zh: "等待决策",
+    });
   });
 
   it("returns typed problems for invalid limits, unknown nodes, and a damaged cache", async () => {

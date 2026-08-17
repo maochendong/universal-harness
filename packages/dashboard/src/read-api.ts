@@ -4,6 +4,7 @@ import { DatabaseSync } from "node:sqlite";
 import {
   GRAPH_DATABASE_RELATIVE_PATH,
   harnessRootFor,
+  readCommittedOperations,
   resolveHarnessPath,
   type EdgeRecord,
   type NodeRecord,
@@ -17,11 +18,17 @@ import {
   type NodeQuery,
   type TraversalOptions,
 } from "@universal-harness-internal/graph";
-import { collectProjectStatus, projectFindingGroups } from "@universal-harness-internal/runtime";
+import {
+  collectProjectStatus,
+  projectFindingGroups,
+  readPendingApprovalRequests,
+  type ApprovalRequestRecord,
+} from "@universal-harness-internal/runtime";
 
 import { DashboardProblem } from "./problem.js";
 import {
   presentEdge,
+  presentApproval,
   presentFindingGroup,
   presentNode,
   presentSemanticProposal,
@@ -58,6 +65,10 @@ export interface DashboardReadApi {
     readonly cursor?: string;
     readonly limit?: number;
   }): DashboardPage<unknown>;
+  approvals(query: {
+    readonly cursor?: string;
+    readonly limit?: number;
+  }): DashboardPage<ApprovalRequestRecord>;
 }
 
 function page<T>(
@@ -323,6 +334,29 @@ export function createDashboardReadApi(projectRoot: string): DashboardReadApi {
         items,
         ...(proposals.length > limit && last !== undefined ? { next_cursor: last.edge_id } : {}),
         presentations: presentationMap(items.map((item) => presentSemanticProposal(item))),
+      };
+    },
+    approvals: (query) => {
+      const limit = query.limit ?? 50;
+      const approvals = readPendingApprovalRequests(
+        harnessRootFor(projectRoot),
+        readCommittedOperations(harnessRootFor(projectRoot)),
+      );
+      const start =
+        query.cursor === undefined
+          ? 0
+          : Math.max(
+              0,
+              approvals.findIndex((approval) => approval.request_id === query.cursor) + 1,
+            );
+      const items = approvals.slice(start, start + limit);
+      const last = items.at(-1);
+      return {
+        items,
+        ...(start + items.length < approvals.length && last !== undefined
+          ? { next_cursor: last.request_id }
+          : {}),
+        presentations: presentationMap(items.map((item) => presentApproval({ ...item }))),
       };
     },
   };

@@ -204,6 +204,7 @@ export {
   previewDigestMatches,
   proposedByOf,
   readApprovalDecisions,
+  readPendingApprovalRequests,
   readApprovalRequests,
   renderApprovalPreview,
   supersededRequestId,

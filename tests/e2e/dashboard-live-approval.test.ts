@@ -139,6 +139,32 @@ const test = base.extend<{ dashboard: LiveDashboardFixture }>({
 });
 
 test.describe("Dashboard live approval journey", () => {
+  test("loads the authoritative approval queue after the live event was missed", async ({
+    dashboard,
+  }) => {
+    const { page, firstRequestId, firstObjectDigest } = dashboard;
+
+    await page.getByRole("link", { name: /Approvals/u }).click();
+    await expect(page.getByRole("heading", { name: "Pending approvals" })).toBeVisible();
+    await expect(page.getByText("1 pending", { exact: true })).toBeVisible();
+    const card = page.locator("#approval-queue .approval-card");
+    await expect(card).toHaveCount(1);
+    await expect(card.getByRole("heading", { name: /批准/u })).toBeVisible();
+    await card.getByText(/审计信息 ·/u).click();
+    await expect(card.getByText(firstRequestId, { exact: true })).toBeVisible();
+
+    let decisionBody: { expected_digest?: string } | undefined;
+    page.on("request", (request) => {
+      if (request.method() !== "POST" || !request.url().includes("/decision")) return;
+      decisionBody = request.postDataJSON() as { expected_digest?: string };
+    });
+    await card.getByLabel("DECISION ACTOR").fill("human:approval-queue-e2e");
+    await card.getByRole("button", { name: "APPROVE" }).click();
+    await expect(card.getByText("DECISION RECORDED")).toBeVisible();
+    expect(decisionBody?.expected_digest).toBe(firstObjectDigest);
+    await expect(card.getByRole("button", { name: "RESUME WORKFLOW" })).toBeVisible();
+  });
+
   test("replaces live signals, commits a digest-bound actor decision, and resumes", async ({
     dashboard,
   }) => {

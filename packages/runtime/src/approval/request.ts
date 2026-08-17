@@ -345,3 +345,46 @@ export function readApprovalDecisions(
     "approval_decision",
   );
 }
+
+/**
+ * All currently pending committed requests across workflow operations.
+ * ApprovalRequest artifacts are authoritative only when vouched for by a
+ * committed operation. Approve/reject are terminal, defer remains pending,
+ * and a reissued request supersedes its predecessor.
+ */
+export function readPendingApprovalRequests(
+  harnessRoot: string,
+  operations: readonly CommittedOperation[],
+): ApprovalRequestRecord[] {
+  const workflowOperationIds = [
+    ...new Set(operations.map((operation) => operation.manifest.workflow_operation_id)),
+  ];
+  const requests = workflowOperationIds.flatMap((workflowOperationId) =>
+    readApprovalRequests(harnessRoot, operations, workflowOperationId),
+  );
+  const terminal = new Set(
+    workflowOperationIds.flatMap((workflowOperationId) =>
+      readApprovalDecisions(harnessRoot, operations, workflowOperationId)
+        .filter((decision) => decision.decision === "approve" || decision.decision === "reject")
+        .map((decision) => decision.request_id),
+    ),
+  );
+  const superseded = new Set(
+    requests
+      .map((request) => supersededRequestId(request))
+      .filter((requestId): requestId is string => requestId !== undefined),
+  );
+  return requests
+    .filter((request) => !terminal.has(request.request_id) && !superseded.has(request.request_id))
+    .sort((left, right) =>
+      left.created_at === right.created_at
+        ? left.request_id < right.request_id
+          ? -1
+          : left.request_id > right.request_id
+            ? 1
+            : 0
+        : left.created_at < right.created_at
+          ? -1
+          : 1,
+    );
+}

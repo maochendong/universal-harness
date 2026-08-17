@@ -105,6 +105,7 @@ function unavailableReadApi(problem: DashboardProblem): DashboardReadApi {
     evidence: reject,
     findingGroups: reject,
     semanticProposals: reject,
+    approvals: reject,
   };
 }
 

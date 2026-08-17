@@ -658,11 +658,12 @@ async function approvalDetails(item) {
       },
       payload.object_digest,
     );
-  renderApproval(merged, presentation);
+  renderApproval(merged, presentation, { card: $("#approval-card"), view: "live" });
 }
 
-function renderApproval(approval, presentation) {
-  const card = $("#approval-card");
+function renderApproval(approval, presentation, options) {
+  const card = options.card;
+  const view = options.view;
   clear(card);
   const authoritativeAuditPresentation = {
     ...presentation,
@@ -696,16 +697,18 @@ function renderApproval(approval, presentation) {
     actions.append(button);
   }
   form.append(label, actions);
-  form.addEventListener("submit", (event) => void decideApproval(event, approval));
+  form.addEventListener("submit", (event) =>
+    void decideApproval(event, approval, { card, view }),
+  );
   card.append(form);
 }
 
-async function decideApproval(event, approval) {
+async function decideApproval(event, approval, options) {
   event.preventDefault();
   const submitter = event.submitter;
   const actor = new FormData(event.currentTarget).get("actor")?.toString().trim();
   if (!actor || !submitter?.value) return;
-  status("live", `Recording ${submitter.value} for ${approval.request_id}…`);
+  status(options.view, `Recording ${submitter.value} for ${approval.request_id}…`);
   try {
     const result = await apiWrite(
       `/api/v1/approvals/${encodeURIComponent(approval.request_id)}/decision`,
@@ -716,7 +719,7 @@ async function decideApproval(event, approval) {
       },
     );
     model.pendingApprovals.delete(approval.request_id);
-    const card = $("#approval-card");
+    const card = options.card;
     clear(card);
     card.append(node("p", "eyebrow", "DECISION RECORDED"), node("h4", "", result.decision));
     if (result.decision === "approve" && result.workflow_digest) {
@@ -724,17 +727,21 @@ async function decideApproval(event, approval) {
       resume.type = "button";
       resume.addEventListener(
         "click",
-        () => void resumeWorkflow(result.workflow_operation_id, result.workflow_digest, actor),
+        () =>
+          void resumeWorkflow(result.workflow_operation_id, result.workflow_digest, actor, {
+            view: options.view,
+            card,
+          }),
       );
       card.append(resume);
     } else {
       card.append(node("p", "", "Ledger readback accepted the actor and expected digest."));
     }
-    status("live", `Decision ${result.decision} committed by ${actor}`);
+    status(options.view, `Decision ${result.decision} committed by ${actor}`);
     await loadOverview();
   } catch (error) {
     status(
-      "live",
+      options.view,
       error.status === 409
         ? "Target changed. Project state refreshed; review again."
         : error.message,
@@ -744,22 +751,74 @@ async function decideApproval(event, approval) {
   }
 }
 
-async function resumeWorkflow(workflowId, workflowDigest, actor) {
-  status("live", `Resuming ${workflowId} from its committed checkpoint…`);
+async function resumeWorkflow(workflowId, workflowDigest, actor, options = { view: "live" }) {
+  status(options.view, `Resuming ${workflowId} from its committed checkpoint…`);
   try {
     const result = await apiWrite(`/api/v1/workflows/${encodeURIComponent(workflowId)}/resume`, {
       expected_digest: workflowDigest,
       actor,
     });
-    status("live", `Resume settled as ${result.status || "advanced"}`);
+    status(options.view, `Resume settled as ${result.status || "advanced"}`);
     await loadOverview();
+    if (options.view === "approvals") await loadApprovals();
   } catch (error) {
     status(
-      "live",
+      options.view,
       error.status === 409 ? "Workflow changed. Project state refreshed." : error.message,
       "error",
     );
     if (error.status === 409) await loadOverview();
+  }
+}
+
+async function loadApprovals() {
+  const queue = $("#approval-queue");
+  status("approvals", "Reading committed ApprovalRequest and ApprovalDecision records…");
+  try {
+    const page = await api("/api/v1/approvals?limit=500");
+    clear(queue);
+    model.pendingApprovals = new Set(page.items.map((approval) => approval.request_id));
+    setText("#approval-count", `${page.items.length} pending`);
+    if (page.items.length === 0) {
+      const empty = node("article", "approval-empty");
+      empty.append(
+        node("p", "eyebrow", "QUEUE CLEAR"),
+        node("h3", "", "当前没有待审批请求"),
+        node(
+          "p",
+          "",
+          "当工作流在需求基线、影响范围或执行授权边界暂停时，权威审批请求会出现在这里。",
+        ),
+      );
+      queue.append(empty);
+      status("approvals", "No committed approval request is pending.", "empty");
+      return;
+    }
+    for (const approval of page.items) {
+      const card = node("article", "approval-card approval-queue-card");
+      const presentation =
+        presentationFor(
+          page.presentations,
+          { id: approval.request_id },
+          approval.object_digest,
+        ) ||
+        technicalPresentation(
+          {
+            id: approval.request_id,
+            type: approval.object_type || "ApprovalRequest",
+            status: "pending",
+          },
+          approval.object_digest,
+        );
+      model.approvalById.set(approval.request_id, approval);
+      renderApproval(approval, presentation, { card, view: "approvals" });
+      queue.append(card);
+    }
+    status("approvals", `${page.items.length} authoritative approval request(s) loaded.`);
+  } catch (error) {
+    clear(queue);
+    queue.append(node("p", "approval-load-error", error.message));
+    status("approvals", error.message, "error");
   }
 }
 
@@ -852,6 +911,7 @@ const loaders = {
   evidence: loadEvidence,
   findings: loadFindings,
   live: async () => startLive(),
+  approvals: loadApprovals,
 };
 
 async function activate(view) {
@@ -886,6 +946,7 @@ $("#evidence-controls").addEventListener("submit", (event) => {
 });
 $("#evidence-more").addEventListener("click", () => void loadEvidence({ append: true }));
 $("#finding-more").addEventListener("click", () => void loadFindings({ append: true }));
+$("#approval-refresh").addEventListener("click", () => void loadApprovals());
 window.addEventListener("hashchange", () => void activate(location.hash.slice(1) || "overview"));
 
 function tick() {

@@ -42,6 +42,9 @@
           <a class="nav-link" href="#evidence" data-view="evidence"><span>05</span> Evidence</a>
           <a class="nav-link" href="#findings" data-view="findings"><span>06</span> Findings</a>
           <a class="nav-link" href="#live" data-view="live"><span>07</span> Live</a>
+          <a class="nav-link" href="#approvals" data-view="approvals"
+            ><span>08</span> Approvals</a
+          >
         </nav>
         <div class="rail-note">
           <span>MODE</span><strong>OBSERVE / GOVERN</strong>
@@ -304,6 +307,29 @@
             </aside>
           </div>
           <p class="state-line" data-state="live" role="status">Live stream is idle.</p>
+        </section>
+
+        <section class="panel" data-panel="approvals" aria-labelledby="approvals-title" hidden>
+          <div class="section-kicker"><span>08</span> AUTHORITATIVE CONTROL QUEUE</div>
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">LEDGER-BACKED / DIGEST-BOUND</p>
+              <h2 id="approvals-title">Pending approvals</h2>
+            </div>
+            <p>
+              这里读取已提交的审批请求与决议。即使实时通知已经错过，待处理治理边界仍会在此恢复。
+            </p>
+          </div>
+          <div class="approval-toolbar">
+            <div>
+              <span>CURRENT QUEUE</span><strong id="approval-count">— pending</strong>
+            </div>
+            <button class="command" id="approval-refresh" type="button">REFRESH LEDGER</button>
+          </div>
+          <div class="approval-queue" id="approval-queue" aria-live="polite"></div>
+          <p class="state-line" data-state="approvals" role="status">
+            Loading authoritative approvals…
+          </p>
         </section>
       </main>
     </div>

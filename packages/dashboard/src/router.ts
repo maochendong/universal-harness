@@ -458,6 +458,19 @@ export function createDashboardRouter(options: DashboardRouterOptions) {
         sendJson(response, options.readApi.project());
         return;
       }
+      if (url.pathname === "/api/v1/approvals") {
+        queryKeys(url.searchParams, new Set(["cursor", "limit"]));
+        const cursor = one(url.searchParams, "cursor");
+        const limit = integer(one(url.searchParams, "limit"), "limit", 1, 500);
+        sendJson(
+          response,
+          options.readApi.approvals({
+            ...(cursor === undefined ? {} : { cursor: identifier(cursor, "cursor") }),
+            ...(limit === undefined ? {} : { limit }),
+          }),
+        );
+        return;
+      }
       if (url.pathname === "/api/v1/graph/nodes") {
         queryKeys(
           url.searchParams,
