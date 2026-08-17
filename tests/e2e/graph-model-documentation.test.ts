@@ -12,12 +12,11 @@ import { describe, expect, it } from "vitest";
 const repositoryRoot = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const modelDocumentPath = join(repositoryRoot, "docs", "graph-driven-harness-model.md");
 const readmePath = join(repositoryRoot, "README.md");
-const dashboardScreenshotPath = join(
-  repositoryRoot,
-  "docs",
-  "assets",
+const dashboardScreenshotNames = [
   "harness-observatory-overview.png",
-);
+  "harness-observatory-graph.png",
+  "harness-observatory-impact.png",
+] as const;
 
 function modelDocument(): string {
   return readFileSync(modelDocumentPath, "utf8");
@@ -146,18 +145,31 @@ describe("Graph-native model documentation", () => {
     );
   });
 
-  it("shows the real atlas-mvp Observatory overview without publishing a local session token", () => {
+  it("shows real atlas-mvp Observatory overview, graph and impact views without publishing a local session token", () => {
     const markdown = readme();
 
-    expect(existsSync(dashboardScreenshotPath)).toBe(true);
-    expect(readFileSync(dashboardScreenshotPath).subarray(0, 8)).toEqual(
-      Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
-    );
+    for (const screenshotName of dashboardScreenshotNames) {
+      const screenshotPath = join(repositoryRoot, "docs", "assets", screenshotName);
+      expect(existsSync(screenshotPath), `${screenshotName} must exist`).toBe(true);
+      expect(readFileSync(screenshotPath).subarray(0, 8)).toEqual(
+        Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+      );
+    }
     expect(markdown).toContain("## Dashboard 效果");
     expect(markdown).toContain(
       "![Harness Observatory Dashboard：atlas-mvp 项目 Overview](docs/assets/harness-observatory-overview.png)",
     );
+    expect(markdown).toContain(
+      "![Harness Observatory Dashboard：atlas-mvp 项目 Graph 邻域](docs/assets/harness-observatory-graph.png)",
+    );
+    expect(markdown).toContain(
+      "![Harness Observatory Dashboard：atlas-mvp 项目 Impact 路径](docs/assets/harness-observatory-impact.png)",
+    );
     expect(markdown).toContain("基于 atlas-mvp 真实 Harness 数据的本地 Observatory Dashboard");
+    expect(markdown).toContain("Graph 视图展开评估用例 `case_docs`");
+    expect(markdown).toContain(
+      "Impact 视图展示 `case_docs` 到 `evidence_evaluation_docs` 的受治理最短解释路径",
+    );
     expect(markdown).not.toMatch(/[?&]token=/u);
   });
 });

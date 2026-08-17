@@ -29,6 +29,14 @@ M1 与 M2 均已完成。M1 的 Task 1–28 和 28 条验收标准已有通过�
 
 _基于 atlas-mvp 真实 Harness 数据的本地 Observatory Dashboard。_
 
+![Harness Observatory Dashboard：atlas-mvp 项目 Graph 邻域](docs/assets/harness-observatory-graph.png)
+
+_Graph 视图展开评估用例 `case_docs`，展示它与 Evidence、Run、Task 的真实关系邻域。_
+
+![Harness Observatory Dashboard：atlas-mvp 项目 Impact 路径](docs/assets/harness-observatory-impact.png)
+
+_Impact 视图展示 `case_docs` 到 `evidence_evaluation_docs` 的受治理最短解释路径。_
+
 ## Graph-native 驱动模型
 
 <!-- graph-model:readme-overview:start -->
