@@ -37,7 +37,7 @@ Lite 未启用 Impact/Design/Evaluation 时外部 DAG 可以更短；一旦 stri
 
 managed PRD Capture、Slim Profiles、DesignSet 与本协议共同进入首次 Protocol 1.1.0。strict_tdd 激活时，DesignSet 负责批准 TDD 适用性、失败 Oracle、目标 Gate 和路径策略；Plan 负责把它编译为不可降级的执行 Contract；TddController、CapabilityGrant、Gate、Evidence 和 Ledger 负责机械证明执行顺序。未激活时零 TDD Contract/Cycle/Run，并显示 `not_enabled_by_profile`。Agent 自述、transcript、文件时间戳和模糊退出码都不是 TDD 证明。
 
-上游 managed PRD Capture 必须先把每条验收标准澄清为具有稳定 criterion id、可观察结果、verification intent 和测试先行示例的业务事实，并物化 Test seed。DesignSet 可以技术细化 Gate/Oracle/path，但不能弱化 accepted observable outcome；Planner、Agent 和 TddController 都不能私自补写验收标准。
+上游 managed PRD Capture 必须先把每条验收标准澄清为具有 Coordinator-issued 稳定 criterion id、Question/Answer SourceBinding、可观察结果、verification intent 和测试先行示例的业务事实，并物化 Test seed。DesignSet 可以技术细化 Gate/Oracle/path，但不能弱化 accepted observable outcome；Planner、Agent 和 TddController 都不能私自补写验收标准。
 
 ## 2. 背景与问题
 
@@ -714,12 +714,11 @@ managed PRD Capture、Slim Profiles、DesignSet 和 TDD 尚未实施，因此 Ca
 
 ### 15.3 开放 Protocol 1.0
 
-先沿用 Slim Profile 迁移规则要求显式 ProjectProfile，再根据新 CapabilityPlan 回到最早安全 DAG node：
+先沿用 Slim Profile 迁移规则要求显式 ProjectProfile，再选择兼容模式。Protocol 1.1 Contract 强制绑定 accepted PRD/Criterion，因此已进入 Impact 的 1.0 Operation 不能直接补 Design/TDD：
 
-- strict_tdd 未激活：不补造 TDD Contract/Cycle，显示 not_enabled_by_profile；
-- strict_tdd 激活且尚未 Plan：补齐 Impact/Design 后编译 Contract；
-- 已有 Plan/Context/Run：旧授权失效，按 CapabilityPlan 回到最早依赖节点；
-- 新 Plan 中 TDD required Task 必须编译 TaskTddContract；
+- `reopen_managed_capture`：失效旧 Impact/Plan/Context/Run，生成 accepted PRD/Criterion/Test seeds 后重新编译 CapabilityPlan，再进入 Impact/Design/Plan；
+- `continue_protocol_1_0`：不补造 PRD Review、DesignSet、TDD Contract/Cycle，按历史授权兼容恢复并显示 `historical_without_prd_review` / `historical_without_proof`；
+- 只有 reopen 后的新 Plan 才能为 TDD required Task 编译 TaskTddContract 并声明 Protocol 1.1 proof；
 - 无法判断 baseline 或 checkpoint 时阻塞并给出明确恢复命令，不猜测 Red/Green 状态。
 
 ### 15.4 追加而非改写
@@ -783,7 +782,7 @@ Evidence、Cycle、Grant 和审批发生漂移时，只追加 invalidation/super
 ### 17.5 DesignSet/Plan Integration
 
 - DesignSet required strategy → Plan Contract；
-- accepted PRD Criterion/Test seed → DesignSet strategy → Assertion Cluster 唯一覆盖；
+- accepted PRD Question/Answer → Criterion/Test seed → DesignSet strategy → Assertion Cluster 唯一覆盖；
 - Design 无法形成有效 Failure Oracle → Finding → Capture new PRD revision；
 - Standard provisional CapabilityPlan + accepted test_strategy → final CapabilityPlan → Plan Contract；
 - Plan 降级/扩大 Oracle/path 被拒绝；

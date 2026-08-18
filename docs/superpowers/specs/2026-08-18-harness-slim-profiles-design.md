@@ -317,7 +317,7 @@ export interface ProjectProfileRecord {
 
 ### 8.2 ProfileRecommendationRecord
 
-记录风险引擎建议：当前 Profile、建议最低 Profile、触发器、风险对象、范围/Policy/Requirement digest、中文理由和可选的范围缩减建议。Recommendation 是建议事实，不直接扩大权限。
+记录风险引擎建议：当前 Profile、建议最低 Profile、触发器、权威 CaptureRiskAssessment/后续 Impact risk 对象、范围/Policy/Requirement digest、中文理由和可选的范围缩减建议。Recommendation 是建议事实，不直接扩大权限；Capture 阶段不得从 Reviewer 自述或未版本化启发式直接派生 Recommendation。
 
 ### 8.3 ProfileDecisionRecord
 
@@ -359,7 +359,7 @@ artifacts/capability-plans/<operation-id>/<revision>.json
 
 - ProjectProfileRecord；
 - RequirementBaseline 或 capture proposal；
-- current Risk/Impact signals；
+- current CaptureRiskAssessmentRecord 或后续 Impact risk signals；
 - accepted Policy；
 - 用户 ProfileDecision；
 - 已注册 Module/Provider capabilities；
@@ -416,7 +416,7 @@ capture
 
 方括号表示只有 CapabilityPlan 启用才存在。`strict_tdd` 仍是 Task execute 内部 subgraph，不变成全局 phase。
 
-new/adopt 的 ProjectProfile 在进入 managed Capture 前由用户选择；iterate 使用当前项目 Profile revision。图中的 `capability_decision` 不是初始档位选择，而是 accepted PRD 提供完整风险输入后编译的 final CapabilityPlan，因此不会形成 Profile/Capture 循环。
+new/adopt 的 ProjectProfile 在进入 managed Capture 前由用户选择；iterate 使用当前项目 Profile revision。图中的 `capability_decision` 不是初始档位选择，而是 accepted PRD 提供完整风险输入后的 CapabilityPlan 编译点：Lite/Governed 在没有合法 deferred capability 时可直接生成 final；Standard 的 strict_tdd 在 DesignSet 前必须生成 provisional，只有 accepted test_strategy 才能在 design checkpoint 原子 finalization，因此不会形成 Profile/Capture 循环。
 
 ### 9.5 Engine 边界
 
@@ -578,7 +578,7 @@ resume 复验 ProjectProfile/Decision/CapabilityPlan/Requirement/Policy/Risk/rep
 所有档位：
 
 - ProjectProfile new/adopt/change；
-- PRD/RequirementBaseline 按 CapturePolicy 形成 PolicyDecision 或人工 ApprovalDecision；Governed 始终人工，Lite/Standard 仅可在低风险且硬门禁/独立 Review 全通过时自动决定；
+- PRD/RequirementBaseline 按 CapturePolicy 形成 PolicyDecision 或人工 ApprovalDecision；Governed 始终人工，Lite/Standard 仅可在权威 CaptureRiskAssessment 为 `low + non_material + high confidence` 且硬门禁/独立 Review 全通过时自动决定；
 - Profile Override；
 - Policy 要求的 Agent 写入或外部副作用授权。
 
@@ -724,7 +724,7 @@ Lite 默认五个核心视图。高级能力可发现、可解释如何启用，
 Slim Profile、managed PRD Capture、DesignSet 和 Provable TDD 均尚未实施，因此共同进入首次 1.1.0：
 
 1. 先建立 Profile/Capability Kernel 和动态 DAG；
-2. 升级 Evidence Kernel Capture：受管 PRD Session、Context、Proposal、Review、风险批准和 Criterion/Test seed；
+2. 升级 Evidence Kernel Capture：受管 PRD Session、Context、Proposal、Coordinator-issued lineage、Review、CaptureRiskAssessment、风险批准和 Criterion/Test seed；
 3. 再把 DesignSet 作为 `design_governance` Module；
 4. 再把严格 TDD 作为 `strict_tdd` Module；
 5. 最后扩展 Projection/Dashboard/E2E。
@@ -739,7 +739,7 @@ Slim Profile、managed PRD Capture、DesignSet 和 Provable TDD 均尚未实施�
 - 非交互传 `--profile`；
 - completed Ledger/Snapshot/digest 不改写；
 - 不猜测历史属于哪个 Profile；
-- 开放 operation 根据新 CapabilityPlan 失效并重编译必要下游。
+- 尚未进入 Impact 的开放 operation 可迁入 managed Capture；已进入 Impact 的 operation 必须显式选择 `reopen_managed_capture` 或 `continue_protocol_1_0`。前者失效旧下游并在 accepted PRD 后重编译 CapabilityPlan，后者不得补造 DesignSet/TDD proof。
 
 ### 17.3 已完成历史
 
@@ -799,9 +799,9 @@ Slim Profile、managed PRD Capture、DesignSet 和 Provable TDD 均尚未实施�
 
 ### 20.3 Profile Matrix
 
-- 三档均运行 managed PRD Capture、硬门禁和独立 Review；
-- Lite/Standard 低风险 PolicyDecision 与 Governed mandatory human approval；
-- Capture 内风险升级扩充 Context 并失效旧 Review/Approval；
+- 三档均运行 managed PRD Capture、硬门禁、独立 Review 和确定性 CaptureRiskAssessment；
+- Lite/Standard 仅 low/non-material/high-confidence PolicyDecision 与 Governed mandatory human approval；
+- Capture 内风险升级按 purpose 扩充 Context；proposal-purpose 漂移失效 Proposal 及下游，review-purpose 漂移失效 Review/Risk/Approval；
 - Lite Kernel-only golden；
 - Lite 风险触发单个/多个 Module；
 - Standard mandatory Impact/Design/Evaluation；
@@ -857,7 +857,7 @@ Slim Profile、managed PRD Capture、DesignSet 和 Provable TDD 均尚未实施�
 
 1. `new/adopt` 交互选择并确认三档；非交互缺少 `--profile` 返回 input_required。
 2. ProjectProfile、Recommendation、Decision 和 CapabilityPlan 是 canonical、append-only runtime records。
-3. Evidence Kernel Capture 从 Intent 生成经过硬门禁、独立 Review、风险批准的 immutable accepted PRD；三档共享状态机且按 Profile 调整上下文、预算和人工批准。
+3. Evidence Kernel Capture 从 Intent 生成经过稳定 lineage、硬门禁、独立 Review、确定性 RiskAssessment 和风险批准的 immutable accepted PRD；三档共享状态机且按 Profile 调整上下文、预算和人工批准。
 4. Capability Compiler 生成确定性依赖闭包、DAG 和 invalidation graph。
 5. Standard strict_tdd 通过 provisional → final CapabilityPlan 解析 test_strategy，不形成循环依赖、重复审批或 provisional 执行授权。
 6. Workflow Engine 不直接包含三套 Profile 大分支。

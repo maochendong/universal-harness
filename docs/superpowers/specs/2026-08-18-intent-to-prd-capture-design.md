@@ -1,7 +1,7 @@
 # Universal Harness Intent → 高质量 PRD Capture 设计
 
 日期：2026-08-18
-状态：已确认，待协同实施计划修订
+状态：评审问题已修订，待复核后协同修订实施计划
 目标版本：Protocol 1.1.0
 关联设计：
 
@@ -125,16 +125,20 @@ export interface PrdCaptureCoordinator {
 }
 ```
 
-`CaptureCommand` 只表达用户动作：
+`CaptureCommand` 只表达触发 Coordinator 的领域动作，不表达目标 state：
 
 ```ts
 export type CaptureCommand =
   | StartCaptureCommand
   | SubmitClarificationAnswersCommand
+  | SubmitManualReviewInputCommand
   | RequestPrdRevisionCommand
+  | ApplyApprovalDecisionCommand
   | ResumeCaptureCommand
   | CancelCaptureCommand;
 ```
+
+`ApplyApprovalDecisionCommand` 只携带已由统一 ApprovalService 提交的 request id、decision id 和 expected session digest；调用方不能在命令中伪造 decision 内容。`SubmitManualReviewInputCommand` 绑定 reviewer actor、review invocation id、rubric/profile digest 和 expected session digest，不能作为业务澄清答案回流 Proposal。
 
 调用方不能传入目标 state、跳过 Validation/Review、直接标记 accepted，或提交 RequirementBaseline。Coordinator 内部拥有：
 
@@ -171,12 +175,12 @@ Ledger repository、state transition、quality rules、approval routing 和 grap
 
 ### 5.3 权威所有权
 
-- 人类拥有 Intent、澄清答案和 ApprovalDecision。
+- 人类拥有 Intent、澄清答案和人工 ApprovalDecision；版本化 Policy identity 拥有受规则约束的自动 ApprovalDecision。
 - ProjectContextPort 只拥有受控读取实现，不拥有 Context 选择 Policy。
 - Proposal Adapter 只拥有生成实现，不拥有 Proposal validity/state。
 - Review Adapter 只拥有评审实现，不拥有最终 accept/reject。
 - Coordinator 拥有状态机和确定性派生。
-- Ledger 拥有已提交的 Session/Proposal/Review/accepted PRD 历史。
+- Ledger 拥有已提交的 Session/Proposal/Lineage/Manual Review/Review/Risk/Approval/accepted PRD 历史。
 - Graph 是 accepted PRD 的权威工程关系表达。
 - Markdown PRD 是可重建 Projection。
 
@@ -198,6 +202,7 @@ export interface CaptureSessionRecord {
   readonly intent_text: string;
   readonly intent_digest: string;
   readonly project_profile_digest: string;
+  readonly profile_decision_digest: string;
   readonly capture_policy_digest: string;
   readonly project_baseline_digest: string;
   readonly proposal_context_bundle_digest?: string;
@@ -205,6 +210,9 @@ export interface CaptureSessionRecord {
   readonly current_proposal_digest?: string;
   readonly current_validation_digest?: string;
   readonly current_review_digest?: string;
+  readonly current_risk_assessment_digest?: string;
+  readonly current_approval_request_id?: string;
+  readonly applied_approval_decision_id?: string;
   readonly pending_question_ids: readonly string[];
   readonly round: number;
   readonly budget_use: CaptureBudgetUse;
@@ -219,6 +227,7 @@ Session revision 只追加，不原地修改。时间、实时 tokens/steps 和 
 
 ```ts
 export interface ClarificationQuestionRecord {
+  readonly protocol_version: "1.1.0";
   readonly record_kind: "clarification_question";
   readonly question_id: string;
   readonly session_id: string;
@@ -242,6 +251,7 @@ export interface ClarificationQuestionRecord {
 }
 
 export interface ClarificationAnswerRecord {
+  readonly protocol_version: "1.1.0";
   readonly record_kind: "clarification_answer";
   readonly answer_id: string;
   readonly session_id: string;
@@ -270,6 +280,7 @@ export interface ProjectContextSource {
 }
 
 export interface ProjectContextBundleRecord {
+  readonly protocol_version: "1.1.0";
   readonly record_kind: "project_context_bundle";
   readonly bundle_id: string;
   readonly session_id: string;
@@ -289,6 +300,7 @@ Bundle 保存模型实际看见的规范摘要与 source digest，不保存未�
 
 ```ts
 export interface PrdProposalRecord {
+  readonly protocol_version: "1.1.0";
   readonly record_kind: "prd_proposal";
   readonly proposal_id: string;
   readonly session_id: string;
@@ -300,6 +312,7 @@ export interface PrdProposalRecord {
     readonly answers_digest: string;
     readonly adapter_profile_digest: string;
     readonly prompt_version_digest: string;
+    readonly producer_identity: string;
     readonly invocation_id: string;
     readonly conversation_id: string;
     readonly evidence_locator: string;
@@ -307,22 +320,183 @@ export interface PrdProposalRecord {
   readonly content: PrdProposal;
   readonly content_digest: string;
   readonly supersedes_digest?: string;
+  readonly record_digest: string;
 }
 ```
 
-`PrdProposal` 至少包含：
+`PrdProposal` 的 Protocol 1.1 权威结构如下；实现时必须提供等价、`additionalProperties: false` 的版本化 JSON Schema，不允许各 Adapter 自行扩展内容形状：
 
-- 原始 Intent 引用、问题陈述和目标；
-- 非目标；
-- actor/persona 和业务场景；
-- Requirements；
-- Constraints；
-- Acceptance Criteria；
-- 假设、依赖、风险和开放问题；
-- glossary/业务术语；
-- source/context references。
+```ts
+export interface PrdSourceBinding {
+  readonly source_kind:
+    | "intent"
+    | "clarification_answer"
+    | "project_context"
+    | "accepted_prd"
+    | "validation_finding"
+    | "review_finding";
+  readonly source_id: string;
+  readonly source_digest: string;
+}
 
-集合规范排序，所有 Requirement、Constraint、Scenario、Acceptance Criterion 和 glossary term 使用稳定 id。Adapter metadata、时间、token 和 conversation id 不进入内容摘要。
+export interface PrdTraceableEntity {
+  readonly id: string;
+  readonly source_bindings: readonly PrdSourceBinding[];
+}
+
+export interface PrdStatement extends PrdTraceableEntity {
+  readonly statement: string;
+}
+
+export interface PrdActor extends PrdTraceableEntity {
+  readonly name: string;
+  readonly description: string;
+}
+
+export interface PrdScenario extends PrdTraceableEntity {
+  readonly actor_id: string;
+  readonly precondition: string;
+  readonly action: string;
+  readonly observable_outcome: string;
+  readonly scenario_kind:
+    | "primary"
+    | "failure"
+    | "boundary"
+    | "security"
+    | "compatibility";
+}
+
+export interface PrdRequirement extends PrdTraceableEntity {
+  readonly statement: string;
+  readonly priority: "must" | "should" | "could";
+  readonly change_kind: "must_change" | "preserve";
+  readonly scenario_ids: readonly string[];
+  readonly acceptance_criterion_ids: readonly string[];
+}
+
+export interface PrdConstraint extends PrdTraceableEntity {
+  readonly statement: string;
+  readonly category:
+    | "business"
+    | "technical"
+    | "security"
+    | "compliance"
+    | "compatibility"
+    | "operational";
+  readonly verification_intent: string;
+}
+
+export interface PrdDependency extends PrdTraceableEntity {
+  readonly dependency_kind: "internal" | "external";
+  readonly description: string;
+  readonly required_by_ids: readonly string[];
+}
+
+export type PrdRiskCategory =
+  | "security"
+  | "privacy"
+  | "compliance"
+  | "financial"
+  | "data_integrity"
+  | "availability"
+  | "compatibility"
+  | "migration"
+  | "operational"
+  | "delivery"
+  | "other";
+
+export interface PrdRisk extends PrdTraceableEntity {
+  readonly category: PrdRiskCategory;
+  readonly description: string;
+  readonly likelihood: "low" | "medium" | "high" | "unknown";
+  readonly impact: "low" | "medium" | "high" | "critical" | "unknown";
+  readonly mitigation: string;
+}
+
+export interface PrdOpenQuestion extends PrdTraceableEntity {
+  readonly question: string;
+  readonly blocking: boolean;
+  readonly owner: string;
+}
+
+export interface PrdGlossaryTerm extends PrdTraceableEntity {
+  readonly term: string;
+  readonly definition: string;
+}
+
+export interface PrdProposal {
+  readonly schema_version: "1.1.0";
+  readonly intent: {
+    readonly text: string;
+    readonly digest: string;
+  };
+  readonly problem_statement: string;
+  readonly goals: readonly PrdStatement[];
+  readonly non_goals: readonly PrdStatement[];
+  readonly actors: readonly PrdActor[];
+  readonly scenarios: readonly PrdScenario[];
+  readonly requirements: readonly PrdRequirement[];
+  readonly constraints: readonly PrdConstraint[];
+  readonly acceptance_criteria: readonly PrdAcceptanceCriterion[];
+  readonly assumptions: readonly PrdStatement[];
+  readonly dependencies: readonly PrdDependency[];
+  readonly risks: readonly PrdRisk[];
+  readonly open_questions: readonly PrdOpenQuestion[];
+  readonly glossary: readonly PrdGlossaryTerm[];
+  readonly context_source_refs: readonly string[];
+}
+```
+
+所有集合按 id 规范排序；引用集合去重后排序。每个 traceable entity 至少一个有效 SourceBinding；accepted Proposal 不允许存在 `blocking: true` 的 OpenQuestion。Adapter metadata、时间、token、conversation id、Review 结论和技术设计均不进入 `PrdProposal` 内容摘要。
+
+Adapter 返回的不是权威 `PrdProposal`，而是 `PrdProposalDraft`。Draft 与上述语义字段同构，但每个 entity 使用本次调用内唯一的 `draft_key` 和以下 lineage 声明替代最终 id：
+
+```ts
+export type PrdDraftLineage =
+  | { readonly kind: "new" }
+  | { readonly kind: "continues"; readonly previous_entity_id: string };
+
+export type PrdDraftEntity<T extends PrdTraceableEntity> = Omit<
+  T,
+  "id" | "source_bindings"
+> & {
+  readonly draft_key: string;
+  readonly lineage: PrdDraftLineage;
+  readonly proposed_source_bindings: readonly PrdSourceBinding[];
+};
+
+export type PrdDraftAcceptanceCriterion = Omit<
+  PrdAcceptanceCriterion,
+  "criterion_id" | "source_bindings"
+> & {
+  readonly draft_key: string;
+  readonly lineage: PrdDraftLineage;
+  readonly proposed_source_bindings: readonly PrdSourceBinding[];
+};
+
+export interface PrdProposalDraft {
+  readonly schema_version: "1.1.0";
+  readonly intent: PrdProposal["intent"];
+  readonly problem_statement: string;
+  readonly goals: readonly PrdDraftEntity<PrdStatement>[];
+  readonly non_goals: readonly PrdDraftEntity<PrdStatement>[];
+  readonly actors: readonly PrdDraftEntity<PrdActor>[];
+  readonly scenarios: readonly PrdDraftEntity<PrdScenario>[];
+  readonly requirements: readonly PrdDraftEntity<PrdRequirement>[];
+  readonly constraints: readonly PrdDraftEntity<PrdConstraint>[];
+  readonly acceptance_criteria: readonly PrdDraftAcceptanceCriterion[];
+  readonly assumptions: readonly PrdDraftEntity<PrdStatement>[];
+  readonly dependencies: readonly PrdDraftEntity<PrdDependency>[];
+  readonly risks: readonly PrdDraftEntity<PrdRisk>[];
+  readonly open_questions: readonly PrdDraftEntity<PrdOpenQuestion>[];
+  readonly glossary: readonly PrdDraftEntity<PrdGlossaryTerm>[];
+  readonly context_source_refs: readonly string[];
+}
+```
+
+Coordinator 对 `new` 铸造 Harness id；对 `continues` 复用精确 previous id，并验证 kind 相同、旧 id 存在且本 revision 只被领取一次。continues 保持逻辑 id，图物化时递增对应 Node revision，旧字节留在 Ledger；LineageRecord 用 previous Proposal digest 记录连续性。真正替换业务身份时必须声明 new，并由 accepted PRD/Graph 的 supersede 记录连接版本。删除实体只通过新 Proposal 不再引用旧 id 表达。禁止 Adapter 自选最终 id，也禁止 Harness 以文本相似度猜测 lineage；无法确定时生成定向澄清问题。
+
+Draft 内所有名为 `*_id` / `*_ids` 的实体引用，在同一 Draft 中使用 target `draft_key`，引用上一 accepted PRD 时使用 canonical id；Coordinator 必须在生成 Proposal 前解析为 canonical id，并拒绝 dangling、跨 kind 或歧义引用。
 
 ### 6.5 Acceptance Criterion
 
@@ -336,16 +510,38 @@ export interface PrdAcceptanceCriterion {
   readonly verification_intent: string;
   readonly test_first_example?: string;
   readonly scenario_kind: "primary" | "failure" | "boundary" | "security" | "compatibility";
+  readonly source_bindings: readonly PrdSourceBinding[];
 }
 ```
 
-Criterion 是业务验收事实，不包含具体测试文件、framework、selector、Gate id 或 Failure Oracle；这些属于 DesignSet.test_strategy。
+Criterion 是业务验收事实，不包含具体测试文件、framework、selector、Gate id 或 Failure Oracle；这些属于 DesignSet.test_strategy。若 Criterion 由澄清答案形成或改变，其 SourceBinding 必须引用对应 AnswerRecord 的 id/digest；AnswerRecord 已绑定 QuestionRecord，因此可机械复验 `Question → Answer → Criterion`。
+
+Coordinator 为每个 Proposal revision 派生索引记录；它不复制内容权威，只加速来源追踪：
+
+```ts
+export interface PrdEntityLineageRecord {
+  readonly protocol_version: "1.1.0";
+  readonly record_kind: "prd_entity_lineage";
+  readonly lineage_record_id: string;
+  readonly session_id: string;
+  readonly proposal_content_digest: string;
+  readonly entity_kind: string;
+  readonly entity_id: string;
+  readonly lineage_kind: "new" | "continues";
+  readonly source_bindings: readonly PrdSourceBinding[];
+  readonly previous_proposal_content_digest?: string;
+  readonly record_digest: string;
+}
+```
 
 ### 6.6 Validation 与 Review
 
 ```ts
 export interface PrdValidationReportRecord {
+  readonly protocol_version: "1.1.0";
   readonly record_kind: "prd_validation_report";
+  readonly validation_report_id: string;
+  readonly session_id: string;
   readonly proposal_digest: string;
   readonly rule_set_digest: string;
   readonly passed: boolean;
@@ -355,11 +551,15 @@ export interface PrdValidationReportRecord {
 }
 
 export interface PrdReviewReportRecord {
+  readonly protocol_version: "1.1.0";
   readonly record_kind: "prd_review_report";
+  readonly review_report_id: string;
+  readonly session_id: string;
   readonly proposal_digest: string;
   readonly review_context_bundle_digest: string;
   readonly validation_digest: string;
   readonly reviewer_adapter_profile_digest: string;
+  readonly reviewer_identity: string;
   readonly prompt_version_digest: string;
   readonly invocation_id: string;
   readonly conversation_id: string;
@@ -374,22 +574,92 @@ export interface PrdReviewReportRecord {
 
 ReviewReport 是质量 Evidence，不是 ApprovalDecision。Harness 复验 finding severity、mandatory dimensions、independence binding 和 Profile policy 后才决定下一状态。
 
-### 6.7 AcceptedPrdRecord
+Manual Review 的人工 rubric 输入独立保存，不进入 ClarificationAnswer：
+
+```ts
+export interface ManualReviewInputRecord {
+  readonly protocol_version: "1.1.0";
+  readonly record_kind: "manual_review_input";
+  readonly manual_review_input_id: string;
+  readonly session_id: string;
+  readonly review_invocation_id: string;
+  readonly reviewer_actor: string;
+  readonly rubric_digest: string;
+  readonly dimension_inputs: readonly PrdReviewDimensionInput[];
+  readonly expected_session_digest: string;
+  readonly record_digest: string;
+}
+```
+
+### 6.7 CaptureRiskAssessmentRecord
+
+风险自适应批准必须基于可重放的确定性记录，而不是 Reviewer 或 Coordinator 中的隐式判断：
+
+```ts
+export type CaptureRiskLevel = "low" | "medium" | "high" | "critical";
+export type CaptureMateriality = "non_material" | "material";
+export type CaptureRiskConfidence = "high" | "medium" | "low";
+
+export interface CaptureRiskTrigger {
+  readonly trigger_id: string;
+  readonly source_kind:
+    | "proposal"
+    | "validation"
+    | "review"
+    | "context_classification"
+    | "policy";
+  readonly source_id: string;
+  readonly source_digest: string;
+  readonly severity: CaptureRiskLevel;
+  readonly reason: string;
+}
+
+export interface CaptureRiskAssessmentRecord {
+  readonly protocol_version: "1.1.0";
+  readonly record_kind: "capture_risk_assessment";
+  readonly risk_assessment_id: string;
+  readonly session_id: string;
+  readonly proposal_content_digest: string;
+  readonly validation_report_digest: string;
+  readonly review_report_digest: string;
+  readonly proposal_context_bundle_digest: string;
+  readonly review_context_bundle_digest: string;
+  readonly project_profile_digest: string;
+  readonly profile_decision_digest: string;
+  readonly capture_policy_digest: string;
+  readonly policy_digest: string;
+  readonly rule_set_digest: string;
+  readonly level: CaptureRiskLevel;
+  readonly materiality: CaptureMateriality;
+  readonly confidence: CaptureRiskConfidence;
+  readonly triggers: readonly CaptureRiskTrigger[];
+  readonly assessment_digest: string;
+}
+```
+
+Risk Engine 只消费以上已绑定事实并按版本化 rule set 确定性归约：级别取命中触发器最高值；任何未知/冲突分类把 confidence 降为 low；Requirement、Constraint、API/data/security/compliance/compatibility 范围变化按 Policy 计算 materiality。Review 只提供带来源的 risk signal，不能直接决定 level、materiality 或批准。只有 `low + non_material + high confidence` 才可能进入 Policy 自动批准；Policy 可进一步收紧，不能放宽公共规则。
+
+### 6.8 AcceptedPrdRecord
 
 Accepted record 不复制第二份 PRD 内容，只封装唯一 Proposal content digest：
 
 ```ts
 export interface AcceptedPrdRecord {
+  readonly protocol_version: "1.1.0";
   readonly record_kind: "accepted_prd";
   readonly prd_id: string;
   readonly revision: number;
+  readonly session_id: string;
+  readonly workflow_operation_id: string;
   readonly proposal_id: string;
   readonly proposal_content_digest: string;
   readonly proposal_context_bundle_digest: string;
   readonly review_context_bundle_digest: string;
   readonly validation_report_digest: string;
   readonly review_report_digest: string;
+  readonly risk_assessment_digest: string;
   readonly project_profile_digest: string;
+  readonly profile_decision_digest: string;
   readonly capture_policy_digest: string;
   readonly policy_digest: string;
   readonly approval_digest: string;
@@ -399,7 +669,7 @@ export interface AcceptedPrdRecord {
 }
 ```
 
-accepted PRD、RequirementBaseline 和 graph records 的内容必须能反向复验到同一个 Proposal content digest。
+同一 `prd_id` 的 revision 单调递增；superseding revision 通过 `supersedes_digest` 指向前一 AcceptedPrdRecord。accepted PRD、RequirementBaseline 和 graph records 的内容必须能反向复验到同一个 Proposal content digest。
 
 ## 7. Capture 内部状态机
 
@@ -413,9 +683,12 @@ export type CaptureState =
   | "validating"
   | "clarification_required"
   | "reviewing"
+  | "review_input_required"
+  | "risk_assessing"
   | "revision_required"
   | "profile_decision_required"
   | "approval_required"
+  | "approval_deferred"
   | "accepted"
   | "blocked"
   | "cancelled";
@@ -430,11 +703,19 @@ intent_received
   → validating
       ├── fail → clarification_required / revision_required
       └── pass → context_compiling(review) → reviewing
+                    ├── manual input → review_input_required → reviewing
                     ├── clarify → clarification_required
                     ├── revise → revision_required → context_compiling(proposal) → proposing
-                    ├── risk upgrade → profile_decision_required
-                    └── accept → approval_required / policy auto-decision
-                                      → accepted
+                    ├── blocked → blocked
+                    └── accept → risk_assessing
+                                  ├── critical/deny → blocked
+                                  ├── risk upgrade → profile_decision_required → purpose-scoped context invalidation
+                                  │                                      ├── proposal drift → context_compiling(proposal)
+                                  │                                      └── review-only drift → context_compiling(review)
+                                  └── stable → approval_required / policy auto-decision
+                                      ├── approve → accepted
+                                      ├── reject → revision_required → context_compiling(proposal) → proposing
+                                      └── defer → approval_deferred → approval_required
 ```
 
 Session 在 `intent_received` 前置事务中创建。`context_compiling` 由已提交 invocation purpose 区分 Proposal/Review，不为同一技术动作复制两个状态。任何 Port 调用发生前，Operation、Session、Profile/Policy/baseline binding 和调用意图已经提交，解决当前“澄清不创建 Operation”的缺口。
@@ -464,15 +745,19 @@ Review 不读取 Proposal conversation/transcript 或模型思维过程，防止
 
 ### 7.5 批准与接受
 
-Approval Preview 从 Proposal、Validation、Review、Risk、Profile 和 Policy 的同一 canonical view 生成。批准后提交前重新复验所有 digest。accepted transaction 同时写入：
+Approval Preview 从 Proposal、Validation、Review、CaptureRiskAssessment、Profile 和 Policy 的同一 canonical view 生成，审批对象固定为当前 `PrdProposalRecord.proposal_id + content_digest`。统一 ApprovalService 只负责提交 ApprovalDecision，不得改变 Capture state 或写 accepted PRD；CLI/Dashboard 随后调用 `advance(ApplyApprovalDecisionCommand)`，Coordinator 读取并复验权威 Decision。Decision consumption key 固定为 `session_id + session_revision + request_id + decision_id + object_digest`，成功后写入 `applied_approval_decision_id`。Approval 已提交但 advance 中断时，resume 会发现未消费 Decision 并幂等继续。
+
+决策语义固定：approve 进入 accepted transaction；reject 必须带理由并使当前 Proposal 追加 rejected revision，然后进入 revision_required，用户显式 cancel 才结束会话；defer 进入 approval_deferred，不生成 accepted 工件，resume 时在 bindings 未漂移的前提下重签 ApprovalRequest。Policy 自动批准由 Coordinator 在 accepted transaction 内生成 actor 为版本化 Policy identity 的 ApprovalDecision，不经过外部捷径。
+
+批准后提交前重新复验所有 digest。accepted transaction 同时写入：
 
 1. accepted PrdProposal status revision；
 2. AcceptedPrdRecord；
 3. RequirementBaseline document；
 4. Intent/Requirement/Constraint/Test NodeRecords；
 5. DECOMPOSES_TO、CONSTRAINED_BY、VERIFIES 等 EdgeRecords；
-6. Context/Validation/Review/Profile/Policy/Approval bindings；
-7. supersede/derivation records；
+6. Context/Validation/Review/Risk/Profile/Policy/Approval bindings；
+7. PrdEntityLineage/supersede/derivation records；
 8. Capture accepted checkpoint/events。
 
 事务失败不留下部分 accepted 状态。resume 使用相同 proposal/content digest 幂等重试；baseline 或 binding 漂移使 Approval 失效。
@@ -487,8 +772,10 @@ Capture 的权威状态由 record/checkpoint 重建，事件只陈述已提交�
 - `PrdValidationCompleted`；
 - `ClarificationRequested` / `ClarificationAnswered`；
 - `PrdReviewRequested` / `PrdReviewCompleted`；
+- `CaptureRiskAssessed`；
 - `CaptureProfileRecommendationCreated`；
 - `PrdApprovalRequired`；
+- `PrdApprovalDecisionApplied` / `PrdApprovalDeferred`；
 - `PrdAccepted` / `PrdRevisionRequested`；
 - `CaptureBlocked` / `CaptureCancelled`。
 
@@ -564,12 +851,12 @@ export interface PrdProposalInput {
 
 ```ts
 export type PrdProposalResult =
-  | { readonly status: "proposed"; readonly proposal: PrdProposal }
+  | { readonly status: "proposed"; readonly draft: PrdProposalDraft }
   | { readonly status: "clarification_required"; readonly questions: readonly ClarificationQuestionDraft[] }
   | { readonly status: "failed"; readonly failure: PrdPortFailure };
 ```
 
-Port 无 Session/Ledger 写权限，不能返回 accepted、approval、next_state 或 graph records。Proposal 必须通过 Harness JSON Schema 和 canonicalization；Adapter 自报“valid”没有权威性。
+Port 无 Session/Ledger 写权限，不能返回 canonical id、accepted、approval、next_state 或 graph records。Coordinator 先验证 Draft JSON Schema/lineage/source refs，再分配或复用稳定 id 并生成 canonical `PrdProposalRecord`；Adapter 自报“valid”没有权威性。
 
 ### 9.3 Adapter
 
@@ -587,6 +874,7 @@ export interface PrdReviewInput {
   readonly proposal: PrdProposalRecord;
   readonly review_context_bundle: ProjectContextBundleRecord;
   readonly validation_report: PrdValidationReportRecord;
+  readonly manual_input?: ManualReviewInputRecord;
   readonly rubric: PrdReviewRubric;
   readonly profile: CaptureReviewProfile;
   readonly invocation: CaptureInvocationBinding;
@@ -635,13 +923,14 @@ Review Adapter 缺失时进入 `review_provider_required`，允许用户显式�
 }
 ```
 
-Capture Proposal、PRD Review 和执行 Agent 是三个 Adapter identity。即使共用 dsh executable/model，也分别拥有 env allowlist、timeout、token/output ceiling、prompt digest、conversation、evidence directory 和 usage accounting。
+Capture Proposal、PRD Review 和执行 Agent 是三个 Adapter identity。即使共用 dsh executable/model，也分别拥有 env allowlist、timeout、token/output ceiling、prompt digest、conversation、Harness-owned evidence sink 和 usage accounting；Evidence sink 不挂载给 provider 进程。
 
 ### 11.2 权限
 
 Proposal/Review Adapter：
 
-- 项目与 Ledger 只读；
+- 对项目目录、`.harness`、Ledger、宿主 cwd 和任意文件路径零直接访问，只能读取 Harness 序列化到 stdin 的 Port input；
+- 在无项目挂载的隔离临时目录运行，ProjectContextPort 是读取项目事实的唯一 Adapter seam；
 - 无 shell/tool invocation 字段；
 - 不继承 Agent write scope；
 - 无 secret/环境变量读取，除明确 provider credential allowlist；
@@ -650,19 +939,29 @@ Proposal/Review Adapter：
 
 ### 11.3 idempotency
 
-Port invocation key：
+输出 digest 不能参与产生它的调用键。三类 Port 分别使用以下预调用键：
 
 ```text
-session_id
-+ session_revision
-+ port_role
-+ context_digest
-+ proposal_or_answers_digest
-+ adapter_profile_digest
-+ prompt_version_digest
+Context:
+  session_id + session_revision + purpose
+  + project_baseline_digest + project_profile_digest + capture_policy_digest
+  + allowed_sources/path_policy/budget digest + context_adapter_profile_digest
+
+Proposal:
+  session_id + session_revision + proposal_context_bundle_digest
+  + answers_digest + previous_proposal_digest
+  + deterministic_feedback_digest + review_feedback_digest
+  + proposal_adapter_profile_digest + prompt_version_digest
+
+Review:
+  session_id + session_revision + proposal_content_digest
+  + review_context_bundle_digest + validation_report_digest
+  + manual_review_input_digest
+  + rubric/profile digest
+  + review_adapter_profile_digest + prompt_version_digest
 ```
 
-resume 先读取已有 invocation/Evidence。completed 调用复用结果；uncertain 调用先按 Provider 能力对账，不能盲目重复产生两个候选事实。
+不存在的可选输入使用固定 null marker，所有组合字段 canonical 后再摘要。resume 先读取已有 invocation/Evidence。completed 调用复用结果；uncertain 调用先按 Provider 能力对账，不能盲目重复产生两个候选事实。
 
 ### 11.4 统一失败契约
 
@@ -691,14 +990,16 @@ export interface PrdPortFailure {
 
 1. Schema、id、引用、枚举、长度和 canonical ordering 合法。
 2. 至少一个目标与 Requirement；非目标、假设、依赖、风险和开放问题字段语义明确。
-3. 每个 Requirement 有稳定 id 和至少一个 Acceptance Criterion。
+3. 每个 Requirement 有稳定 id 和至少一个 Acceptance Criterion；每个 `must_change` Requirement 至少一个 Criterion 含非空 test-first example。
 4. 每个 Constraint 有 verification intent。
 5. Requirement/Constraint/Scenario/Criterion 引用对象存在。
 6. requirement/non-goal、assumption/fact、open/decided 之间无结构化冲突。
 7. 业务术语无一词多义冲突或缺失关键定义。
 8. Context/answers/proposal/profile/policy bindings 完整。
-9. `test_first_readiness` 通过。
-10. critical deterministic Finding 为零。
+9. entity id 只由 Coordinator 铸造/复用，Draft lineage、SourceBinding 和所有引用完整无歧义。
+10. accepted Proposal 没有 blocking OpenQuestion。
+11. `test_first_readiness` 通过。
+12. critical deterministic Finding 为零。
 
 ### 12.2 test_first_readiness
 
@@ -728,7 +1029,7 @@ ClarificationQuestion / Answer
   → TaskVerdict
 ```
 
-accepted PRD 物化每个 Criterion 对应的 Test seed。Test extension 必须含 `acceptance_criterion_id`，VERIFIES 指向 Requirement。
+accepted PRD 物化每个 Criterion 对应的 Test seed。Test id 由 Coordinator 从 canonical criterion id 确定性派生；Criterion continues 时复用 Test id 并递增 Node revision。Test extension 必须含 `acceptance_criterion_id`、Criterion source binding digest，VERIFIES 指向 Requirement。
 
 ### 13.2 职责分界
 
@@ -768,6 +1069,7 @@ Capture 属于 Evidence Kernel。Profile 只调整策略：
 | Context | manifest/README/Gate/相关 Graph 最小摘要 | 增加 ADR、现有 PRD、API、Schema、Test、Impact 邻域 | 增加 Policy、合规、审计、历史 Decision |
 | Proposal | Manual 默认；模型可选 | 模型推荐；Manual 可用 | Policy 认可的 Adapter/profile |
 | Review | 必须，较小 budget | 必须，标准 rubric | 必须，强化 rubric/retention/identity |
+| Risk Assessment | 公共确定性规则；低风险阈值最宽但不可低于公共下限 | 增加 materiality/敏感域规则 | 强化合规触发器，禁止自动批准 |
 | 测试先行 | 每 must-change Requirement 至少一个可执行 Criterion | 主路径 + 关键失败/边界 | 安全/权限/兼容/迁移/审计/不可逆场景 |
 | 低风险人工批准 | Policy 可自动决定 | Policy 可自动决定，物质性变化通常人工 | 不免，必须人工 |
 | 中高风险 | 人工或建议升级 | 人工 | 人工，可职责分离/双人 |
@@ -781,8 +1083,8 @@ Capture 属于 Evidence Kernel。Profile 只调整策略：
 - new/adopt 在 Capture 前选择 ProjectProfile；
 - iterate 使用项目 Profile revision；
 - CapturePolicyBinding 从 ProjectProfile、Policy 和当前 ProfileDecision 确定性派生；
-- accepted PRD 产生完整风险输入后再编译后续 CapabilityPlan；
-- accepted PRD 绑定最终 CapturePolicy/ProfileDecision digest。
+- current reviewed Proposal 生成 CaptureRiskAssessment；approved/accepted PRD 再提供完整风险输入编译后续 CapabilityPlan；
+- accepted PRD 绑定最终 CapturePolicy/ProfileDecision/RiskAssessment digest。
 
 ### 14.2 Capture 内升级
 
@@ -793,28 +1095,28 @@ Proposal/Review risk changed
   → upgrade / rescope / override / cancel
   → new CapturePolicyBinding
   → expand Context when required
-  → invalidate old Review/Approval
-  → review again
+  → proposal-purpose drift: invalidate Proposal/Review/Risk/Approval → propose again
+  → review-purpose only drift: invalidate Review/Risk/Approval → review again
 ```
 
-未漂移的 Intent、answers 和 Proposal content 可以复用；Profile/Policy/Context budget 或 source selection 漂移时，相关 proposal-purpose/review-purpose Bundle、Review 和 Approval 只追加 invalidation。Override 服从 Slim Profile 的范围、理由、digest 和 Policy deny 规则。
+未漂移的 Intent 和 answers 可以复用。Profile/Policy/Context budget 或 source selection 漂移时，相关 purpose-bound Bundle 只追加 invalidation；proposal-purpose Bundle 漂移必须使其绑定的 Proposal 及全部下游失效，只有 review-purpose Bundle 漂移才允许复用 Proposal。Override 服从 Slim Profile 的范围、理由、digest 和 Policy deny 规则。
 
 ## 15. 风险自适应批准
 
-Review 通过不等于批准。Coordinator 根据 CapturePolicy、Risk、Review findings、materiality 和 override 决定：
+Review 通过不等于批准。Coordinator 先生成并提交绑定当前 Proposal/Validation/Review/Context/Profile/Policy 的 `CaptureRiskAssessmentRecord`，再根据 CapturePolicy、`level + materiality + confidence` 和 override 决定：
 
-- `policy_auto_decision`：仅 Lite/Standard 明确允许的低风险、非物质性 Proposal；
+- `policy_auto_decision`：仅 Lite/Standard 明确允许的 `low + non_material + high confidence` Proposal；
 - `human_approval_required`：中高风险、物质性变化、低 confidence、敏感领域、Profile upgrade/override；
 - Governed：始终 human approval，可要求 reviewer/approver segregation。
 
-自动接受仍生成 ApprovalDecision，actor 为版本化 Policy identity，并绑定同样的 object/content/baseline/policy/profile digest。它不是“没有批准”。
+自动接受仍生成 ApprovalDecision，actor 为版本化 Policy identity，并绑定同样的 object/content/baseline/validation/review/risk/policy/profile digest。它不是“没有批准”。
 
 以下永远不能自动或人工绕过：
 
 - deterministic hard gate failure；
 - unresolved critical Review Finding；
 - Policy deny/法规强制项；
-- Context/Proposal/Review/Profile/Policy digest 漂移；
+- Context/Proposal/Review/Risk/Profile/Policy digest 漂移；
 - required Review Provider/independence binding 缺失。
 
 ## 16. CLI 与 Dashboard 共用会话
@@ -839,7 +1141,7 @@ harness resume <operation-id> --answers answers.json
 
 ### 16.2 Dashboard
 
-Read API 提供当前 Session、问题/答案、Context 摘要、Proposal diff、Validation、Review、Profile Recommendation 和 Approval preview。Write API 提供 submit answers、request revision、resume；PRD approval 复用统一 Approval API。
+Read API 提供当前 Session、问题/答案、Context 摘要、Proposal diff、Validation、Review、Risk Assessment、Profile Recommendation 和 Approval preview。Write API 提供 submit answers、submit manual review input、request revision、resume；PRD approval 复用统一 Approval API 提交 Decision，然后必须调用 Coordinator `advance(ApplyApprovalDecisionCommand)` 才能改变 Capture 状态。
 
 所有写入要求 session authentication、exact Origin、CSRF、actor、expected digest、body size 和字段 allowlist。CLI 与 Dashboard 交替操作后都从最新 Ledger checkpoint 继续。
 
@@ -898,21 +1200,23 @@ IntentInterpreter
 - completed Protocol 1.0 RequirementBaseline 不改写，显示 `historical_without_prd_review`；
 - 尚未批准的开放 Capture 创建 Session revision 1，保留原 Intent/问题；
 - 旧 pending RequirementBaseline ApprovalRequest 被 supersede，新 Proposal 通过 Gate/Review 后重新签发；
-- 已进入 Impact 后的开放旧 Operation 不补造 Review，按 Protocol migration 明确重开 Capture 或继续 historical compatibility；
+- 已进入 Impact 后的开放旧 Operation 不就地补造 Review：选择 `reopen_managed_capture` 时失效旧 Impact/Plan/Context/Run，回到 Capture 生成真实 accepted PRD 后才可进入 Protocol 1.1 Design/TDD；选择 `continue_protocol_1_0` 时沿历史兼容路径完成，不能生成 1.1 DesignSet/TddContract 或宣称新 proof；
 - 兼容期结束删除写入口和类型导出，但历史 reader 永久保留。
 
 ## 18. 失效、错误与恢复
 
 | 条件 | 行为 |
 | --- | --- |
-| Context source/baseline 漂移 | 失效 Bundle、Proposal、Review、Approval，重新编译 |
+| Context source/baseline 漂移 | 失效 Bundle、Proposal、Review、RiskAssessment、Approval，重新编译 |
 | Proposal Schema/JSON 非法 | `proposal_invalid`，预算内重试，不调用 Review |
 | deterministic gate fail | typed questions/findings，回到 clarify/revise |
 | Proposal timeout/crash | 保存 invocation Evidence，Session 可恢复 |
 | Review Provider 缺失 | `review_provider_required`，选择 Manual/配置 Provider |
 | Review revise/clarify | 保留旧 Proposal/Report，追加新 revision/questions |
+| Manual Review input 缺失/冲突 | 保持 `review_input_required`，拒绝混入 ClarificationAnswer |
 | answer/session digest 冲突 | typed conflict/HTTP 409，刷新后重交 |
-| Profile/Policy risk upgrade | pause，失效 Review/Approval，按新 CapturePolicy 继续 |
+| Profile/Policy risk upgrade | pause，失效相关 Context/Review/RiskAssessment/Approval，按新 CapturePolicy 继续 |
+| Approval reject/defer | reject 进入 revision_required；defer 进入 approval_deferred，均不生成 accepted 工件 |
 | Approval binding drift | supersede request，重新 Preview/批准 |
 | Ledger transaction failure | 零部分 accepted PRD，幂等恢复 |
 | round/budget exhausted | `capture_budget_exhausted` blocker |
@@ -928,11 +1232,12 @@ IntentInterpreter
 3. 路径规范化后复验 realpath，阻止 traversal/symlink escape。
 4. secret patterns、credential paths、环境变量、证书和私钥 fail closed。
 5. Proposal/Review Adapter 的 provider credential 只进入进程环境，不进入 prompt/Evidence。
-6. Prompt、Schema、Adapter profile、model 和 Policy 全部有版本/digest。
-7. Proposal 与 Review independence 由 Harness 根据 invocation/conversation/profile/purpose-bound Context bindings 机械验证。
-8. Manual answers/review/approval 绑定 actor、expected digest 和 session revision。
-9. Profile Override 不能覆盖 hard gate、critical Finding 或 Policy deny。
-10. accepted PRD/RequirementBaseline/Graph 原子提交防止批准到提交的 TOCTOU。
+6. Proposal/Review provider 进程不挂载项目、Ledger 或宿主 cwd；只有 ProjectContextPort 可按 Policy 读取项目事实。
+7. Prompt、Schema、Adapter profile、model 和 Policy 全部有版本/digest。
+8. Proposal 与 Review independence 由 Harness 根据 invocation/conversation/profile/purpose-bound Context bindings 机械验证。
+9. Manual answers/review/approval 绑定 actor、expected digest 和 session revision。
+10. Profile Override 不能覆盖 hard gate、critical Finding 或 Policy deny。
+11. accepted PRD/RequirementBaseline/Graph 原子提交防止批准到提交的 TOCTOU。
 
 ## 20. 测试策略
 
@@ -940,6 +1245,8 @@ IntentInterpreter
 
 - Intent → 多轮 clarify → Proposal → Validation → Review → Approval → accepted；
 - revise/reject/defer/cancel/resume；
+- persisted ApprovalDecision → ApplyApprovalDecisionCommand → accepted/revision/deferred，崩溃后 resume 幂等消费；
+- Manual Review input 与业务 ClarificationAnswer 隔离；
 - CLI/Dashboard 交替回答；
 - immutable accepted PRD + superseding revision；
 - invalid transition 和 expected digest conflict。
@@ -954,23 +1261,27 @@ Proposal/Review Adapter 统一验证：
 - zero project/Ledger writes；
 - invocation/conversation/prompt/profile digest；
 - Proposal/Review session 不复用；
-- proposal-purpose/review-purpose Bundle identity 与 digest 不复用。
+- proposal-purpose/review-purpose Bundle identity 与 digest 不复用；
+- Proposal/Review 无项目、Ledger、cwd 或任意文件直接读取。
 
 ### 20.3 Schema/Property
 
 - 任意集合输入排序得到相同 Proposal/Bundle/Report digest；
 - dangling/duplicate id 永远失败；
 - Question/Answer target 可重放；
+- Draft lineage 确定性生成/复用 entity id，跨 revision 不靠文本猜测；
+- Criterion SourceBinding 可复验到 Intent/Answer/Context/旧 PRD；
 - accepted Criterion 恰好物化一个当前 Test seed；
 - 任意 hard gate failure 都不能进入 accepted transaction；
-- Context/Profile/Policy 漂移必然失效依赖 Review/Approval。
+- Context/Profile/Policy 漂移必然失效依赖 Review/RiskAssessment/Approval；
+- RiskAssessment 同输入/规则产生同 digest；low confidence 永不自动批准。
 
 ### 20.4 Fault/Recovery
 
 - 每个状态/checkpoint 前后 fault injection；
 - Context/Proposal/Review uncertain invocation reconciliation；
 - accepted transaction 任意 artifact 写入失败零部分提交；
-- resume 不重复答案、Review、Approval、Node/Edge/Event；
+- resume 不重复答案、Manual Review、Review、Risk、ApprovalDecision consumption、Lineage、Node/Edge/Event；
 - round/token/time budget 恢复。
 
 ### 20.5 Security
@@ -983,7 +1294,7 @@ Proposal/Review Adapter 统一验证：
 
 ### 20.6 Profile Matrix
 
-- Lite Manual + minimal Context + independent Review + low-risk PolicyDecision；
+- Lite Manual + minimal Context + independent Review + low/non-material/high-confidence PolicyDecision；
 - Lite risk upgrade Standard 后 expanded Context/re-review；
 - Standard model Proposal + independent Review + material human approval；
 - Governed strong Review + human approval + segregation Policy；
@@ -1013,18 +1324,19 @@ Proposal/Review Adapter 统一验证：
 1. Capture Session 在首次 Port 调用前持久化并可恢复。
 2. `PrdCaptureCoordinator.advance()` 是 CLI/Dashboard/Orchestrator 唯一推进 Interface。
 3. structured PrdProposal 是 PRD 内容唯一权威源。
-4. Proposal/Review 的 purpose-bound ProjectContextBundle 分别受路径、baseline、Policy、budget、脱敏和 digest 控制，允许源重叠但禁止 Bundle 复用。
+4. Proposal/Review 的 purpose-bound ProjectContextBundle 分别受路径、baseline、Policy、budget、脱敏和 digest 控制，允许源重叠但禁止 Bundle 复用；Proposal/Review Adapter 对项目与 Ledger 零直接访问。
 5. deterministic hard gates 与 independent Review 均不能被 Adapter/Profile/Approval 绕过。
 6. Proposal、Review、执行 Agent 的 Adapter identity、权限、会话、budget 和 Evidence 分离。
 7. 无 Proposal 模型时默认 Manual；Generic Interpreter 不再默认自动包装。
 8. Profile 分层、Capture 内升级、Override 和 Approval 与 Slim Profile 规则一致。
-9. 每个 accepted Criterion 有稳定 id/Test seed，并贯通 DesignSet/TddContract/Evidence。
-10. accepted PRD、RequirementBaseline、Graph、bindings 和 checkpoint 原子提交。
-11. accepted PRD 不可修改，修订只通过新 version/SUPERSEDES。
-12. CLI/Dashboard 可交替完成同一澄清会话。
-13. IntentInterpreter 一个 major 兼容且不能绕过新质量链；历史不改写。
-14. Unit、Conformance、Property、Fault、Security、Migration、Dashboard、TDD Integration 和 E2E 全通过。
-15. 真实项目完成 Lite、Standard、Governed Intent→PRD dogfood并比较轮次、批准、上下文规模、成本和质量 Finding。
+9. 每个 canonical entity id 由 Coordinator 铸造/复用并有 SourceBinding/lineage；accepted Criterion 可追溯到澄清事实并贯通 Test seed/DesignSet/TddContract/Evidence。
+10. CaptureRiskAssessment 是版本化、确定性、可重放事实，自动批准仅允许 low/non-material/high-confidence。
+11. accepted PRD、RequirementBaseline、Graph、bindings 和 checkpoint 原子提交。
+12. accepted PRD 不可修改，修订只通过新 version/SUPERSEDES。
+13. CLI/Dashboard 可交替完成同一澄清、Manual Review 和审批会话，所有状态变化经过 Coordinator.advance。
+14. IntentInterpreter 一个 major 兼容且不能绕过新质量链；历史不改写。
+15. Unit、Conformance、Property、Fault、Security、Migration、Dashboard、TDD Integration 和 E2E 全通过。
+16. 真实项目完成 Lite、Standard、Governed Intent→PRD dogfood并比较轮次、批准、上下文规模、成本和质量 Finding。
 
 ## 22. 被否决的替代方案
 
@@ -1056,15 +1368,16 @@ Proposal/Review Adapter 统一验证：
 
 本设计不授权代码实施。用户复核正式 Spec 后，应把它并入 Slim/DesignSet/TDD 的同一 Protocol 1.1 实施计划，建议依赖顺序：
 
-1. Capture runtime records、Schema、canonical digest 和 migration reader；
-2. PrdCaptureCoordinator/state/checkpoint；
-3. ProjectContextPort/Compiler 与安全预算；
-4. PrdProposalPort、Manual Adapter、deterministic gates；
-5. PrdReviewPort、independence validator、risk approval；
-6. accepted PRD/RequirementBaseline/Graph 原子提交；
-7. Criterion/Test seed 与 DesignSet/TDD bindings；
-8. LegacyIntentInterpreterAdapter 与 deprecation；
-9. CLI/Dashboard 共用 Session；
-10. Profile matrix、fault、migration、E2E 和 dogfood。
+1. Capture runtime records、完整 PrdProposal/Draft JSON Schema、canonical digest 和 migration reader；
+2. PrdCaptureCoordinator/state/checkpoint/ApprovalDecision consumption；
+3. ProjectContextPort/Compiler、安全预算与 Proposal/Review 零文件访问隔离；
+4. PrdProposalPort、Coordinator-issued id/lineage、Manual Adapter、deterministic gates；
+5. PrdReviewPort、Manual Review input 与 independence validator；
+6. CaptureRiskAssessment、Profile Recommendation 与风险批准；
+7. accepted PRD/RequirementBaseline/Graph 原子提交；
+8. Criterion/Test seed 与 DesignSet/TDD bindings；
+9. LegacyIntentInterpreterAdapter 与 deprecation；
+10. CLI/Dashboard 共用 Session；
+11. Profile matrix、fault、migration、E2E 和 dogfood。
 
 现有 19-task DesignSet/TDD 协同计划必须重新编排，把高质量 Capture 放在 Impact/Design/Plan 之前；禁止先让低质量 RequirementBaseline 进入后续治理，再事后补 PRD Review。
