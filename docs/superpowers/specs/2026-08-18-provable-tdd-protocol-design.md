@@ -176,7 +176,7 @@ TddCycle completed
 ### 5.4 Capability 激活边界
 
 - Governed：所有适用代码、配置、Schema、迁移、安全和缺陷修复 Task 激活 strict_tdd；
-- Standard：DesignSet.test_strategy 对 Task 声明 required 时激活；
+- Standard：DesignSet accepted 前使用 `strict_tdd: deferred` 的 provisional CapabilityPlan；DesignSet 获批后，Harness 以 canonical test_strategy/digest 确定性生成 active 的 final revision，并由 test_strategy 对 Task 声明 required/not_applicable，不能让 deferred 状态进入 Plan；
 - Lite：风险推荐、用户选择或 Project Policy 激活后，Capability Compiler 先补齐 design_governance、structured Gate 和 isolated workspace 依赖；
 - 未激活：不调用 TddController，不创建 TaskTddContract、TDD Run/Event/Evidence/TddCycleRecord，也不创建空壳批准；
 - 激活决定和 CapabilityPlan digest 必须进入 Plan/TaskVerdict，使“未启用”与“遗漏证据”可机械区分。
@@ -185,7 +185,7 @@ TddCycle completed
 
 ### 6.1 每个 Requirement 的策略
 
-当 CapabilityPlan 激活 design_governance/strict_tdd 时，每个相关 `must-change` Requirement 必须关联至少一个 accepted `test_strategy` DesignArtifact。test_strategy 资产本身不可缺失；其内部可以对“严格 TDD 执行是否适用”做受控判断：
+当 design_governance 激活，且 strict_tdd 已激活或在 Standard provisional CapabilityPlan 中 deferred 时，每个相关 `must-change` Requirement 必须关联至少一个 accepted `test_strategy` DesignArtifact。test_strategy 资产本身不可缺失；其内部可以对“严格 TDD 执行是否适用”做受控判断：
 
 ```ts
 export type TddApplicability =
@@ -278,7 +278,7 @@ export type TddFailureKind =
 
 ### 7.1 编译规则
 
-strict_tdd 激活后，Planner 从 accepted DesignSet 的 test_strategy 编译每个相关 Task 的 `TaskTddContract`。Plan 必须绑定 RequirementBaseline、ImpactSet、DesignSet、CapabilityPlan、Policy 和 Contract digest。未激活的 Task 不生成 Contract，并在 Plan/Verdict 中绑定 `not_enabled_by_profile`。
+strict_tdd 激活后，Planner 从 accepted DesignSet 的 test_strategy 编译每个相关 Task 的 `TaskTddContract`。Plan 必须绑定 RequirementBaseline、ImpactSet、DesignSet、final CapabilityPlan、Policy 和 Contract digest。Standard provisional CapabilityPlan 不能进入 Plan。Profile 未激活 strict_tdd 的 Task 不生成 Contract，并在 Plan/Verdict 中绑定 `not_enabled_by_profile`；已由 accepted test_strategy 判定受控不适用的 Task 则绑定 `controlled_not_applicable`，两者不能混淆。
 
 Planner 允许：
 
@@ -773,6 +773,7 @@ Evidence、Cycle、Grant 和审批发生漂移时，只追加 invalidation/super
 ### 17.5 DesignSet/Plan Integration
 
 - DesignSet required strategy → Plan Contract；
+- Standard provisional CapabilityPlan + accepted test_strategy → final CapabilityPlan → Plan Contract；
 - Plan 降级/扩大 Oracle/path 被拒绝；
 - DesignSet revision 使 Plan/Context/Grant/Cycle 失效；
 - TestInfrastructureTask DAG 依赖；
@@ -802,18 +803,19 @@ Evidence、Cycle、Grant 和审批发生漂移时，只追加 invalidation/super
 1. Protocol 1.1 同时包含 Slim Profile/Capability、DesignSet 和可证明 TDD 的 Schema、JSON Schema 与兼容读取。
 2. strict_tdd 激活时，accepted test_strategy 对每个相关 Requirement 给出 required 或受控 not_applicable；未激活时零 TDD 工件。
 3. Plan 对 strict_tdd 激活的 Task 生成不可降级 TaskTddContract，Assertion 覆盖唯一且完整。
-4. strict TDD 使用隔离 workspace 和规范 test patch；Red workspace 可确定性重建。
-5. Red 只有在 Baseline 健康且匹配 Failure Oracle 时 accepted。
-6. Red accepted 前不能签发 Implementation Grant。
-7. Red/Green 使用相同 test patch、Gate、framework profile 和 executor environment。
-8. Red 后测试变化、环境漂移和越权写入会机械失效或阻塞。
-9. TestInfrastructureTask 能生成 FrameworkEvidence 并正确阻塞/解锁依赖 Task。
-10. TaskVerdict 区分 tdd_proven、受控不适用、framework proof、not_enabled_by_profile、历史无证明和无效/不完整。
-11. Verify 以及 CapabilityPlan 启用的 Evaluation 继续独立于 TDD Cycle，并能否决最终完成。
-12. Ledger 可重放所有 TDD state、Grant、Evidence、Record 和 invalidation。
-13. Dashboard/Projection 提供中文业务语义和可展开 digest 审计。
-14. Unit、Property、Policy、Integration、Migration、Adapter、Dashboard 和 E2E 测试全部通过。
-15. 至少一个真实 Standard/Governed 项目通过真实 Agent 完成 DesignSet → Red → Green → Gate → Evaluation → Snapshot 纵向闭环；同时一个 Lite Kernel-only 项目证明零 TDD Contract/Run/Event/Evidence/Cycle，二者均可从账本复验。
+4. Standard provisional CapabilityPlan 在 accepted DesignSet 后确定性解析为 final revision；deferred 状态不能越过 Plan guard，也不产生重复审批。
+5. strict TDD 使用隔离 workspace 和规范 test patch；Red workspace 可确定性重建。
+6. Red 只有在 Baseline 健康且匹配 Failure Oracle 时 accepted。
+7. Red accepted 前不能签发 Implementation Grant。
+8. Red/Green 使用相同 test patch、Gate、framework profile 和 executor environment。
+9. Red 后测试变化、环境漂移和越权写入会机械失效或阻塞。
+10. TestInfrastructureTask 能生成 FrameworkEvidence 并正确阻塞/解锁依赖 Task。
+11. TaskVerdict 区分 tdd_proven、受控不适用、framework proof、not_enabled_by_profile、历史无证明和无效/不完整。
+12. Verify 以及 CapabilityPlan 启用的 Evaluation 继续独立于 TDD Cycle，并能否决最终完成。
+13. Ledger 可重放所有 TDD state、Grant、Evidence、Record 和 invalidation。
+14. Dashboard/Projection 提供中文业务语义和可展开 digest 审计。
+15. Unit、Property、Policy、Integration、Migration、Adapter、Dashboard 和 E2E 测试全部通过。
+16. 至少一个真实 Standard/Governed 项目通过真实 Agent 完成 DesignSet → Red → Green → Gate → Evaluation → Snapshot 纵向闭环；同时一个 Lite Kernel-only 项目证明零 TDD Contract/Run/Event/Evidence/Cycle，二者均可从账本复验。
 
 ## 19. 被否决的替代方案
 

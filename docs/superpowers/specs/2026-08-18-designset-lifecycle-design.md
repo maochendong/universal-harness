@@ -25,7 +25,7 @@ Standard、Governed，以及 Lite 中由风险、用户或 Policy 激活 `design
 
 启用 design_governance 的 ExecutionPlan 必须同时绑定 RequirementBaseline、ImpactSet、DesignSet、CapabilityPlan 和 Policy 摘要；未启用时绑定 RequirementBaseline、CapabilityPlan、Plan 和 Policy，不伪造 DesignSet。任一实际启用的上游摘要漂移都会使审批或下游执行授权失效。测试、评审、审计或运行时 Finding 继续作为 Change Seed；当 CapabilityPlan 包含 Impact/Design 时，通过图谱传播触发新的 ImpactSet 和 DesignSet revision，再级联重建 Plan、Context 和 Run。
 
-当 CapabilityPlan 启用 `strict_tdd` 时，DesignSet 的 `test_strategy` 是可证明 TDD 的唯一设计来源：它按 Requirement 声明 TDD required 或受控 not_applicable，并在 required 时批准 Baseline Guard、target Gate、Failure Oracle、路径策略和测试框架摘要。Plan 只能把这些约束编译为更窄的 TaskTddContract，不能降级或扩大。未启用 strict_tdd 时不生成 Contract/Cycle，并显示 `not_enabled_by_profile`。Slim Profile、DesignSet 和 TDD 一起进入首次 Protocol 1.1.0。
+DesignSet 的 `test_strategy` 是可证明 TDD 的唯一设计来源：它按 Requirement 声明 TDD required 或受控 not_applicable，并在 required 时批准 Baseline Guard、target Gate、Failure Oracle、路径策略和测试框架摘要。Standard 在 design 前允许 provisional CapabilityPlan 把 `strict_tdd` 标为 deferred；DesignSet 获批后，Harness 以 canonical test_strategy/digest 确定性生成 final CapabilityPlan，并与 accepted DesignSet 在同一 Ledger transaction 提交，再允许 Plan 编译更窄的 TaskTddContract。Planner 不能降级或扩大。Profile 未启用 strict_tdd 时不生成 Contract/Cycle，并显示 `not_enabled_by_profile`。Slim Profile、DesignSet 和 TDD 一起进入首次 Protocol 1.1.0。
 
 ## 2. 背景与问题
 
@@ -488,7 +488,8 @@ DesignCommitter 使用单一 Ledger Operation 提交：
 3. create/supersede 的 EdgeRecord；
 4. DesignSet DERIVES_FROM 和 CONTAINS 结构边；
 5. Approval/phase lifecycle events；
-6. design checkpoint。
+6. Standard 需要解析 deferred strict_tdd 时的 final CapabilityPlan revision/binding；
+7. design checkpoint。
 
 提交前读取 expected baseline，并复验所有 base revision digest。Ledger transaction 失败时不允许留下部分节点、部分边或已推进 checkpoint。恢复使用同一 proposal/content digest 幂等重试；如果 baseline 已变化，则使批准失效并重新进入 proposal/approval。
 
@@ -514,7 +515,7 @@ readonly design_set_digest: string;
 
 启用 design_governance 时，`PlanTasksPort` 输入增加 accepted DesignSet 摘要、设计资产引用、覆盖结果和关系路径。默认 Planner 仍可一 Requirement 一 Task，但 Task 必须声明它实施的 Requirement、Decision 和适用 DesignArtifact。未启用时 Planner 不接收伪 DesignSet，只绑定 CapabilityPlan 的 `inactive_by_profile` 事实。
 
-CapabilityPlan 同时启用 strict_tdd 时，对于 test_strategy 声明为 required 的 Assertion，Planner 还必须按配套设计编译 `TaskTddContract` 和唯一 `AssertionCluster` 覆盖。Planner 可以缩小 selector、路径和预算，但不能降低适用性、扩大 Failure Oracle 或绕过 TestInfrastructureTask 依赖。Plan digest 同时覆盖 TaskTddContract。
+final CapabilityPlan 启用 strict_tdd 时，对于 test_strategy 声明为 required 的 Assertion，Planner 还必须按配套设计编译 `TaskTddContract` 和唯一 `AssertionCluster` 覆盖。Standard 的 provisional CapabilityPlan 不得越过 Plan guard。Planner 可以缩小 selector、路径和预算，但不能降低适用性、扩大 Failure Oracle 或绕过 TestInfrastructureTask 依赖。Plan digest 同时覆盖 final CapabilityPlan 和 TaskTddContract。
 
 ### 13.2 ContextBundle
 
@@ -671,6 +672,7 @@ Projection 不拥有独立状态。检测漂移后只能从权威图重建，不
 - baseline/policy/impact/reused revision drift → approval invalidation；
 - design_governance 已启用但缺少 DesignSet → plan guard failure；未启用时验证零 Design 工件和 CapabilityPlan binding；
 - CapabilityPlan/DesignSet 的 Plan、Context、Preflight 条件绑定及 TaskTddContract 编译；
+- Standard DesignSet accepted → final CapabilityPlan 原子、幂等解析，deferred 不能越过 Plan guard；
 - Finding → new ImpactSet → new DesignSet revision → replanning。
 
 ### 19.4 Migration

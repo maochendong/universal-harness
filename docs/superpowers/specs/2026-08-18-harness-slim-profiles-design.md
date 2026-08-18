@@ -270,7 +270,7 @@ conditional 由用户显式选择、风险推荐确认或项目 Policy 触发。
 | Strict TDD | conditional，由 accepted test_strategy 按 Task 决定 |
 | Advanced Audit | conditional；基础 Ledger integrity 始终由 Kernel 执行 |
 
-Standard 的每个启用 Design iteration 必须遵守 DesignSet 原子批准/提交；TDD required Task 必须遵守 Provable TDD 协议。
+Standard 的每个 Design iteration 必须遵守 DesignSet 原子批准/提交。表中的 Strict TDD `conditional` 指 Task 级适用性：DesignSet 获批后 final CapabilityPlan 激活策略解析，required Task 必须遵守 Provable TDD 协议，受控 not_applicable Task 留下批准依据但不生成 TDD Cycle。
 
 ### 7.4 Governed
 
@@ -330,7 +330,14 @@ Decision 绑定 actor、reason、推荐对象、当前/实际 Profile、Requirem
 
 ### 8.4 CapabilityPlanRecord
 
-记录本迭代实际 Capability 闭包、Module versions/digests、required providers、approval policy、Operation DAG 和上游 ProfileDecision digest。
+记录本迭代 Capability 闭包、Module versions/digests、required providers、approval policy、Operation DAG 和上游 ProfileDecision digest。Record 还必须包含：
+
+- `compilation_stage: provisional | final`；
+- 每项 Capability 的 `resolution: active | inactive_by_profile | deferred`；
+- resolution source 与所绑定的 Profile/Policy/Risk/DesignSet digest；
+- `supersedes_digest`，用于 provisional → final 或风险升级 revision。
+
+`deferred` 只允许出现在协议明确声明的后置决策点。Protocol 1.1 内置规则只允许 Standard 的 `strict_tdd` 在 design 前 deferred；它不能授权 Plan、Context 或 Execute。DesignSet 获批后、权威提交时，Capability Compiler 必须以其 canonical test_strategy/digest 为新输入生成 final revision。strict_tdd 在 final revision 中为 active，并由 test_strategy 决定 Task 级 required/not_applicable：存在 required Requirement 时生成对应 TDD Contract/Cycle；全部为受控 not_applicable 时不生成 Cycle，但保留 accepted DesignSet/test_strategy 作为 `controlled_not_applicable` 依据，不能标成 `not_enabled_by_profile`。
 
 建议路径：
 
@@ -355,6 +362,8 @@ artifacts/capability-plans/<operation-id>/<revision>.json
 - 已注册 Module/Provider capabilities；
 - 当前 repository/operation baseline。
 
+final 编译还输入 accepted DesignSet/test_strategy digest；除 Standard strict_tdd 的既定 deferred 边界外，Compiler 不得依赖尚未产生的未来工件。
+
 ### 9.2 输出
 
 Capability Compiler 确定性生成：
@@ -367,9 +376,25 @@ Capability Compiler 确定性生成：
 - invalidation graph；
 - capability plan digest。
 
-同一规范输入必须产生相同 DAG/digest。DAG 循环、输出冲突、缺失 required Provider 或未知 Module 都是 compile blocker，不允许回退 Lite。
+同一规范输入必须产生相同 DAG/digest。DAG 循环、输出冲突、缺失 required Provider、未知 Module、非法 deferred Capability 或进入 Plan 时仍非 final 都是 compile blocker，不允许回退 Lite。
 
-### 9.3 DAG 节点语义
+### 9.3 Standard Strict TDD 的两阶段解析
+
+```text
+provisional CapabilityPlan
+  ├── impact_analysis: active
+  ├── design_governance: active
+  └── strict_tdd: deferred
+        ↓ approved canonical DesignSet.test_strategy
+final CapabilityPlan revision
+  └── strict_tdd: active（Task 级 required / not_applicable）
+        ↓
+      Plan / TaskTddContract
+```
+
+provisional 与 final revision 使用同一 ProfileDecision，不新增 Profile 或人工批准。DesignSet Approval 已经批准 test_strategy，因此 final 编译是确定性派生事务，不再创建重复审批。accepted DesignSet、final CapabilityPlan、binding 和 design checkpoint 必须在同一 Ledger transaction 原子提交；事务中断时以相同 proposal/content digest 幂等重试。DesignSet/test_strategy 漂移会使 final revision 及全部下游失效。
+
+### 9.4 DAG 节点语义
 
 Kernel nodes 稳定存在；Module 通过 contributor 注册节点：
 
@@ -388,7 +413,7 @@ capture
 
 方括号表示只有 CapabilityPlan 启用才存在。`strict_tdd` 仍是 Task execute 内部 subgraph，不变成全局 phase。
 
-### 9.4 Engine 边界
+### 9.5 Engine 边界
 
 Workflow Engine 只理解 DAG node contract、checkpoint、typed result 和 invalidation；不直接判断 Profile 名称。禁止在 Engine 中复制 Lite/Standard/Governed 三条大分支。Profile 差异只存在于 registry、Capability Compiler 和 Module contributor。
 
@@ -511,6 +536,8 @@ Risk changed
 ### 12.2 原子边界
 
 ProfileDecision、CapabilityPlan revision、invalidation set 和 checkpoint 必须在同一 Ledger operation 原子提交。提交前失败时保持旧 checkpoint，但 Operation 继续暂停且旧 Grant 已撤销；不能在决策不完整时继续低档执行。
+
+Standard 在 DesignSet 批准后进行 provisional → final 解析时，final CapabilityPlan revision、DesignSet binding 和 design checkpoint 同样遵守该原子边界；不能让 provisional Plan 进入执行。
 
 ### 12.3 历史
 
@@ -724,6 +751,7 @@ Slim Profile、DesignSet 和 Provable TDD 均尚未实施，因此共同进入�
 | 未知 Profile/definition digest | 阻塞，不回退 Lite |
 | required Module/Provider 缺失 | typed blocker + doctor 恢复建议 |
 | Capability DAG 循环/冲突 | compile failure，不创建 Plan/Grant |
+| Standard strict_tdd 在 Plan 前仍 deferred | typed compile blocker；从 approved canonical DesignSet 幂等提交 accepted DesignSet + final CapabilityPlan |
 | Recommendation 未决 | Operation 暂停，不继续旧授权 |
 | Override reason 缺失 | ApprovalRequest 无效 |
 | Override binding drift | 旧 Override 失效并重新建议 |
@@ -758,6 +786,7 @@ Slim Profile、DesignSet 和 Provable TDD 均尚未实施，因此共同进入�
 - resolved set 总是满足依赖闭包；
 - 同一输入产生同一 DAG；
 - 循环、输出冲突、缺失 required provider 永远失败；
+- Standard provisional → final 对同一 DesignSet digest 确定且幂等，deferred 状态不能越过 Plan guard；
 - Lite 未启用 Module 永远无 DAG node/Port call/output record；
 - Project Policy 只能收紧 Profile；
 - Policy deny 永远不能被 Override。
@@ -820,21 +849,22 @@ Slim Profile、DesignSet 和 Provable TDD 均尚未实施，因此共同进入�
 1. `new/adopt` 交互选择并确认三档；非交互缺少 `--profile` 返回 input_required。
 2. ProjectProfile、Recommendation、Decision 和 CapabilityPlan 是 canonical、append-only runtime records。
 3. Capability Compiler 生成确定性依赖闭包、DAG 和 invalidation graph。
-4. Workflow Engine 不直接包含三套 Profile 大分支。
-5. Lite 只运行 Evidence Kernel；未启用 Module 零 Port 调用、零工件、零批准、零 Run。
-6. Standard 强制 Impact/Design/Evaluation，TDD 由 approved test_strategy 决定。
-7. Governed 对所有适用代码 Task 强制 strict TDD 和完整审计。
-8. Profile Recommendation 可人工 Override，但 Policy deny 永远不可覆盖。
-9. Override 绑定当前 iteration/risk/digest，漂移即失效。
-10. 中途升级原子提交新 CapabilityPlan，失效下游并确定性恢复。
-11. 项目降级只影响未来 Operation，不改写历史。
-12. 已有项目下一次运行前显式选择，不静默映射。
-13. CLI 默认只有六个主入口，旧高级命令兼容一个 major。
-14. Dashboard 一套实现渐进披露，稳定 URL/API，正确区分五类状态。
-15. Lite 硬复杂度预算全部进入自动验收。
-16. Slim/DesignSet/TDD 作为同一 Protocol 1.1 依赖序列交付。
-17. Unit、Property、Integration、Fault、Migration、CLI、Dashboard、E2E 全部通过。
-18. 至少一个真实项目分别完成 Lite、Standard 和 Governed dogfood，并比较工件数、批准原因和运行成本。
+4. Standard strict_tdd 通过 provisional → final CapabilityPlan 解析 test_strategy，不形成循环依赖、重复审批或 provisional 执行授权。
+5. Workflow Engine 不直接包含三套 Profile 大分支。
+6. Lite 只运行 Evidence Kernel；未启用 Module 零 Port 调用、零工件、零批准、零 Run。
+7. Standard 强制 Impact/Design/Evaluation，TDD 由 approved test_strategy 决定。
+8. Governed 对所有适用代码 Task 强制 strict TDD 和完整审计。
+9. Profile Recommendation 可人工 Override，但 Policy deny 永远不可覆盖。
+10. Override 绑定当前 iteration/risk/digest，漂移即失效。
+11. 中途升级原子提交新 CapabilityPlan，失效下游并确定性恢复。
+12. 项目降级只影响未来 Operation，不改写历史。
+13. 已有项目下一次运行前显式选择，不静默映射。
+14. CLI 默认只有六个主入口，旧高级命令兼容一个 major。
+15. Dashboard 一套实现渐进披露，稳定 URL/API，正确区分五类状态。
+16. Lite 硬复杂度预算全部进入自动验收。
+17. Slim/DesignSet/TDD 作为同一 Protocol 1.1 依赖序列交付。
+18. Unit、Property、Integration、Fault、Migration、CLI、Dashboard、E2E 全部通过。
+19. 至少一个真实项目分别完成 Lite、Standard 和 Governed dogfood，并比较工件数、批准原因和运行成本。
 
 ## 22. 被否决的替代方案
 
