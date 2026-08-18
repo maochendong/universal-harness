@@ -6,6 +6,7 @@
 前置设计：
 
 - [Universal Harness Slim Profiles 与 Capability Kernel 设计](./2026-08-18-harness-slim-profiles-design.md)
+- [Universal Harness Intent → 高质量 PRD Capture 设计](./2026-08-18-intent-to-prd-capture-design.md)
 - [Universal Harness DesignSet 生命周期设计](./2026-08-18-designset-lifecycle-design.md)
 
 ## 1. 摘要
@@ -34,7 +35,9 @@ capture → impact → design → plan → context → execute → verify → ev
 
 Lite 未启用 Impact/Design/Evaluation 时外部 DAG 可以更短；一旦 strict_tdd 激活，它依赖 design_governance、structured Gate 和 isolated workspace，并在每个相关 Task、每个 required Assertion Cluster 的 `execute` 内运行，因此可以服从 Task DAG 并行执行，不把整个迭代强制串行化。
 
-Slim Profiles、DesignSet 与本协议共同进入首次 Protocol 1.1.0。strict_tdd 激活时，DesignSet 负责批准 TDD 适用性、失败 Oracle、目标 Gate 和路径策略；Plan 负责把它编译为不可降级的执行 Contract；TddController、CapabilityGrant、Gate、Evidence 和 Ledger 负责机械证明执行顺序。未激活时零 TDD Contract/Cycle/Run，并显示 `not_enabled_by_profile`。Agent 自述、transcript、文件时间戳和模糊退出码都不是 TDD 证明。
+managed PRD Capture、Slim Profiles、DesignSet 与本协议共同进入首次 Protocol 1.1.0。strict_tdd 激活时，DesignSet 负责批准 TDD 适用性、失败 Oracle、目标 Gate 和路径策略；Plan 负责把它编译为不可降级的执行 Contract；TddController、CapabilityGrant、Gate、Evidence 和 Ledger 负责机械证明执行顺序。未激活时零 TDD Contract/Cycle/Run，并显示 `not_enabled_by_profile`。Agent 自述、transcript、文件时间戳和模糊退出码都不是 TDD 证明。
+
+上游 managed PRD Capture 必须先把每条验收标准澄清为具有稳定 criterion id、可观察结果、verification intent 和测试先行示例的业务事实，并物化 Test seed。DesignSet 可以技术细化 Gate/Oracle/path，但不能弱化 accepted observable outcome；Planner、Agent 和 TddController 都不能私自补写验收标准。
 
 ## 2. 背景与问题
 
@@ -212,6 +215,8 @@ export type TddNotApplicableCategory =
 
 export interface RequirementTddPolicy {
   readonly requirement_id: string;
+  readonly acceptance_criterion_ids: readonly string[];
+  readonly test_node_ids: readonly string[];
   readonly applicability: TddApplicability;
 }
 ```
@@ -280,6 +285,8 @@ export type TddFailureKind =
 
 strict_tdd 激活后，Planner 从 accepted DesignSet 的 test_strategy 编译每个相关 Task 的 `TaskTddContract`。Plan 必须绑定 RequirementBaseline、ImpactSet、DesignSet、final CapabilityPlan、Policy 和 Contract digest。Standard provisional CapabilityPlan 不能进入 Plan。Profile 未激活 strict_tdd 的 Task 不生成 Contract，并在 Plan/Verdict 中绑定 `not_enabled_by_profile`；已由 accepted test_strategy 判定受控不适用的 Task 则绑定 `controlled_not_applicable`，两者不能混淆。
 
+每个 Assertion Cluster 还必须绑定 accepted PRD digest、Requirement id、Acceptance Criterion ids 和对应 Test node ids。DesignSet/Plan 只能收窄技术执行范围，不能删除 Criterion、替换 observable outcome 或把上游未批准的自然语言补丁当成验收标准。
+
 Planner 允许：
 
 - 将 Requirement Assertion 拆分为更小的 Assertion Cluster；
@@ -330,6 +337,7 @@ export interface TaskTddContract {
   readonly contract_id: string;
   readonly task_id: string;
   readonly contract_mode: TddContractMode;
+  readonly accepted_prd_digest: string;
   readonly requirement_baseline_digest: string;
   readonly impact_set_digest: string;
   readonly design_set_digest: string;
@@ -350,6 +358,8 @@ export interface TaskTddContract {
 export interface AssertionCluster {
   readonly cluster_id: string;
   readonly logical_cycle_id: string;
+  readonly requirement_ids: readonly string[];
+  readonly acceptance_criterion_ids: readonly string[];
   readonly assertion_ids: readonly string[];
   readonly test_node_ids: readonly string[];
   readonly target_gate_id: string;
@@ -693,7 +703,7 @@ Live 可以显示 dsh 心跳、tokens/steps、phase、stdout tail 和当前 TDD 
 
 ### 15.1 Protocol 1.1 协同交付
 
-Slim Profiles、DesignSet 和 TDD 尚未实施，因此 Profile/Capability records、DesignSet Schema、test_strategy profile、TaskTddContract、typed Evidence、TddCycleRecord 和事件在首次 Protocol 1.1.0 中按依赖一起交付。先建立动态 CapabilityPlan/DAG，再把 TDD 作为 strict_tdd Module 接入，避免先发布固定重流水线再返工。
+managed PRD Capture、Slim Profiles、DesignSet 和 TDD 尚未实施，因此 Capture Session/Proposal/Review、accepted Criterion/Test seeds、Profile/Capability records、DesignSet Schema、test_strategy profile、TaskTddContract、typed Evidence、TddCycleRecord 和事件在首次 Protocol 1.1.0 中按依赖一起交付。先建立受管 Capture 与动态 CapabilityPlan/DAG，再把 Design/TDD Module 接入，避免让低质量 RequirementBaseline 先进入固定重流水线后再返工。
 
 ### 15.2 已完成 Protocol 1.0
 
@@ -773,6 +783,8 @@ Evidence、Cycle、Grant 和审批发生漂移时，只追加 invalidation/super
 ### 17.5 DesignSet/Plan Integration
 
 - DesignSet required strategy → Plan Contract；
+- accepted PRD Criterion/Test seed → DesignSet strategy → Assertion Cluster 唯一覆盖；
+- Design 无法形成有效 Failure Oracle → Finding → Capture new PRD revision；
 - Standard provisional CapabilityPlan + accepted test_strategy → final CapabilityPlan → Plan Contract；
 - Plan 降级/扩大 Oracle/path 被拒绝；
 - DesignSet revision 使 Plan/Context/Grant/Cycle 失效；
@@ -800,9 +812,9 @@ Evidence、Cycle、Grant 和审批发生漂移时，只追加 invalidation/super
 
 实现只有在以下条件全部满足时才完成：
 
-1. Protocol 1.1 同时包含 Slim Profile/Capability、DesignSet 和可证明 TDD 的 Schema、JSON Schema 与兼容读取。
+1. Protocol 1.1 同时包含 Slim Profile/Capability、managed PRD Capture、DesignSet 和可证明 TDD 的 Schema、JSON Schema 与兼容读取。
 2. strict_tdd 激活时，accepted test_strategy 对每个相关 Requirement 给出 required 或受控 not_applicable；未激活时零 TDD 工件。
-3. Plan 对 strict_tdd 激活的 Task 生成不可降级 TaskTddContract，Assertion 覆盖唯一且完整。
+3. Plan 对 strict_tdd 激活的 Task 生成不可降级 TaskTddContract，accepted PRD/Requirement/Criterion/Test/strategy/Assertion 覆盖唯一且完整。
 4. Standard provisional CapabilityPlan 在 accepted DesignSet 后确定性解析为 final revision；deferred 状态不能越过 Plan guard，也不产生重复审批。
 5. strict TDD 使用隔离 workspace 和规范 test patch；Red workspace 可确定性重建。
 6. Red 只有在 Baseline 健康且匹配 Failure Oracle 时 accepted。
@@ -848,14 +860,15 @@ Evidence、Cycle、Grant 和审批发生漂移时，只追加 invalidation/super
 本设计不授权代码实施。获得文档确认后，应修订现有 DesignSet 实施计划，而不是创建独立的事后 TDD 计划。建议依赖顺序：
 
 1. Protocol 1.1 Profile/Capability records、Capability Compiler 与 Operation DAG；
-2. Lite Kernel-only vertical slice 和零 TDD 工件证明；
-3. DesignSet/test_strategy Schema、validator、approval preview 与 design_governance Module；
-4. Plan TaskTddContract、Assertion Cluster 和 coverage validator；
-5. isolated workspace、patch canonicalization 和 Phase Grant；
-6. TddController、checkpoint、resume 和 invalidation；
-7. Gate structured result、Failure Oracle、typed Evidence、TddCycleRecord 与 TaskVerdict；
-8. TestInfrastructureTask、framework proof 和 dsh/test adapters 的分段 Run；
-9. Finding/Profile upgrade 级联与 Protocol 1.0 migration；
-10. Markdown Projection、Dashboard 渐进披露、三档 E2E、真实 Agent dogfood 和验收报告。
+2. managed PRD Capture、test-first Criterion/Test seeds 和原子 RequirementBaseline；
+3. Lite Kernel-only vertical slice 和零 TDD 工件证明；
+4. DesignSet/test_strategy Schema、validator、approval preview 与 design_governance Module；
+5. Plan TaskTddContract、Assertion Cluster 和 coverage validator；
+6. isolated workspace、patch canonicalization 和 Phase Grant；
+7. TddController、checkpoint、resume 和 invalidation；
+8. Gate structured result、Failure Oracle、typed Evidence、TddCycleRecord 与 TaskVerdict；
+9. TestInfrastructureTask、framework proof 和 dsh/test adapters 的分段 Run；
+10. Finding/Profile/Capture upgrade 级联与 Protocol 1.0 migration；
+11. Markdown Projection、Dashboard 渐进披露、三档 E2E、真实 Agent dogfood 和验收报告。
 
 现有 DesignProposalPort、Design Approval、原子提交、Plan/Context/Preflight 强绑定和 Finding 回流仍是前置能力。协同计划必须在这些依赖点直接加入 TDD 工作，避免先完成一套 DesignSet 流程后再返工 Plan、Run、Evidence 和 UI。

@@ -7,6 +7,7 @@
 配套设计：
 
 - [Universal Harness Slim Profiles 与 Capability Kernel 设计](./2026-08-18-harness-slim-profiles-design.md)
+- [Universal Harness Intent → 高质量 PRD Capture 设计](./2026-08-18-intent-to-prd-capture-design.md)
 - [Universal Harness 可证明 TDD 协议设计](./2026-08-18-provable-tdd-protocol-design.md)
 
 ## 1. 摘要
@@ -25,13 +26,13 @@ Standard、Governed，以及 Lite 中由风险、用户或 Policy 激活 `design
 
 启用 design_governance 的 ExecutionPlan 必须同时绑定 RequirementBaseline、ImpactSet、DesignSet、CapabilityPlan 和 Policy 摘要；未启用时绑定 RequirementBaseline、CapabilityPlan、Plan 和 Policy，不伪造 DesignSet。任一实际启用的上游摘要漂移都会使审批或下游执行授权失效。测试、评审、审计或运行时 Finding 继续作为 Change Seed；当 CapabilityPlan 包含 Impact/Design 时，通过图谱传播触发新的 ImpactSet 和 DesignSet revision，再级联重建 Plan、Context 和 Run。
 
-DesignSet 的 `test_strategy` 是可证明 TDD 的唯一设计来源：它按 Requirement 声明 TDD required 或受控 not_applicable，并在 required 时批准 Baseline Guard、target Gate、Failure Oracle、路径策略和测试框架摘要。Standard 在 design 前允许 provisional CapabilityPlan 把 `strict_tdd` 标为 deferred；DesignSet 获批后，Harness 以 canonical test_strategy/digest 确定性生成 final CapabilityPlan，并与 accepted DesignSet 在同一 Ledger transaction 提交，再允许 Plan 编译更窄的 TaskTddContract。Planner 不能降级或扩大。Profile 未启用 strict_tdd 时不生成 Contract/Cycle，并显示 `not_enabled_by_profile`。Slim Profile、DesignSet 和 TDD 一起进入首次 Protocol 1.1.0。
+DesignSet 的 `test_strategy` 是可证明 TDD 的唯一技术设计来源；它必须覆盖上游 accepted PRD 的稳定 Acceptance Criterion/Test seeds，按 Requirement 声明 TDD required 或受控 not_applicable，并在 required 时批准 Baseline Guard、target Gate、Failure Oracle、路径策略和测试框架摘要。DesignSet 可以细化但不能弱化已批准的 observable outcome。Standard 在 design 前允许 provisional CapabilityPlan 把 `strict_tdd` 标为 deferred；DesignSet 获批后，Harness 以 canonical test_strategy/digest 确定性生成 final CapabilityPlan，并与 accepted DesignSet 在同一 Ledger transaction 提交，再允许 Plan 编译更窄的 TaskTddContract。Planner 不能降级或扩大。Profile 未启用 strict_tdd 时不生成 Contract/Cycle，并显示 `not_enabled_by_profile`。Slim Profile、managed PRD Capture、DesignSet 和 TDD 一起进入首次 Protocol 1.1.0。
 
 ## 2. 背景与问题
 
 当前实现已经具备以下基础：
 
-- `capture` 将 Intent、Requirement、Constraint、Test 固化为经批准的 RequirementBaseline；
+- managed `capture` 将 Intent 经多轮澄清、硬门禁、独立 Review 和风险批准后，原子固化为 accepted PRD、RequirementBaseline 及 Requirement/Constraint/Test 图；
 - `impact` 根据 Change Seed 和关系传播规则生成、批准并冻结 ImpactSet；
 - `plan` 从冻结 ImpactSet 编译声明式 Task Specification；
 - 图谱 Schema 已包含 Decision、Component，以及 `ADDRESSES`、`SHAPES`、`REALIZES` 等关系；
@@ -137,6 +138,7 @@ Design 相位拆分为六个职责单一的深模块。
 输入：
 
 - RequirementBaseline digest 和本次 Requirement/Constraint/Test 节点；
+- accepted PRD digest、稳定 Acceptance Criterion ids，以及由 Criterion 物化的 Test seeds；
 - accepted/frozen ImpactSet 及全部解释路径；
 - 受影响 Requirement、Decision、Component、DesignArtifact、CodeArtifact、Test 的受控邻域；
 - accepted Policy、Gate 和项目能力；
@@ -235,6 +237,7 @@ body 是被批准语义的一部分，不能只保存外部 locator。可以同�
 
 `test_strategy` 的 TDD profile 由配套设计定义，至少包含：
 
+- accepted PRD/Requirement/Acceptance Criterion/Test seed bindings；
 - `required` 或受控 `not_applicable`；
 - required 时的 Baseline Guard Gates、target Gate、test selectors 和 Failure Oracle；
 - test/test-config/production/immutable 路径策略；
@@ -408,6 +411,8 @@ export interface RequirementDesignCoverage {
     | { readonly status: "covered" | "reused"; readonly component_ids: readonly string[] }
     | { readonly status: "not_applicable"; readonly reason: string };
   readonly test_strategy_ids: readonly string[];
+  readonly acceptance_criterion_ids: readonly string[];
+  readonly test_node_ids: readonly string[];
   readonly applicability: {
     readonly api: DesignApplicability;
     readonly data: DesignApplicability;
@@ -424,7 +429,7 @@ export type DesignApplicability =
 
 1. 每个 must-change Requirement 至少由一个 accepted/new Decision 通过 ADDRESSES 回应。
 2. 每个 Decision 至少 SHAPES 一个 Component；仅当 `component_scope.status` 为 `not_applicable` 且 reason 非空时，才允许没有 Component。
-3. 每个 must-change Requirement 至少关联一个 test_strategy DesignArtifact；test_strategy 资产本身不允许缺失。其内部 TDD 适用性必须是 required 或配套设计定义的受控 not_applicable。
+3. 每个 must-change Requirement 至少关联一个 test_strategy DesignArtifact；test_strategy 资产本身不允许缺失，并必须唯一覆盖该 Requirement 的全部 accepted Acceptance Criterion/Test seeds。其内部 TDD 适用性必须是 required 或配套设计定义的受控 not_applicable。
 4. API、数据、UI 分别必须是 covered、reused 或带非空理由的 not_applicable。
 5. covered/reused 的 asset id 必须存在于本 DesignSet 的 node changes/reused assets 中，并由合法 SPECIFIES edge 连接到相应 Requirement、Decision、Component 或 Test。
 6. `mode: reuse` 不降低任何覆盖要求，只是禁止无必要的 node revision。
@@ -511,11 +516,12 @@ readonly design_set_digest: string;
 - RequirementBaseline/ImpactSet/Policy digest 与 DesignSet 一致；
 - DesignSet materialized asset bindings 与当前图一致；
 - 所有 must-change Requirement 的设计覆盖 complete；
+- accepted PRD/Acceptance Criterion/Test seed 与 test_strategy 覆盖完整且 observable outcome 未被弱化；
 - Plan 的 Task expected outputs/impact paths 覆盖已批准设计资产。
 
 启用 design_governance 时，`PlanTasksPort` 输入增加 accepted DesignSet 摘要、设计资产引用、覆盖结果和关系路径。默认 Planner 仍可一 Requirement 一 Task，但 Task 必须声明它实施的 Requirement、Decision 和适用 DesignArtifact。未启用时 Planner 不接收伪 DesignSet，只绑定 CapabilityPlan 的 `inactive_by_profile` 事实。
 
-final CapabilityPlan 启用 strict_tdd 时，对于 test_strategy 声明为 required 的 Assertion，Planner 还必须按配套设计编译 `TaskTddContract` 和唯一 `AssertionCluster` 覆盖。Standard 的 provisional CapabilityPlan 不得越过 Plan guard。Planner 可以缩小 selector、路径和预算，但不能降低适用性、扩大 Failure Oracle 或绕过 TestInfrastructureTask 依赖。Plan digest 同时覆盖 final CapabilityPlan 和 TaskTddContract。
+final CapabilityPlan 启用 strict_tdd 时，对于 test_strategy 声明为 required 的 Assertion，Planner 还必须按配套设计编译 `TaskTddContract` 和唯一 `AssertionCluster` 覆盖。Contract 同时绑定 accepted PRD、Requirement、Acceptance Criterion、Test seed 和 test_strategy。Standard 的 provisional CapabilityPlan 不得越过 Plan guard。Planner 可以缩小 selector、路径和预算，但不能降低适用性、改写业务结果、扩大 Failure Oracle 或绕过 TestInfrastructureTask 依赖。Plan digest 同时覆盖 final CapabilityPlan 和 TaskTddContract。
 
 ### 13.2 ContextBundle
 
@@ -548,6 +554,7 @@ Finding
 - 新设计通过 revision 和 SUPERSEDES 形成演化链；
 - design_governance 已启用时，即使 Finding 最终判断“设计无需改变”，也必须产生新的 `mode: reuse` DesignSet，绑定新 ImpactSet 并留下判断依据；
 - Requirement/Constraint 改变时，RequirementBaseline 和其下游摘要全部失效；
+- 如果 Design 无法从 accepted Criterion 形成有效 Failure Oracle，则 Finding 必须回到 managed PRD Capture，生成 superseding PRD/RequirementBaseline，不能由 Design/Planner 私自补写验收标准；
 - Decision/Component/DesignArtifact 改变时，从 impact/design 重新进入；
 - design_governance 已启用时，仅 Task/Code/Test 变化也不能跳过 design，而是使用 change 或 reuse DesignSet 明确设计判断；未启用时 Finding 先触发风险/Profile 重算，再由新 CapabilityPlan 决定是否激活 Design。
 
@@ -661,6 +668,7 @@ Projection 不拥有独立状态。检测漂移后只能从权威图重建，不
 - 幂等 resume 不重复提交节点、边或 ApprovalDecision；
 - finding cascade 不修改历史 accepted digest。
 - test_strategy required 永远不能被 Planner 降级，DesignSet digest 漂移必然使 TaskTddContract 和当前 Cycle 失效。
+- accepted PRD Criterion/Test seed 必须被唯一覆盖，observable outcome 的弱化必然校验失败。
 
 ### 19.3 Integration
 
@@ -672,6 +680,8 @@ Projection 不拥有独立状态。检测漂移后只能从权威图重建，不
 - baseline/policy/impact/reused revision drift → approval invalidation；
 - design_governance 已启用但缺少 DesignSet → plan guard failure；未启用时验证零 Design 工件和 CapabilityPlan binding；
 - CapabilityPlan/DesignSet 的 Plan、Context、Preflight 条件绑定及 TaskTddContract 编译；
+- accepted PRD/Criterion/Test seed → test_strategy → TaskTddContract 的完整追踪；
+- 无有效 Failure Oracle → Finding → Capture new PRD revision；
 - Standard DesignSet accepted → final CapabilityPlan 原子、幂等解析，deferred 不能越过 Plan guard；
 - Finding → new ImpactSet → new DesignSet revision → replanning。
 
@@ -707,13 +717,14 @@ Projection 不拥有独立状态。检测漂移后只能从权威图重建，不
 4. Design Agent 没有项目或 Ledger 写权限。
 5. 所有 proposal 在批准前不进入物化工程图。
 6. DesignSet 原子批准、原子提交、摘要失效和 reject 重提案均有账本证据。
-7. 每个启用 design_governance 的 1.1 Plan 都绑定 accepted DesignSet；缺失或漂移时机械阻止执行。
-8. Standard/Governed 以及临时激活 Design 的迭代均经过 design；未启用的 Lite 迭代显示 not_enabled_by_profile 且零空壳工件。
-9. Finding 能生成新 ImpactSet/DesignSet 并失效下游授权。
-10. 已完成 1.0 历史不改写，开放 operation 按规则迁移。
-11. Dashboard 与 Markdown Projection 完整展示设计资产、覆盖、审批和历史演化。
-12. Unit、Property、Integration、Migration、E2E 和 Dashboard 测试全部通过。
-13. strict_tdd 同时启用时，每个 required Assertion 都有唯一、当前有效的 Baseline/Red/Green 配对证明；受控不适用、Profile 未启用和历史无证明被明确区分。
+7. 每个 test_strategy 唯一覆盖 accepted PRD Criterion/Test seeds，且不能弱化 observable outcome；无法形成 Oracle 时回到 Capture。
+8. 每个启用 design_governance 的 1.1 Plan 都绑定 accepted DesignSet；缺失或漂移时机械阻止执行。
+9. Standard/Governed 以及临时激活 Design 的迭代均经过 design；未启用的 Lite 迭代显示 not_enabled_by_profile 且零空壳工件。
+10. Finding 能生成新 ImpactSet/DesignSet 并失效下游授权。
+11. 已完成 1.0 历史不改写，开放 operation 按规则迁移。
+12. Dashboard 与 Markdown Projection 完整展示设计资产、覆盖、审批和历史演化。
+13. Unit、Property、Integration、Migration、E2E 和 Dashboard 测试全部通过。
+14. strict_tdd 同时启用时，每个 required Assertion 都有唯一、当前有效的 Baseline/Red/Green 配对证明；受控不适用、Profile 未启用和历史无证明被明确区分。
 
 ## 21. 被否决的替代方案
 
@@ -739,11 +750,12 @@ Projection 不拥有独立状态。检测漂移后只能从权威图重建，不
 
 1. Protocol 1.1 Profile/Capability runtime records 与 Capability Compiler；
 2. Workflow Engine/Operation DAG 与固定 phase 解耦；
-3. Lite Kernel-only vertical slice 和零 Design 工件测试；
-4. DesignSet Schema、canonical model、validator、coverage 和 property tests；
-5. DesignInputCompiler、DesignProposalPort、ApprovalCoordinator、DesignCommitter；
-6. design_governance Module、checkpoint、resume 和 migration；
-7. Plan/Context/Preflight 的 CapabilityPlan/DesignSet 条件绑定；
-8. Finding/Profile upgrade cascade 与 Audit 语义；
-9. CLI/config/dsh、Projection、Dashboard 渐进披露；
-10. Standard/Governed/临时激活 Design 的 E2E、dogfood 和验收报告。
+3. managed PRD Capture、accepted Criterion/Test seed 与原子 RequirementBaseline；
+4. Lite Kernel-only vertical slice 和零 Design 工件测试；
+5. DesignSet Schema、canonical model、validator、coverage 和 property tests；
+6. DesignInputCompiler、DesignProposalPort、ApprovalCoordinator、DesignCommitter；
+7. design_governance Module、checkpoint、resume 和 migration；
+8. Plan/Context/Preflight 的 CapabilityPlan/DesignSet 条件绑定；
+9. Finding/Profile upgrade/Capture cascade 与 Audit 语义；
+10. CLI/config/dsh、Projection、Dashboard 渐进披露；
+11. Standard/Governed/临时激活 Design 的 E2E、dogfood 和验收报告。

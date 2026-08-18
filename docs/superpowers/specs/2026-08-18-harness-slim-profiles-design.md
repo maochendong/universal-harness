@@ -5,6 +5,7 @@
 目标版本：Protocol 1.1.0
 关联设计：
 
+- [Universal Harness Intent → 高质量 PRD Capture 设计](./2026-08-18-intent-to-prd-capture-design.md)
 - [Universal Harness DesignSet 生命周期设计](./2026-08-18-designset-lifecycle-design.md)
 - [Universal Harness 可证明 TDD 协议设计](./2026-08-18-provable-tdd-protocol-design.md)
 
@@ -34,7 +35,7 @@ Evidence Kernel
 
 固定 `ORCHESTRATION_PHASES` 不再是协议核心。Capability Compiler 根据 ProjectProfile、Requirement、Risk、Policy、用户决定和 Provider 能力生成确定性的 Operation DAG。未启用的 Module 不运行 Port、不生成空壳 Node/Event/Evidence、不制造批准请求，也不占据 Dashboard 核心导航。
 
-Profile Slim、DesignSet 和可证明 TDD 一起进入首次 Protocol 1.1.0。后两项尚未实施，因此不先发布一个默认重流水线再返工。
+Profile Slim、高质量 PRD Capture、DesignSet 和可证明 TDD 一起进入首次 Protocol 1.1.0。后三项尚未实施，因此不先发布一个低质量 Capture 或默认重流水线再返工。
 
 ## 2. 背景与问题
 
@@ -74,7 +75,7 @@ Profile Slim、DesignSet 和可证明 TDD 一起进入首次 Protocol 1.1.0。�
 | 非交互 | 必须显式 `--profile`；缺失返回 `input_required` |
 | 项目基线 | 保存一个 ProjectProfile；迭代可临时升级 |
 | 项目降级 | 显式批准，只影响未来迭代，不改写历史 |
-| Lite 内核 | Requirement、Plan、Context、Agent Grant、Gate/Evidence、Snapshot/Finding |
+| Lite 内核 | managed PRD Capture、Requirement、Plan、Context、Agent Grant、Gate/Evidence、Snapshot/Finding |
 | Lite 审批 | 保留必要人工审批与 Dashboard 卡片，但不设固定次数 |
 | Standard | 强制 Impact、DesignSet、Independent Evaluation；TDD 由 test_strategy 决定 |
 | Governed | 所有适用代码 Task 强制 Strict TDD，强制完整治理与审计 |
@@ -88,7 +89,7 @@ Profile Slim、DesignSet 和可证明 TDD 一起进入首次 Protocol 1.1.0。�
 | Override 生命周期 | 仅当前迭代和风险对象；摘要漂移即失效 |
 | 旧项目 | 下一次 iterate/resume 前显式选择；不自动映射 |
 | 复杂度预算 | 进入自动验收，但不固定人工批准次数 |
-| Protocol | Slim Profiles、DesignSet、Provable TDD 一起进入 1.1.0 |
+| Protocol | Slim Profiles、managed PRD Capture、DesignSet、Provable TDD 一起进入 1.1.0 |
 
 ## 4. 目标与非目标
 
@@ -119,7 +120,9 @@ Profile Slim、DesignSet 和可证明 TDD 一起进入首次 Protocol 1.1.0。�
 所有 Profile 强制共享以下内核：
 
 ```text
-RequirementBaseline
+Intent
+  → managed PRD Capture
+  → RequirementBaseline
   → ExecutionPlan
   → ContextBundle
   → Agent CapabilityGrant / Run
@@ -130,7 +133,7 @@ RequirementBaseline
 
 ### 5.1 RequirementBaseline
 
-用户确认需求边界、验收标准和基础风险输入。Profile 不允许跳过需求基线或让 Agent 自行定义完成条件。
+用户通过受管 Capture Session 把 Intent 澄清为 structured PrdProposal。所有 Profile 都必须经过确定性 PRD 硬门禁、独立 PrdReview 和 Profile/风险批准策略；accepted PRD、RequirementBaseline 与业务图原子提交。Profile 不允许跳过需求基线、让 Agent 自行定义完成条件，或把 `createGenericInterpreter()` 生成的单条泛化需求作为默认生产路径。详细契约见 Intent → 高质量 PRD Capture 设计。
 
 ### 5.2 ExecutionPlan
 
@@ -413,6 +416,8 @@ capture
 
 方括号表示只有 CapabilityPlan 启用才存在。`strict_tdd` 仍是 Task execute 内部 subgraph，不变成全局 phase。
 
+new/adopt 的 ProjectProfile 在进入 managed Capture 前由用户选择；iterate 使用当前项目 Profile revision。图中的 `capability_decision` 不是初始档位选择，而是 accepted PRD 提供完整风险输入后编译的 final CapabilityPlan，因此不会形成 Profile/Capture 循环。
+
 ### 9.5 Engine 边界
 
 Workflow Engine 只理解 DAG node contract、checkpoint、typed result 和 invalidation；不直接判断 Profile 名称。禁止在 Engine 中复制 Lite/Standard/Governed 三条大分支。Profile 差异只存在于 registry、Capability Compiler 和 Module contributor。
@@ -573,7 +578,7 @@ resume 复验 ProjectProfile/Decision/CapabilityPlan/Requirement/Policy/Risk/rep
 所有档位：
 
 - ProjectProfile new/adopt/change；
-- RequirementBaseline；
+- PRD/RequirementBaseline 按 CapturePolicy 形成 PolicyDecision 或人工 ApprovalDecision；Governed 始终人工，Lite/Standard 仅可在低风险且硬门禁/独立 Review 全通过时自动决定；
 - Profile Override；
 - Policy 要求的 Agent 写入或外部副作用授权。
 
@@ -716,12 +721,13 @@ Lite 默认五个核心视图。高级能力可发现、可解释如何启用，
 
 ### 17.1 Protocol 1.1 协同交付
 
-Slim Profile、DesignSet 和 Provable TDD 均尚未实施，因此共同进入首次 1.1.0：
+Slim Profile、managed PRD Capture、DesignSet 和 Provable TDD 均尚未实施，因此共同进入首次 1.1.0：
 
 1. 先建立 Profile/Capability Kernel 和动态 DAG；
-2. 再把 DesignSet 作为 `design_governance` Module；
-3. 再把严格 TDD 作为 `strict_tdd` Module；
-4. 最后扩展 Projection/Dashboard/E2E。
+2. 升级 Evidence Kernel Capture：受管 PRD Session、Context、Proposal、Review、风险批准和 Criterion/Test seed；
+3. 再把 DesignSet 作为 `design_governance` Module；
+4. 再把严格 TDD 作为 `strict_tdd` Module；
+5. 最后扩展 Projection/Dashboard/E2E。
 
 禁止先实现固定 `capture → impact → design → ...` 全量流水线，再用 UI 隐藏。
 
@@ -793,6 +799,9 @@ Slim Profile、DesignSet 和 Provable TDD 均尚未实施，因此共同进入�
 
 ### 20.3 Profile Matrix
 
+- 三档均运行 managed PRD Capture、硬门禁和独立 Review；
+- Lite/Standard 低风险 PolicyDecision 与 Governed mandatory human approval；
+- Capture 内风险升级扩充 Context 并失效旧 Review/Approval；
 - Lite Kernel-only golden；
 - Lite 风险触发单个/多个 Module；
 - Standard mandatory Impact/Design/Evaluation；
@@ -848,23 +857,24 @@ Slim Profile、DesignSet 和 Provable TDD 均尚未实施，因此共同进入�
 
 1. `new/adopt` 交互选择并确认三档；非交互缺少 `--profile` 返回 input_required。
 2. ProjectProfile、Recommendation、Decision 和 CapabilityPlan 是 canonical、append-only runtime records。
-3. Capability Compiler 生成确定性依赖闭包、DAG 和 invalidation graph。
-4. Standard strict_tdd 通过 provisional → final CapabilityPlan 解析 test_strategy，不形成循环依赖、重复审批或 provisional 执行授权。
-5. Workflow Engine 不直接包含三套 Profile 大分支。
-6. Lite 只运行 Evidence Kernel；未启用 Module 零 Port 调用、零工件、零批准、零 Run。
-7. Standard 强制 Impact/Design/Evaluation，TDD 由 approved test_strategy 决定。
-8. Governed 对所有适用代码 Task 强制 strict TDD 和完整审计。
-9. Profile Recommendation 可人工 Override，但 Policy deny 永远不可覆盖。
-10. Override 绑定当前 iteration/risk/digest，漂移即失效。
-11. 中途升级原子提交新 CapabilityPlan，失效下游并确定性恢复。
-12. 项目降级只影响未来 Operation，不改写历史。
-13. 已有项目下一次运行前显式选择，不静默映射。
-14. CLI 默认只有六个主入口，旧高级命令兼容一个 major。
-15. Dashboard 一套实现渐进披露，稳定 URL/API，正确区分五类状态。
-16. Lite 硬复杂度预算全部进入自动验收。
-17. Slim/DesignSet/TDD 作为同一 Protocol 1.1 依赖序列交付。
-18. Unit、Property、Integration、Fault、Migration、CLI、Dashboard、E2E 全部通过。
-19. 至少一个真实项目分别完成 Lite、Standard 和 Governed dogfood，并比较工件数、批准原因和运行成本。
+3. Evidence Kernel Capture 从 Intent 生成经过硬门禁、独立 Review、风险批准的 immutable accepted PRD；三档共享状态机且按 Profile 调整上下文、预算和人工批准。
+4. Capability Compiler 生成确定性依赖闭包、DAG 和 invalidation graph。
+5. Standard strict_tdd 通过 provisional → final CapabilityPlan 解析 test_strategy，不形成循环依赖、重复审批或 provisional 执行授权。
+6. Workflow Engine 不直接包含三套 Profile 大分支。
+7. Lite 只运行 Evidence Kernel；未启用 Module 零 Port 调用、零工件、零批准、零 Run。
+8. Standard 强制 Impact/Design/Evaluation，TDD 由 approved test_strategy 决定。
+9. Governed 对所有适用代码 Task 强制 strict TDD 和完整审计。
+10. Profile Recommendation 可人工 Override，但 Policy deny 永远不可覆盖。
+11. Override 绑定当前 iteration/risk/digest，漂移即失效。
+12. 中途升级原子提交新 CapabilityPlan，失效下游并确定性恢复。
+13. 项目降级只影响未来 Operation，不改写历史。
+14. 已有项目下一次运行前显式选择，不静默映射。
+15. CLI 默认只有六个主入口，旧高级命令兼容一个 major。
+16. Dashboard 一套实现渐进披露，稳定 URL/API，正确区分五类状态。
+17. Lite 硬复杂度预算全部进入自动验收。
+18. Slim/PRD Capture/DesignSet/TDD 作为同一 Protocol 1.1 依赖序列交付。
+19. Unit、Property、Integration、Fault、Migration、CLI、Dashboard、E2E 全部通过。
+20. 至少一个真实项目分别完成 Lite、Standard 和 Governed dogfood，并比较工件数、批准原因和运行成本。
 
 ## 22. 被否决的替代方案
 
@@ -894,7 +904,11 @@ Slim Profile、DesignSet 和 Provable TDD 均尚未实施，因此共同进入�
 
 ## 23. 与 DesignSet/TDD 的协同边界
 
-本 Spec 的 Profile/Capability 决策优先于两份配套 Spec 的“是否启用”问题：
+本 Spec 的 Profile/Capability 决策同时约束 Capture 与两份下游 Spec：
+
+- managed PRD Capture、硬门禁与 independent Review 属于所有 Profile 的 Evidence Kernel；
+- Profile 只改变 Context、Adapter/rubric budget、风险阈值和人工批准，不关闭 PRD 质量链；
+- accepted PRD/RequirementBaseline 的 Criterion/Test seeds 是 DesignSet/TDD 的上游权威输入；
 
 - `design_governance` 未启用时，不运行 design、不生成 DesignSet；
 - 一旦启用，DesignSet Spec 的原子提案、批准、提交、覆盖和 Finding 规则全部强制；
@@ -910,13 +924,14 @@ Slim Profile、DesignSet 和 Provable TDD 均尚未实施，因此共同进入�
 
 1. Protocol 1.1 Profile/Capability records；
 2. Capability registry/compiler/DAG；
-3. Workflow Engine 与固定 phase 解耦、orchestrator 拆分；
-4. Lite Kernel-only vertical slice 与复杂度验收；
-5. Standard 的 Impact/Design/Evaluation Modules；
-6. Governed/conditional Strict TDD Module；
-7. Profile selection/approval/override/migration；
-8. CLI 信息架构和 compatibility aliases；
-9. Dashboard progressive disclosure；
-10. 三档 E2E、fault、dogfood 与成本对比报告。
+3. managed PRD Capture/Context/Proposal/Review/Criterion-Test seed；
+4. Workflow Engine 与固定 phase 解耦、orchestrator 拆分；
+5. Lite Kernel-only vertical slice 与复杂度验收；
+6. Standard 的 Impact/Design/Evaluation Modules；
+7. Governed/conditional Strict TDD Module；
+8. Profile selection/approval/override/migration；
+9. CLI 信息架构、Capture Session 与 compatibility aliases；
+10. Dashboard progressive disclosure；
+11. 三档 E2E、fault、dogfood 与成本对比报告。
 
 DesignSet/TDD 的原 19 个任务必须按上述依赖重新编排和裁剪；禁止在固定重流水线基础上先完成全部能力再补 Profile。
