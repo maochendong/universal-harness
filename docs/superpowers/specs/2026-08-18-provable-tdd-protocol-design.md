@@ -3,13 +3,16 @@
 日期：2026-08-18
 状态：已确认，待协同实施计划修订
 目标版本：Protocol 1.1.0
-前置设计：[Universal Harness DesignSet 生命周期设计](./2026-08-18-designset-lifecycle-design.md)
+前置设计：
+
+- [Universal Harness Slim Profiles 与 Capability Kernel 设计](./2026-08-18-harness-slim-profiles-design.md)
+- [Universal Harness DesignSet 生命周期设计](./2026-08-18-designset-lifecycle-design.md)
 
 ## 1. 摘要
 
 Universal Harness 当前能够证明“任务最终通过了 Gate、Evaluation 和 Evidence 验收”，但不能证明任务遵守了测试驱动开发中的“先红、再绿”。Agent 可以先完成实现，再补测试；也可能把编译错误、依赖缺失或任意非零退出码描述为 Red。最终测试通过不能反向证明生产代码是在有效失败测试之后才被允许修改。
 
-本设计把 TDD 从提示词中的开发建议提升为 `execute` 内部的受管协议：
+当 CapabilityPlan 启用 `strict_tdd` 时，本设计把 TDD 从提示词中的开发建议提升为 `execute` 内部的受管协议：
 
 ```text
 approved DesignSet.test_strategy
@@ -23,15 +26,15 @@ approved DesignSet.test_strategy
   → Verify → Evaluate → TaskVerdict → Snapshot
 ```
 
-公开生命周期保持不变：
+TDD 仍是 execute 内部 subgraph，不新增全局 phase。外部 Operation DAG 由 Slim CapabilityPlan 决定，例如 Standard/Governed 的完整路径可以是：
 
 ```text
 capture → impact → design → plan → context → execute → verify → evaluate → snapshot
 ```
 
-TDD 是每个 Task、每个 Assertion Cluster 在 `execute` 内部运行的状态机，因此可以服从 Task DAG 并行执行，不把整个迭代强制串行化。
+Lite 未启用 Impact/Design/Evaluation 时外部 DAG 可以更短；一旦 strict_tdd 激活，它依赖 design_governance、structured Gate 和 isolated workspace，并在每个相关 Task、每个 required Assertion Cluster 的 `execute` 内运行，因此可以服从 Task DAG 并行执行，不把整个迭代强制串行化。
 
-DesignSet 与本协议共同进入首次 Protocol 1.1.0。DesignSet 负责批准 TDD 适用性、失败 Oracle、目标 Gate 和路径策略；Plan 负责把它编译为不可降级的执行 Contract；TddController、CapabilityGrant、Gate、Evidence 和 Ledger 负责机械证明执行顺序。Agent 自述、transcript、文件时间戳和模糊退出码都不是 TDD 证明。
+Slim Profiles、DesignSet 与本协议共同进入首次 Protocol 1.1.0。strict_tdd 激活时，DesignSet 负责批准 TDD 适用性、失败 Oracle、目标 Gate 和路径策略；Plan 负责把它编译为不可降级的执行 Contract；TddController、CapabilityGrant、Gate、Evidence 和 Ledger 负责机械证明执行顺序。未激活时零 TDD Contract/Cycle/Run，并显示 `not_enabled_by_profile`。Agent 自述、transcript、文件时间戳和模糊退出码都不是 TDD 证明。
 
 ## 2. 背景与问题
 
@@ -78,17 +81,19 @@ Agent 先实现 → verify 失败 → 修复 → verify 通过
 | 测试冻结 | Red accepted 后冻结规范化 test patch；后续修改使本轮证据失效 |
 | Green 定义 | 同一 test patch、target Gate、framework profile 和执行环境在实现 revision 上通过 |
 | Refactor | 显式但可选的第三个受管 Run；测试路径继续只读 |
-| 生命周期位置 | 作为每个 Task 的 `execute` 内部状态机，不新增公共 red/green phase |
+| 生命周期位置 | 作为每个启用 strict_tdd Task 的 `execute` 内部状态机，不新增公共 red/green phase |
 | 证据模型 | 复用统一 Evidence 节点，通过 `evidence_type` 区分；另有不可变 `TddCycleRecord` 配对 |
 | 覆盖粒度 | Planner 定义 Assertion Cluster；每个 required Assertion 恰好属于一个当前有效 Cycle |
 | 无测试框架 | 先执行受治理的 `TestInfrastructureTask`，生产 Task 在 FrameworkEvidence accepted 前阻塞 |
 | Protocol 版本 | 与 DesignSet 一起进入首次 1.1.0，不另建 1.2 过渡版本 |
+| Profile 激活 | Governed 对适用代码 Task 强制；Standard 由 test_strategy 决定；Lite 由风险/用户/Policy 激活 |
+| 未启用语义 | 零 TDD 工件，状态为 `not_enabled_by_profile`，不伪装 not_applicable/proven |
 
 ## 4. 目标与非目标
 
 ### 4.1 目标
 
-1. 对所有 `tdd: required` Assertion，Ledger 能重放并证明 Baseline、Red、Green 的顺序和绑定。
+1. 对所有已激活 strict_tdd 且 `tdd: required` 的 Assertion，Ledger 能重放并证明 Baseline、Red、Green 的顺序和绑定。
 2. Red accepted 前没有任何生产实现参与被验证的 Red 工作树。
 3. Red 只能由预声明的行为失败产生，不能由任意非零退出码伪造。
 4. Red 和 Green 使用同一个规范化测试补丁、目标 Gate、测试框架和执行环境。
@@ -99,12 +104,13 @@ Agent 先实现 → verify 失败 → 修复 → verify 通过
 ### 4.2 非目标
 
 - 不声称状态机可以独立证明实现代码是理论上的“最小实现”。
-- 不用 TDD 证据替代完整项目 Gate、独立 Evaluation、代码评审或安全评估。
+- 不用 TDD 证据替代完整项目 Gate、CapabilityPlan 启用的独立 Evaluation、代码评审或安全评估。
 - 不允许 Agent、模型或 transcript 自己签发 RedEvidence、GreenEvidence 或生产写权限。
 - 不用 Git 文件时间戳、提交顺序或自然语言日志推断 TDD 顺序。
 - 不要求文档、研究和纯投影任务伪造不可执行测试。
 - 不追溯生成 Protocol 1.0 历史迭代当时不存在的 Red/Green 证据。
 - 不在本设计中引入新的公共生命周期 phase。
+- 不要求 strict_tdd 未启用的 Lite Task 生成 no-op Contract、Cycle 或 Evidence。
 
 ## 5. 总体架构
 
@@ -134,6 +140,7 @@ Verify / Evaluate / Snapshot
 
 权威所有权不可互换：
 
+- CapabilityPlan 决定本迭代/Task 是否启用 strict_tdd；未启用时不得进入本权威链。
 - DesignSet 决定为什么需要 TDD、预期什么失败、允许测试和实现触及哪些范围。
 - Planner 只负责拆分 Assertion Cluster、选择更窄 selector/path/budget 并形成执行 Contract。
 - TddController 只执行已批准策略，不能修改 Oracle 或自行声明不适用。
@@ -160,17 +167,25 @@ Task 内的 Green 只证明指定行为由红转绿。它不等于项目级完�
 TddCycle completed
   → execute 完成
   → verify 运行完整 build/test/regression/security Gates
-  → evaluate 独立检查 Assertion 与 Evidence
+  → [evaluate] 独立检查 Assertion 与 Evidence
   → TaskVerdict 联合裁决
 ```
 
-即使全部 TDD Cycle completed，只要完整 Gate 或 Evaluation 失败，TaskVerdict 仍失败并进入统一 Finding 反馈闭环。
+方括号表示 `independent_evaluation` 启用时存在。即使全部 TDD Cycle completed，只要完整 Gate 或已启用的 Evaluation 失败，TaskVerdict 仍失败并进入统一 Finding 反馈闭环。
+
+### 5.4 Capability 激活边界
+
+- Governed：所有适用代码、配置、Schema、迁移、安全和缺陷修复 Task 激活 strict_tdd；
+- Standard：DesignSet.test_strategy 对 Task 声明 required 时激活；
+- Lite：风险推荐、用户选择或 Project Policy 激活后，Capability Compiler 先补齐 design_governance、structured Gate 和 isolated workspace 依赖；
+- 未激活：不调用 TddController，不创建 TaskTddContract、TDD Run/Event/Evidence/TddCycleRecord，也不创建空壳批准；
+- 激活决定和 CapabilityPlan digest 必须进入 Plan/TaskVerdict，使“未启用”与“遗漏证据”可机械区分。
 
 ## 6. DesignSet.test_strategy 契约
 
 ### 6.1 每个 Requirement 的策略
 
-每个 `must-change` Requirement 仍必须关联至少一个 accepted `test_strategy` DesignArtifact。test_strategy 资产本身不可缺失；其内部可以对“严格 TDD 执行是否适用”做受控判断：
+当 CapabilityPlan 激活 design_governance/strict_tdd 时，每个相关 `must-change` Requirement 必须关联至少一个 accepted `test_strategy` DesignArtifact。test_strategy 资产本身不可缺失；其内部可以对“严格 TDD 执行是否适用”做受控判断：
 
 ```ts
 export type TddApplicability =
@@ -263,7 +278,7 @@ export type TddFailureKind =
 
 ### 7.1 编译规则
 
-Planner 从 accepted DesignSet 的 test_strategy 编译每个 Task 的 `TaskTddContract`。Plan 必须绑定 RequirementBaseline、ImpactSet、DesignSet、Policy 和 Contract digest。
+strict_tdd 激活后，Planner 从 accepted DesignSet 的 test_strategy 编译每个相关 Task 的 `TaskTddContract`。Plan 必须绑定 RequirementBaseline、ImpactSet、DesignSet、CapabilityPlan、Policy 和 Contract digest。未激活的 Task 不生成 Contract，并在 Plan/Verdict 中绑定 `not_enabled_by_profile`。
 
 Planner 允许：
 
@@ -318,6 +333,7 @@ export interface TaskTddContract {
   readonly requirement_baseline_digest: string;
   readonly impact_set_digest: string;
   readonly design_set_digest: string;
+  readonly capability_plan_digest: string;
   readonly test_strategy_asset_id: string;
   readonly test_strategy_digest: string;
   readonly plan_digest: string;
@@ -586,7 +602,7 @@ Bootstrap Task：
 
 ## 13. TaskVerdict
 
-TaskVerdict 在现有 Assertion/Gate/Evaluation/Evidence 条件上增加 TDD 条件：
+strict_tdd 激活时，TaskVerdict 在现有 Assertion/Gate/Evaluation/Evidence 条件上增加 TDD 条件：
 
 ### 13.1 required
 
@@ -597,7 +613,7 @@ TaskVerdict 在现有 Assertion/Gate/Evaluation/Evidence 条件上增加 TDD 条
 3. Record 的 Contract/DesignSet/Plan/Assertion binding 未漂移；
 4. Baseline、Red、Green Evidence 均 accepted 且绑定一致；
 5. refactor_policy 为 planned 时存在 accepted RefactorEvidence；
-6. 完整 required Gates 和独立 Evaluation 通过。
+6. 完整 required Gates 通过；CapabilityPlan 启用 `independent_evaluation` 时，对应 Evaluation 也必须通过。
 
 ### 13.2 not_applicable
 
@@ -607,7 +623,11 @@ TaskVerdict 在现有 Assertion/Gate/Evaluation/Evidence 条件上增加 TDD 条
 
 必须存在 accepted FrameworkEvidence，且所有 discovery/pass/fail assertions 通过。Verdict 显示“测试基础设施证明”。
 
-### 13.4 历史记录
+### 13.4 Profile 未启用
+
+CapabilityPlan 未启用 strict_tdd 时，不要求 TddCycleRecord，但必须存在 accepted CapabilityPlan binding。Verdict 显示 `not_enabled_by_profile`，不能显示“受控不适用”“具备 TDD 证明”或“缺失证据”。
+
+### 13.5 历史记录
 
 Protocol 1.0 completed Task 保持原 Verdict，不补造 TDD 条件。Dashboard/Projection 显示“历史记录，无 TDD 证明”。
 
@@ -615,7 +635,7 @@ Protocol 1.0 completed Task 保持原 Verdict，不补造 TDD 条件。Dashboard
 
 ### 14.1 Design 与 Approval
 
-DesignSet Preview 增加每个 Requirement 的：
+strict_tdd Capability 激活时，DesignSet Preview 增加每个 Requirement 的：
 
 - TDD required/not_applicable；
 - 中文业务理由；
@@ -628,13 +648,15 @@ DesignSet Preview 增加每个 Requirement 的：
 
 ### 14.2 Iterations 与 Task
 
-Task 详情使用时间线展示：
+strict_tdd 激活时，Task 详情使用时间线展示：
 
 ```text
 Baseline → Test Authoring → Red → Implementation → Green → Refactor → Complete
 ```
 
 每一段显示当前/完成/失效/阻塞状态、Run、Grant 范围、预算、Gate、中文原因、恢复入口和关联 Finding。digest 作为可展开审计字段，不作为主要业务标签。
+
+未激活时 Dashboard TDD 稳定 URL/Read API 返回 `inactive_by_profile` 和激活选项，不渲染空时间线。
 
 ### 14.3 Evidence 与 Verdict
 
@@ -652,6 +674,7 @@ Verdict 明确区分：
 - `tdd_proven`
 - `controlled_not_applicable`
 - `framework_proven`
+- `not_enabled_by_profile`
 - `historical_without_tdd_proof`
 - `tdd_incomplete_or_invalid`
 
@@ -670,7 +693,7 @@ Live 可以显示 dsh 心跳、tokens/steps、phase、stdout tail 和当前 TDD 
 
 ### 15.1 Protocol 1.1 协同交付
 
-DesignSet 尚未实施，因此 DesignSet Schema、test_strategy profile、TaskTddContract、typed Evidence、TddCycleRecord 和事件在首次 Protocol 1.1.0 中一起交付。避免先发布无法证明 TDD 的 1.1，再对 Plan、Run、Evidence 和 Dashboard 做 1.2 返工。
+Slim Profiles、DesignSet 和 TDD 尚未实施，因此 Profile/Capability records、DesignSet Schema、test_strategy profile、TaskTddContract、typed Evidence、TddCycleRecord 和事件在首次 Protocol 1.1.0 中按依赖一起交付。先建立动态 CapabilityPlan/DAG，再把 TDD 作为 strict_tdd Module 接入，避免先发布固定重流水线再返工。
 
 ### 15.2 已完成 Protocol 1.0
 
@@ -681,11 +704,12 @@ DesignSet 尚未实施，因此 DesignSet Schema、test_strategy profile、TaskT
 
 ### 15.3 开放 Protocol 1.0
 
-沿用 DesignSet 迁移规则回到最早安全 phase：
+先沿用 Slim Profile 迁移规则要求显式 ProjectProfile，再根据新 CapabilityPlan 回到最早安全 DAG node：
 
-- 尚未 Plan 且 ImpactSet 有效：进入 design；
-- 已有 Plan/Context/Run：旧授权失效，回到 `impact → design → plan`；
-- 新 Plan 中 required Task 必须编译 TaskTddContract；
+- strict_tdd 未激活：不补造 TDD Contract/Cycle，显示 not_enabled_by_profile；
+- strict_tdd 激活且尚未 Plan：补齐 Impact/Design 后编译 Contract；
+- 已有 Plan/Context/Run：旧授权失效，按 CapabilityPlan 回到最早依赖节点；
+- 新 Plan 中 TDD required Task 必须编译 TaskTddContract；
 - 无法判断 baseline 或 checkpoint 时阻塞并给出明确恢复命令，不猜测 Red/Green 状态。
 
 ### 15.4 追加而非改写
@@ -709,7 +733,7 @@ Evidence、Cycle、Grant 和审批发生漂移时，只追加 invalidation/super
 ### 17.1 Unit
 
 - test_strategy TDD profile 的有效/无效 Schema；
-- required/not_applicable/framework_bootstrap 分类；
+- required/not_applicable/framework_bootstrap/not_enabled_by_profile 分类；
 - Failure Oracle 分类和受限 pattern；
 - Assertion Cluster 覆盖与唯一性；
 - TaskTddContract canonical digest；
@@ -753,6 +777,7 @@ Evidence、Cycle、Grant 和审批发生漂移时，只追加 invalidation/super
 - DesignSet revision 使 Plan/Context/Grant/Cycle 失效；
 - TestInfrastructureTask DAG 依赖；
 - Finding → ImpactSet → DesignSet revision → new Contract。
+- Lite 未激活 strict_tdd → zero Contract/Run/Event/Evidence/Cycle。
 
 ### 17.6 Adapter 与 E2E
 
@@ -762,32 +787,33 @@ Evidence、Cycle、Grant 和审批发生漂移时，只追加 invalidation/super
 2. dsh 的两个受管 Run（test-authoring、implementation）和可选 refactor Run；
 3. framework bootstrap 后生产 Task 解锁；
 4. controlled not_applicable Task；
-5. 越权路径、错误 Oracle、环境漂移和预算耗尽；
-6. 完整 Gate/Evaluation 失败后的反馈级联；
-7. Dashboard 刷新后从 Ledger 重建时间线；
-8. Markdown Plan/Snapshot 与权威 Contract/Evidence 无漂移；
-9. Protocol 1.0 历史兼容和开放迭代迁移；
-10. `harness new`、`adopt`、`iterate` 各至少一个纵向场景。
+5. Lite not_enabled_by_profile Task 且零 TDD 工件；
+6. 越权路径、错误 Oracle、环境漂移和预算耗尽；
+7. 完整 Gate 或已启用 Evaluation 失败后的反馈级联；
+8. Dashboard 刷新后从 Ledger 重建时间线；
+9. Markdown Plan/Snapshot 与权威 Contract/Evidence 无漂移；
+10. Protocol 1.0 历史兼容和开放迭代迁移；
+11. `harness new`、`adopt`、`iterate` 各至少一个纵向场景。
 
 ## 18. 完成定义
 
 实现只有在以下条件全部满足时才完成：
 
-1. Protocol 1.1 同时包含 DesignSet 和可证明 TDD 的 Schema、JSON Schema 与兼容读取。
-2. accepted test_strategy 对每个 Requirement 给出 required 或受控 not_applicable。
-3. Plan 能生成不可降级 TaskTddContract，Assertion 覆盖唯一且完整。
+1. Protocol 1.1 同时包含 Slim Profile/Capability、DesignSet 和可证明 TDD 的 Schema、JSON Schema 与兼容读取。
+2. strict_tdd 激活时，accepted test_strategy 对每个相关 Requirement 给出 required 或受控 not_applicable；未激活时零 TDD 工件。
+3. Plan 对 strict_tdd 激活的 Task 生成不可降级 TaskTddContract，Assertion 覆盖唯一且完整。
 4. strict TDD 使用隔离 workspace 和规范 test patch；Red workspace 可确定性重建。
 5. Red 只有在 Baseline 健康且匹配 Failure Oracle 时 accepted。
 6. Red accepted 前不能签发 Implementation Grant。
 7. Red/Green 使用相同 test patch、Gate、framework profile 和 executor environment。
 8. Red 后测试变化、环境漂移和越权写入会机械失效或阻塞。
 9. TestInfrastructureTask 能生成 FrameworkEvidence 并正确阻塞/解锁依赖 Task。
-10. TaskVerdict 区分 tdd_proven、受控不适用、framework proof 和历史无证明。
-11. Verify/Evaluate 继续独立于 TDD Cycle 并能否决最终完成。
+10. TaskVerdict 区分 tdd_proven、受控不适用、framework proof、not_enabled_by_profile、历史无证明和无效/不完整。
+11. Verify 以及 CapabilityPlan 启用的 Evaluation 继续独立于 TDD Cycle，并能否决最终完成。
 12. Ledger 可重放所有 TDD state、Grant、Evidence、Record 和 invalidation。
 13. Dashboard/Projection 提供中文业务语义和可展开 digest 审计。
 14. Unit、Property、Policy、Integration、Migration、Adapter、Dashboard 和 E2E 测试全部通过。
-15. 一个真实项目通过真实 Agent 完成 DesignSet → Red → Green → Gate → Evaluation → Snapshot 纵向闭环，并在账本中可验证。
+15. 至少一个真实 Standard/Governed 项目通过真实 Agent 完成 DesignSet → Red → Green → Gate → Evaluation → Snapshot 纵向闭环；同时一个 Lite Kernel-only 项目证明零 TDD Contract/Run/Event/Evidence/Cycle，二者均可从账本复验。
 
 ## 19. 被否决的替代方案
 
@@ -819,17 +845,15 @@ Evidence、Cycle、Grant 和审批发生漂移时，只追加 invalidation/super
 
 本设计不授权代码实施。获得文档确认后，应修订现有 DesignSet 实施计划，而不是创建独立的事后 TDD 计划。建议依赖顺序：
 
-1. Protocol 1.1 DesignSet + TDD Schema、Evidence/Event registry；
-2. test_strategy profile、DesignSet validator 和 approval preview；
-3. Plan TaskTddContract、Assertion Cluster 和 coverage validator；
-4. isolated workspace、patch canonicalization 和 Phase Grant；
-5. TddController、checkpoint、resume 和 invalidation；
-6. Gate structured result、Failure Oracle 和 typed Evidence；
-7. TddCycleRecord 与 TaskVerdict；
-8. TestInfrastructureTask 和 framework proof；
-9. dsh/test adapters 的分段 Run；
-10. Finding 级联、Protocol 1.0 migration；
-11. Markdown Projection 与 Dashboard；
-12. 纵向 E2E、真实 Agent dogfood 和验收报告。
+1. Protocol 1.1 Profile/Capability records、Capability Compiler 与 Operation DAG；
+2. Lite Kernel-only vertical slice 和零 TDD 工件证明；
+3. DesignSet/test_strategy Schema、validator、approval preview 与 design_governance Module；
+4. Plan TaskTddContract、Assertion Cluster 和 coverage validator；
+5. isolated workspace、patch canonicalization 和 Phase Grant；
+6. TddController、checkpoint、resume 和 invalidation；
+7. Gate structured result、Failure Oracle、typed Evidence、TddCycleRecord 与 TaskVerdict；
+8. TestInfrastructureTask、framework proof 和 dsh/test adapters 的分段 Run；
+9. Finding/Profile upgrade 级联与 Protocol 1.0 migration；
+10. Markdown Projection、Dashboard 渐进披露、三档 E2E、真实 Agent dogfood 和验收报告。
 
 现有 DesignProposalPort、Design Approval、原子提交、Plan/Context/Preflight 强绑定和 Finding 回流仍是前置能力。协同计划必须在这些依赖点直接加入 TDD 工作，避免先完成一套 DesignSet 流程后再返工 Plan、Run、Evidence 和 UI。
