@@ -1,7 +1,7 @@
 # Universal Harness Intent → 高质量 PRD Capture 设计
 
 日期：2026-08-18
-状态：评审问题已修订，待最终确认与实施授权
+状态：已批准实施
 目标版本：Protocol 1.1.0
 关联设计：
 
@@ -1386,7 +1386,7 @@ Proposal/Review Adapter 统一验证：
 
 ## 23. 实施边界建议
 
-统一实施计划已重编为 [Universal Harness Protocol 1.1 统一实施计划](../plans/2026-08-18-protocol-1.1-unified-implementation-plan.md)。本设计不授权代码实施；以下序列仅保留为 Capture 子模块的局部依赖说明：
+统一实施计划已重编为 [Universal Harness Protocol 1.1 统一实施计划](../plans/2026-08-18-protocol-1.1-unified-implementation-plan.md)。本设计已由该统一计划授权实施；以下序列仅保留为 Capture 子模块的局部依赖说明：
 
 1. Capture runtime records、完整 PrdProposal/Draft JSON Schema 和 canonical digest；
 2. PrdCaptureCoordinator/state/checkpoint/ApprovalDecision consumption；

@@ -1,7 +1,7 @@
 # Universal Harness DesignSet 生命周期设计
 
 日期：2026-08-18
-状态：评审问题已修订，待最终确认与实施授权
+状态：已批准实施
 目标版本：Protocol 1.1.0
 
 配套设计：
@@ -764,7 +764,7 @@ Projection 不拥有独立状态。检测漂移后只能从权威图重建，不
 
 ## 22. 实施边界建议
 
-统一实施计划已重编为 [Universal Harness Protocol 1.1 统一实施计划](../plans/2026-08-18-protocol-1.1-unified-implementation-plan.md)。以下序列仅保留为 DesignSet 子模块的局部依赖说明，不再作为独立实施顺序，也不直接授权代码修改：
+统一实施计划已重编为 [Universal Harness Protocol 1.1 统一实施计划](../plans/2026-08-18-protocol-1.1-unified-implementation-plan.md)。本设计已由该统一计划授权实施；以下序列仅保留为 DesignSet 子模块的局部依赖说明，不再作为独立实施顺序：
 
 1. Protocol 1.1 Profile/Capability runtime records 与 Capability Compiler；
 2. Workflow Engine/Operation DAG 与固定 phase 解耦；
