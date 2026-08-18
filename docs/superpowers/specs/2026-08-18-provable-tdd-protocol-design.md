@@ -1,7 +1,7 @@
 # Universal Harness 可证明 TDD 协议设计
 
 日期：2026-08-18
-状态：评审问题已修订，统一实施计划已重编，待实施授权
+状态：评审问题已修订，待最终确认与实施授权
 目标版本：Protocol 1.1.0
 前置设计：
 
@@ -290,7 +290,7 @@ Canonical Criterion Assertion 的编译是所有 Protocol 1.1 Plan 的 Kernel �
 Criterion → Assertion 的编译基数与身份是 Protocol 规则，不由 Planner Adapter 自由决定：
 
 1. 每个 accepted 原子 Criterion 恰好编译为一个 `criterion_assertion`，并绑定唯一 Criterion 与对应 Test seed；映射为 1:1。design_governance 启用时还必须绑定 primary test_strategy；未启用时不生成 strategy binding，Plan 通过 CapabilityPlan 单独证明该能力未启用。
-2. Assertion id 由 accepted PRD digest、criterion id 和 assertion schema version 确定性派生；相同输入重编保持稳定。
+2. Assertion id 严格使用 managed PRD Capture §13.1 定义的 `harness:criterion-assertion` 公式，由 criterion id、criterion semantic digest 和 assertion schema version 确定性派生；accepted PRD digest 继续作为 Plan/Contract 的来源与授权 binding，但不进入 Assertion 身份。相同 Criterion 语义输入重编保持稳定，无关 Criterion 或纯 SourceBinding 变化不得轮换它。
 3. 同一 Plan revision 中，每个 criterion assertion 恰好分配给一个 owning Task。多个 criterion assertions 可以 N:1 组合进同一 AssertionCluster，但各自的 identity、Evidence requirement 和 Verdict 不合并。
 4. 不允许 Criterion 1:N 拆成多个业务 Assertion；遇到非原子 Criterion 必须阻塞 Plan 并回到 managed Capture 拆分。
 5. Planner 可以增加 `task_internal_assertion`，用于构建产物或工程内部约束；它必须声明来源，不能替代 criterion assertion、满足 Criterion coverage 或修改业务 observable outcome。
@@ -383,13 +383,16 @@ export interface TaskAcceptanceAssertion {
   readonly assertion_id: string;
   readonly assertion_kind: "criterion_assertion" | "task_internal_assertion";
   readonly acceptance_criterion_id?: string;
+  readonly criterion_semantic_digest?: string;
   readonly test_ids: readonly string[];
   readonly required_gate_ids: readonly string[];
   readonly evidence_requirements: readonly string[];
 }
 ```
 
-`criterion_assertion` 必须填写 `acceptance_criterion_id`，且一个 Plan revision 内该 id 只能出现一次；`task_internal_assertion` 必须省略它并使用独立的工程来源 binding。owning Task 由包含该 Assertion 的 `TaskSpecification` 唯一确定，不重复存储 `owning_task_id`，避免双重真相。Plan validator 必须把上述约束作为 Schema 之外的语义不变量执行。
+`criterion_assertion` 必须填写 `acceptance_criterion_id` 和 `criterion_semantic_digest`，且一个 Plan revision 内该 Criterion id 只能出现一次；`task_internal_assertion` 必须省略二者并使用独立的工程来源 binding。owning Task 由包含该 Assertion 的 `TaskSpecification` 唯一确定，不重复存储 `owning_task_id`，避免双重真相。Plan validator 必须把上述约束作为 Schema 之外的语义不变量执行。
+
+任何 accepted PRD revision 都会使当前 Plan/Contract 授权失效并触发重编；Assertion identity 只对业务语义实际变化的 Criterion 轮换。未变化的 id 只用于精确 diff、追踪和失效分析，不能绕过新 Plan/Contract freshness，也不能自动复用旧 Evidence。
 
 `logical_cycle_id` 对一个 Plan revision 中的 Cluster 稳定。每次失效重试使用新的 `attempt_ordinal` 和 attempt record，但仍归属同一 logical cycle。这样既能保留失败历史，又能要求每个 Assertion 最终只有一个当前有效 completed attempt。
 
@@ -784,6 +787,7 @@ Evidence、Cycle、Grant 和审批发生漂移时，只追加 invalidation/super
 ### 17.2 Property
 
 - 输入排序不影响 Contract、patch manifest 和 Cycle digest；
+- accepted PRD 修订但当前 Criterion semantic digest 不变时 Assertion id 稳定；只修改一个 Criterion 语义时只轮换对应 Assertion id；
 - required 永远不能被 Planner 降级；
 - required Assertion 恰好一个当前有效 Cycle；
 - 不匹配 Oracle 的任意失败都不能 accepted；
@@ -888,7 +892,7 @@ Evidence、Cycle、Grant 和审批发生漂移时，只追加 invalidation/super
 
 ## 20. 与 DesignSet 实施计划的协同边界
 
-统一实施计划已重编为 [Universal Harness Protocol 1.1 统一实施计划](../plans/2026-08-18-designset-lifecycle-implementation-plan.md)。本设计不授权代码实施；以下序列仅保留为 TDD 子模块的局部依赖说明，不再作为独立的事后 TDD 计划：
+统一实施计划已重编为 [Universal Harness Protocol 1.1 统一实施计划](../plans/2026-08-18-protocol-1.1-unified-implementation-plan.md)。本设计不授权代码实施；以下序列仅保留为 TDD 子模块的局部依赖说明，不再作为独立的事后 TDD 计划：
 
 1. Protocol 1.1 Profile/Capability records、Capability Compiler 与 Operation DAG；
 2. managed PRD Capture、test-first Criterion/Test seeds 和原子 RequirementBaseline；

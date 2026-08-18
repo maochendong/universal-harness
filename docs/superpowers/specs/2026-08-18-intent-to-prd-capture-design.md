@@ -1,7 +1,7 @@
 # Universal Harness Intent → 高质量 PRD Capture 设计
 
 日期：2026-08-18
-状态：评审问题已修订，统一实施计划已重编，待实施授权
+状态：评审问题已修订，待最终确认与实施授权
 目标版本：Protocol 1.1.0
 关联设计：
 
@@ -511,11 +511,12 @@ export interface PrdAcceptanceCriterion {
   readonly verification_intent: string;
   readonly test_first_example?: string;
   readonly scenario_kind: "primary" | "failure" | "boundary" | "security" | "compatibility";
+  readonly criterion_semantic_digest: string;
   readonly source_bindings: readonly PrdSourceBinding[];
 }
 ```
 
-Criterion 是业务验收事实，不包含具体测试文件、framework、selector、Gate id 或 Failure Oracle；这些属于 DesignSet.test_strategy。若 Criterion 由澄清答案形成或改变，其 SourceBinding 必须引用对应 AnswerRecord 的 id/digest；AnswerRecord 已绑定 QuestionRecord，因此可机械复验 `Question → Answer → Criterion`。
+Criterion 是业务验收事实，不包含具体测试文件、framework、selector、Gate id 或 Failure Oracle；这些属于 DesignSet.test_strategy。`criterion_semantic_digest` 从 `requirement_id`、`precondition`、`action`、`observable_outcome`、`verification_intent`、规范化的 `test_first_example` 和 `scenario_kind` 计算，不包含 `criterion_id`、SourceBinding、时间或自身字段。字符串统一换行、裁剪首尾空白，缺失的 `test_first_example` 规范为 `null`。该 digest 由 Coordinator 在 Proposal 规范化后派生；Adapter Draft 不拥有该值，若外部输出携带它则必须与 Coordinator 重算结果一致，否则确定性校验失败。若 Criterion 由澄清答案形成或改变，其 SourceBinding 必须引用对应 AnswerRecord 的 id/digest；AnswerRecord 已绑定 QuestionRecord，因此可机械复验 `Question → Answer → Criterion`。只有来源变化而业务语义不变时 semantic digest 保持稳定；任一上述业务字段变化都必须改变 digest。
 
 Coordinator 为每个 Proposal revision 派生索引记录；它不复制内容权威，只加速来源追踪：
 
@@ -1041,7 +1042,9 @@ ClarificationQuestion / Answer
 
 accepted PRD 物化每个 Criterion 对应的 Test seed。Test id 由 Coordinator 从 canonical criterion id 确定性派生；Criterion continues 时复用 Test id 并递增 Node revision。Test extension 必须含 `acceptance_criterion_id`、Criterion source binding digest，VERIFIES 指向 Requirement。
 
-Criterion 是 Assertion 编译的唯一业务权威源：每个 accepted 原子 Criterion 在任何 Protocol 1.1 Plan 中必须确定性编译为且仅编译为一个 `criterion_assertion`。Assertion id 从 accepted PRD digest、criterion id 和 assertion schema version 稳定派生，并显式绑定 `acceptance_criterion_id` 与对应 Test seed；相同输入重编必须得到相同 id。启用 design_governance 时再绑定 primary test_strategy；未启用时不生成 strategy binding，由 Plan 单独绑定 CapabilityPlan 证明该能力未启用。若一个 Criterion 包含多个可独立裁决的结果，Capture 硬门禁必须先要求拆分 Criterion，Planner 不得在下游用 1:N Assertion 掩盖上游非原子语义。
+Criterion 是 Assertion 编译的唯一业务权威源：每个 accepted 原子 Criterion 在任何 Protocol 1.1 Plan 中必须确定性编译为且仅编译为一个 `criterion_assertion`。身份公式固定为 `sha256(canonical({ domain: "harness:criterion-assertion", criterion_id, criterion_semantic_digest, assertion_schema_version }))`，并显式绑定 `acceptance_criterion_id`、`criterion_semantic_digest` 与对应 Test seed；相同输入重编必须得到相同 id。accepted PRD digest 仍是 Plan/Contract 的来源与授权 binding，但不参与 Assertion 身份。启用 design_governance 时再绑定 primary test_strategy；未启用时不生成 strategy binding，由 Plan 单独绑定 CapabilityPlan 证明该能力未启用。若一个 Criterion 包含多个可独立裁决的结果，Capture 硬门禁必须先要求拆分 Criterion，Planner 不得在下游用 1:N Assertion 掩盖上游非原子语义。
+
+因此，不相关 Criterion 或纯 SourceBinding 修订不会轮换当前 Criterion 的 Assertion id；当前 Criterion 的业务语义变化会轮换 Assertion id，同时保留 Test id 并递增 Test Node revision/digest。任何 accepted PRD revision 仍会使旧 Plan 授权失效并要求重编，但重编结果可以机械识别哪些 Assertion 身份未变；旧 Evidence 是否可复用仍由新 Plan/Contract 的 freshness 和 binding 规则决定，不能仅凭 id 相同自动沿用。
 
 ### 13.2 职责分界
 
@@ -1285,6 +1288,8 @@ Proposal/Review Adapter 统一验证：
 - Question/Answer target 可重放；
 - Draft lineage 确定性生成/复用 entity id，跨 revision 不靠文本猜测；
 - Criterion SourceBinding 可复验到 Intent/Answer/Context/旧 PRD；
+- Coordinator 重算 criterion semantic digest，Adapter 携带错误 digest 永远失败；
+- SourceBinding 或其他 Criterion 改变不影响当前 Criterion semantic digest，当前 Criterion 任一业务字段改变必然改变 digest；
 - accepted Criterion 恰好物化一个当前 Test seed；
 - 任意 hard gate failure 都不能进入 accepted transaction；
 - Context/Profile/Policy 漂移必然失效依赖 Review/RiskAssessment/Approval；
@@ -1381,9 +1386,9 @@ Proposal/Review Adapter 统一验证：
 
 ## 23. 实施边界建议
 
-统一实施计划已重编为 [Universal Harness Protocol 1.1 统一实施计划](../plans/2026-08-18-designset-lifecycle-implementation-plan.md)。本设计不授权代码实施；以下序列仅保留为 Capture 子模块的局部依赖说明：
+统一实施计划已重编为 [Universal Harness Protocol 1.1 统一实施计划](../plans/2026-08-18-protocol-1.1-unified-implementation-plan.md)。本设计不授权代码实施；以下序列仅保留为 Capture 子模块的局部依赖说明：
 
-1. Capture runtime records、完整 PrdProposal/Draft JSON Schema、canonical digest 和 migration reader；
+1. Capture runtime records、完整 PrdProposal/Draft JSON Schema 和 canonical digest；
 2. PrdCaptureCoordinator/state/checkpoint/ApprovalDecision consumption；
 3. ProjectContextPort/Compiler、安全预算与 Proposal/Review 零文件访问隔离；
 4. PrdProposalPort、Coordinator-issued id/lineage、Manual Adapter、deterministic gates；
@@ -1391,8 +1396,8 @@ Proposal/Review Adapter 统一验证：
 6. CaptureRiskAssessment、Profile Recommendation 与风险批准；
 7. accepted PRD/RequirementBaseline/Graph 原子提交；
 8. Criterion/Test seed 与 DesignSet/TDD bindings；
-9. LegacyIntentInterpreterAdapter 与 deprecation；
-10. CLI/Dashboard 共用 Session；
-11. Profile matrix、fault、migration、E2E 和 dogfood。
+9. LegacyIntentInterpreterAdapter、确定性映射、新旧配置冲突与 deprecation；
+10. CLI/Dashboard 共用 Session 与旧式 clarification 命令兼容；
+11. Protocol 1.0 reader、Profile matrix、fault、migration、E2E 和 dogfood。
 
 统一计划已经把高质量 Capture 放在 Impact/Design/Plan 之前；实施时禁止先让低质量 RequirementBaseline 进入后续治理，再事后补 PRD Review。

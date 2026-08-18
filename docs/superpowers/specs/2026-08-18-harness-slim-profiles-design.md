@@ -1,7 +1,7 @@
 # Universal Harness Slim Profiles 与 Capability Kernel 设计
 
 日期：2026-08-18
-状态：评审问题已修订，统一实施计划已重编，待实施授权
+状态：评审问题已修订，待最终确认与实施授权
 目标版本：Protocol 1.1.0
 关联设计：
 
@@ -946,7 +946,7 @@ Slim Profile、managed PRD Capture、DesignSet 和 Provable TDD 均尚未实施�
 
 ## 24. 实施边界建议
 
-统一实施计划已经按本节主干重编为 [Universal Harness Protocol 1.1 统一实施计划](../plans/2026-08-18-designset-lifecycle-implementation-plan.md)，没有追加 Task 20。本设计仍不授权代码实施；以下顺序保留为 Kernel→Module 的全局约束：
+统一实施计划已经按本节主干重编为 [Universal Harness Protocol 1.1 统一实施计划](../plans/2026-08-18-protocol-1.1-unified-implementation-plan.md)，没有追加 Task 20。本设计仍不授权代码实施；以下顺序保留为 Kernel→Module 的全局约束：
 
 1. Protocol 1.1 Profile/Capability records；
 2. Capability registry/compiler/DAG；

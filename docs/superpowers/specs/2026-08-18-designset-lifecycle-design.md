@@ -1,7 +1,7 @@
 # Universal Harness DesignSet 生命周期设计
 
 日期：2026-08-18
-状态：评审问题已修订，统一实施计划已重编，待实施授权
+状态：评审问题已修订，待最终确认与实施授权
 目标版本：Protocol 1.1.0
 
 配套设计：
@@ -535,7 +535,7 @@ final CapabilityPlan 启用 strict_tdd 时，对于 test_strategy 声明为 requ
 Criterion → Assertion 的权威编译规则如下：
 
 1. 每个 accepted 原子 Criterion 在任何 Protocol 1.1 Plan 中确定性编译为且仅编译为一个 `criterion_assertion`；Assertion 必须显式绑定唯一 `acceptance_criterion_id` 和对应 Test seed。启用 design_governance 时还必须绑定该 pair 的 primary test_strategy；未启用时不生成 strategy binding，Plan 通过 CapabilityPlan 单独证明该能力未启用。
-2. Assertion id 从 accepted PRD digest、criterion id 和 assertion schema version 稳定派生；同一输入重编不得产生新身份。
+2. Assertion id 严格使用 managed PRD Capture §13.1 定义的 `harness:criterion-assertion` 公式，由 criterion id、criterion semantic digest 和 assertion schema version 稳定派生；accepted PRD digest 保留为 Plan/Contract binding，但不参与 Assertion 身份。同一 Criterion 语义输入重编不得产生新身份，无关 Criterion 或纯来源变化不得轮换它。
 3. 同一 Plan revision 中，每个 criterion assertion 必须恰好分配给一个 owning Task；多个 Assertion 可以进入同一 Cluster，但身份、Evidence 要求和 Verdict 必须逐 Assertion 保留。
 4. 一个 Criterion 不得拆成多个业务 Assertion。若存在多个可独立裁决的结果，Plan validation 必须阻塞并回到 Capture 拆分 Criterion。
 5. Planner 可以生成 `task_internal_assertion` 表达工程产物或内部约束，但它不能替代 criterion assertion、满足 Criterion 覆盖或改变 observable outcome。
@@ -764,7 +764,7 @@ Projection 不拥有独立状态。检测漂移后只能从权威图重建，不
 
 ## 22. 实施边界建议
 
-统一实施计划已重编为 [Universal Harness Protocol 1.1 统一实施计划](../plans/2026-08-18-designset-lifecycle-implementation-plan.md)。以下序列仅保留为 DesignSet 子模块的局部依赖说明，不再作为独立实施顺序，也不直接授权代码修改：
+统一实施计划已重编为 [Universal Harness Protocol 1.1 统一实施计划](../plans/2026-08-18-protocol-1.1-unified-implementation-plan.md)。以下序列仅保留为 DesignSet 子模块的局部依赖说明，不再作为独立实施顺序，也不直接授权代码修改：
 
 1. Protocol 1.1 Profile/Capability runtime records 与 Capability Compiler；
 2. Workflow Engine/Operation DAG 与固定 phase 解耦；
