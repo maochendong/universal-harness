@@ -1,7 +1,7 @@
 # Universal Harness 可证明 TDD 协议设计
 
 日期：2026-08-18
-状态：已确认，待协同实施计划修订
+状态：评审问题已修订，统一实施计划已重编，待实施授权
 目标版本：Protocol 1.1.0
 前置设计：
 
@@ -30,10 +30,10 @@ approved DesignSet.test_strategy
 TDD 仍是 execute 内部 subgraph，不新增全局 phase。外部 Operation DAG 由 Slim CapabilityPlan 决定，例如 Standard/Governed 的完整路径可以是：
 
 ```text
-capture → impact → design → plan → context → execute → verify → evaluate → snapshot
+capture → impact → design → plan → context → execute → verify → [evaluate?] → snapshot
 ```
 
-Lite 未启用 Impact/Design/Evaluation 时外部 DAG 可以更短；一旦 strict_tdd 激活，它依赖 design_governance、structured Gate 和 isolated workspace，并在每个相关 Task、每个 required Assertion Cluster 的 `execute` 内运行，因此可以服从 Task DAG 并行执行，不把整个迭代强制串行化。
+方括号表示 CapabilityPlan 启用对应 Module 时节点才存在；Standard/Governed 解析后的 DAG 默认包含 evaluate。Lite 未启用 Impact/Design/Evaluation 时外部 DAG 可以更短；一旦 strict_tdd 激活，它依赖 impact_analysis、design_governance、structured Gate 和 isolated workspace 的完整传递依赖闭包，并在每个相关 Task、每个 required Assertion Cluster 的 `execute` 内运行，因此可以服从 Task DAG 并行执行，不把整个迭代强制串行化。
 
 managed PRD Capture、Slim Profiles、DesignSet 与本协议共同进入首次 Protocol 1.1.0。strict_tdd 激活时，DesignSet 负责批准 TDD 适用性、失败 Oracle、目标 Gate 和路径策略；Plan 负责把它编译为不可降级的执行 Contract；TddController、CapabilityGrant、Gate、Evidence 和 Ledger 负责机械证明执行顺序。未激活时零 TDD Contract/Cycle/Run，并显示 `not_enabled_by_profile`。Agent 自述、transcript、文件时间戳和模糊退出码都不是 TDD 证明。
 
@@ -120,13 +120,13 @@ Agent 先实现 → verify 失败 → 修复 → verify 通过
 ### 5.1 权威链
 
 ```text
-Requirement / Assertion
+Requirement / Criterion / Test seed
   ↓
 accepted DesignSet.test_strategy
   applicability + baseline guards + target Gate + Oracle + path policy
   ↓
 ExecutionPlan.TaskTddContract
-  assertion clusters + immutable design binding + phase budgets
+  canonical criterion assertions + assertion clusters + immutable design binding + phase budgets
   ↓
 TddController
   phase state + isolated workspaces + CapabilityGrants + checkpoints
@@ -180,7 +180,7 @@ TddCycle completed
 
 - Governed：所有适用代码、配置、Schema、迁移、安全和缺陷修复 Task 激活 strict_tdd；
 - Standard：DesignSet accepted 前使用 `strict_tdd: deferred` 的 provisional CapabilityPlan；DesignSet 获批后，Harness 以 canonical test_strategy/digest 确定性生成 active 的 final revision，并由 test_strategy 对 Task 声明 required/not_applicable，不能让 deferred 状态进入 Plan；
-- Lite：风险推荐、用户选择或 Project Policy 激活后，Capability Compiler 先补齐 design_governance、structured Gate 和 isolated workspace 依赖；
+- Lite：风险推荐、用户选择或 Project Policy 激活后，Capability Compiler 先补齐 `impact_analysis → design_governance` 以及 structured Gate、isolated workspace 的完整传递依赖闭包；
 - 未激活：不调用 TddController，不创建 TaskTddContract、TDD Run/Event/Evidence/TddCycleRecord，也不创建空壳批准；
 - 激活决定和 CapabilityPlan digest 必须进入 Plan/TaskVerdict，使“未启用”与“遗漏证据”可机械区分。
 
@@ -283,15 +283,23 @@ export type TddFailureKind =
 
 ### 7.1 编译规则
 
-strict_tdd 激活后，Planner 从 accepted DesignSet 的 test_strategy 编译每个相关 Task 的 `TaskTddContract`。Plan 必须绑定 RequirementBaseline、ImpactSet、DesignSet、final CapabilityPlan、Policy 和 Contract digest。Standard provisional CapabilityPlan 不能进入 Plan。Profile 未激活 strict_tdd 的 Task 不生成 Contract，并在 Plan/Verdict 中绑定 `not_enabled_by_profile`；已由 accepted test_strategy 判定受控不适用的 Task 则绑定 `controlled_not_applicable`，两者不能混淆。
+Canonical Criterion Assertion 的编译是所有 Protocol 1.1 Plan 的 Kernel 不变量，不以 strict_tdd 是否启用为条件。strict_tdd 激活后，Planner 再从 accepted DesignSet 的 test_strategy 把相关 Assertion 编译进 `TaskTddContract`。Plan 必须绑定 RequirementBaseline、ImpactSet、DesignSet、final CapabilityPlan、Policy 和 Contract digest。Standard provisional CapabilityPlan 不能进入 Plan。Profile 未激活 strict_tdd 的 Task 不生成 Contract，并在 Plan/Verdict 中绑定 `not_enabled_by_profile`；已由 accepted test_strategy 判定受控不适用的 Task 则绑定 `controlled_not_applicable`，两者不能混淆。
 
 每个 Assertion Cluster 还必须绑定 accepted PRD digest、Requirement id、Acceptance Criterion ids 和对应 Test node ids。DesignSet/Plan 只能收窄技术执行范围，不能删除 Criterion、替换 observable outcome 或把上游未批准的自然语言补丁当成验收标准。
 
+Criterion → Assertion 的编译基数与身份是 Protocol 规则，不由 Planner Adapter 自由决定：
+
+1. 每个 accepted 原子 Criterion 恰好编译为一个 `criterion_assertion`，并绑定唯一 Criterion 与对应 Test seed；映射为 1:1。design_governance 启用时还必须绑定 primary test_strategy；未启用时不生成 strategy binding，Plan 通过 CapabilityPlan 单独证明该能力未启用。
+2. Assertion id 由 accepted PRD digest、criterion id 和 assertion schema version 确定性派生；相同输入重编保持稳定。
+3. 同一 Plan revision 中，每个 criterion assertion 恰好分配给一个 owning Task。多个 criterion assertions 可以 N:1 组合进同一 AssertionCluster，但各自的 identity、Evidence requirement 和 Verdict 不合并。
+4. 不允许 Criterion 1:N 拆成多个业务 Assertion；遇到非原子 Criterion 必须阻塞 Plan 并回到 managed Capture 拆分。
+5. Planner 可以增加 `task_internal_assertion`，用于构建产物或工程内部约束；它必须声明来源，不能替代 criterion assertion、满足 Criterion coverage 或修改业务 observable outcome。
+
 Planner 允许：
 
-- 将 Requirement Assertion 拆分为更小的 Assertion Cluster；
+- 按共享 test patch、target Gate、Oracle 和路径策略，把多个完整的 canonical criterion assertions 分组为更小的 Assertion Cluster；
 - 缩小 target selector、路径和预算；
-- 为共享同一个 test patch 和 target Gate 的 Assertion 建立一个 Cluster；
+- 将需要不同 patch/Gate 的 Assertion 分配到不同 owning Task；
 - 插入 `TestInfrastructureTask` 依赖。
 
 Planner 禁止：
@@ -370,7 +378,18 @@ export interface AssertionCluster {
   readonly framework_profile_digest: string;
   readonly refactor_policy: "planned" | "not_planned";
 }
+
+export interface TaskAcceptanceAssertion {
+  readonly assertion_id: string;
+  readonly assertion_kind: "criterion_assertion" | "task_internal_assertion";
+  readonly acceptance_criterion_id?: string;
+  readonly test_ids: readonly string[];
+  readonly required_gate_ids: readonly string[];
+  readonly evidence_requirements: readonly string[];
+}
 ```
+
+`criterion_assertion` 必须填写 `acceptance_criterion_id`，且一个 Plan revision 内该 id 只能出现一次；`task_internal_assertion` 必须省略它并使用独立的工程来源 binding。owning Task 由包含该 Assertion 的 `TaskSpecification` 唯一确定，不重复存储 `owning_task_id`，避免双重真相。Plan validator 必须把上述约束作为 Schema 之外的语义不变量执行。
 
 `logical_cycle_id` 对一个 Plan revision 中的 Cluster 稳定。每次失效重试使用新的 `attempt_ordinal` 和 attempt record，但仍归属同一 logical cycle。这样既能保留失败历史，又能要求每个 Assertion 最终只有一个当前有效 completed attempt。
 
@@ -688,6 +707,19 @@ Verdict 明确区分：
 - `historical_without_tdd_proof`
 - `tdd_incomplete_or_invalid`
 
+TDD 保留上述领域状态，但 Read API、Dashboard 和跨 Capability 汇总必须通过统一投影映射到 Slim §7.5 的通用五态；不能让页面自行推断：
+
+| TDD 领域状态 | 通用状态 |
+| --- | --- |
+| `tdd_proven` | `proven` |
+| `framework_proven` | `proven` |
+| `controlled_not_applicable` | `controlled_not_applicable` |
+| `not_enabled_by_profile` | `not_enabled_by_profile` |
+| `historical_without_tdd_proof` | `historical_without_proof` |
+| `tdd_incomplete_or_invalid` | `invalid_or_incomplete` |
+
+统一输出使用 `CapabilityStatusProjection { capability_id, generic_status, domain_status, reason, binding_ids }`。通用状态支持跨域排序、筛选和汇总；领域状态保留 `framework_proven` 与普通 TDD proof 的差异。`framework_proven` 投影为 `proven` 不代表生产 Requirement 已完成 TDD，只证明测试基础设施能力本身已被机械验证。
+
 ### 14.4 Live
 
 Live 可以显示 dsh 心跳、tokens/steps、phase、stdout tail 和当前 TDD state，便于观察和故障定位；它仍是可删除观测层。Dashboard 刷新或 Live 丢失后，所有权威状态必须能从 Ledger、Evidence 和 TddCycleRecord 重建。
@@ -782,7 +814,7 @@ Evidence、Cycle、Grant 和审批发生漂移时，只追加 invalidation/super
 ### 17.5 DesignSet/Plan Integration
 
 - DesignSet required strategy → Plan Contract；
-- accepted PRD Question/Answer → Criterion/Test seed → DesignSet strategy → Assertion Cluster 唯一覆盖；
+- accepted PRD Question/Answer → Criterion/Test seed → DesignSet primary strategy → canonical criterion assertion → owning Task/Assertion Cluster 唯一覆盖；
 - Design 无法形成有效 Failure Oracle → Finding → Capture new PRD revision；
 - Standard provisional CapabilityPlan + accepted test_strategy → final CapabilityPlan → Plan Contract；
 - Plan 降级/扩大 Oracle/path 被拒绝；
@@ -856,7 +888,7 @@ Evidence、Cycle、Grant 和审批发生漂移时，只追加 invalidation/super
 
 ## 20. 与 DesignSet 实施计划的协同边界
 
-本设计不授权代码实施。获得文档确认后，应修订现有 DesignSet 实施计划，而不是创建独立的事后 TDD 计划。建议依赖顺序：
+统一实施计划已重编为 [Universal Harness Protocol 1.1 统一实施计划](../plans/2026-08-18-designset-lifecycle-implementation-plan.md)。本设计不授权代码实施；以下序列仅保留为 TDD 子模块的局部依赖说明，不再作为独立的事后 TDD 计划：
 
 1. Protocol 1.1 Profile/Capability records、Capability Compiler 与 Operation DAG；
 2. managed PRD Capture、test-first Criterion/Test seeds 和原子 RequirementBaseline；

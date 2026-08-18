@@ -1,7 +1,7 @@
 # Universal Harness Slim Profiles 与 Capability Kernel 设计
 
 日期：2026-08-18
-状态：已确认，待协同实施计划修订
+状态：评审问题已修订，统一实施计划已重编，待实施授权
 目标版本：Protocol 1.1.0
 关联设计：
 
@@ -290,6 +290,25 @@ Standard 的每个 Design iteration 必须遵守 DesignSet 原子批准/提交�
 - `invalid_or_incomplete`
 
 这些状态不能折叠为一个 `passed` 标签。
+
+领域 Module 可以定义更细状态，但必须由统一投影层映射到上述五态，Read API 和 Dashboard 不得各自复制映射逻辑：
+
+```ts
+export interface CapabilityStatusProjection {
+  readonly capability_id: CapabilityId;
+  readonly generic_status:
+    | "proven"
+    | "controlled_not_applicable"
+    | "not_enabled_by_profile"
+    | "historical_without_proof"
+    | "invalid_or_incomplete";
+  readonly domain_status: string;
+  readonly reason?: string;
+  readonly binding_ids: readonly string[];
+}
+```
+
+Protocol 1.1 的 TDD 映射固定为：`tdd_proven → proven`、`framework_proven → proven`、`controlled_not_applicable → controlled_not_applicable`、`not_enabled_by_profile → not_enabled_by_profile`、`historical_without_tdd_proof → historical_without_proof`、`tdd_incomplete_or_invalid → invalid_or_incomplete`。UI 必须同时保留领域状态；特别是 `framework_proven` 只证明测试基础设施，不得显示为生产 Requirement 已完成 TDD。
 
 ## 8. Profile 与 Capability 权威记录
 
@@ -680,6 +699,7 @@ Dashboard 卡片展示对象中文摘要、风险、Profile 建议/实际档位�
 - 一次 `new/adopt/iterate` 驱动至完成或明确暂停；
 - Lite happy path 不要求手工调用 impact/plan/run/verify/eval/snapshot；
 - 恢复使用 `resume`，不要求用户理解 checkpoint internals。
+- Lite 单 Requirement Intent→accepted PRD dogfood 必须记录墙钟时间、用户输入轮次和人工批准等待时间；基线/阈值由首次 dogfood 报告冻结，后续回归不得无解释恶化。
 
 ### 16.2 认知预算
 
@@ -690,6 +710,12 @@ Dashboard 卡片展示对象中文摘要、风险、Profile 建议/实际档位�
 ### 16.3 配置预算
 
 除 Profile、Agent 和项目 Gates 外，普通 Lite 项目没有其他强制配置。Graph/Design/TDD/Evaluation Provider 只有对应 Capability 启用时才要求。
+
+### 16.3.1 Capture 交互预算
+
+- ManualPrdProposalAdapter 必须优先展示上下文预填值、差异和缺失项，不要求用户重复录入可从受控项目上下文确定的事实；
+- dogfood 必须记录手填字段数、上下文预填命中率和 Review 修订率；
+- Capture 硬门禁、独立 Review、RiskAssessment 和必要批准不可通过 UX 优化删除；“轻”只允许来自更少的输入、轮次和等待时间。
 
 ### 16.4 工件预算
 
@@ -874,7 +900,7 @@ Slim Profile、managed PRD Capture、DesignSet 和 Provable TDD 均尚未实施�
 17. Lite 硬复杂度预算全部进入自动验收。
 18. Slim/PRD Capture/DesignSet/TDD 作为同一 Protocol 1.1 依赖序列交付。
 19. Unit、Property、Integration、Fault、Migration、CLI、Dashboard、E2E 全部通过。
-20. 至少一个真实项目分别完成 Lite、Standard 和 Governed dogfood，并比较工件数、批准原因和运行成本。
+20. 至少一个真实项目分别完成 Lite、Standard 和 Governed dogfood，并比较工件数、批准原因和运行成本；Lite 还必须报告单 Requirement 录入墙钟时间、用户输入轮次、手填字段数、上下文预填命中率、Review 修订率和人工批准等待时间。
 
 ## 22. 被否决的替代方案
 
@@ -920,7 +946,7 @@ Slim Profile、managed PRD Capture、DesignSet 和 Provable TDD 均尚未实施�
 
 ## 24. 实施边界建议
 
-本设计不授权代码实施。正式 Spec 获得复核后，应先重写现有 19-task 协同计划，而不是直接追加 Task 20：
+统一实施计划已经按本节主干重编为 [Universal Harness Protocol 1.1 统一实施计划](../plans/2026-08-18-designset-lifecycle-implementation-plan.md)，没有追加 Task 20。本设计仍不授权代码实施；以下顺序保留为 Kernel→Module 的全局约束：
 
 1. Protocol 1.1 Profile/Capability records；
 2. Capability registry/compiler/DAG；
@@ -934,4 +960,4 @@ Slim Profile、managed PRD Capture、DesignSet 和 Provable TDD 均尚未实施�
 10. Dashboard progressive disclosure；
 11. 三档 E2E、fault、dogfood 与成本对比报告。
 
-DesignSet/TDD 的原 19 个任务必须按上述依赖重新编排和裁剪；禁止在固定重流水线基础上先完成全部能力再补 Profile。
+统一计划保留 19 个任务并已按上述依赖重新编排和裁剪；实施时禁止回退为“先完成固定重流水线、再补 Profile”的顺序。

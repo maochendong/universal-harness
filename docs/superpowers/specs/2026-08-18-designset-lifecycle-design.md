@@ -1,7 +1,7 @@
 # Universal Harness DesignSet 生命周期设计
 
-日期：2026-08-18  
-状态：已确认，待协同实施计划修订
+日期：2026-08-18
+状态：评审问题已修订，统一实施计划已重编，待实施授权
 目标版本：Protocol 1.1.0
 
 配套设计：
@@ -17,8 +17,10 @@
 本设计定义 `design_governance` Capability Module。它启用时在 `impact` 与 `plan` 之间贡献一级 `design` DAG 节点：
 
 ```text
-capture → impact → design → plan → context → execute → verify → evaluate → snapshot
+capture → impact → design → plan → context → execute → verify → [evaluate?] → snapshot
 ```
+
+方括号表示 CapabilityPlan 启用对应 Module 时节点才存在；Standard/Governed 解析后的 DAG 默认包含 evaluate。
 
 `design` 相位通过可插拔的 `DesignProposalPort` 调用设计 Agent/LLM。模型只能读取受控输入并返回结构化 `DesignSetProposalRecord`，不能批准自身提案、直接写入权威图或修改项目文件。Harness 对提案执行确定性的 Schema、引用、关系、覆盖、冲突、风险和摘要校验；人工批准整个 DesignSet 的规范摘要后，Harness 才在一次 Ledger 事务中原子提交 accepted `DesignSet`、`Decision`、`Component`、`DesignArtifact` revisions 及关系边。
 
@@ -110,8 +112,10 @@ design
 plan
   Task decomposition + plan validation + authoritative commit
     ↓
-context → execute → verify → evaluate → snapshot
+context → execute → verify → [evaluate?] → snapshot
 ```
+
+方括号表示 CapabilityPlan 启用对应 Module 时节点才存在。Standard/Governed 默认启用 `independent_evaluation`，因此解析后的档位 DAG 中 evaluate 为必经节点；本图保留通用 Capability-aware 写法，避免被误读为所有 Profile 强制执行 Evaluation。
 
 `design_governance` Module 依赖 `impact_analysis`，并向 Capability Compiler 贡献 `impact → design → plan` 节点和 invalidation rules。`design` checkpoint boundary 使用 `authoritative_commit`。Workflow Engine 不直接按 Profile 判断是否运行 design；它只执行 CapabilityPlan 中实际存在的 DAG 节点。design 在等待或处理审批时沿用 `awaiting_approval`，设计提交完成后由 plan 生成 ExecutionPlan。
 
@@ -332,7 +336,7 @@ export interface DesignRiskSummary {
 - node changes 按 node id、revision 排序；
 - reused assets 按 node id、revision 排序；
 - edge changes 按 edge id 排序；
-- coverage 按 requirement id 排序；
+- coverage 按 requirement id 排序，其中 test_strategy_coverage 按 criterion id、test node id、primary strategy id 排序，supporting_test_strategy_ids 按 id 排序；
 - 所有集合在验证后去重；
 - generator、时间、token、run id 不进入 content digest；
 - base revision digest、目标 revision 和目标语义内容必须进入 digest。
@@ -410,14 +414,19 @@ export interface RequirementDesignCoverage {
   readonly component_scope:
     | { readonly status: "covered" | "reused"; readonly component_ids: readonly string[] }
     | { readonly status: "not_applicable"; readonly reason: string };
-  readonly test_strategy_ids: readonly string[];
-  readonly acceptance_criterion_ids: readonly string[];
-  readonly test_node_ids: readonly string[];
+  readonly test_strategy_coverage: readonly TestStrategyCoverageBinding[];
+  readonly supporting_test_strategy_ids: readonly string[];
   readonly applicability: {
     readonly api: DesignApplicability;
     readonly data: DesignApplicability;
     readonly ui: DesignApplicability;
   };
+}
+
+export interface TestStrategyCoverageBinding {
+  readonly acceptance_criterion_id: string;
+  readonly test_node_id: string;
+  readonly primary_test_strategy_id: string;
 }
 
 export type DesignApplicability =
@@ -429,7 +438,7 @@ export type DesignApplicability =
 
 1. 每个 must-change Requirement 至少由一个 accepted/new Decision 通过 ADDRESSES 回应。
 2. 每个 Decision 至少 SHAPES 一个 Component；仅当 `component_scope.status` 为 `not_applicable` 且 reason 非空时，才允许没有 Component。
-3. 每个 must-change Requirement 至少关联一个 test_strategy DesignArtifact；test_strategy 资产本身不允许缺失，并必须唯一覆盖该 Requirement 的全部 accepted Acceptance Criterion/Test seeds。其内部 TDD 适用性必须是 required 或配套设计定义的受控 not_applicable。
+3. 每个 must-change Requirement 至少关联一个 test_strategy DesignArtifact；test_strategy 资产本身不允许缺失。每个当前 accepted `(Acceptance Criterion, Test seed)` 对必须在 `test_strategy_coverage` 中出现且只出现一次，并由恰好一个 `primary_test_strategy_id` 主责覆盖。一个策略资产可以主责多个 pair；`supporting_test_strategy_ids` 只能列出补充或复用策略，必须通过 SPECIFIES 连接到相应对象，但不能声明或替代 primary coverage。Criterion/Test 集合直接从 accepted PRD/Test seeds 与 coverage binding 比对，不再保存重复的 id 汇总字段。每个 primary strategy 的 TDD 适用性必须是 required 或配套设计定义的受控 not_applicable。
 4. API、数据、UI 分别必须是 covered、reused 或带非空理由的 not_applicable。
 5. covered/reused 的 asset id 必须存在于本 DesignSet 的 node changes/reused assets 中，并由合法 SPECIFIES edge 连接到相应 Requirement、Decision、Component 或 Test。
 6. `mode: reuse` 不降低任何覆盖要求，只是禁止无必要的 node revision。
@@ -521,7 +530,16 @@ readonly design_set_digest: string;
 
 启用 design_governance 时，`PlanTasksPort` 输入增加 accepted DesignSet 摘要、设计资产引用、覆盖结果和关系路径。默认 Planner 仍可一 Requirement 一 Task，但 Task 必须声明它实施的 Requirement、Decision 和适用 DesignArtifact。未启用时 Planner 不接收伪 DesignSet，只绑定 CapabilityPlan 的 `inactive_by_profile` 事实。
 
-final CapabilityPlan 启用 strict_tdd 时，对于 test_strategy 声明为 required 的 Assertion，Planner 还必须按配套设计编译 `TaskTddContract` 和唯一 `AssertionCluster` 覆盖。Contract 同时绑定 accepted PRD、Requirement、Acceptance Criterion、Test seed 和 test_strategy。Standard 的 provisional CapabilityPlan 不得越过 Plan guard。Planner 可以缩小 selector、路径和预算，但不能降低适用性、改写业务结果、扩大 Failure Oracle 或绕过 TestInfrastructureTask 依赖。Plan digest 同时覆盖 final CapabilityPlan 和 TaskTddContract。
+final CapabilityPlan 启用 strict_tdd 时，对于 test_strategy 声明为 required 的 Criterion/Test pair，Planner 必须先按下述规则编译 canonical criterion assertion，再按配套设计编译 `TaskTddContract` 和唯一 `AssertionCluster` 覆盖。Contract 同时绑定 accepted PRD、Requirement、Acceptance Criterion、Test seed 和 test_strategy。Standard 的 provisional CapabilityPlan 不得越过 Plan guard。Planner 可以缩小 selector、路径和预算，但不能降低适用性、改写业务结果、扩大 Failure Oracle 或绕过 TestInfrastructureTask 依赖。Plan digest 同时覆盖 final CapabilityPlan 和 TaskTddContract。
+
+Criterion → Assertion 的权威编译规则如下：
+
+1. 每个 accepted 原子 Criterion 在任何 Protocol 1.1 Plan 中确定性编译为且仅编译为一个 `criterion_assertion`；Assertion 必须显式绑定唯一 `acceptance_criterion_id` 和对应 Test seed。启用 design_governance 时还必须绑定该 pair 的 primary test_strategy；未启用时不生成 strategy binding，Plan 通过 CapabilityPlan 单独证明该能力未启用。
+2. Assertion id 从 accepted PRD digest、criterion id 和 assertion schema version 稳定派生；同一输入重编不得产生新身份。
+3. 同一 Plan revision 中，每个 criterion assertion 必须恰好分配给一个 owning Task；多个 Assertion 可以进入同一 Cluster，但身份、Evidence 要求和 Verdict 必须逐 Assertion 保留。
+4. 一个 Criterion 不得拆成多个业务 Assertion。若存在多个可独立裁决的结果，Plan validation 必须阻塞并回到 Capture 拆分 Criterion。
+5. Planner 可以生成 `task_internal_assertion` 表达工程产物或内部约束，但它不能替代 criterion assertion、满足 Criterion 覆盖或改变 observable outcome。
+6. Cluster 只共享 patch、Gate、Oracle 和执行预算，不改变 `Criterion 1:1 criterion_assertion` 与 `criterion_assertion 1:1 owning Task` 的追踪关系。
 
 ### 13.2 ContextBundle
 
@@ -668,7 +686,7 @@ Projection 不拥有独立状态。检测漂移后只能从权威图重建，不
 - 幂等 resume 不重复提交节点、边或 ApprovalDecision；
 - finding cascade 不修改历史 accepted digest。
 - test_strategy required 永远不能被 Planner 降级，DesignSet digest 漂移必然使 TaskTddContract 和当前 Cycle 失效。
-- accepted PRD Criterion/Test seed 必须被唯一覆盖，observable outcome 的弱化必然校验失败。
+- 每个 accepted PRD Criterion/Test seed pair 必须被恰好一个 primary test_strategy 覆盖，observable outcome 的弱化必然校验失败。
 
 ### 19.3 Integration
 
@@ -717,7 +735,7 @@ Projection 不拥有独立状态。检测漂移后只能从权威图重建，不
 4. Design Agent 没有项目或 Ledger 写权限。
 5. 所有 proposal 在批准前不进入物化工程图。
 6. DesignSet 原子批准、原子提交、摘要失效和 reject 重提案均有账本证据。
-7. 每个 test_strategy 唯一覆盖 Coordinator-issued accepted PRD Criterion/Test seeds，且能复验 Question/Answer lineage，不能弱化 observable outcome；无法形成 Oracle 时回到 Capture。
+7. 每个 Coordinator-issued accepted PRD Criterion/Test seed pair 恰好由一个 primary test_strategy 覆盖，且能复验 Question/Answer lineage，不能弱化 observable outcome；无法形成 Oracle 时回到 Capture。
 8. 每个启用 design_governance 的 1.1 Plan 都绑定 accepted DesignSet；缺失或漂移时机械阻止执行。
 9. Standard/Governed 以及临时激活 Design 的迭代均经过 design；未启用的 Lite 迭代显示 not_enabled_by_profile 且零空壳工件。
 10. Finding 能生成新 ImpactSet/DesignSet 并失效下游授权。
@@ -746,7 +764,7 @@ Projection 不拥有独立状态。检测漂移后只能从权威图重建，不
 
 ## 22. 实施边界建议
 
-后续实施计划必须服从 Slim Profile/Capability Kernel 的依赖顺序，本设计不直接授权代码修改：
+统一实施计划已重编为 [Universal Harness Protocol 1.1 统一实施计划](../plans/2026-08-18-designset-lifecycle-implementation-plan.md)。以下序列仅保留为 DesignSet 子模块的局部依赖说明，不再作为独立实施顺序，也不直接授权代码修改：
 
 1. Protocol 1.1 Profile/Capability runtime records 与 Capability Compiler；
 2. Workflow Engine/Operation DAG 与固定 phase 解耦；

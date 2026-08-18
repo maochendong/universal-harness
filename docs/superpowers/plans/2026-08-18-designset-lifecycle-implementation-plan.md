@@ -1,1206 +1,549 @@
-# Universal Harness DesignSet 与可证明 TDD 协同实施计划
+# Universal Harness Protocol 1.1 统一实施计划
 
-日期：2026-08-18  
-状态：已规划，待批准实施  
-设计依据：
+> 状态：设计已确认，等待实施授权
+> 主干设计：Slim Profiles 与 Capability Kernel
+> 嵌入设计：Managed PRD Capture、DesignSet 生命周期、可证明 TDD
+> 交付方式：保留 19 个原子任务，但按 Kernel → Capture → Lite 纵向闭环 → Capability Modules 重编；本计划取代旧的固定重流水线顺序，不追加 Task 20。
 
-- [Universal Harness DesignSet 生命周期设计](../specs/2026-08-18-designset-lifecycle-design.md)
-- [Universal Harness 可证明 TDD 协议设计](../specs/2026-08-18-provable-tdd-protocol-design.md)
+## 1. 目标与边界
 
-## 1. 实施原则
+本计划把以下四份正式设计作为同一个 Protocol 1.1.0 交付：
 
-本计划按 red-green-refactor 执行。每个 Task 先写一个因当前能力缺失而失败的最小测试，确认失败原因与设计中的 Oracle 一致后再修改生产代码；窄测试通过后运行受影响包测试；每个 Task 独立提交，不把 Protocol、Orchestrator、TddController、dsh、Projection 和 Dashboard 压进一个不可评审提交。
+- `2026-08-18-harness-slim-profiles-design.md`；
+- `2026-08-18-intent-to-prd-capture-design.md`；
+- `2026-08-18-designset-lifecycle-design.md`；
+- `2026-08-18-provable-tdd-protocol-design.md`。
 
-严格 TDD 协议尚未实现前，前置任务使用仓库开发纪律保留 Red/Green 命令和结果；TddController、Evidence 和 TaskVerdict 可用后，后续任务必须通过 Harness 自身 dogfood 留下可重放的 Baseline/Red/Green 证据。不能用“本计划要求 TDD”替代运行时协议验收。
+实施完成后：
 
-以下设计约束不得在实施中静默改变：
+1. `new/adopt` 先由用户选择并确认 Lite、Standard、Governed；`iterate` 使用当前项目 Profile revision。
+2. 所有 Profile 共用 Evidence Kernel 和 managed Capture，但只运行 CapabilityPlan 中真实启用的 Module。
+3. Lite 先形成可用的最小纵向闭环，不产生未启用 Module 的空壳工件。
+4. Standard/Governed 在同一 Kernel 上增加 Impact、Design、Evaluation、Strict TDD 和 Audit，而不是复制 Orchestrator。
+5. Plan 从 accepted PRD、冻结 ImpactSet、accepted DesignSet 和 final CapabilityPlan 编译；Criterion、Test seed、Assertion、Task、Evidence、Verdict 全链唯一可追踪。
+6. Agent 自述、transcript、Live telemetry 和文件时间戳都不能替代 Ledger Evidence。
 
-1. 生命周期固定为 `capture → impact → design → plan → context → execute → verify → evaluate → snapshot`。
-2. 所有 Protocol 1.1 迭代都必须产生 accepted DesignSet；reuse 也不能跳过。
-3. DesignProposalPort 只提案，不具备项目写或 Ledger 写能力。
-4. Proposal 在批准前不进入物化工程图。
-5. DesignSet 以整个集合的 content digest 原子审批、原子提交。
-6. 覆盖不足不能进入 Plan。
-7. Plan、Context 和 Preflight 必须绑定 DesignSet digest。
-8. Reject 关闭当前 proposal 并携带理由重提案，不终止整个迭代。
-9. 已完成 1.0 历史不改写；旧开放 operation 不能越过 design 继续执行。
-10. 模型供应商可以替换，Harness 的 Schema、校验、审批和权威状态不随之改变。
-11. test_strategy 是 TDD 适用性、Failure Oracle、Gate 和路径策略的唯一设计来源；Planner 只能收紧。
-12. Protocol 1.1 的 required Task 必须经过健康 Baseline、test-only Red、Red 后生产解锁和同源 Green。
-13. 一个 Protocol 1.1 Task 只允许一种 TDD mode；required Task 只有一个 logical cycle，可覆盖共享 test patch/Gate 的多个 Assertion。
-14. RedEvidence 只能由 `baseline + frozen test patch` 的隔离工作区和结构化 Oracle 匹配产生。
-15. Red accepted 后测试变化、环境漂移或越权写入必须失效 Cycle；历史 Evidence 不改写。
-16. Green 不替代完整 Verify、独立 Evaluation 或 Finding 的 ImpactSet/DesignSet 反馈级联。
-17. TestInfrastructureTask 使用 framework_bootstrap proof，不能借“缺少测试框架”降级生产 Task。
+本计划不包含多人并行设计、分布式租约、多人投票审批、Markdown 权威源、未启用 Capability 的占位工件，也不改写已完成 Protocol 1.0 的历史事实。
 
-如果代码事实迫使上述任何约束改变，必须先修订设计文档并重新获得确认。
+## 2. 实施纪律
 
-## 2. 基线、分支与通用验证
+### 2.1 测试先行
 
-开始代码实施前：
+每个 Task 必须遵守：
 
-```bash
-git status --short --branch
-test "$(git branch --show-current)" = "main"
-pnpm test -- packages/core/test/schema packages/graph/test/impact
-pnpm test -- packages/runtime/test/planning packages/runtime/test/orchestration
-pnpm test -- packages/cli/test packages/dashboard/test adapters/projection-markdown/test
-pnpm typecheck
+```text
+新增或修改测试并证明失败
+  → 最小实现
+  → 目标测试通过
+  → 相关包测试通过
+  → pnpm verify
+  → 提交
 ```
 
-每个 Task 至少运行其列出的窄测试。每个纵向切片完成后运行：
+在 Harness 自身 Provable TDD 尚未可用前，提交说明或任务 Evidence 必须记录 Red/Green 命令和结果。Task 16 完成后，后续适用任务必须通过 Harness dogfood 生成可重放 Baseline/Red/Green 证据，不能只引用开发纪律。
+
+### 2.2 权威边界
+
+- Ledger/typed runtime records 保存权威状态；Graph 只保存 accepted 工程事实；Markdown/Dashboard 是 Projection。
+- Workflow Engine 只理解 CapabilityPlan DAG、checkpoint、typed result 和 invalidation，不判断 Profile 名称。
+- Profile/Capability Compiler、Capture Coordinator、Design Coordinator、TddController 分别保持一个窄 Interface；CLI/Dashboard 不复制状态机。
+- 每个审批必须绑定真实业务对象及 digest，不按 phase 固定批准次数。
+- 所有新集合进入 digest 前规范排序；时间和 Live telemetry 不进入语义 digest。
+
+### 2.3 通用验证
+
+每个 Task 至少运行目标测试和相关包 typecheck。进入主干前统一运行：
 
 ```bash
 pnpm format:check
 pnpm lint
+pnpm build
 pnpm typecheck
 pnpm test
+pnpm verify
 ```
 
-最终发布验证：
+涉及安全、恢复、Dashboard 或打包的 Task 还要运行相应专项命令：
 
 ```bash
-pnpm verify
-pnpm test:release
+pnpm test:security
+pnpm test:fault
+pnpm test:e2e
+pnpm test:e2e:dashboard
+pnpm pack:smoke
 ```
 
-真实 dsh dogfood 需要本机现有凭据和项目配置，不能替代可重复的自动测试；自动测试必须使用受控 fixture adapter，真实 dsh 结果作为额外 Evidence 留存。
-
-## 3. 依赖顺序
+## 3. 统一依赖图
 
 ```text
-T1 Protocol Design + TDD Schema
- ├─→ T2 Graph Relations
- └─→ T3 Design Domain + Validator
-       ├─→ T4 Input Compiler + Port
-       └─→ T5 Proposal Persistence + Approval
-              └─→ T6 Atomic Committer
-                     └─→ T7 Orchestration Phase
-                            ├─→ T8 Legacy Migration
-                            └─→ T9 Plan/Context/Preflight + TDD Contract
-                                  └─→ T10 Isolated Workspace + Patch
-                                        └─→ T11 Phase Grants + TddController
-                                              └─→ T12 Structured Gate + Evidence
-                                                    └─→ T13 Cycle Record + Verdict
-T9/T13 ─→ T14 Framework Bootstrap
-T7/T13/T14 ─→ T15 Feedback Cascade + Invalidation
-T4/T11/T12/T14 ─→ T16 CLI Config + dsh Adapters
-T6/T9/T13 ─→ T17 Markdown Projection
-T5/T7/T13/T15 ─→ T18 Dashboard
-T1–T18 ─→ T19 E2E/Docs/Dogfood/Acceptance
+T1 Protocol Schema / Canonical / Projection Status
+  ├── T2 Profile Records 与选择
+  │     └── T3 Capability Registry / Compiler / DAG
+  └── T4 Managed Capture Coordinator
+        └── T5 Project Context
+              └── T6 Proposal / Hard Gates / Manual UX
+                    └── T7 Review / Risk / Approval / Accepted PRD
+
+T3 + T7
+  └── T8 Workflow Engine 解耦与 Orchestrator 拆分
+        ├── T9 Lite Kernel-only 纵向闭环
+        └── T10 Impact / Evaluation / Audit Module contributors
+              └── T11 DesignSet Schema / Coverage / Validator
+                    └── T12 Design Proposal / Approval / Commit
+                          └── T13 Plan / Criterion Assertion / TDD Contract
+                                ├── T14 Context / Preflight 条件绑定
+                                └── T15 Isolated Workspace / Patch / Grant
+                                      └── T16 TddController / Gate / Evidence / Verdict
+
+T10 + T12 + T16
+  └── T17 Finding Cascade / Invalidation / Migration
+
+T9 + T17
+  └── T18 CLI / Adapters / Projection / Dashboard
+        └── T19 三档 E2E / Dogfood / 发布验收
 ```
 
-T1–T7 是 DesignSet 最小权威闭环；T9–T14 是可证明 TDD 最小权威闭环。关键链 `T1 → T3 → T9 → T10 → T11 → T12 → T13` 必须按顺序完成。无直接依赖的 Graph、Migration、Projection 和 Dashboard 工作可以分批，但同一工作区内仍应保持小提交和完整窄测试。
+除图中显式依赖外，不允许通过临时 stub 把下游语义提前固化。测试 fake 可以满足 Port，但不能生成伪 accepted 工件。
 
-## 4. Task 1：Protocol 1.1 DesignSet、TDD、Evidence 与 Event Schema
+## 4. Task 1：Protocol 1.1 Schema、Canonical 与通用状态投影
 
-### 测试先行
+**目标**：冻结四份设计共享的类型、JSON Schema、canonical digest 和兼容读取。
 
-修改：
+**主要落点**：`packages/core/src/schema/`、`packages/core/schemas/`、`packages/runtime/src/compatibility/`，以及新的 Protocol registry、canonical helpers 和 `CapabilityStatusProjection`。
 
-- `packages/core/test/schema/protocol-version.test.ts`
-- `packages/core/test/schema/persisted-records.test.ts`
-- `packages/core/test/schema/operation-runtime.test.ts`
-- `packages/core/test/schema/schema-export.test.ts`
-- 新增 `packages/core/test/schema/design-records.test.ts`
-- 新增 `packages/core/test/schema/tdd-records.test.ts`
-- 新增 `packages/core/test/schema/tdd-events.test.ts`
-- 新增 `packages/core/test/fixtures/protocol-1.0-designless-ledger.json`
+**测试先行**：
 
-先写失败断言：
+- 新 record 的严格 Schema、未知字段、枚举、长度和引用错误；
+- 集合乱序仍产生同一 digest，语义变化必然改变 digest；
+- TDD 六个领域状态确定性映射到 Slim 五个通用状态；
+- `framework_proven` 通用投影为 `proven`，但保留领域状态和基础设施语义；
+- Protocol 1.0 fixtures 可读且历史 digest 不变化。
 
-1. 新记录默认使用 `1.1.0`，reader 仍接受 `1.0.0`。
-2. Node 类型接受 DesignSet、DesignArtifact；未知类型仍失败。
-3. Runtime Schema 接受严格的 `design_set_proposal`，拒绝未知字段、空 digest、非法 action 和未排序集合。
-4. DesignArtifact kind 仅接受 `api_contract/data_contract/test_strategy/ui_design`。
-5. 旧 1.0 fixture 可以读取，且没有任何自动补造的 DesignSet。
-6. 生成的 JSON Schema 包含新 Node/Edge/Runtime 定义。
-7. test_strategy profile 严格接受 required/not_applicable 的形状，拒绝未知 category、空/畸形 Oracle、非法路径/Gate ID 和未知字段；跨引用与路径冲突留给 Task 3 纯校验器。
-8. Runtime Schema 接受 TaskTddContract、TddCycleRecord 和 9 个 TDD lifecycle events，拒绝未知字段和不合法 status/field 组合。
-9. Evidence 继续使用统一 Node 类型，只允许注册的 `framework_result/baseline_test_result/red_test_result/green_test_result/refactor_test_result`。
-10. completed Cycle 必须具有 Baseline/Red/Green/implementation bindings；blocked/invalidated 不得伪造未到达阶段的字段。
-11. 1.0 历史 fixture 没有自动补造 TDD proof，兼容 reader 保持原始 digest。
-
-### 实现
-
-修改：
-
-- `packages/core/src/version.ts`
-- `packages/core/src/schema/node.ts`
-- `packages/core/src/schema/edge.ts`
-- `packages/core/src/schema/runtime.ts`
-- `packages/core/src/schema/index.ts`
-- `packages/core/src/schema/registry.ts`
-- `packages/core/scripts/write-schemas.mjs`
-- 重新生成 `packages/core/schemas/*.schema.json`
-- `packages/core/src/index.ts`
-
-新增严格 TypeBox Schema：DesignArtifact content、DesignSet content、DesignSetProposalRecord、node/edge changes、reused assets、coverage、risk summary、test_strategy TDD profile、TaskTddContract、TddCycleRecord、typed Evidence extension 和 TDD lifecycle events。事件 payload 只保存规范 ID/摘要/状态/原因，大输出通过 locator/digest 引用。旧记录只按 major version 兼容读取，不修改原始字节。
-
-### 验证
-
-```bash
-pnpm --filter @universal-harness-internal/core schema:generate
-pnpm test -- packages/core/test/schema
-pnpm --filter @universal-harness-internal/core typecheck
-```
+**实现**：定义 Profile/Capability、Capture、DesignSet、TDD、Evidence、Event 的 1.1 类型与 Schema；统一状态投影；提供 1.0 reader 和 1.1 writer。
 
-提交：`feat(protocol): add DesignSet and TDD 1.1 records`
+**完成条件**：Schema 生成可重复，golden fixtures 稳定，未定义状态/映射 fail closed。
 
-## 5. Task 2：设计关系矩阵与影响传播
+## 5. Task 2：Project Profile 记录、选择与风险 Override
 
-### 测试先行
+**依赖**：T1。
 
-修改/新增：
+**目标**：实现三档 ProjectProfile 的 append-only 权威记录和 new/adopt/iterate 选择语义，但暂不运行高级 Module。
 
-- `packages/graph/test/integrity.test.ts`
-- `packages/graph/test/impact/propagation.test.ts`
-- `packages/graph/test/impact/scoring.test.ts`
-- `packages/graph/test/impact/impact-set.test.ts`
-- `packages/graph/test/fixtures.ts`
-- `packages/graph/test/impact/fixtures.ts`
-- 新增 `tests/golden/impact/designset-change.json`
-- 新增 `tests/golden/impact/contract-change.json`
+**测试先行**：
 
-先写失败断言：
+- new/adopt 缺少交互选择或 `--profile` 时返回 `input_required`；
+- iterate 使用当前 revision，项目降级只影响未来 Operation；
+- Recommendation 可 Override，但 Policy required/deny 不可覆盖；
+- Override 绑定 iteration/risk/digest，scope drift 后失效；
+- 同一 decision idempotency key 不产生重复记录。
 
-1. `DesignSet DERIVES_FROM ImpactSet`、`DesignSet CONTAINS design asset` 合法，错误方向失败。
-2. `DesignArtifact SPECIFIES Requirement/Decision/Component/Test` 合法，其他 target 失败。
-3. `Task IMPLEMENTS DesignArtifact` 合法。
-4. SPECIFIES 双向传播、默认 high risk、禁止沿 proposed/inferred edge 满足 must-change。
-5. CONTAINS 不参与影响传播。
-6. ImpactSet 变化能通过 inverse DERIVES_FROM 定位依赖它的 DesignSet。
-7. 同一图和种子稳定生成相同 explanation path、classification 和 digest。
+**实现**：`ProjectProfileRecord`、`ProfileRecommendationRecord`、`ProfileDecisionRecord`、三档 registry、风险推荐和旧项目显式迁移。
 
-### 实现
+**完成条件**：项目档位选择是显式、可恢复、可审计事实，不存在静默 Standard 默认。
 
-修改：
+## 6. Task 3：Capability Registry、依赖闭包、Compiler 与 Operation DAG
 
-- `packages/graph/src/integrity.ts`
-- `packages/graph/src/impact/propagation.ts`
-- `packages/graph/src/impact/scoring.ts`
-- `packages/graph/src/views/artifact-graph.ts`
-- `packages/graph/src/index.ts`
+**依赖**：T1、T2。
 
-把 DesignSet、DesignArtifact 加入 versionable/view 类型，扩展关系兼容矩阵和传播策略。CONTAINS 继续只属于结构关系，不进入影响传播；SPECIFIES 把影响传播关系从 17 个增加到 18 个。
+**目标**：从 Profile、风险、Policy、Provider 和 accepted bindings 确定性编译 CapabilityPlan。
 
-### 验证
+**测试先行**：
 
-```bash
-pnpm test -- packages/graph/test tests/golden/impact
-pnpm --filter @universal-harness-internal/graph typecheck
-```
+- dependency closure property tests；
+- 激活 `strict_tdd` 自动补齐 `impact_analysis → design_governance`、structured Gate 和 isolated workspace；
+- DAG 循环、缺 Provider、冲突 output、非法 deferred 全部阻塞；
+- Standard `strict_tdd` provisional → final 只允许在 accepted DesignSet 后发生；
+- 通用 DAG 固定表示 `verify → [evaluate?] → snapshot`；
+- 未启用 Module 零 contributor invocation、零工件、零 Approval。
 
-提交：`feat(graph): propagate approved design contracts`
+**实现**：Capability registry、依赖/provider closure、approval objects、invalidation graph、provisional/final `CapabilityPlanRecord` 和 DAG contributor Interface。
 
-## 6. Task 3：DesignSet 规范模型、覆盖率与纯校验器
+**完成条件**：同一 canonical 输入产生同一 plan digest；进入 Plan 前 CapabilityPlan 必须 final。
 
-### 测试先行
+## 7. Task 4：Managed Capture Coordinator 与可恢复状态机
 
-新增：
+**依赖**：T1。
 
-- `packages/runtime/test/design/model.test.ts`
-- `packages/runtime/test/design/canonical.property.test.ts`
-- `packages/runtime/test/design/coverage.test.ts`
-- `packages/runtime/test/design/validator.test.ts`
-- 新增 `packages/runtime/test/design/test-strategy.test.ts`
-- 新增 `packages/runtime/test/design/failure-oracle.test.ts`
-- `packages/runtime/test/design/fixtures.ts`
+**目标**：以 `PrdCaptureCoordinator.advance()` 作为 CLI、Dashboard、Orchestrator 共用的唯一推进 Interface。
 
-先写失败断言：
+**测试先行**：
 
-1. 任意 node/edge/coverage 输入顺序产生同一 canonical content 和 digest。
-2. create/revise/reuse 的 base/target revision 规则准确拒绝跳号、分叉和 drift。
-3. 每个 must-change Requirement 必须有 Decision 和 test_strategy。
-4. Decision 必须 SHAPES Component，或带结构化 component not_applicable reason。
-5. API/data/UI 必须 covered、reused 或带非空 not_applicable reason。
-6. inferred/proposed edge 不能满足 must-change 覆盖。
-7. proposed extensions 中嵌套的 command/shell/tool invocation 被递归拒绝。
-8. 冲突 Decision、重复 asset/edge、非法 endpoint 和超限 body 产生稳定 ValidationReport code/path。
-9. round-trip 后语义与 digest 不变。
-10. 每个 must-change Requirement 的 test_strategy 都有 required 或受控 not_applicable TDD policy；代码、配置、Schema、迁移、安全和缺陷修复不能 not_applicable。
-11. required policy 必须绑定已注册的 baseline guards、target Gate/selectors、Failure Oracle、无冲突 path policy、存在的 framework profile digest 和 refactor policy。
-12. `missing_symbol` 只有精确 symbol/error code 可用；syntax/discovery/environment/timeout/crash 不能进入 Oracle。
-13. test/production 路径重叠时，缺少受信任语法感知 classifier 的策略失败；Design Agent 不能用 not_applicable 绕过。
-14. project Policy 可以收紧 not_applicable registry、Oracle 和路径，不能放宽 Protocol deny。
+- 15 个 `CaptureState` 的合法/非法迁移矩阵；
+- `review_provider_required` 只能表示为 `state: blocked` 与 typed `blocked_reason`，不得被接受为状态；
+- `blocked_reason` 当且仅当 blocked 必填；
+- crash、resume、expected digest conflict、Decision 已提交未消费；
+- Session revision append-only，重复命令幂等。
 
-### 实现
+**实现**：Capture Session、Question、Answer、Invocation、Checkpoint records，typed `CaptureBlockReason`、恢复命令和 ApprovalDecision consumption。
 
-新增：
+**完成条件**：任何 Port 调用前 Session/Operation 已提交；刷新或重启后能只从 Ledger 恢复。
 
-- `packages/runtime/src/design/model.ts`
-- `packages/runtime/src/design/canonical.ts`
-- `packages/runtime/src/design/coverage.ts`
-- `packages/runtime/src/design/validator.ts`
-- `packages/runtime/src/design/test-strategy.ts`
-- `packages/runtime/src/design/failure-oracle.ts`
-- `packages/runtime/src/design/errors.ts`
-- `packages/runtime/src/design/index.ts`
+## 8. Task 5：受控 Project Context 与 Proposal/Review 隔离
 
-修改：
+**依赖**：T4。
 
-- `packages/runtime/src/index.ts`
+**目标**：自动读取受控项目上下文，并为 Proposal 与 Review 编译相互独立的 ContextBundle。
 
-校验器保持纯函数：不读文件、不查网络、不调用模型、不写 Ledger。Graph snapshot、当前 revisions 和 frozen ImpactSet 通过输入参数显式传入。
+**测试先行**：
 
-### 验证
+- manifest/README/Gate/Graph/ADR/API/Schema/Policy 的 Profile 选择矩阵；
+- path traversal、symlink、secret、binary、oversize、prompt injection fixtures；
+- Proposal/Review 可以源文件重叠，但 bundle id/digest/conversation 不得复用；
+- baseline 漂移使 Bundle 及下游失效；
+- Adapter 无项目文件或 Ledger 直接读取权限。
 
-```bash
-pnpm test -- packages/runtime/test/design
-pnpm --filter @universal-harness-internal/runtime typecheck
-```
+**实现**：`ProjectContextPort`、local-git/in-memory adapters、purpose、budget、selection、redaction、provenance 和失效记录。
 
-提交：`feat(design): validate DesignSet and TDD strategies`
+**完成条件**：上下文最小、可解释、可复验，Proposal 与 Review 不形成同会话自评。
 
-## 7. Task 4：DesignInputCompiler 与 DesignProposalPort
+## 9. Task 6：PrdProposalPort、确定性硬门禁与 Manual Capture UX
 
-### 测试先行
+**依赖**：T5。
 
-新增：
+**目标**：让结构化 `PrdProposal` 成为 PRD 唯一权威源，并使 Lite Manual 录入真正轻量。
 
-- `packages/runtime/test/design/input-compiler.test.ts`
-- `packages/runtime/test/design/input-compiler.property.test.ts`
-- `packages/runtime/test/design/port.test.ts`
-- `packages/runtime/test/design/budget.test.ts`
+**测试先行**：
 
-先写失败断言：
+- Manual、in-memory、模型 Adapter conformance；
+- Coordinator-issued entity id、lineage、SourceBinding 和 stable revision；
+- Schema/reference/conflict/open-question/test-first-readiness hard gates；
+- 非原子 Criterion 必须澄清，不能留给 Planner 做 1:N Assertion 拆分；
+- Manual 表单优先显示上下文预填、差异和缺失项；
+- telemetry 不进入 Proposal semantic digest。
 
-1. 输入 Bundle 只包含冻结 ImpactSet 命中的 Requirement/Test 和受控设计/实现邻域。
-2. Bundle 绑定 baseline/impact/policy/repository digest，并对同一输入稳定。
-3. 仓库内容被标记为 untrusted data，不被拼接为高优先级指令。
-4. token/step/attempt 和单资产尺寸预算生效，超限返回 typed failure。
-5. Port 只允许 proposed/clarification_required/failed 三类结果。
-6. validation report 和 reject reason 只在重提案时进入受控 feedback 区域。
-7. 测试 Port 可以在没有外部 LLM 的情况下重复返回固定 proposal。
+**实现**：`PrdProposalPort`、ManualPrdProposalAdapter、deterministic validators、typed questions/findings 和 Capture UX telemetry。
 
-### 实现
+**完成条件**：无模型时 Manual 是完整默认路径；Generic Interpreter 不再自动包装低质量 Requirement。
 
-新增：
+## 10. Task 7：独立 Review、Risk、批准与 Accepted PRD 原子提交
 
-- `packages/runtime/src/design/input.ts`
-- `packages/runtime/src/design/input-compiler.ts`
-- `packages/runtime/src/design/port.ts`
-- `packages/runtime/src/design/budget.ts`
-- `packages/runtime/src/design/test-port.ts`
+**依赖**：T6。
 
-修改：
+**目标**：完成 Capture 质量闭环并物化稳定 Criterion/Test seeds。
 
-- `packages/runtime/src/context/selector.ts`
-- `packages/runtime/src/index.ts`
+**测试先行**：
 
-DesignSet 和 DesignArtifact 加入 L2 knowledge layer。Port 不复用 `OrchestrationExecutor`，避免执行能力与设计提案能力混为一体。
+- hard gate 失败不调用 reviewer；
+- Proposal/Review invocation/context/prompt/conversation/Evidence 独立；
+- Review revise/clarify/blocked、Manual Review input 和 Provider 缺失恢复；
+- low/non-material/high-confidence Policy auto approval 与 material human approval；
+- object digest 漂移使 Approval 失效；
+- accepted PRD、RequirementBaseline、Graph、bindings、checkpoint 原子提交；
+- Criterion continues 稳定复用 id/Test seed，Question→Answer→Criterion lineage 可复验。
 
-### 验证
+**实现**：`PrdReviewPort`、RiskAssessment/Profile Recommendation、immutable `AcceptedPrdRecord`，以及从 criterion id 确定性派生 Test id。
 
-```bash
-pnpm test -- packages/runtime/test/design packages/runtime/test/context/selector.test.ts
-```
+**完成条件**：accepted PRD 不可修改；失败事务不留下部分 baseline 或 graph facts。
 
-提交：`feat(design): compile governed proposal inputs`
+## 11. Task 8：Workflow Engine DAG 化与 Orchestrator 深模块拆分
 
-## 8. Task 5：Proposal 持久化、审批预览与 Reject 重提案
+**依赖**：T3、T7。
 
-### 测试先行
+**目标**：移除固定 phase 主流程，让 Workflow Engine 执行 CapabilityPlan 中实际存在的节点。
 
-修改/新增：
+**测试先行**：
 
-- `packages/runtime/test/approval/request.test.ts`
-- `packages/runtime/test/approval/invalidation.test.ts`
-- `packages/runtime/test/approval/service.test.ts`
-- 新增 `packages/runtime/test/design/proposal-repository.test.ts`
-- 新增 `packages/runtime/test/design/approval.test.ts`
-- `packages/dashboard/test/presentation.test.ts` 先增加共享中文预览 golden
+- Lite、Standard、Governed 三种 DAG fixture；
+- optional node 缺席时无调用、无 checkpoint、无空壳事件；
+- node crash/resume、awaiting approval、authoritative commit；
+- capability upgrade 失效最早必要节点并确定性恢复；
+- Engine 测试不需要构造 Profile-specific 分支。
 
-先写失败断言：
+**实现**：DAG node contract/runner/checkpoint/typed result，从现有大型 orchestrator 抽出 Kernel Coordinator、Capability Compiler 和 Module contributors，保留兼容 facade。
 
-1. ProposalRecord 写入 `artifacts/design-set-proposals/<id>.json`，但 materialized graph 查不到 DesignSet/DesignArtifact。
-2. ApprovalRequest 绑定 proposal content、baseline、policy、impact 和 repository digest。
-3. CLI/Dashboard 中文 Preview 与 JSON API 来自同一 ProposalRecord。
-4. defer 保持原 proposal pending。
-5. reject 必须有非空理由，关闭当前 proposal，下一轮获得新 proposal id/content digest。
-6. approve 前任一绑定漂移使旧 ApprovalRequest 失效并重签。
-7. 模型、actor 或 Dashboard 不能自我批准或批量批准其他 DesignSet。
-8. Preview 按 Requirement 展示 TDD required/not_applicable、中文理由、Baseline/target Gates、Oracle、路径和 framework profile；JSON 与中文视图来自同一 canonical proposal。
-9. 人工批准 DesignSet 不能扩大 Policy deny，也不能只批准设计资产而跳过 test_strategy TDD profile。
+**完成条件**：Engine Interface 足以测试所有 DAG；删除任一未启用 Module 不影响 Kernel happy path。
 
-### 实现
+## 12. Task 9：Lite Kernel-only 首个完整纵向闭环
 
-新增：
+**依赖**：T8。
 
-- `packages/runtime/src/design/proposal-repository.ts`
-- `packages/runtime/src/design/approval.ts`
-- `packages/runtime/src/design/presentation.ts`
+**目标**：在高级 Module 之前交付 Capture → Plan → Context → Execute → Verify → Snapshot。
 
-修改：
+**测试先行**：
 
-- `packages/runtime/src/approval/request.ts`
-- `packages/runtime/src/approval/invalidation.ts`
-- `packages/runtime/src/approval/service.ts`
-- `packages/runtime/src/approval/interaction.ts`
-- `packages/runtime/src/index.ts`
+- new/adopt/iterate/resume Lite happy path；
+- required project Gates 产生 Evidence，Agent 自述不能通过验收；
+- ImpactSet、DesignSet、Evaluation、TDD Contract/Cycle 的 Port、record、event、approval 均为零；
+- CLI/Dashboard happy path 不要求理解 Node、Edge、digest、Cycle；
+- 单 Requirement Capture 指标可记录和导出。
 
-Design-specific reject 语义放在 `DesignApprovalCoordinator`，不改变 RequirementBaseline/ImpactSet 已有 reject 终止行为。ApprovalDecision Schema 不放宽；仅对 DesignSet reject 增加 reason 必填校验。
+**实现**：Kernel-only Planner、Context、Agent Grant、Gate/Evidence、Snapshot/Finding、`inactive_by_profile` Read API 和一次驱动入口。
 
-### 验证
+**完成条件**：Lite 不是隐藏后的完整重流水线；自动测试机械证明零 optional artifacts。
 
-```bash
-pnpm test -- packages/runtime/test/approval packages/runtime/test/design/approval.test.ts packages/runtime/test/design/proposal-repository.test.ts
-```
+## 13. Task 10：Impact、Independent Evaluation 与 Advanced Audit Module Contributors
 
-提交：`feat(design): govern DesignSet approvals`
+**依赖**：T8。
 
-## 9. Task 6：DesignCommitter 原子提交与演化链
+**目标**：把既有 Impact/Evaluation/Audit 接入 Capability Module contract，而不是固定 phase。
 
-### 测试先行
+**测试先行**：
 
-新增：
+- Impact contributor 的 input/output/checkpoint/invalidation；
+- Evaluation 未启用时 `verify → snapshot`，启用时 `verify → evaluate → snapshot`；
+- Evaluation/Audit 未启用时零 runner/event/evidence；
+- Standard/Governed 默认解析出的 DAG 包含对应节点；
+- Finding 风险信号可以请求升级，但不能自行批准。
 
-- `packages/runtime/test/design/committer.test.ts`
-- `packages/runtime/test/design/committer.property.test.ts`
-- `tests/fault/designset-atomic-commit.test.ts`
-- `tests/fault/designset-binding-drift.test.ts`
+**实现**：三个 ModuleDefinition/contributor、既有引擎适配和 Read API 通用/领域状态投影。
 
-先写失败断言：
+**完成条件**：三项能力可以独立启停，Engine 和 Kernel 无 Profile 条件分支。
 
-1. approve 后一次 Ledger Operation 写入 accepted DesignSet、资产 revisions、语义边、DERIVES_FROM、CONTAINS 和 checkpoint payload。
-2. commit 前可以预测并复验全部目标 digest。
-3. 任一 base revision/baseline/impact/policy/repository drift 时零设计节点落地。
-4. 注入事务中断时不存在部分资产或部分关系。
-5. 同一 proposal 幂等重试不重复写节点、边或 ApprovalDecision。
-6. 同一 iteration 使用稳定 DesignSet id 和连续 revision。
-7. 新 iteration 使用新 id，并 SUPERSEDES 上一个项目有效 DesignSet。
-8. 被复用资产可以被多个 DesignSet CONTAINS，但自身 revision/digest 不改变。
+## 14. Task 11：DesignSet Schema、主责覆盖与纯 Validator
 
-### 实现
+**依赖**：T10。
 
-新增：
+**目标**：实现 DesignSet、设计资产、关系边和无歧义 Test Strategy coverage。
 
-- `packages/runtime/src/design/records.ts`
-- `packages/runtime/src/design/committer.ts`
-- `packages/runtime/src/design/identity.ts`
+**测试先行**：
 
-修改：
+- Shape/imperative/reference/revision/relation/coverage/conflict 顺序；
+- 每个 must-change Requirement 的 Decision/Component/API/Data/UI 覆盖；
+- 每个 accepted `(criterion_id, test_node_id)` 恰好一个 `primary_test_strategy_id`；
+- 一个 strategy 可覆盖多个 pair，supporting/reused strategy 不得重复主责；
+- coverage canonical ordering 与 digest；
+- weak observable outcome、错误 relation、proposed/inferred edge 满足覆盖均被拒绝。
 
-- `packages/runtime/src/workflow/checkpoint.ts`
-- `packages/runtime/src/index.ts`
+**实现**：`RequirementDesignCoverage`、`TestStrategyCoverageBinding`、DesignSet/Artifact/Proposal schema、纯 validator 和设计关系兼容。
 
-DesignCommitter 是唯一能把已批准 proposal 物化为设计事实的模块。结构边由 committer 生成；Design Agent 不得提供 DERIVES_FROM、CONTAINS 或 IMPLEMENTS。
+**完成条件**：覆盖失败是 design blocker；Criterion/Test 集合直接与显式 primary binding 比对，supporting strategy 不能形成第二份覆盖真相。
 
-### 验证
+## 15. Task 12：Design Proposal、审批、原子提交与 Standard Finalization
 
-```bash
-pnpm test -- packages/runtime/test/design/committer.test.ts packages/runtime/test/design/committer.property.test.ts tests/fault/designset-atomic-commit.test.ts tests/fault/designset-binding-drift.test.ts
-```
+**依赖**：T11、T3。
 
-提交：`feat(design): commit approved design graphs atomically`
+**目标**：实现 impact → design → plan 的正式设计资产生命周期。
 
-## 10. Task 7：Orchestrator design 相位与恢复状态机
+**测试先行**：
 
-### 测试先行
+- DesignInputBundle 绑定 baseline/ImpactSet/Policy/CapabilityPlan；
+- DesignProposalPort 只读、无项目写权限、不可自批；
+- approve/reject/defer、digest drift、revision conflict、事务失败恢复；
+- accepted DesignSet/资产/关系/checkpoint 原子提交；
+- Standard accepted test_strategy 与 final CapabilityPlan 同事务提交；
+- design_governance 未启用时零 Design 工件。
 
-修改/新增：
+**实现**：DesignInputCompiler、ProposalPort、Validator、ApprovalCoordinator、Committer、Manual/InMemory/dsh adapters 和 final CapabilityPlan derivation。
 
-- `packages/runtime/test/orchestration/phases.test.ts`
-- `packages/runtime/test/orchestration/orchestrator.test.ts`
-- 新增 `packages/runtime/test/orchestration/lifecycle-events.test.ts`
-- 新增 `packages/runtime/test/orchestration/design-phase.test.ts`
-- `tests/fault/expired-approval.test.ts`
-- `tests/fault/approval-cascade-invalidation.test.ts`
+**完成条件**：Plan 只能消费 accepted DesignSet 与 final CapabilityPlan，provisional plan 无执行授权。
 
-先写失败断言：
+## 16. Task 13：Plan 编译、Criterion Assertion 与 TaskTddContract
 
-1. phase 顺序在 impact 与 plan 之间包含 design。
-2. frozen ImpactSet 后调用 DesignInputCompiler/DesignProposalPort，而不是直接进入 plan。
-3. valid proposal 暂停在 DesignSet ApprovalRequest；approve 后原子提交并进入 plan。
-4. invalid proposal 在 phase budget 内重提案，耗尽后形成可恢复 blocker。
-5. clarification_required 返回 input_required，恢复后重新编译输入。
-6. defer/resume 不重复调用模型；绑定漂移时才重新提案。
-7. reject reason 被带入下一轮 proposal，operation 不终止。
-8. design checkpoint 只在权威提交后推进。
-9. resume 不重复已提交 DesignSet revision 或 phase lifecycle event。
+**依赖**：T12。
 
-### 实现
+**目标**：补齐 Criterion → Assertion 权威映射，并条件生成 TDD Contract。
 
-修改：
+**测试先行**：
 
-- `packages/runtime/src/orchestration/phases.ts`
-- `packages/runtime/src/orchestration/lifecycle-events.ts`
-- `packages/runtime/src/orchestration/orchestrator.ts`
-- `packages/runtime/src/workflow/resume.ts`
-- `packages/runtime/src/workflow/checkpoint.ts`
-- `packages/runtime/src/status/status.ts`
-- `packages/runtime/src/index.ts`
+- 每个 accepted 原子 Criterion 恰好编译一个 `criterion_assertion`；
+- Assertion id 由 accepted PRD digest、criterion id、schema version 稳定派生；
+- 每个 criterion assertion 在一个 Plan revision 中恰好一个 owning Task；
+- 多 Assertion 可 N:1 组成 Cluster，但 identity/Evidence/Verdict 不合并；
+- Criterion 1:N 业务 Assertion 被拒绝并回到 Capture；
+- `task_internal_assertion` 不能替代 Criterion coverage；
+- required/not_applicable/framework_bootstrap 与未启用状态不能混合。
 
-优先把 `phaseDesign` 放在独立 `packages/runtime/src/orchestration/design-phase.ts`，orchestrator 只负责依赖注入和 phase dispatch，避免继续扩大单文件职责。
+**实现**：扩展 `TaskAcceptanceAssertion`，新增 Criterion Assertion compiler、coverage validator、DesignSet-aware PlanTasksPort、TaskTddContract 和 AssertionCluster。
 
-### 验证
+**完成条件**：从 Criterion 到 Task 的基数和身份不依赖 Planner Adapter 自由解释。
 
-```bash
-pnpm test -- packages/runtime/test/orchestration packages/runtime/test/workflow tests/fault/expired-approval.test.ts tests/fault/approval-cascade-invalidation.test.ts
-```
+## 17. Task 14：Context 与 ExecutionPreflight 的 Capability 条件绑定
 
-提交：`feat(orchestration): add governed design phase`
+**依赖**：T13。
 
-## 11. Task 8：Protocol 1.0 开放迭代迁移
+**目标**：只为实际启用能力编译上下文和执行前强绑定。
 
-### 测试先行
+**测试先行**：
 
-修改/新增：
+- Lite Context 不含伪 Impact/Design/TDD binding；
+- design_governance 启用时绑定 DesignSet 和实现关系；
+- strict_tdd 启用时绑定 Contract、framework profile、workspace capability；
+- 任一 digest drift 阻止 RunStarted；
+- Context selection 预算和 freshness 不因 Module 数量无界增长。
 
-- `packages/runtime/test/compatibility/open-iteration-migration.test.ts`
-- 新增 `packages/runtime/test/compatibility/design-phase-migration.test.ts`
-- 新增 `tests/e2e/protocol-1.0-design-migration.test.ts`
+**实现**：Capability-aware Context contributors、conditional execution binding、preflight typed blockers 和恢复入口。
 
-使用真实 1.0 fixture，先写失败断言：
+**完成条件**：Agent 收到当前、最小、已批准上下文，不能凭旧 Approval 或自述绕过。
 
-1. completed Snapshot 保持原字节和 digest，不补 DesignSet。
-2. capture/impact 开放 checkpoint 在有效 frozen ImpactSet 后路由 design。
-3. plan/context/execute 开放 checkpoint 追加 migration blocker，使旧 Plan/Run 授权失效，并回到 impact/design。
-4. 缺失或 drifted ImpactSet 不猜测，阻塞并输出明确恢复动作。
-5. 迁移重复执行幂等，不重复 blocker/invalidated event。
-6. completed 1.0 Verdict/Projection 标记“历史记录，无 DesignSet/TDD 证明”，不生成伪 Red/Green。
-7. 开放 1.0 operation 的新 Plan 必须按 accepted test_strategy 编译 TaskTddContract；旧 Run 不能被当作已有 Red/Green。
+## 18. Task 15：隔离工作区、规范 Patch 与 Phase Grant
 
-### 实现
+**依赖**：T13。
 
-修改：
+**目标**：为严格 TDD 提供可重建工作区和测试/生产写权限隔离。
 
-- `packages/runtime/src/compatibility/open-iteration.ts`
-- `packages/runtime/src/workflow/resume.ts`
-- `packages/runtime/src/status/status.ts`
-- `packages/runtime/src/orchestration/orchestrator.ts`
+**测试先行**：
 
-新增 design-specific migration reason/error code。迁移只追加新记录，不改写 1.0 artifact。
+- baseline/test/implementation/refactor workspace 可重复构建；
+- test authoring 只能写 test/test-config；Red 前 production write 被拒绝；
+- canonical test patch hash、同一 patch 复用、Red 后测试漂移失效；
+- symlink/path escape/重叠路径/共置测试 classifier；
+- crash/resume 不重复签发 Grant，过期 Grant 不可使用。
 
-### 验证
+**实现**：IsolatedWorkspacePort 与 git/in-memory adapter、canonical patch、write-set attestation 和 phase CapabilityGrant。
 
-```bash
-pnpm test -- packages/runtime/test/compatibility tests/e2e/protocol-1.0-design-migration.test.ts
-```
+**完成条件**：RedEvidence 只可能来自 baseline + accepted test patch；Red accepted 前无法获得 production path。
 
-提交：`feat(migration): require design for open legacy iterations`
+## 19. Task 16：TddController、Structured Gate、Evidence、Framework 与 Verdict
 
-## 12. Task 9：Plan、Context、Preflight 与 TaskTddContract
+**依赖**：T15、T14。
 
-### 测试先行
+**目标**：实现可证明 Baseline → Red → Green → Refactor，并接入最终 Gate/Evaluation/TaskVerdict。
 
-修改/新增：
+**测试先行**：
 
-- `packages/runtime/test/planning/execution-plan.test.ts`
-- `packages/runtime/test/planning/validator.test.ts`
-- `packages/runtime/test/planning/impact-coverage.test.ts`
-- `packages/runtime/test/context/compiler.test.ts`
-- `packages/runtime/test/context/task-bundles.test.ts`
-- `packages/runtime/test/orchestration/execution-binding.test.ts`
-- 新增 `packages/runtime/test/planning/design-coverage.test.ts`
-- 新增 `packages/runtime/test/planning/tdd-contract.test.ts`
-- 新增 `packages/runtime/test/planning/tdd-coverage.property.test.ts`
-- 新增 `packages/runtime/test/orchestration/tdd-preflight.test.ts`
+- 状态机、预算、checkpoint、resume、attempt ordinal；
+- Baseline 健康、allowed failure kind、selector/assertion/Oracle 精确绑定；
+- syntax/env/timeout/OOM/无结构化结果不能形成 RedEvidence；
+- Red/Green 同 patch/Gate/framework/environment；
+- TestInfrastructureTask 的 pass/fail discovery 与 `framework_proven`；
+- required、controlled_not_applicable、framework_proven、not_enabled、historical、invalid 六类领域 Verdict；
+- 领域状态到通用五态投影，Dashboard 不得自行推断；
+- Green 通过但完整 Gate/Evaluation 失败时最终 Verdict 失败。
 
-先写失败断言：
+**实现**：TddController、Phase runs/events/checkpoints、structured Gate、FailureOracle、typed Evidence、TddCycleRecord、FrameworkEvidence 和 TaskVerdict。
 
-1. 没有 accepted DesignSet 时 `generateExecutionPlan` 失败。
-2. Plan shared context 同时绑定 RequirementBaseline、ImpactSet、DesignSet、Policy digest。
-3. Planner 输入包含 Decision/Component/DesignArtifact/coverage 摘要。
-4. Task IMPLEMENTS Requirement、Decision 和适用 DesignArtifact。
-5. ContextBundle 绑定 design_set_digest，并选择 L2 设计邻域。
-6. reuse DesignSet 的引用资产也进入 ContextBundle manifest。
-7. Plan/Context/Run 前任一 DesignSet 或资产 revision drift 阻止 executor 调用。
-8. ImpactCoverage 将 architecture/design coverage 纳入 complete 条件。
-9. required test_strategy 编译为 TaskTddContract；Plan digest 覆盖 strategy、Contract 和 Assertion Cluster。
-10. Planner 只能缩小 selector、path、Oracle 和 budget，任何 required → not_applicable 或能力扩大都失败。
-11. 一个 required Task 恰好一个 logical cycle，可覆盖共享 test patch/target Gate 的多个 Assertion；不同 patch/Gate 或不同 mode 必须拆 Task。
-12. 每个 required Assertion 恰好属于一个当前 Cluster；遗漏和重复覆盖都失败。
-13. not_applicable Task 绑定批准的 category/reason；framework_bootstrap Task 不含 production Requirement 或 production path。
-14. 缺少 framework profile 时 Planner 插入 TestInfrastructureTask DAG 依赖，生产 Task 保持阻塞。
-15. Preflight 验证 Adapter isolation、patch canonicalization、structured Gate 和当前 TDD checkpoint 能力，不支持 strict TDD 时 fail closed。
+**完成条件**：Ledger 可机械证明顺序与绑定；Agent 自述和 transcript 不参与 proof。
 
-### 实现
+## 20. Task 17：Finding 反馈级联、失效、升级与 Protocol 迁移
 
-修改：
+**依赖**：T10、T12、T16。
 
-- `packages/runtime/src/planning/execution-plan.ts`
-- `packages/runtime/src/planning/validator.ts`
-- `packages/runtime/src/planning/impact-coverage.ts`
-- `packages/runtime/src/planning/task.ts`
-- 新增 `packages/runtime/src/planning/tdd-contract.ts`
-- 新增 `packages/runtime/src/planning/tdd-coverage.ts`
-- `packages/runtime/src/context/compiler.ts`
-- `packages/runtime/src/context/selector.ts`
-- `packages/runtime/src/context/task-bundles.ts`
-- `packages/runtime/src/orchestration/execution-binding.ts`
-- `packages/runtime/src/orchestration/orchestrator.ts`
-- `packages/runtime/src/workflow/resume.ts`
+**目标**：把测试/评审结果重新编译为 Change Seed，并按最早受影响节点级联更新。
 
-不要使用 legacy inferred design authorization。1.1 Run 只能消费真实 accepted DesignSet。TaskTddContract 使用 discriminated mode 和 canonical digest；Plan validator 而不是 Agent prompt 负责唯一覆盖、不可降级和 DAG 约束。
+**测试先行**：
 
-### 验证
+- Finding → Capture/Impact/Design/Plan 路由矩阵；
+- Criterion/PRD 漂移失效 Test strategy、Assertion、Contract、Evidence；
+- Design drift 失效 Plan/Context/Grant/Cycle；
+- Capability/Profile 中途升级原子提交并恢复；
+- completed 1.0 不改写，开放 1.0 按 checkpoint 迁移或显式继续历史协议；
+- uncertain adapter、事务中断、重复 resume、stale approval fault tests。
 
-```bash
-pnpm test -- packages/runtime/test/planning packages/runtime/test/context packages/runtime/test/orchestration/execution-binding.test.ts
-```
+**实现**：Finding router、dependency/invalidation graph、supersede/revision/audit events 和 Protocol 1.0 migration strategy。
 
-提交：`feat(planning): compile governed TDD contracts`
+**完成条件**：不存在“只改 Markdown”或“旧 Evidence 继续有效”的旁路；历史与当前证明清晰区分。
 
-## 13. Task 10：隔离工作区、规范 Patch 与写集合证明
+## 21. Task 18：CLI、Adapters、Projection 与 Dashboard 渐进披露
 
-### 测试先行
+**依赖**：T9、T17。
 
-新增：
+**目标**：让三档共用一套 CLI/Dashboard/Read API，并按 CapabilityPlan 渐进披露。
 
-- `packages/runtime/test/tdd/patch.test.ts`
-- `packages/runtime/test/tdd/patch.property.test.ts`
-- `packages/runtime/test/tdd/workspace.test.ts`
-- `packages/runtime/test/tdd/workspace-resume.test.ts`
-- `tests/fault/tdd-unauthorized-write.test.ts`
-- `tests/fault/tdd-workspace-interruption.test.ts`
+**测试先行**：
 
-先写失败断言：
+- 默认 help 仅保留六个主入口，旧命令一个 major compatibility alias；
+- CLI/Dashboard 可交替推进同一 Capture、Manual Review、批准和恢复会话；
+- inactive capability 返回稳定 URL/API 和激活说明，不渲染空卡片；
+- Approval 卡片展示对象、风险、范围、Profile/Capability 变化和 digest 展开；
+- Graph/Impact/Design/Plan/TDD/Evidence/Verdict 使用中文业务描述；
+- `generic_status` 与 `domain_status` 同时展示；
+- SSE/Live 删除后权威页面仍可从 Ledger 重建；
+- Origin/CSRF/session/body/digest 安全测试。
 
-1. Baseline workspace 精确绑定 repository baseline，未应用 test 或 production patch。
-2. Test Authoring workspace 只接受 test/test-config diff；production/immutable path 使 patch 拒绝并返回稳定 reason/path。
-3. 规范化 patch 不受文件遍历顺序、临时时间戳、绝对路径和换行差异影响，digest 稳定。
-4. Red workspace 必须由 clean baseline + accepted frozen test patch 重建，不能继承 Test Authoring 的瞬态生产变更。
-5. Implementation workspace 从同一 baseline + frozen test patch 创建，test/test-config path 标记只读。
-6. 共置测试缺少受信任 syntax-aware classifier 时 preflight fail closed；classifier 只能批准测试区域 hunk。
-7. 任一工作区中断不污染主工作树，resume 只在 baseline/patch/worktree digest 完全匹配时继续。
-8. cleanup 使用受控临时目录或隔离 worktree，不执行针对仓库根、`$HOME` 或未知路径的破坏性 Git 操作。
+**实现**：六个主入口、Capture/Design/TDD adapters、Markdown Projections、Dashboard progressive disclosure、Capture 表单和状态投影层。
 
-### 实现
+**完成条件**：Lite 首屏无高级内部术语；Standard/Governed 能逐级展开完整证据和审批历史。
 
-新增：
+## 22. Task 19：三档 E2E、Dogfood、文档与发布验收
 
-- `packages/runtime/src/tdd/patch.ts`
-- `packages/runtime/src/tdd/patch-manifest.ts`
-- `packages/runtime/src/tdd/workspace.ts`
-- `packages/runtime/src/tdd/workspace-provider.ts`
-- `packages/runtime/src/tdd/structural-classifier.ts`
-- `packages/runtime/src/tdd/errors.ts`
-- `packages/runtime/src/tdd/index.ts`
+**依赖**：T18。
 
-修改：
+**目标**：用自动化与真实 Agent 共同证明 Protocol 1.1 的三档行为、成本与证据闭环。
 
-- `packages/runtime/src/policy/path-boundary.ts`
-- `packages/runtime/src/policy/execution-preflight.ts`
-- `packages/plugin-sdk/src/agent.ts`
-- `packages/runtime/src/index.ts`
+**自动 E2E 矩阵**：
 
-WorkspaceProvider 暴露 create/inspect/extract/apply/discard，不把 shell/git 命令泄露给 Agent。即使 Adapter 只能在任务结束后报告 diff，Red 也必须在 Harness 新建的 clean verification workspace 中运行，从而机械证明被验证状态只包含 baseline + accepted test patch。
+1. Lite Kernel-only new/adopt/iterate/resume 完整闭环；
+2. Lite 零 Impact/Design/Evaluation/TDD/Audit optional artifacts；
+3. Lite 风险升级 Standard 与用户 Override；
+4. Standard Impact → DesignSet → selective TDD → Evaluation；
+5. Governed full TDD + audit；
+6. 人工批准、拒绝、暂缓和 Dashboard 恢复；
+7. Review/Design/Gate/Workspace Provider 缺失 fail closed；
+8. Criterion→Test→Strategy→Assertion→Task→Evidence→Verdict 唯一追踪；
+9. Finding → Capture/Impact/Design/Plan 反馈级联；
+10. Protocol 1.0 completed/open migration；
+11. Dashboard progressive disclosure 与安全；
+12. pack/install/new/adopt smoke。
 
-### 验证
+**真实 Agent dogfood**：
 
-```bash
-pnpm test -- packages/runtime/test/tdd/patch.test.ts packages/runtime/test/tdd/patch.property.test.ts packages/runtime/test/tdd/workspace.test.ts packages/runtime/test/tdd/workspace-resume.test.ts tests/fault/tdd-unauthorized-write.test.ts tests/fault/tdd-workspace-interruption.test.ts
-pnpm --filter @universal-harness-internal/runtime typecheck
-```
+- 至少一个真实 Lite、Standard、Governed 项目；
+- 记录 Approval/Phase Run/Grant/Baseline/Red/Green/Cycle/Gate/Evaluation/Snapshot ids；
+- 区分 fixture Evidence 与真实 Agent Evidence；
+- 真实失败场景能从 Ledger 复盘，不依赖最终 stdout 摘要。
 
-提交：`feat(tdd): isolate test and implementation workspaces`
+**Lite UX 指标**：
 
-## 14. Task 11：Phase Grant、TddController 与恢复状态机
+- 单 Requirement Intent→accepted PRD 墙钟时间；
+- 用户输入轮次；
+- 手填字段数；
+- 上下文预填命中率；
+- Review 修订率；
+- 人工批准等待时间；
+- accepted 前质量 Finding 数量。
 
-### 测试先行
+首次 dogfood 报告冻结基线和后续回归阈值。不得用删除硬门禁、独立 Review、RiskAssessment 或必要批准换取更低耗时；优化目标是减少重复录入、轮次和等待。
 
-新增/修改：
-
-- 新增 `packages/runtime/test/tdd/controller.test.ts`
-- 新增 `packages/runtime/test/tdd/controller.property.test.ts`
-- 新增 `packages/runtime/test/tdd/checkpoint.test.ts`
-- 新增 `packages/runtime/test/tdd/budget.test.ts`
-- `packages/runtime/test/policy/capability-grant.test.ts`
-- `packages/runtime/test/policy/capability-grant-record.test.ts`
-- `packages/runtime/test/workflow/resume.test.ts`
-- `packages/runtime/test/orchestration/orchestrator.test.ts`
-- `packages/runtime/test/loop/task-envelope.test.ts`
-
-先写失败断言：
-
-1. 状态顺序固定为 contract_ready → baseline_guard → test_authoring → red_verification → implementation → green_verification → optional refactor → completed。
-2. 每个状态撤销旧 Grant 并重新签发独立 Grant；不能在原 Grant 上直接扩权。
-3. `TddRedAccepted` 之前无法签发 production write path，Agent transcript 或 exit code 不能解锁。
-4. Test Authoring 只写 test/test-config；Implementation/Refactor 只写批准 production path 且 frozen test patch 只读。
-5. Green 失败在 implementation budget 内重试，不生成新的 Red；测试变化使当前 attempt invalidated 并回到 test_authoring。
-6. planned refactor 使用更窄 Grant；失败丢弃隔离 patch并保留 Green checkpoint。
-7. 每个 lifecycle event、checkpoint 和 Grant 在 resume/replay 下幂等，不重复解锁或扣减预算。
-8. baseline/Gate/framework/environment/Contract drift 撤销 Grant，并回到最早受影响状态。
-9. tokens/steps unavailable 时仍强制 duration/run budget，并把 unavailable 明确记入 telemetry；不能当作零消耗。
-10. 不同 Task 按 DAG 并行时，各自 Cycle/Grant/workspace 不串扰；单 Task 只有一个 logical cycle。
-
-### 实现
-
-新增：
-
-- `packages/runtime/src/tdd/state.ts`
-- `packages/runtime/src/tdd/controller.ts`
-- `packages/runtime/src/tdd/checkpoint.ts`
-- `packages/runtime/src/tdd/budget.ts`
-- `packages/runtime/src/tdd/grant.ts`
-
-修改：
-
-- `packages/runtime/src/policy/capability-grant.ts`
-- `packages/runtime/src/policy/execution-authorization.ts`
-- `packages/runtime/src/loop/task-envelope.ts`
-- `packages/runtime/src/loop/controller.ts`
-- `packages/runtime/src/orchestration/lifecycle-events.ts`
-- `packages/runtime/src/orchestration/orchestrator.ts`
-- `packages/runtime/src/workflow/checkpoint.ts`
-- `packages/runtime/src/workflow/resume.ts`
-- `packages/runtime/src/status/status.ts`
-
-TddController 只消费 accepted TaskTddContract 和 Ledger Evidence，不解析自然语言完成声明。Orchestrator 负责 Task DAG dispatch，Controller 负责单 Task 内部状态；两者通过 typed result 协作，避免把 TDD 分支继续堆入 orchestrator 大函数。
-
-### 验证
-
-```bash
-pnpm test -- packages/runtime/test/tdd/controller.test.ts packages/runtime/test/tdd/controller.property.test.ts packages/runtime/test/tdd/checkpoint.test.ts packages/runtime/test/tdd/budget.test.ts packages/runtime/test/policy packages/runtime/test/workflow/resume.test.ts packages/runtime/test/loop/task-envelope.test.ts
-```
-
-提交：`feat(tdd): govern red green phase transitions`
-
-## 15. Task 12：结构化 Gate、Failure Oracle 与 Typed Evidence
-
-### 测试先行
-
-新增/修改：
-
-- 新增 `packages/runtime/test/tdd/failure-classifier.test.ts`
-- 新增 `packages/runtime/test/tdd/oracle-matcher.test.ts`
-- 新增 `packages/runtime/test/tdd/evidence-binding.test.ts`
-- `packages/runtime/test/gates/provider.test.ts`
-- `packages/runtime/test/gates/runner.test.ts`
-- `packages/runtime/test/gates/evidence.test.ts`
-- `packages/runtime/test/gates/freshness.test.ts`
-- `packages/conformance/test/gate-providers.conformance.test.ts`
-- 新增 `tests/fault/tdd-evidence-forgery.test.ts`
-
-先写失败断言：
-
-1. Gate Provider 输出稳定 selector、assertion、result、failure_kind、error code/symbol 和原始报告 digest。
-2. assertion_failure、contract_mismatch、expected_exception_not_thrown 可按 Oracle 匹配；missing_symbol 只有精确预声明且绑定目标 selector 才可用。
-3. 通用 syntax/compile、discovery、dependency/environment、timeout、crash、无目标结果和模糊 nonzero 永远不能形成 accepted RedEvidence；仅允许预声明并绑定目标 selector 的精确 missing_symbol 或稳定 contract_mismatch 例外。
-4. 新测试 baseline 使用批准的 component guard Gates，并记录目标测试不存在；“no tests found”不能当作 Red。
-5. RedEvidence 绑定 baseline、frozen test patch、target Gate、framework、environment、Grant 和 observed write set。
-6. GreenEvidence 必须引用同一 logical cycle/current Red，且 test patch/Gate/framework/environment 完全一致。
-7. project source/lockfile 变化进入 production revision；不能伪装为 executor environment drift。
-8. Agent 直接提交 accepted Evidence、篡改报告或只提供 stdout/exit code 时被拒绝。
-9. output 大小、嵌套和附件受限；完整报告以 artifact digest/locator 留存，Evidence 只保留规范摘要。
-
-### 实现
-
-新增：
-
-- `packages/runtime/src/tdd/failure-classifier.ts`
-- `packages/runtime/src/tdd/oracle-matcher.ts`
-- `packages/runtime/src/tdd/evidence-binding.ts`
-- `packages/runtime/src/tdd/evidence-validator.ts`
-
-修改：
-
-- `packages/plugin-sdk/src/gate.ts`
-- `packages/runtime/src/gates/provider.ts`
-- `packages/runtime/src/gates/runner.ts`
-- `packages/runtime/src/gates/evidence.ts`
-- `packages/runtime/src/gates/freshness.ts`
-- `packages/runtime/src/index.ts`
-
-Provider 只报告结构化运行事实；Evidence Validator 根据 Contract、workspace manifest 和 Gate 结果计算 accepted/rejected。Failure Oracle 使用枚举、稳定 code/symbol 和受限 pattern，不执行任意 regex 或测试输出中的指令。
-
-### 验证
-
-```bash
-pnpm test -- packages/runtime/test/tdd/failure-classifier.test.ts packages/runtime/test/tdd/oracle-matcher.test.ts packages/runtime/test/tdd/evidence-binding.test.ts packages/runtime/test/gates packages/conformance/test/gate-providers.conformance.test.ts tests/fault/tdd-evidence-forgery.test.ts
-```
-
-提交：`feat(tdd): validate structured red green evidence`
-
-## 16. Task 13：TddCycleRecord、唯一配对与 TaskVerdict
-
-### 测试先行
-
-新增/修改：
-
-- 新增 `packages/runtime/test/tdd/cycle-record.test.ts`
-- 新增 `packages/runtime/test/tdd/cycle-record.property.test.ts`
-- 新增 `packages/runtime/test/tdd/cycle-repository.test.ts`
-- 新增 `packages/runtime/test/tdd/invalidation.test.ts`
-- `packages/runtime/test/evaluation/task-verdict.test.ts`
-- `packages/runtime/test/evaluation-backfill.test.ts`
-- `packages/runtime/test/snapshot/builder.test.ts`
-
-先写失败断言：
-
-1. 每个 attempt 写入不可变 Record；completed 必须有 Baseline/Red/Green/implementation，blocked/invalidated 只含到达阶段和 reason。
-2. Record digest 对同一规范内容稳定，旧 Record 不因后续 invalidation 原地变化。
-3. TddCycleInvalidated 追加后，materialized current view 不再选择旧 completed attempt。
-4. 每个 required Assertion 必须恰好找到一个当前有效 completed logical cycle；缺失、重复、过期或 binding drift 都失败。
-5. planned refactor 缺少 RefactorEvidence 时 Verdict 失败；not_planned 不伪造 refactor proof。
-6. controlled not_applicable、framework_proven、historical_without_tdd_proof 和 tdd_incomplete_or_invalid 使用不同 Verdict code/中文描述。
-7. TDD proven 仍不能覆盖 required Gate/Evaluation 失败。
-8. Protocol 1.0 Verdict/backfill 保持旧字节和语义，不追溯生成 Cycle。
-
-### 实现
-
-新增：
-
-- `packages/runtime/src/tdd/cycle-record.ts`
-- `packages/runtime/src/tdd/cycle-repository.ts`
-- `packages/runtime/src/tdd/current-cycle-view.ts`
-- `packages/runtime/src/tdd/invalidation.ts`
-
-修改：
-
-- `packages/runtime/src/evaluation/task-verdict.ts`
-- `packages/runtime/src/evaluation/outcome-projection.ts`
-- `packages/runtime/src/evaluation/backfill.ts`
-- `packages/runtime/src/snapshot/builder.ts`
-- `packages/runtime/src/index.ts`
-
-活动状态从 append-only events/checkpoint 重建；终止 attempt 才写 TddCycleRecord。TaskVerdict 只消费 accepted Evidence、Record 和 Evaluation，不读取 Live Spool 或 transcript。
-
-### 验证
-
-```bash
-pnpm test -- packages/runtime/test/tdd/cycle-record.test.ts packages/runtime/test/tdd/cycle-record.property.test.ts packages/runtime/test/tdd/cycle-repository.test.ts packages/runtime/test/tdd/invalidation.test.ts packages/runtime/test/evaluation/task-verdict.test.ts packages/runtime/test/evaluation-backfill.test.ts packages/runtime/test/snapshot/builder.test.ts
-```
-
-提交：`feat(evaluation): require paired TDD cycle evidence`
-
-## 17. Task 14：TestInfrastructureTask 与 FrameworkEvidence
-
-### 测试先行
-
-新增/修改：
-
-- 新增 `packages/runtime/test/tdd/framework-bootstrap.test.ts`
-- 新增 `packages/runtime/test/tdd/framework-evidence.test.ts`
-- `packages/runtime/test/planning/tdd-contract.test.ts`
-- `packages/runtime/test/planning/validator.test.ts`
-- 新增 `tests/integration/tdd-framework-bootstrap.test.ts`
-- 新增 `tests/fixtures/tdd/no-test-framework/`
-
-先写失败断言：
-
-1. 缺少 structured Gate/framework profile 时 Planner 插入 mode=framework_bootstrap 的 TestInfrastructureTask。
-2. Bootstrap 只能写 test framework/config/fixture path，不能获得 production path 或实现 production Requirement。
-3. FrameworkEvidence 同时证明 discovery、隔离 pass fixture 和隔离 fail fixture 的结构化 failure kind。
-4. 受控 fail fixture 不留在项目默认测试套件，也不能让完整 Gate 永久失败。
-5. Bootstrap 不递归要求普通 Red/Green Cycle，也不能被标记 not_applicable。
-6. production Task 在 FrameworkEvidence accepted 前阻塞；profile/config digest 漂移后重新阻塞。
-7. TestInfrastructureTask Verdict 明确为 framework_proven，不伪装 tdd_proven。
-
-### 实现
-
-新增：
-
-- `packages/runtime/src/tdd/framework-bootstrap.ts`
-- `packages/runtime/src/tdd/framework-evidence.ts`
-
-修改：
-
-- `packages/runtime/src/planning/tdd-contract.ts`
-- `packages/runtime/src/planning/validator.ts`
-- `packages/runtime/src/orchestration/orchestrator.ts`
-- `packages/runtime/src/evaluation/task-verdict.ts`
-- `packages/runtime/src/status/status.ts`
-
-Bootstrap fixture 在隔离 workspace 中运行；accepted project patch 只包含框架/config 和不会破坏默认 suite 的通过样例或结构化测试资产。
-
-### 验证
-
-```bash
-pnpm test -- packages/runtime/test/tdd/framework-bootstrap.test.ts packages/runtime/test/tdd/framework-evidence.test.ts packages/runtime/test/planning/tdd-contract.test.ts packages/runtime/test/planning/validator.test.ts tests/integration/tdd-framework-bootstrap.test.ts
-```
-
-提交：`feat(tdd): bootstrap verifiable test frameworks`
-
-## 18. Task 15：Finding 级联、TDD 失效、Design revision 与 Audit 语义
-
-### 测试先行
-
-修改/新增：
-
-- `tests/integration/feedback-cascade.test.ts`
-- `packages/runtime/test/audit/auditor.test.ts`
-- 新增 `packages/runtime/test/finding/governance.test.ts`
-- 新增 `packages/runtime/test/design/feedback-router.test.ts`
-- 新增 `packages/runtime/test/tdd/feedback-invalidation.test.ts`
-- 新增 `tests/fault/designset-finding-invalidation.test.ts`
-- 新增 `tests/fault/tdd-finding-invalidation.test.ts`
-
-先写失败断言：
-
-1. Finding → Change Seed → new ImpactSet → new DesignSet revision → new Plan。
-2. 设计确实改变时，新 revision/SUPERSEDES 链可查询，旧 digest 不变。
-3. 设计无需改变时也生成绑定新 ImpactSet 的 reuse DesignSet。
-4. 旧 Plan/Context/未启动 Run 授权失效，历史 completed Snapshot 不变。
-5. Protocol 1.1 的设计缺口在 design phase 阻塞，不再等到 snapshot 才 warning。
-6. Protocol 1.0 历史 `missing_design_artifact` 保持 warning，避免追溯阻塞。
-7. ImprovementCandidate 针对 Decision/Component/DesignArtifact 时走同一反馈链。
-8. Verify/Evaluate Finding 一律成为 Change Seed；即使设计不变也生成 reuse DesignSet 和新 Plan/Contract。
-9. DesignSet/Plan/Oracle/Gate/path 漂移撤销 Phase Grant，并追加 TddCycleInvalidated；旧 Evidence/Record 字节不变。
-10. Green 验证阶段的局部失败在当前 implementation budget 内修复，不提前创建新 Finding 或伪造第二个 Red。
-11. Dashboard/Audit 可以从规范 reason 定位 earliest affected phase、logical cycle 和失效 Evidence。
-
-### 实现
-
-新增：
-
-- `packages/runtime/src/design/feedback-router.ts`
-
-修改：
-
-- `packages/runtime/src/audit/auditor.ts`
-- `packages/runtime/src/finding/governance.ts`
-- `packages/runtime/src/orchestration/orchestrator.ts`
-- `packages/runtime/src/status/status.ts`
-- `packages/runtime/src/tdd/invalidation.ts`
-- `packages/graph/src/impact/seeds.ts`
-
-所有失效均追加事件/新 revision，不删除旧 Artifact、Evidence 或 Cycle Record。Dashboard 所需的 reason、earliest affected phase、logical cycle 和 evidence digests 由 router 输出规范字段。
-
-### 验证
-
-```bash
-pnpm test -- packages/runtime/test/design/feedback-router.test.ts packages/runtime/test/tdd/feedback-invalidation.test.ts packages/runtime/test/audit packages/runtime/test/finding tests/integration/feedback-cascade.test.ts tests/fault/designset-finding-invalidation.test.ts tests/fault/tdd-finding-invalidation.test.ts
-```
-
-提交：`feat(feedback): cascade findings through design and TDD`
-
-## 19. Task 16：项目配置与 dsh DesignProposalPort/TDD Adapter
-
-### 测试先行
-
-修改/新增：
-
-- `packages/cli/test/project-runtime-config.test.ts`
-- 新增 `packages/cli/test/runtime-service.test.ts`
-- 新增 `packages/cli/test/doctor.test.ts`
-- `adapters/agent-dsh/test/prompt.test.ts`
-- `adapters/agent-dsh/test/adapter.test.ts`
-- 新增 `adapters/agent-dsh/test/design-adapter.test.ts`
-- 新增 `adapters/agent-dsh/test/tdd-prompt.test.ts`
-- 新增 `adapters/agent-dsh/test/tdd-adapter.test.ts`
-- 新增 `adapters/agent-dsh/test/tdd-phased-runs.test.ts`
-- 新增 `adapters/agent-dsh/test/fixtures/design-proposal.mjs`
-- 新增 `adapters/agent-dsh/test/fixtures/tdd-agent.mjs`
-- 新增 `packages/conformance/test/design-adapters.conformance.test.ts`
-- 新增 `packages/conformance/test/tdd-agent-adapters.conformance.test.ts`
-
-先写失败断言：
-
-1. runtime config v3 接受独立 `designer`，旧 v1/v2 仍可读。
-2. designer 配置没有 proposed_write_paths，出现写路径字段直接失败。
-3. resolution 顺序固定：测试注入 Port → explicit designer config → compatible dsh agent 的只读派生配置 → typed designer_required。
-4. dsh prompt 清楚区分不可信上下文、输出 JSON Schema、禁止项目/Ledger 写入。
-5. adapter 拒绝 malformed/stdout flood/timeout/contract mismatch/任何工作区变更。
-6. adapter 输出 usage、steps、duration、stdout tail Evidence，不把 provider metadata 放进 DesignSet content digest。
-7. `harness doctor` 报告 designer 配置、版本、模型契约和只读范围。
-8. Agent Adapter 明确声明 isolation、structured Gate、phase envelope 和 write-set capabilities；缺失能力不能运行 strict TDD。
-9. dsh 按 Controller 指令分别执行 test-authoring、implementation 和可选 refactor Run，不在一个 prompt/envelope 中混合测试与生产写权限。
-10. test-authoring prompt 只包含测试任务、Oracle 和 test paths；implementation prompt 只包含 frozen test manifest、生产目标和 production paths。
-11. Adapter 不能自行宣称 Red/Green accepted 或请求扩大 Grant；所有结果由 Harness workspace/Gate/Evidence validator 复验。
-12. heartbeat、tokens、steps、duration、stdout tail 和 terminated reason 在每个 phase Run 可观测；unavailable 使用明确状态而不是 0。
-13. fixture Adapter 能稳定模拟 valid Red/Green、invalid Red、越权写入、timeout、crash 和 resume，无外部模型也可重复测试。
-
-### 实现
-
-修改/新增：
-
-- `packages/cli/src/project-runtime-config.ts`
-- `packages/cli/src/project-agent.ts`
-- `packages/cli/src/runtime-service.ts`
-- `packages/cli/src/commands/doctor.ts`
-- 新增 `packages/cli/src/project-designer.ts`
-- 新增 `adapters/agent-dsh/src/design-prompt.ts`
-- 新增 `adapters/agent-dsh/src/design-adapter.ts`
-- 新增 `adapters/agent-dsh/src/tdd-prompt.ts`
-- 新增 `adapters/agent-dsh/src/tdd-adapter.ts`
-- 新增 `adapters/agent-dsh/src/capabilities.ts`
-- `adapters/agent-dsh/src/index.ts`
-- `packages/plugin-sdk/src/agent.ts` 或新增 `packages/plugin-sdk/src/design.ts`
-- `packages/plugin-sdk/src/index.ts`
-
-优先复用现有受管 dsh process/telemetry 基础，但 Design adapter 必须构造独立只读 envelope，不复用带写权限的 AgentTaskEnvelope。TDD adapter 只执行 TddController 签发的 phase envelope；它不拥有状态机、Oracle 判定或 Evidence 接受权。未来其他 LLM adapter 分别实现相同 DesignProposalPort 和 phased Agent contract。
-
-### 验证
-
-```bash
-pnpm test -- packages/cli/test/project-runtime-config.test.ts packages/cli/test/runtime-service.test.ts packages/cli/test/doctor.test.ts adapters/agent-dsh/test packages/conformance/test/design-adapters.conformance.test.ts packages/conformance/test/tdd-agent-adapters.conformance.test.ts
-```
-
-提交：`feat(adapter): add governed dsh design and TDD runs`
-
-## 20. Task 17：Architecture、Specification、Plan、TDD 与 Snapshot 投影
-
-### 测试先行
-
-修改/新增：
-
-- `adapters/projection-markdown/test/projections.test.ts`
-- `tests/golden/projections/architecture.md`
-- `tests/golden/projections/spec.md`
-- `tests/golden/projections/plan.md`
-- `tests/golden/projections/prd.md`
-- `tests/golden/projections/snapshot.md`
-- `packages/conformance/test/projection.conformance.test.ts`
-- `packages/runtime/test/projection/projection.test.ts`
-
-先写失败断言：
-
-1. Architecture 展示 DesignSet revision、Decision、Component、API/data/UI assets 和关系。
-2. Specification 展示 Requirement、Constraint、Test、contracts 和 test strategy。
-3. Plan 展示 design_set_id/digest 以及 Task 实施的设计资产。
-4. PRD 链接 Requirement → Decision → DesignSet。
-5. Snapshot 记录 DesignSet 和设计 Approval Evidence。
-6. 1.0 历史投影显示明确兼容提示，不伪造设计内容。
-7. Projection source digest 漂移时从权威图重建。
-8. Specification 展示每个 Requirement 的 TDD 适用性、Oracle、Gate 和测试策略中文说明。
-9. Plan 展示 TaskTddContract mode、Assertion Cluster、phase budgets 和 required Evidence，不暴露 secret 或超长输出。
-10. Snapshot 区分 tdd_proven、controlled_not_applicable、framework_proven、historical_without_tdd_proof 和 invalid/incomplete。
-11. Red/Green/Refactor 摘要来自 accepted Evidence/TddCycleRecord；Live transcript 不能进入权威投影。
-
-### 实现
-
-修改：
-
-- `adapters/projection-markdown/src/architecture.ts`
-- `adapters/projection-markdown/src/spec.ts`
-- `adapters/projection-markdown/src/plan.ts`
-- `adapters/projection-markdown/src/prd.ts`
-- `adapters/projection-markdown/src/snapshot.ts`
-- `adapters/projection-markdown/src/index.ts`
-- `packages/runtime/src/projection/managed-output.ts`
-- `packages/runtime/src/projection/drift.ts`
-- `packages/runtime/src/snapshot/commit-projection.ts`
-
-投影只读 accepted graph；Proposal 只能出现在审批 Preview，不进入正式 Architecture/Specification。
-
-### 验证
-
-```bash
-pnpm test -- adapters/projection-markdown/test packages/conformance/test/projection.conformance.test.ts packages/runtime/test/projection
-```
-
-提交：`feat(projection): render design and TDD evidence`
-
-## 21. Task 18：Dashboard Design/TDD 视图与全视图业务语义
-
-### 测试先行
-
-修改/新增：
-
-- 新增 `packages/dashboard/test/read-api.test.ts`
-- `packages/dashboard/test/presentation.test.ts`
-- `packages/dashboard/test/server.test.ts`
-- `packages/dashboard/test/write-api.test.ts`
-- `packages/dashboard/test/sse.test.ts`
-- `packages/dashboard/test/assets.test.ts`
-- `tests/e2e/dashboard-readonly.test.ts`
-- `tests/e2e/dashboard-live-approval.test.ts`
-- `tests/security/dashboard-security.test.ts`
-- `tests/performance/m2-dashboard.test.ts`
-
-先写失败断言：
-
-1. Read API 从 Ledger 重建 current/history DesignSet、coverage、asset changes 和 evolution links。
-2. 新 Design 视图显示中文业务描述、digest、风险、适用性和 relation path。
-3. Overview/Graph/Impact/Iterations/Evidence/Findings/Live/Approvals 统一识别 design phase 和设计节点。
-4. DesignSet Approval 卡片显示同源 Preview，reject 必填 reason。
-5. Live 显示 DesignProposalPort progress、stdout tail、usage/steps unavailable 的明确回退。
-6. 历史 1.0 Designless 状态有明确提示。
-7. session、Origin、CSRF、actor、expected digest 和 409 conflict 保护保持有效。
-8. 大图/多 revision 查询保持既有性能门槛。
-9. Iterations/Task 以 Baseline → Test Authoring → Red → Implementation → Green → Refactor 时间线展示 Ledger 重建状态。
-10. Evidence/Verdict 显示 Requirement/Assertion/test selector、Oracle 匹配、Gate、revision 和配对结论；digest 为可展开审计字段。
-11. 当前 Phase Grant、预算、阻塞原因、Finding 和恢复入口有中文业务描述，不只显示 unavailable/digest。
-12. Live 显示 phase heartbeat、tokens/steps/duration 和 stdout tail，但删除 Live Spool 后 TDD 时间线与 Verdict 仍完整。
-13. controlled_not_applicable、framework_proven、historical_without_tdd_proof 和 invalid/incomplete 使用不同状态与解释。
-14. Dashboard 不能直接解锁 implementation、接受 Evidence 或修改 Cycle；写 API 只暴露已有受治理的 approval/recovery action。
-
-### 实现
-
-修改：
-
-- `packages/dashboard/src/read-api.ts`
-- `packages/dashboard/src/presentation.ts`
-- `packages/dashboard/src/router.ts`
-- `packages/dashboard/src/server.ts`
-- `packages/dashboard/src/write-api.ts`
-- `packages/dashboard/src/sse.ts`
-- `packages/dashboard/assets/dashboard.html`
-- `packages/dashboard/assets/dashboard.js`
-- `packages/dashboard/assets/dashboard.css`
-
-Design/TDD 视图读取权威 Ledger、物化图、typed Evidence 和 TddCycleRecord，不依赖 Live 事件是否被浏览器错过。Live 仍是可删除观测层，不参与 DesignSet/TDD 成败或 Grant 解锁。
-
-### 验证
-
-```bash
-pnpm test -- packages/dashboard/test tests/e2e/dashboard-readonly.test.ts tests/e2e/dashboard-live-approval.test.ts tests/security/dashboard-security.test.ts tests/performance/m2-dashboard.test.ts
-pnpm test:e2e:dashboard
-```
-
-提交：`feat(dashboard): visualize design and TDD cycles`
-
-## 22. Task 19：全链路 E2E、文档、Dogfood 与验收报告
-
-### 测试先行
-
-修改/新增：
-
-- `tests/e2e/complete-loop.assertions.ts`
-- `tests/e2e/generic-new.test.ts`
-- `tests/e2e/generic-adopt.test.ts`
-- `tests/e2e/generic-iterate.test.ts`
-- `tests/e2e/generic-resume.test.ts`
-- `tests/e2e/node-new.test.ts`
-- `tests/e2e/python-adopt.test.ts`
-- `tests/e2e/java-iterate.test.ts`
-- `tests/e2e/delegated-agent-vertical-loop.test.ts`
-- `tests/e2e/m2-vertical-loop.test.ts`
-- 新增 `tests/e2e/designset-reuse-loop.test.ts`
-- 新增 `tests/e2e/designset-reject-reproposal.test.ts`
-- 新增 `tests/e2e/tdd-strict-loop.test.ts`
-- 新增 `tests/e2e/tdd-not-applicable.test.ts`
-- 新增 `tests/e2e/tdd-framework-bootstrap.test.ts`
-- 新增 `tests/e2e/tdd-invalidation-resume.test.ts`
-- 新增 `tests/e2e/tdd-finding-cascade.test.ts`
-- `tests/e2e/documentation-examples.test.ts`
-
-先让共享纵向断言因缺少以下证据失败：
-
-1. DesignSetProposalRecord；
-2. DesignSet ApprovalRequest/Decision；
-3. accepted DesignSet 和设计资产/关系边；
-4. ExecutionPlan design_set binding；
-5. ContextBundle design_set binding；
-6. Gate/Evaluation/Snapshot 的设计证据链；
-7. reuse 和 reject/reproposal 分支；
-8. Finding 触发的新 DesignSet revision。
-9. accepted test_strategy、TaskTddContract 和唯一 Assertion Cluster；
-10. healthy Baseline、test-only Red、TddRedAccepted 后的 Implementation Grant、同源 Green 和 optional Refactor；
-11. typed Evidence、TddCycleRecord、TaskVerdict 与 Snapshot 配对；
-12. invalid Red 不解锁、test change/environment drift 失效、resume 幂等；
-13. framework_bootstrap 和 controlled_not_applicable 分支；
-14. 完整 Gate/Evaluation Finding 触发 ImpactSet/DesignSet/Plan/Contract 级联。
-
-### 实现与文档
-
-修改：
-
-- `README.md`
-- `docs/getting-started.md`
-- `docs/adopting-a-project.md`
-- `docs/operations.md`
-- `docs/operations-and-recovery.md`
-- `docs/plugin-contracts.md`
-- `docs/graph-driven-harness-model.md`
-- `docs/dsh-execution-backend.md`
-- `docs/m1-acceptance-report.md` 或新增对应 M2/DesignSet 验收报告
-- `scripts/generate-acceptance-report.mjs`
-
-文档同步：
-
-- 生命周期图加入 design；
-- 关系类型从 17 个影响关系更新为 18 个，并解释 SPECIFIES；
-- Node/Edge/Event 总览加入 DesignSet/DesignArtifact；
-- Event 总览加入 TDD lifecycle events，Evidence 总览加入 framework/baseline/red/green/refactor 类型；
-- README 图与 Dashboard 截图展示 Design 视图；
-- README/模型文档展示 Task 内 Baseline → Red → Green 状态机、Phase Grant 和 Evidence 配对；
-- runtime config v3 提供 designer 配置示例；
-- 操作手册列出 DesignSet approve/reject/defer、TDD blocker/invalidation、迁移 blocker 和恢复命令；
-- 插件合同记录 DesignProposalPort 的只读能力、strict TDD Adapter capability、structured Gate 和 workspace isolation contract；
-- 验收报告明确区分测试 fixture Evidence 与真实 Agent dogfood Evidence。
-
-### 自动 E2E 验证
-
-```bash
-pnpm test:e2e
-pnpm test:fault
-pnpm test:security
-pnpm test:performance
-pnpm test:e2e:dashboard
-```
-
-### 真实 dsh Dogfood
-
-在一个临时或明确授权的受管项目中：
-
-1. 配置 dsh DesignProposalPort；
-2. 运行 `harness iterate`；
-3. 在 Dashboard 查看 design phase、输出流和 Approval 卡片；
-4. 先 reject 一次并填写理由，确认新 proposal digest；
-5. approve 后验证 accepted DesignSet、资产、边和 Plan binding；
-6. 查看 TaskTddContract、BaselineEvidence 和 test-authoring Grant，确认生产路径未解锁；
-7. 验证 Red 的 failure kind/Oracle/test patch，确认 TddRedAccepted 后才签发 implementation Grant；
-8. 完成同一测试补丁的 Green、可选 Refactor、完整 Gates、Evaluation 和 Snapshot；
-9. 人为触发一次 invalid Red 或测试补丁变化，验证不解锁/失效/新 attempt；
-10. 创建一个受控 Verify/Evaluate Finding，验证 ImpactSet/DesignSet revision/Plan/Contract 级联；
-11. 把 design run、approval、phase runs、grants、baseline/red/green evidence、cycle、gate、evaluation 和 snapshot ids 写入验收报告。
-
-### 最终发布验证
+**发布验证**：
 
 ```bash
 pnpm verify
+pnpm test:security
+pnpm test:fault
+pnpm test:performance
+pnpm test:e2e
+pnpm test:e2e:dashboard
+pnpm pack:smoke
 pnpm test:release
-git status --short --branch
 ```
 
-提交：`docs(acceptance): prove DesignSet and TDD vertical loop`
+**完成条件**：生成中文验收报告，列出每个设计不变量对应的自动测试、Ledger Evidence、真实 dogfood 结果、已知限制和 Protocol 1.0 兼容结论。
 
-## 23. 实施提交序列
+## 23. 建议提交序列
 
-预期提交保持如下顺序：
+每个 Task 原则上一个可独立回滚的提交；只有为保持 Schema 与实现原子性时才合并相邻 Task：
 
-1. `feat(protocol): add DesignSet and TDD 1.1 records`
-2. `feat(graph): propagate approved design contracts`
-3. `feat(design): validate DesignSet and TDD strategies`
-4. `feat(design): compile governed proposal inputs`
-5. `feat(design): govern DesignSet approvals`
-6. `feat(design): commit approved design graphs atomically`
-7. `feat(orchestration): add governed design phase`
-8. `feat(migration): require design for open legacy iterations`
-9. `feat(planning): compile governed TDD contracts`
-10. `feat(tdd): isolate test and implementation workspaces`
-11. `feat(tdd): govern red green phase transitions`
-12. `feat(tdd): validate structured red green evidence`
-13. `feat(evaluation): require paired TDD cycle evidence`
-14. `feat(tdd): bootstrap verifiable test frameworks`
-15. `feat(feedback): cascade findings through design and TDD`
-16. `feat(adapter): add governed dsh design and TDD runs`
-17. `feat(projection): render design and TDD evidence`
-18. `feat(dashboard): visualize design and TDD cycles`
-19. `docs(acceptance): prove DesignSet and TDD vertical loop`
+```text
+feat(protocol): add protocol 1.1 canonical schemas
+feat(profile): persist explicit project profile decisions
+feat(capability): compile dependency-closed operation dags
+feat(capture): add recoverable managed capture coordinator
+feat(capture): compile isolated project context bundles
+feat(capture): add structured proposals and hard gates
+feat(capture): review and atomically accept prd baselines
+refactor(runtime): execute capability-plan dags
+feat(kernel): deliver lite vertical loop
+feat(capability): modularize impact evaluation and audit
+feat(design): validate designset primary coverage
+feat(design): approve and atomically commit designsets
+feat(plan): compile canonical criterion assertions
+feat(context): bind enabled capabilities at preflight
+feat(tdd): isolate workspaces patches and phase grants
+feat(tdd): prove cycles with typed evidence and verdicts
+feat(feedback): cascade findings and migrate protocol state
+feat(ui): expose profile-aware cli and dashboard
+test(protocol): prove three-profile vertical loops
+```
 
-每个提交必须能单独通过对应窄测试；不得把失败测试留给后续提交修复。
+任何提交都不得夹带与当前 Task 无关的重构。
 
 ## 24. 最终验收清单
 
-- [ ] Protocol 1.1 写入与 Protocol 1.0 兼容读取通过。
-- [ ] DesignSet、DesignArtifact、SPECIFIES 和扩展 IMPLEMENTS 通过 Schema/Graph integrity。
-- [ ] DesignProposalPort 可替换且无项目/Ledger 写权限。
-- [ ] Proposal 校验失败不会进入物化工程图。
-- [ ] DesignSet approve/reject/defer 和摘要失效都有 Ledger 证据。
-- [ ] accepted DesignSet、资产和边一次事务原子提交。
-- [ ] 所有 1.1 迭代都经过 design；reuse 不跳过。
-- [ ] 覆盖不足机械阻止 Plan。
-- [ ] Plan、Context、Preflight 均强绑定 DesignSet。
-- [ ] required test_strategy 编译为不可降级 TaskTddContract；每个 Assertion 唯一归属一个 logical cycle。
-- [ ] strict TDD Adapter 缺少隔离 workspace、规范 patch 或 structured Gate 能力时 preflight fail closed。
-- [ ] Baseline 证明既有目标测试或受影响组件健康；pre-existing failure 不被当作 Red。
-- [ ] Red workspace 可由 baseline + frozen test patch 重建，且 production path 在 Red accepted 前不可写。
-- [ ] Failure Oracle 拒绝 syntax/discovery/environment/timeout/crash 和模糊 nonzero；只接受结构化目标失败。
-- [ ] Implementation Grant 只在 TddRedAccepted 后签发；Green 与 Red 使用同一 patch/Gate/framework/environment。
-- [ ] Red 后测试变化、环境漂移和越权写入会失效 Cycle；resume/replay 幂等。
-- [ ] TddCycleRecord、typed Evidence 和 TaskVerdict 对 required Assertion 唯一配对。
-- [ ] TestInfrastructureTask 产生 FrameworkEvidence，并在完成前阻塞 production Task。
-- [ ] Verdict 区分 tdd_proven、controlled_not_applicable、framework_proven、historical_without_tdd_proof 和 invalid/incomplete。
-- [ ] TDD Green 不替代完整 Gate 或 Evaluation，Finding 仍级联新 ImpactSet/DesignSet/Plan/Contract。
-- [ ] Finding 能产生新 ImpactSet、DesignSet revision 和 Plan。
-- [ ] completed 1.0 历史不改写，开放 operation 安全迁移。
-- [ ] dsh Design/TDD adapters 的分段 Run、输出流、usage、steps 和失败可观测。
-- [ ] Architecture、Specification、Plan、TDD Evidence、Snapshot 可从权威图/Ledger 重建。
-- [ ] Dashboard Design/TDD 与全部相关视图使用中文业务描述，Live 删除后权威时间线不丢失。
-- [ ] new/adopt/iterate/resume 纵向闭环 E2E 通过。
-- [ ] `pnpm verify` 和 `pnpm test:release` 全绿。
-- [ ] 真实 dsh dogfood 的 Approval/Phase Run/Grant/Baseline/Red/Green/Cycle/Gate/Evaluation/Snapshot ids 已写入验收报告。
+- [ ] Profile 选择显式、可审计，Policy deny 不可覆盖。
+- [ ] Capability Compiler 生成完整依赖闭包；Strict TDD 显式包含 Impact 传递依赖。
+- [ ] Workflow Engine 不包含三套 Profile 大分支。
+- [ ] `review_provider_required` 是 blocked reason，不是 CaptureState。
+- [ ] Proposal/Review 上下文、会话、权限和 Evidence 相互独立。
+- [ ] accepted PRD/RequirementBaseline/Graph 原子提交且 Criterion/Test seed 稳定。
+- [ ] 每个 Criterion 恰好一个 canonical criterion assertion，每个 assertion 恰好一个 owning Task。
+- [ ] 每个 Criterion/Test seed 恰好一个 primary test_strategy 覆盖。
+- [ ] Lite 未启用 Module 时零 Port、工件、Event、Approval 和 Dashboard 空壳。
+- [ ] 通用 DAG 使用 `verify → [evaluate?] → snapshot`，解析后按 CapabilityPlan 执行。
+- [ ] DesignSet/final CapabilityPlan 同事务提交，provisional 状态不能进入 Plan。
+- [ ] Red 前无 production Grant，Red/Green 绑定同一 patch/Gate/environment。
+- [ ] TaskVerdict 只消费 accepted Evidence，并保留通用状态与领域状态。
+- [ ] Finding 能级联更新 Capture/Impact/Design/Plan 并失效下游授权。
+- [ ] Protocol 1.0 历史不改写，开放 Operation 有显式迁移路径。
+- [ ] CLI/Dashboard 共用状态机，中文业务摘要优先于 digest。
+- [ ] Lite Capture UX 指标已建立基线且不以绕过质量链换取速度。
+- [ ] 三档自动 E2E、真实 Agent dogfood、发布门禁与中文验收报告全部完成。

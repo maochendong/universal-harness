@@ -1,7 +1,7 @@
 # Universal Harness Intent → 高质量 PRD Capture 设计
 
 日期：2026-08-18
-状态：评审问题已修订，待复核后协同修订实施计划
+状态：评审问题已修订，统一实施计划已重编，待实施授权
 目标版本：Protocol 1.1.0
 关联设计：
 
@@ -199,6 +199,7 @@ export interface CaptureSessionRecord {
   readonly workflow_operation_id: string;
   readonly iteration_id: string;
   readonly state: CaptureState;
+  readonly blocked_reason?: CaptureBlockReason;
   readonly intent_text: string;
   readonly intent_digest: string;
   readonly project_profile_digest: string;
@@ -692,7 +693,15 @@ export type CaptureState =
   | "accepted"
   | "blocked"
   | "cancelled";
+
+export type CaptureBlockReason =
+  | "review_provider_required"
+  | "capture_budget_exhausted"
+  | "review_blocked"
+  | "risk_policy_denied";
 ```
+
+`review_provider_required` 不是生命周期状态，而是 `blocked` 的 typed reason。`blocked_reason` 当且仅当 `state === "blocked"` 时必须存在；其他状态出现该字段一律拒绝。这样可以在不扩张状态机 Interface 的前提下精确表达恢复入口。恢复动作只能清除导致阻塞的条件并追加新 Session revision，不能原地改写旧记录。
 
 ### 7.2 主路径
 
@@ -706,9 +715,9 @@ intent_received
                     ├── manual input → review_input_required → reviewing
                     ├── clarify → clarification_required
                     ├── revise → revision_required → context_compiling(proposal) → proposing
-                    ├── blocked → blocked
+                    ├── blocked → blocked(reason=review_blocked)
                     └── accept → risk_assessing
-                                  ├── critical/deny → blocked
+                                  ├── critical/deny → blocked(reason=risk_policy_denied)
                                   ├── risk upgrade → profile_decision_required → purpose-scoped context invalidation
                                   │                                      ├── proposal drift → context_compiling(proposal)
                                   │                                      └── review-only drift → context_compiling(review)
@@ -777,7 +786,7 @@ Capture 的权威状态由 record/checkpoint 重建，事件只陈述已提交�
 - `PrdApprovalRequired`；
 - `PrdApprovalDecisionApplied` / `PrdApprovalDeferred`；
 - `PrdAccepted` / `PrdRevisionRequested`；
-- `CaptureBlocked` / `CaptureCancelled`。
+- `CaptureBlocked`（必须携带 `CaptureBlockReason`）/ `CaptureCancelled`。
 
 Live heartbeat、token/step 计量和 stdout tail 是可删除观察事件，不能替代以上权威事件、Port Evidence 或 accepted checkpoint。
 
@@ -906,7 +915,7 @@ Proposal 与 Review 必须具有不同：
 - `ManualPrdReviewAdapter`，职责分离按 Policy；
 - `InMemoryPrdReviewAdapter`。
 
-Review Adapter 缺失时进入 `review_provider_required`，允许用户显式选择 Manual Review；不能自动跳过。
+Review Adapter 缺失时进入 `blocked`，并记录 `blocked_reason: "review_provider_required"`。用户可以显式选择 Manual Review 或配置 Provider 后恢复；不能自动跳过 Review。
 
 ## 11. Adapter 运行边界与配置
 
@@ -1024,12 +1033,15 @@ ClarificationQuestion / Answer
   → PrdAcceptanceCriterion
   → accepted Test node
   → DesignSet.test_strategy
+  → canonical criterion_assertion
   → TaskTddContract AssertionCluster
   → Baseline / Red / Green Evidence
   → TaskVerdict
 ```
 
 accepted PRD 物化每个 Criterion 对应的 Test seed。Test id 由 Coordinator 从 canonical criterion id 确定性派生；Criterion continues 时复用 Test id 并递增 Node revision。Test extension 必须含 `acceptance_criterion_id`、Criterion source binding digest，VERIFIES 指向 Requirement。
+
+Criterion 是 Assertion 编译的唯一业务权威源：每个 accepted 原子 Criterion 在任何 Protocol 1.1 Plan 中必须确定性编译为且仅编译为一个 `criterion_assertion`。Assertion id 从 accepted PRD digest、criterion id 和 assertion schema version 稳定派生，并显式绑定 `acceptance_criterion_id` 与对应 Test seed；相同输入重编必须得到相同 id。启用 design_governance 时再绑定 primary test_strategy；未启用时不生成 strategy binding，由 Plan 单独绑定 CapabilityPlan 证明该能力未启用。若一个 Criterion 包含多个可独立裁决的结果，Capture 硬门禁必须先要求拆分 Criterion，Planner 不得在下游用 1:N Assertion 掩盖上游非原子语义。
 
 ### 13.2 职责分界
 
@@ -1052,9 +1064,11 @@ DesignSet.test_strategy 决定：
 
 Planner 决定更窄 Assertion Cluster 和 Task Contract。PRD 不产生 RedEvidence；只有在 baseline 后真实执行且匹配 approved Oracle 的失败才是 Red。
 
+Planner 可以把多个 canonical criterion assertions 分配给同一 owning Task/AssertionCluster，但不能合并其身份、Evidence 要求或 Verdict；同一 Plan revision 中，每个 criterion assertion 必须恰好归属一个 owning Task。Planner 还可以增加 `task_internal_assertion` 表达构建产物或工程约束，但这种 Assertion 必须声明独立来源，不能替代 criterion assertion、满足 Criterion 覆盖或弱化业务结果。
+
 ### 13.3 不可降级
 
-- DesignSet 必须覆盖 accepted Criterion/Test seeds；
+- design_governance 启用时，DesignSet 必须覆盖 accepted Criterion/Test seeds；未启用时零 DesignSet/strategy binding；
 - DesignSet 可技术细化，但不能删减或弱化 observable outcome；
 - controlled_not_applicable 只能由 DesignSet 批准；
 - 设计阶段无法形成有效 Oracle 时创建 Finding 回到 Capture，生成新 PRD revision；
@@ -1211,7 +1225,7 @@ IntentInterpreter
 | Proposal Schema/JSON 非法 | `proposal_invalid`，预算内重试，不调用 Review |
 | deterministic gate fail | typed questions/findings，回到 clarify/revise |
 | Proposal timeout/crash | 保存 invocation Evidence，Session 可恢复 |
-| Review Provider 缺失 | `review_provider_required`，选择 Manual/配置 Provider |
+| Review Provider 缺失 | `state: blocked`、`blocked_reason: review_provider_required`，选择 Manual/配置 Provider 后追加 Session revision 恢复 |
 | Review revise/clarify | 保留旧 Proposal/Report，追加新 revision/questions |
 | Manual Review input 缺失/冲突 | 保持 `review_input_required`，拒绝混入 ClarificationAnswer |
 | answer/session digest 冲突 | typed conflict/HTTP 409，刷新后重交 |
@@ -1219,7 +1233,7 @@ IntentInterpreter
 | Approval reject/defer | reject 进入 revision_required；defer 进入 approval_deferred，均不生成 accepted 工件 |
 | Approval binding drift | supersede request，重新 Preview/批准 |
 | Ledger transaction failure | 零部分 accepted PRD，幂等恢复 |
-| round/budget exhausted | `capture_budget_exhausted` blocker |
+| round/budget exhausted | `state: blocked`、`blocked_reason: capture_budget_exhausted`，调整 Policy/budget 后显式恢复 |
 | invalid transition | fail closed，不修改 Session |
 | Adapter uncertain | 对账后复用/重试，不盲目双调用 |
 
@@ -1318,6 +1332,7 @@ Proposal/Review Adapter 统一验证：
 - open Capture migration；
 - new/adopt/iterate/resume/serve 完整纵向场景；
 - 真实 Lite/Standard/Governed dogfood。
+- Lite 单 Requirement 从 Intent 到 accepted PRD 的墙钟时间、用户输入轮次、手填字段数、上下文预填命中率、Review 修订率和人工批准等待时间。
 
 ## 21. 完成定义
 
@@ -1336,7 +1351,7 @@ Proposal/Review Adapter 统一验证：
 13. CLI/Dashboard 可交替完成同一澄清、Manual Review 和审批会话，所有状态变化经过 Coordinator.advance。
 14. IntentInterpreter 一个 major 兼容且不能绕过新质量链；历史不改写。
 15. Unit、Conformance、Property、Fault、Security、Migration、Dashboard、TDD Integration 和 E2E 全通过。
-16. 真实项目完成 Lite、Standard、Governed Intent→PRD dogfood并比较轮次、批准、上下文规模、成本和质量 Finding。
+16. 真实项目完成 Lite、Standard、Governed Intent→PRD dogfood并比较轮次、批准、上下文规模、成本和质量 Finding；Lite 必须单独报告单 Requirement 录入墙钟时间、用户输入轮次、手填字段数、上下文预填命中率、Review 修订率和人工批准等待时间，证明“轻”来自交互深度降低而不是绕过质量链。
 
 ## 22. 被否决的替代方案
 
@@ -1366,7 +1381,7 @@ Proposal/Review Adapter 统一验证：
 
 ## 23. 实施边界建议
 
-本设计不授权代码实施。用户复核正式 Spec 后，应把它并入 Slim/DesignSet/TDD 的同一 Protocol 1.1 实施计划，建议依赖顺序：
+统一实施计划已重编为 [Universal Harness Protocol 1.1 统一实施计划](../plans/2026-08-18-designset-lifecycle-implementation-plan.md)。本设计不授权代码实施；以下序列仅保留为 Capture 子模块的局部依赖说明：
 
 1. Capture runtime records、完整 PrdProposal/Draft JSON Schema、canonical digest 和 migration reader；
 2. PrdCaptureCoordinator/state/checkpoint/ApprovalDecision consumption；
@@ -1380,4 +1395,4 @@ Proposal/Review Adapter 统一验证：
 10. CLI/Dashboard 共用 Session；
 11. Profile matrix、fault、migration、E2E 和 dogfood。
 
-现有 19-task DesignSet/TDD 协同计划必须重新编排，把高质量 Capture 放在 Impact/Design/Plan 之前；禁止先让低质量 RequirementBaseline 进入后续治理，再事后补 PRD Review。
+统一计划已经把高质量 Capture 放在 Impact/Design/Plan 之前；实施时禁止先让低质量 RequirementBaseline 进入后续治理，再事后补 PRD Review。
