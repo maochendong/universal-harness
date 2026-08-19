@@ -4,6 +4,7 @@ import type { TSchema } from "@sinclair/typebox";
 import { isProtocolCompatible } from "../version.js";
 import { PROTOCOL_1_1_VERSION } from "../protocol.js";
 import { createDomainSchemaRegistry, mergeSchemaDocuments } from "./domain-registry.js";
+import { CapabilityPlanRecordSchema } from "./capability.js";
 import { EdgeSchema } from "./edge.js";
 import { EventSchema } from "./event.js";
 import { FeedbackSchema } from "./feedback.js";
@@ -132,7 +133,8 @@ export const JSON_SCHEMA_DOCUMENTS = Object.fromEntries(
  * Protocol 1.1 domain schemas register here as their owning tasks land
  * (Profile T2, Capability T3, Capture T4-T7, and so on). Task 2 contributes
  * the profile definition and the Profile/Recommendation/Decision records plus
- * the Capture-scope model provider binding.
+ * the Capture-scope model provider binding; Task 3 contributes the
+ * CapabilityPlan record.
  */
 export const PROTOCOL_1_1_SCHEMA_REGISTRY = createDomainSchemaRegistry({
   protocolVersion: PROTOCOL_1_1_VERSION,
@@ -142,6 +144,7 @@ export const PROTOCOL_1_1_SCHEMA_REGISTRY = createDomainSchemaRegistry({
     { key: "profile-recommendation", schema: ProfileRecommendationRecordSchema },
     { key: "profile-decision", schema: ProfileDecisionRecordSchema },
     { key: "model-provider-binding", schema: CaptureModelProviderBindingRecordSchema },
+    { key: "capability-plan", schema: CapabilityPlanRecordSchema },
   ],
 });
 

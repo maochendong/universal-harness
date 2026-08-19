@@ -103,9 +103,9 @@ describe("Graph-native model documentation", () => {
     expect(structural).toHaveLength(new Set(structural).size);
     expect(propagation.filter((type) => structural.includes(type))).toEqual([]);
     for (const pending of PENDING_1_1_EDGE_TYPES) expect(propagation).toContain(pending);
-    expect(
-      sorted(withoutPending([...propagation, ...structural], PENDING_1_1_EDGE_TYPES)),
-    ).toEqual(sorted(RELATION_TYPES));
+    expect(sorted(withoutPending([...propagation, ...structural], PENDING_1_1_EDGE_TYPES))).toEqual(
+      sorted(RELATION_TYPES),
+    );
   });
 
   it("documents the executable propagation policy without drift", () => {

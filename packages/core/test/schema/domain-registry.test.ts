@@ -114,7 +114,7 @@ describe("domain schema export boundary", () => {
 });
 
 describe("protocol 1.1 schema plumbing", () => {
-  it("registers the Task 2 profile schemas under the 1.1 domain registry", () => {
+  it("registers the Task 2/3 profile and capability schemas under the 1.1 domain registry", () => {
     expect(PROTOCOL_1_1_SCHEMA_REGISTRY.protocolVersion).toBe("1.1.0");
     expect(PROTOCOL_1_1_SCHEMA_REGISTRY.keys).toEqual([
       "profile-definition",
@@ -122,6 +122,7 @@ describe("protocol 1.1 schema plumbing", () => {
       "profile-recommendation",
       "profile-decision",
       "model-provider-binding",
+      "capability-plan",
     ]);
     expect(PROTOCOL_1_1_SCHEMA_REGISTRY.validate("project-profile", {})).toMatchObject({
       valid: false,

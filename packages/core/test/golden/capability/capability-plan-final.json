@@ -1,0 +1,234 @@
+{
+  "protocol_version": "1.1.0",
+  "record_kind": "capability_plan",
+  "capability_plan_id": "capability-plan_8a66d07b-5765-5080-8974-ba57391d5101",
+  "operation_id": "operation_01K1ABCDEFGHIJKLMNO",
+  "revision": 2,
+  "compilation_stage": "final",
+  "profile_id": "standard",
+  "project_profile_digest": "77e0351f1e1e6a5473d2747565f6327b959e1fca0a0160b78f97dba151708bf1",
+  "profile_decision_digest": "2c8702273fb339b0b0313fbf61bfd3ba92ce6dabed6076eb93a63df2a53370da",
+  "requirement_digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "risk_digest": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+  "policy_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "baseline_digest": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+  "capabilities": [
+    {
+      "capability_id": "advanced_audit",
+      "resolution": "inactive_by_profile",
+      "resolution_source": "conditional_inactive",
+      "module_version": "1.1.0",
+      "module_digest": "1e37b3481b43e808b1b22c4593d280f8300efd2ba5244e5515bbcb923cd51c77",
+      "binding_digest": "60654cd6b24d9d4518995bc95060f84741df28ec458e9db7fab857715c5dc8be"
+    },
+    {
+      "capability_id": "design_governance",
+      "resolution": "active",
+      "resolution_source": "profile_required",
+      "module_version": "1.1.0",
+      "module_digest": "11107db527629eca474627986196b9dd3f1c24fa6b2a9c6b17ccadea71d39fd0",
+      "binding_digest": "60654cd6b24d9d4518995bc95060f84741df28ec458e9db7fab857715c5dc8be"
+    },
+    {
+      "capability_id": "impact_analysis",
+      "resolution": "active",
+      "resolution_source": "profile_required",
+      "module_version": "1.1.0",
+      "module_digest": "5f859616f65f181cbf96837cbe63373fe4d25916f00001fa3676c7b1b1dbfad1",
+      "binding_digest": "60654cd6b24d9d4518995bc95060f84741df28ec458e9db7fab857715c5dc8be"
+    },
+    {
+      "capability_id": "independent_evaluation",
+      "resolution": "active",
+      "resolution_source": "profile_required",
+      "module_version": "1.1.0",
+      "module_digest": "529007c985edc670ab8deedd80cb2e592b6d61cbddb81533bfd6fe8f0e7352ca",
+      "binding_digest": "60654cd6b24d9d4518995bc95060f84741df28ec458e9db7fab857715c5dc8be"
+    },
+    {
+      "capability_id": "strict_tdd",
+      "resolution": "active",
+      "resolution_source": "design_set_finalization",
+      "module_version": "1.1.0",
+      "module_digest": "644012e6268b0c1a8a9a689c9bce2281e4140016edd97ec04fc094009e56cffd",
+      "binding_digest": "0000000000000000000000000000000000000000000000000000000000000000"
+    }
+  ],
+  "providers": ["isolated_workspace_provider", "structured_gate_provider"],
+  "approval_policy_id": "approval-policy-standard",
+  "approval_objects": ["design_set", "impact_set", "project_profile", "requirement_baseline"],
+  "operation_dag": {
+    "nodes": [
+      {
+        "node_id": "capture",
+        "node_kind": "kernel",
+        "depends_on": [],
+        "consumes": [],
+        "produces": ["requirement_baseline"],
+        "checkpoint": true
+      },
+      {
+        "node_id": "capability_decision",
+        "node_kind": "kernel",
+        "depends_on": ["capture"],
+        "consumes": ["requirement_baseline"],
+        "produces": [],
+        "checkpoint": true
+      },
+      {
+        "node_id": "impact",
+        "node_kind": "module",
+        "capability_id": "impact_analysis",
+        "depends_on": ["capability_decision"],
+        "consumes": ["requirement_baseline"],
+        "produces": ["impact_set"],
+        "checkpoint": true
+      },
+      {
+        "node_id": "design",
+        "node_kind": "module",
+        "capability_id": "design_governance",
+        "depends_on": ["impact"],
+        "consumes": ["impact_set"],
+        "produces": ["design_set"],
+        "checkpoint": true
+      },
+      {
+        "node_id": "plan",
+        "node_kind": "kernel",
+        "depends_on": ["capability_decision", "impact", "design"],
+        "consumes": ["requirement_baseline", "impact_set", "design_set"],
+        "produces": ["execution_plan"],
+        "checkpoint": true
+      },
+      {
+        "node_id": "context",
+        "node_kind": "kernel",
+        "depends_on": ["plan"],
+        "consumes": ["execution_plan", "design_set"],
+        "produces": ["context_bundle"],
+        "checkpoint": true
+      },
+      {
+        "node_id": "execute",
+        "node_kind": "kernel",
+        "depends_on": ["context"],
+        "consumes": ["context_bundle", "design_set"],
+        "produces": ["tdd_contract"],
+        "checkpoint": true,
+        "subgraph": "strict_tdd"
+      },
+      {
+        "node_id": "verify",
+        "node_kind": "kernel",
+        "depends_on": ["execute"],
+        "consumes": ["context_bundle"],
+        "produces": ["gate_evidence"],
+        "checkpoint": true
+      },
+      {
+        "node_id": "evaluate",
+        "node_kind": "module",
+        "capability_id": "independent_evaluation",
+        "depends_on": ["verify"],
+        "consumes": ["gate_evidence"],
+        "produces": ["evaluation_report"],
+        "checkpoint": true
+      },
+      {
+        "node_id": "snapshot",
+        "node_kind": "kernel",
+        "depends_on": ["verify", "evaluate"],
+        "consumes": ["gate_evidence", "evaluation_report"],
+        "produces": ["snapshot"],
+        "checkpoint": true
+      }
+    ]
+  },
+  "invalidation_graph": [
+    {
+      "binding_kind": "design_set",
+      "invalidates": ["strict_tdd"]
+    },
+    {
+      "binding_kind": "gate_evidence",
+      "invalidates": ["independent_evaluation"]
+    },
+    {
+      "binding_kind": "impact_set",
+      "invalidates": ["design_governance"]
+    },
+    {
+      "binding_kind": "requirement_baseline",
+      "invalidates": ["impact_analysis"]
+    }
+  ],
+  "model_provider_bindings": [
+    {
+      "slot_id": "design_review",
+      "required": true,
+      "provider_identity": "provider_anthropic",
+      "config_digest": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+      "prompt_version": "design_review.v1",
+      "schema_version": "design_review-result.v1",
+      "budget_profile": "operation-standard",
+      "failure_mode": "block"
+    },
+    {
+      "slot_id": "feedback_analysis",
+      "required": true,
+      "provider_identity": "provider_anthropic",
+      "config_digest": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+      "prompt_version": "feedback_analysis.v1",
+      "schema_version": "feedback_analysis-result.v1",
+      "budget_profile": "operation-standard",
+      "failure_mode": "block"
+    },
+    {
+      "slot_id": "grounded_synthesis",
+      "purpose": "context_enrichment",
+      "required": true,
+      "provider_identity": "provider_anthropic",
+      "config_digest": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+      "prompt_version": "grounded_synthesis.v1",
+      "schema_version": "grounded_synthesis-result.v1",
+      "budget_profile": "operation-standard",
+      "failure_mode": "block"
+    },
+    {
+      "slot_id": "grounded_synthesis",
+      "purpose": "iteration_narrative",
+      "required": true,
+      "provider_identity": "provider_anthropic",
+      "config_digest": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+      "prompt_version": "grounded_synthesis.v1",
+      "schema_version": "grounded_synthesis-result.v1",
+      "budget_profile": "operation-standard",
+      "failure_mode": "projection_finding"
+    },
+    {
+      "slot_id": "impact_advisory",
+      "required": true,
+      "provider_identity": "provider_anthropic",
+      "config_digest": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+      "prompt_version": "impact_advisory.v1",
+      "schema_version": "impact_advisory-result.v1",
+      "budget_profile": "operation-standard",
+      "failure_mode": "block"
+    },
+    {
+      "slot_id": "plan_proposal",
+      "required": true,
+      "provider_identity": "provider_anthropic",
+      "config_digest": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+      "prompt_version": "plan_proposal.v1",
+      "schema_version": "plan_proposal-result.v1",
+      "budget_profile": "operation-standard",
+      "failure_mode": "block"
+    }
+  ],
+  "design_set_digest": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+  "test_strategy_digest": "0000000000000000000000000000000000000000000000000000000000000000",
+  "supersedes_digest": "184b69ba3500a80b11034ec2de64689e9a1938925481aefc1420b781f7315f8c",
+  "record_digest": "eb92f8bdd1c7307f8014ff180e9bbfca588487e0f30e832a236ef0caf278f1da"
+}
