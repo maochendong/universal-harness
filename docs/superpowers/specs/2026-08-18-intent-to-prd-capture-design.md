@@ -8,6 +8,7 @@
 - [Universal Harness Slim Profiles 与 Capability Kernel 设计](./2026-08-18-harness-slim-profiles-design.md)
 - [Universal Harness DesignSet 生命周期设计](./2026-08-18-designset-lifecycle-design.md)
 - [Universal Harness 可证明 TDD 协议设计](./2026-08-18-provable-tdd-protocol-design.md)
+- [Universal Harness 模型建议 Adapter 与 Grounded Synthesis 设计](./2026-08-19-model-advisory-adapters-design.md)
 
 ## 1. 摘要
 
@@ -31,6 +32,8 @@ Intent
 `PrdProposal` 是 PRD 内容唯一权威源。模型、Manual 表单和旧 `IntentInterpreter` 只能提出结构化 Proposal 或问题，不能写 Ledger、批准自身输出或直接生成 accepted RequirementBaseline。Harness 对 Proposal 做确定性的 Schema、引用、完整性、一致性和测试先行准备度校验；独立 `PrdReviewPort` 再做语义质量评审。最终 accepted PRD、RequirementBaseline、图记录、Review/Policy/Profile/Approval bindings 和 Capture checkpoint 在一次 Ledger transaction 中原子提交，批准版本不可原地修改。
 
 Capture 是所有 Profile 共享的 Evidence Kernel，不增加公共 lifecycle phase。Lite、Standard、Governed 改变上下文深度、Adapter/Review budget、风险阈值和人工批准要求，但不能关闭受管会话、硬门禁、独立 Review 或不可变提交。
+
+Protocol 1.1 的跨阶段 `GroundedSynthesisPort` 在 adopt 时以 `project_discovery` 向 Capture 提供带引用的项目事实候选，并在真实 PRD/Profile/Override 审批展示前以 `approval_brief` 生成中文提炼。两者都不进入 PRD 内容权威或审批对象 digest；Capture 仍只通过 Coordinator 改变状态。
 
 现有 `IntentInterpreter` 保留一个 major 的兼容期，通过 `LegacyIntentInterpreterAdapter` 接入 `PrdProposalPort`。旧输出仍必须通过新硬门禁和独立 Review；`createGenericInterpreter()` 不再是默认生产路径。
 
@@ -88,6 +91,7 @@ intent string
 | 旧接口 | IntentInterpreter 保留一个 major，通过兼容 Adapter 接入 |
 | TDD 协同 | 澄清必须形成测试先行验收标准；DesignSet 再批准具体 Oracle/Gate/路径 |
 | Profile 协同 | Capture 属于 Evidence Kernel；三档只改变深度、预算、风险与批准策略 |
+| 跨阶段提炼 | adopt 可消费 `project_discovery`；真实人工审批可展示 `approval_brief`，二者均强制来源引用 |
 
 ## 4. 目标与非目标
 
@@ -171,7 +175,7 @@ export interface PrdReviewPort {
 }
 ```
 
-Ledger repository、state transition、quality rules、approval routing 和 graph materialization 是 Coordinator 内部能力，不再为每一步暴露一个浅 Port。
+Ledger repository、state transition、quality rules、approval routing 和 graph materialization 是 Coordinator 内部能力，不再为每一步暴露一个浅 Port。跨阶段 `GroundedSynthesisPort` 由 adopt/Approval Presentation 调用，不是 Capture Coordinator 的第四个状态转移 seam；其运行契约由模型建议 Adapter 设计统一定义。
 
 ### 5.3 权威所有权
 
@@ -183,6 +187,7 @@ Ledger repository、state transition、quality rules、approval routing 和 grap
 - Ledger 拥有已提交的 Session/Proposal/Lineage/Manual Review/Review/Risk/Approval/accepted PRD 历史。
 - Graph 是 accepted PRD 的权威工程关系表达。
 - Markdown PRD 是可重建 Projection。
+- Grounded Synthesis Adapter 只拥有带引用的提炼实现，不拥有 Context 选择、PRD 内容、风险或 ApprovalDecision。
 
 ## 6. 权威数据模型
 
@@ -755,7 +760,7 @@ Review 不读取 Proposal conversation/transcript 或模型思维过程，防止
 
 ### 7.5 批准与接受
 
-Approval Preview 从 Proposal、Validation、Review、CaptureRiskAssessment、Profile 和 Policy 的同一 canonical view 生成，审批对象固定为当前 `PrdProposalRecord.proposal_id + content_digest`。统一 ApprovalService 只负责提交 ApprovalDecision，不得改变 Capture state 或写 accepted PRD；CLI/Dashboard 随后调用 `advance(ApplyApprovalDecisionCommand)`，Coordinator 读取并复验权威 Decision。Decision consumption key 固定为 `session_id + session_revision + request_id + decision_id + object_digest`，成功后写入 `applied_approval_decision_id`。Approval 已提交但 advance 中断时，resume 会发现未消费 Decision 并幂等继续。
+Approval Preview 从 Proposal、Validation、Review、CaptureRiskAssessment、Profile 和 Policy 的同一 canonical view 生成，审批对象固定为当前 `PrdProposalRecord.proposal_id + content_digest`。Standard/Governed 在展示真实人工审批前调用 `GroundedSynthesisPort` 的 `approval_brief`，但摘要不进入批准对象/content digest，也不能隐藏确定性风险/范围事实。统一 ApprovalService 只负责提交 ApprovalDecision，不得改变 Capture state 或写 accepted PRD；CLI/Dashboard 随后调用 `advance(ApplyApprovalDecisionCommand)`，Coordinator 读取并复验权威 Decision。Decision consumption key 固定为 `session_id + session_revision + request_id + decision_id + object_digest`，成功后写入 `applied_approval_decision_id`。Approval 已提交但 advance 中断时，resume 会发现未消费 Decision 并幂等继续。
 
 决策语义固定：approve 进入 accepted transaction；reject 必须带理由并使当前 Proposal 追加 rejected revision，然后进入 revision_required，用户显式 cancel 才结束会话；defer 进入 approval_deferred，不生成 accepted 工件，resume 时在 bindings 未漂移的前提下重签 ApprovalRequest。Policy 自动批准由 Coordinator 在 accepted transaction 内生成 actor 为版本化 Policy identity 的 ApprovalDecision，不经过外部捷径。
 
@@ -935,6 +940,8 @@ Review Adapter 缺失时进入 `blocked`，并记录 `blocked_reason: "review_pr
 
 Capture Proposal、PRD Review 和执行 Agent 是三个 Adapter identity。即使共用 dsh executable/model，也分别拥有 env allowlist、timeout、token/output ceiling、prompt digest、conversation、Harness-owned evidence sink 和 usage accounting；Evidence sink 不挂载给 provider 进程。
 
+`project_discovery`/`approval_brief` 使用全局 `GroundedSynthesisPort` 配置槽，不复用 Proposal/Review conversation。Standard/Governed adopt 的 discovery 和实际人工审批 brief 是 required binding；Lite 未启用时不调用。配置、Invocation、Evidence 和失败契约见模型建议 Adapter 设计。
+
 ### 11.2 权限
 
 Proposal/Review Adapter：
@@ -1090,6 +1097,7 @@ Capture 属于 Evidence Kernel。Profile 只调整策略：
 | 测试先行 | 每 must-change Requirement 至少一个可执行 Criterion | 主路径 + 关键失败/边界 | 安全/权限/兼容/迁移/审计/不可逆场景 |
 | 低风险人工批准 | Policy 可自动决定 | Policy 可自动决定，物质性变化通常人工 | 不免，必须人工 |
 | 中高风险 | 人工或建议升级 | 人工 | 人工，可职责分离/双人 |
+| Grounded discovery/approval brief | 可选，未启用零工件 | adopt/真实人工审批时强制 | 强制，会话/证据独立 |
 
 公共硬门禁、独立 Review 和 critical Finding 不可由低档 Profile 关闭。
 
@@ -1229,6 +1237,8 @@ IntentInterpreter
 | deterministic gate fail | typed questions/findings，回到 clarify/revise |
 | Proposal timeout/crash | 保存 invocation Evidence，Session 可恢复 |
 | Review Provider 缺失 | `state: blocked`、`blocked_reason: review_provider_required`，选择 Manual/配置 Provider 后追加 Session revision 恢复 |
+| Standard/Governed Grounded Provider 缺失 | adopt/approval presentation typed blocked，不降级为无引用摘要 |
+| discovery/approval brief citation 缺失 | Result 拒绝，预算内重试，耗尽后 blocked |
 | Review revise/clarify | 保留旧 Proposal/Report，追加新 revision/questions |
 | Manual Review input 缺失/冲突 | 保持 `review_input_required`，拒绝混入 ClarificationAnswer |
 | answer/session digest 冲突 | typed conflict/HTTP 409，刷新后重交 |
@@ -1255,6 +1265,7 @@ IntentInterpreter
 9. Manual answers/review/approval 绑定 actor、expected digest 和 session revision。
 10. Profile Override 不能覆盖 hard gate、critical Finding 或 Policy deny。
 11. accepted PRD/RequirementBaseline/Graph 原子提交防止批准到提交的 TOCTOU。
+12. Grounded discovery/approval brief 只能读取受控 Bundle，每个 claim 强制 source id/digest，不得写 Graph、修改 PRD/审批对象或共享 Proposal/Review 隐藏历史。
 
 ## 20. 测试策略
 
@@ -1280,6 +1291,7 @@ Proposal/Review Adapter 统一验证：
 - Proposal/Review session 不复用；
 - proposal-purpose/review-purpose Bundle identity 与 digest 不复用；
 - Proposal/Review 无项目、Ledger、cwd 或任意文件直接读取。
+- Grounded `project_discovery`/`approval_brief` purpose Schema、citation ownership、独立 conversation/run/Evidence 和 typed blocker。
 
 ### 20.3 Schema/Property
 
@@ -1338,6 +1350,7 @@ Proposal/Review Adapter 统一验证：
 - new/adopt/iterate/resume/serve 完整纵向场景；
 - 真实 Lite/Standard/Governed dogfood。
 - Lite 单 Requirement 从 Intent 到 accepted PRD 的墙钟时间、用户输入轮次、手填字段数、上下文预填命中率、Review 修订率和人工批准等待时间。
+- Standard/Governed adopt 强制 discovery Provider、人工审批强制 approval brief，Provider/citation 失败可恢复 blocked。
 
 ## 21. 完成定义
 
@@ -1357,6 +1370,7 @@ Proposal/Review Adapter 统一验证：
 14. IntentInterpreter 一个 major 兼容且不能绕过新质量链；历史不改写。
 15. Unit、Conformance、Property、Fault、Security、Migration、Dashboard、TDD Integration 和 E2E 全通过。
 16. 真实项目完成 Lite、Standard、Governed Intent→PRD dogfood并比较轮次、批准、上下文规模、成本和质量 Finding；Lite 必须单独报告单 Requirement 录入墙钟时间、用户输入轮次、手填字段数、上下文预填命中率、Review 修订率和人工批准等待时间，证明“轻”来自交互深度降低而不是绕过质量链。
+17. Grounded discovery/approval brief 与 Proposal/Review 会话、prompt、Schema、budget、run identity 和 Evidence 独立，结构化 claim 的 citation coverage 为 100%。
 
 ## 22. 被否决的替代方案
 

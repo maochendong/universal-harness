@@ -8,6 +8,7 @@
 - [Universal Harness Slim Profiles 与 Capability Kernel 设计](./2026-08-18-harness-slim-profiles-design.md)
 - [Universal Harness Intent → 高质量 PRD Capture 设计](./2026-08-18-intent-to-prd-capture-design.md)
 - [Universal Harness DesignSet 生命周期设计](./2026-08-18-designset-lifecycle-design.md)
+- [Universal Harness 模型建议 Adapter 与 Grounded Synthesis 设计](./2026-08-19-model-advisory-adapters-design.md)
 
 ## 1. 摘要
 
@@ -36,6 +37,8 @@ capture → impact → design → plan → context → execute → verify → [e
 方括号表示 CapabilityPlan 启用对应 Module 时节点才存在；Standard/Governed 解析后的 DAG 默认包含 evaluate。Lite 未启用 Impact/Design/Evaluation 时外部 DAG 可以更短；一旦 strict_tdd 激活，它依赖 impact_analysis、design_governance、structured Gate 和 isolated workspace 的完整传递依赖闭包，并在每个相关 Task、每个 required Assertion Cluster 的 `execute` 内运行，因此可以服从 Task DAG 并行执行，不把整个迭代强制串行化。
 
 managed PRD Capture、Slim Profiles、DesignSet 与本协议共同进入首次 Protocol 1.1.0。strict_tdd 激活时，DesignSet 负责批准 TDD 适用性、失败 Oracle、目标 Gate 和路径策略；Plan 负责把它编译为不可降级的执行 Contract；TddController、CapabilityGrant、Gate、Evidence 和 Ledger 负责机械证明执行顺序。未激活时零 TDD Contract/Cycle/Run，并显示 `not_enabled_by_profile`。Agent 自述、transcript、文件时间戳和模糊退出码都不是 TDD 证明。
+
+Protocol 1.1 的 `PlanProposalPort` 可用模型提出 Task、Assertion Cluster 和 DAG 分配，但 canonical Assertion、TDD Contract、Gate/Oracle/path 交集和 Task id/digest 仍由确定性 Plan Compiler 生成。`GroundedSynthesisPort.context_enrichment` 只对 Harness 已选的 Context 做带引用的术语和摘要增强，不能删除 mandatory source；TDD/Gate/Evaluation Finding 的未分类语义可进入 `FeedbackAnalysisPort`，但不能改写已接受 Evidence 或确定性路由。
 
 上游 managed PRD Capture 必须先把每条验收标准澄清为具有 Coordinator-issued 稳定 criterion id、Question/Answer SourceBinding、可观察结果、verification intent 和测试先行示例的业务事实，并物化 Test seed。DesignSet 可以技术细化 Gate/Oracle/path，但不能弱化 accepted observable outcome；Planner、Agent 和 TddController 都不能私自补写验收标准。
 
@@ -409,6 +412,12 @@ Plan validator 必须证明：
 5. 所有 Task 依赖形成无环 DAG；生产 Task 依赖所需 FrameworkEvidence。
 6. 一个 Task 不混合 required、not_applicable 和 framework_bootstrap；需要不同模式时必须拆分。
 
+### 7.4 PlanProposalPort 边界
+
+Standard/Governed 使用 `PlanProposalPort` 从 Harness 预编译的 canonical Assertion descriptors、accepted PRD/ImpactSet/DesignSet、final CapabilityPlan、Gate registry、TDD strategy 和受控路径提出 Task/Cluster/DAG。模型可以建议 Assertion 分组、owning Task、依赖、并行和 Context budget，但不能创建/合并 canonical Assertion、扩大路径/Gate/Oracle、改变 TDD 适用性或生成最终 Task/Contract digest。
+
+Plan Compiler 对返回候选重新执行本节全部不变量。`PlanTasksPort` 只通过一个 major 的 `LegacyPlanTasksAdapter` 映射成新 Proposal，新旧 Planner 配置同时存在时 fail closed。
+
 ## 8. TDD 状态机
 
 ### 8.1 状态顺序
@@ -678,6 +687,8 @@ strict_tdd Capability 激活时，DesignSet Preview 增加每个 Requirement 的
 
 这些字段随整个 DesignSet 原子批准，不新增执行期批准入口。
 
+Standard/Governed 的 DesignSet 人工审批卡在展示前调用 `GroundedSynthesisPort.approval_brief`，用带引用的中文解释 TDD 适用性、Oracle、路径和遗留风险。Brief 不进入 DesignSet/Approval digest，不能改变任何 Contract 字段。
+
 ### 14.2 Iterations 与 Task
 
 strict_tdd 激活时，Task 详情使用时间线展示：
@@ -738,7 +749,7 @@ Live 可以显示 dsh 心跳、tokens/steps、phase、stdout tail 和当前 TDD 
 
 ### 15.1 Protocol 1.1 协同交付
 
-managed PRD Capture、Slim Profiles、DesignSet 和 TDD 尚未实施，因此 Capture Session/Proposal/Review、accepted Criterion/Test seeds、Profile/Capability records、DesignSet Schema、test_strategy profile、TaskTddContract、typed Evidence、TddCycleRecord 和事件在首次 Protocol 1.1.0 中按依赖一起交付。先建立受管 Capture 与动态 CapabilityPlan/DAG，再把 Design/TDD Module 接入，避免让低质量 RequirementBaseline 先进入固定重流水线后再返工。
+managed PRD Capture、Slim Profiles、DesignSet、TDD 和模型建议 Adapter 尚未实施，因此 Capture Session/Proposal/Review、accepted Criterion/Test seeds、Profile/Capability/model-provider records、DesignSet Schema/Review、PlanProposal、test_strategy profile、TaskTddContract、typed Evidence、TddCycleRecord 和事件在首次 Protocol 1.1.0 中按依赖一起交付。先建立受管 Capture 与动态 CapabilityPlan/DAG，再把 Design/TDD/Model Advisory 接入，避免让低质量 RequirementBaseline 或未校验模型输出先进入固定重流水线后再返工。
 
 ### 15.2 已完成 Protocol 1.0
 
@@ -771,6 +782,7 @@ Evidence、Cycle、Grant 和审批发生漂移时，只追加 invalidation/super
 7. secret、环境变量和工作区外路径不进入 test patch 或 Evidence content。
 8. Grant、baseline、Gate、environment 和 patch 的摘要绑定防止审批/验证之间的 TOCTOU。
 9. 恶意测试不得通过修改 Harness Ledger、Evidence 或 Gate Provider 伪造结果；这些路径必须 immutable。
+10. PlanProposal/context enrichment/feedback analysis 模型只读 purpose-bound Bundle，不获得 workspace/Grant/Gate/Evidence 写能力；其 citation 和会话独立性由 Harness 机械复验。
 
 ## 17. 测试策略
 
@@ -822,6 +834,8 @@ Evidence、Cycle、Grant 和审批发生漂移时，只追加 invalidation/super
 - Design 无法形成有效 Failure Oracle → Finding → Capture new PRD revision；
 - Standard provisional CapabilityPlan + accepted test_strategy → final CapabilityPlan → Plan Contract；
 - Plan 降级/扩大 Oracle/path 被拒绝；
+- PlanProposal 只能分配预编译 Assertion/Cluster/Task DAG，Harness 重算 Task/Contract id/digest 并拒绝覆盖、路径、Gate 和 TDD 扩权；
+- Context Enrichment 不能删除 mandatory source、扩大读取范围或把摘要当作 TDD Evidence；
 - DesignSet revision 使 Plan/Context/Grant/Cycle 失效；
 - TestInfrastructureTask DAG 依赖；
 - Finding → ImpactSet → DesignSet revision → new Contract。
@@ -842,6 +856,8 @@ Evidence、Cycle、Grant 和审批发生漂移时，只追加 invalidation/super
 9. Markdown Plan/Snapshot 与权威 Contract/Evidence 无漂移；
 10. Protocol 1.0 历史兼容和开放迭代迁移；
 11. `harness new`、`adopt`、`iterate` 各至少一个纵向场景。
+12. Standard/Governed 必需 PlanProposal/context-enrichment Provider 缺失或失败时 blocked，且每个 slot/purpose 会话/Evidence 独立。
+13. TDD/Gate/Evaluation 的未分类 Finding 可经 FeedbackAnalysis 提出候选，但确定性 RCA、Evidence 和路由不可改写。
 
 ## 18. 完成定义
 
@@ -863,6 +879,7 @@ Evidence、Cycle、Grant 和审批发生漂移时，只追加 invalidation/super
 14. Dashboard/Projection 提供中文业务语义和可展开 digest 审计。
 15. Unit、Property、Policy、Integration、Migration、Adapter、Dashboard 和 E2E 测试全部通过。
 16. 至少一个真实 Standard/Governed 项目通过真实 Agent 完成 DesignSet → Red → Green → Gate → Evaluation → Snapshot 纵向闭环；同时一个 Lite Kernel-only 项目证明零 TDD Contract/Run/Event/Evidence/Cycle，二者均可从账本复验。
+17. Standard/Governed 的 PlanProposal、Context Enrichment 和适用 FeedbackAnalysis 都有真实模型 Invocation/Result/Validation Evidence，且模型无法降级 TDD 权威链。
 
 ## 19. 被否决的替代方案
 
@@ -906,4 +923,4 @@ Evidence、Cycle、Grant 和审批发生漂移时，只追加 invalidation/super
 10. Finding/Profile/Capture upgrade 级联与 Protocol 1.0 migration；
 11. Markdown Projection、Dashboard 渐进披露、三档 E2E、真实 Agent dogfood 和验收报告。
 
-现有 DesignProposalPort、Design Approval、原子提交、Plan/Context/Preflight 强绑定和 Finding 回流仍是前置能力。协同计划必须在这些依赖点直接加入 TDD 工作，避免先完成一套 DesignSet 流程后再返工 Plan、Run、Evidence 和 UI。
+现有 DesignProposalPort、Design Approval、原子提交、Plan/Context/Preflight 强绑定和 Finding 回流仍是前置能力。Protocol 1.1 新增的 DesignReviewPort、PlanProposalPort、Context Enrichment 和 FeedbackAnalysis 必须在同一依赖点与 TDD Contract/Evidence 协同，不得形成第二套 Assertion、Gate、Oracle、路由或 proof 真相。协同计划必须在这些依赖点直接加入 TDD 工作，避免先完成一套 DesignSet 流程后再返工 Plan、Run、Evidence 和 UI。

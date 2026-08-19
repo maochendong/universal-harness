@@ -8,6 +8,7 @@
 - [Universal Harness Intent → 高质量 PRD Capture 设计](./2026-08-18-intent-to-prd-capture-design.md)
 - [Universal Harness DesignSet 生命周期设计](./2026-08-18-designset-lifecycle-design.md)
 - [Universal Harness 可证明 TDD 协议设计](./2026-08-18-provable-tdd-protocol-design.md)
+- [Universal Harness 模型建议 Adapter 与 Grounded Synthesis 设计](./2026-08-19-model-advisory-adapters-design.md)
 
 ## 1. 摘要
 
@@ -35,7 +36,7 @@ Evidence Kernel
 
 固定 `ORCHESTRATION_PHASES` 不再是协议核心。Capability Compiler 根据 ProjectProfile、Requirement、Risk、Policy、用户决定和 Provider 能力生成确定性的 Operation DAG。未启用的 Module 不运行 Port、不生成空壳 Node/Event/Evidence、不制造批准请求，也不占据 Dashboard 核心导航。
 
-Profile Slim、高质量 PRD Capture、DesignSet 和可证明 TDD 一起进入首次 Protocol 1.1.0。后三项尚未实施，因此不先发布一个低质量 Capture 或默认重流水线再返工。
+Profile Slim、高质量 PRD Capture、DesignSet、可证明 TDD 和模型建议 Adapter 一起进入首次 Protocol 1.1.0。本组能力尚未实施，因此不先发布一个低质量 Capture、默认重流水线或无权威边界的通用模型 Port 再返工。
 
 ## 2. 背景与问题
 
@@ -90,6 +91,8 @@ Profile Slim、高质量 PRD Capture、DesignSet 和可证明 TDD 一起进入�
 | 旧项目 | 下一次 iterate/resume 前显式选择；不自动映射 |
 | 复杂度预算 | 进入自动验收，但不固定人工批准次数 |
 | Protocol | Slim Profiles、managed PRD Capture、DesignSet、Provable TDD 一起进入 1.1.0 |
+| 模型建议 | Impact/Design Review/Plan/Feedback 四个领域 Port + 四 purpose GroundedSynthesis 一起进入 1.1.0 |
+| Provider | Standard/Governed 对适用的新模型槽位强制配置；Lite 按 Capability/Policy 启用 |
 
 ## 4. 目标与非目标
 
@@ -103,6 +106,7 @@ Profile Slim、高质量 PRD Capture、DesignSet 和可证明 TDD 一起进入�
 6. Standard/Governed 继续满足 DesignSet 和严格 TDD 已确认的不变量。
 7. 默认 CLI 和 Dashboard 使用业务语言，不要求用户理解内部 Graph/Protocol 术语。
 8. Profile 逻辑通过 Capability Compiler/Module contract 实现，不继续扩大 orchestrator 的条件分支。
+9. 模型只在受控的 Proposal/Review/Synthesis seam 发挥作用，不拥有 Graph 传播、风险下限、审批、Gate、Ledger 或 Verdict。
 
 ### 4.2 非目标
 
@@ -189,6 +193,8 @@ export interface CapabilityModuleDefinition {
   readonly definition_digest: string;
 }
 ```
+
+CapabilityPlan 还会为实际启用的模型 seam 编译版本化 `ModelProviderBinding`，其包含 slot/purpose、required、provider/config/prompt/Schema/budget digest 和 `block | projection_finding` 失败模式。这些 binding 是 Module/Kernel node 的 Provider 依赖，不是新的公共 Capability 或 Graph Node。
 
 Module 实现必须回答：
 
@@ -279,6 +285,13 @@ Standard 的每个 Design iteration 必须遵守 DesignSet 原子批准/提交�
 
 所有 Capability required。Strict TDD 对所有适用代码、配置、Schema、迁移、安全和缺陷修复 Task 强制；受控不适用仍必须由 approved test_strategy 给出 category/reason。Governed 还允许项目 Policy 增加法规、隔离、审批职责分离和 Evidence 留存要求。
 
+#### 模型槽位分层
+
+- Lite 默认使用确定性 Kernel/Planner；只在相应 Capability 或 Policy 激活时调用 ImpactAdvisory、DesignReview、PlanProposal、FeedbackAnalysis 或 GroundedSynthesis，未启用时零 Invocation/Result/Evidence。
+- Standard 对 ImpactAdvisory、DesignReview、PlanProposal 以及当前 Operation 适用的 GroundedSynthesis purpose 强制 Provider；FeedbackAnalysis 在 RCA 未分类/冲突时强制调用。
+- Governed 沿用 Standard 强制项并允许 Policy 要求 Proposal/Review 使用不同模型或数据留存级别。
+- Standard/Governed 必需 Provider 缺失或预算内失败后 typed blocked，不静默降级；`iteration_narrative` 运行失败是唯一非阻塞例外，只产生 Projection Finding。
+
 ### 7.5 状态区分
 
 任何 UI、API、Projection 和 Verdict 都必须区分：
@@ -358,6 +371,7 @@ Decision 绑定 actor、reason、推荐对象、当前/实际 Profile、Requirem
 - 每项 Capability 的 `resolution: active | inactive_by_profile | deferred`；
 - resolution source 与所绑定的 Profile/Policy/Risk/DesignSet digest；
 - `supersedes_digest`，用于 provisional → final 或风险升级 revision。
+- 当前 Operation 实际适用的 `model_provider_bindings`，按 slot/purpose 稳定排序；未启用槽位不生成占位 binding。
 
 `deferred` 只允许出现在协议明确声明的后置决策点。Protocol 1.1 内置规则只允许 Standard 的 `strict_tdd` 在 design 前 deferred；它不能授权 Plan、Context 或 Execute。DesignSet 获批后、权威提交时，Capability Compiler 必须以其 canonical test_strategy/digest 为新输入生成 final revision。strict_tdd 在 final revision 中为 active，并由 test_strategy 决定 Task 级 required/not_applicable：存在 required Requirement 时生成对应 TDD Contract/Cycle；全部为受控 not_applicable 时不生成 Cycle，但保留 accepted DesignSet/test_strategy 作为 `controlled_not_applicable` 依据，不能标成 `not_enabled_by_profile`。
 
@@ -382,6 +396,7 @@ artifacts/capability-plans/<operation-id>/<revision>.json
 - accepted Policy；
 - 用户 ProfileDecision；
 - 已注册 Module/Provider capabilities；
+- 已注册 model slot/purpose、Adapter profile、prompt/Schema/budget 版本；
 - 当前 repository/operation baseline。
 
 final 编译还输入 accepted DesignSet/test_strategy digest；除 Standard strict_tdd 的既定 deferred 边界外，Compiler 不得依赖尚未产生的未来工件。
@@ -393,6 +408,7 @@ Capability Compiler 确定性生成：
 - resolved CapabilitySet；
 - dependency closure；
 - Provider bindings；
+- 独立且 purpose-bound 的 ModelProviderBindings 及失败模式；
 - approval object policy；
 - Operation DAG；
 - invalidation graph；
@@ -434,6 +450,8 @@ capture
 ```
 
 方括号表示只有 CapabilityPlan 启用才存在。`strict_tdd` 仍是 Task execute 内部 subgraph，不变成全局 phase。
+
+新模型 Port 都是现有 node 内部受管子状态，不增加公共 phase：`impact: propagate → advise → validate → approve`、`design: propose → validate → review → approve`、`plan: propose → compile`、`context: select → enrich`、`feedback: deterministic RCA → semantic analysis → route`、`snapshot: commit → narrative projection`。
 
 new/adopt 的 ProjectProfile 在进入 managed Capture 前由用户选择；iterate 使用当前项目 Profile revision。图中的 `capability_decision` 不是初始档位选择，而是 accepted PRD 提供完整风险输入后的 CapabilityPlan 编译点：Lite/Governed 在没有合法 deferred capability 时可直接生成 final；Standard 的 strict_tdd 在 DesignSet 前必须生成 provisional，只有 accepted test_strategy 才能在 design checkpoint 原子 finalization，因此不会形成 Profile/Capture 循环。
 
@@ -591,6 +609,7 @@ resume 复验 ProjectProfile/Decision/CapabilityPlan/Requirement/Policy/Risk/rep
 - 显示批准后的能力、写入、风险和失效影响；
 - 绑定 object/content/baseline/policy digest；
 - 避免仅为 phase 对称或 no-op 工件创建。
+- Standard/Governed 的真实人工审批在展示前调用 `GroundedSynthesisPort.approval_brief`；它只生成带引用的中文提炼，不修改审批对象、风险、digest 或决策。
 
 ### 13.3 各档批准对象
 
@@ -747,13 +766,14 @@ Lite 默认五个核心视图。高级能力可发现、可解释如何启用，
 
 ### 17.1 Protocol 1.1 协同交付
 
-Slim Profile、managed PRD Capture、DesignSet 和 Provable TDD 均尚未实施，因此共同进入首次 1.1.0：
+Slim Profile、managed PRD Capture、DesignSet、Provable TDD 和模型建议 Adapter 均尚未实施，因此共同进入首次 1.1.0：
 
 1. 先建立 Profile/Capability Kernel 和动态 DAG；
 2. 升级 Evidence Kernel Capture：受管 PRD Session、Context、Proposal、Coordinator-issued lineage、Review、CaptureRiskAssessment、风险批准和 Criterion/Test seed；
 3. 再把 DesignSet 作为 `design_governance` Module；
 4. 再把严格 TDD 作为 `strict_tdd` Module；
 5. 最后扩展 Projection/Dashboard/E2E。
+6. 模型建议 Port、GroundedSynthesis 和统一受管 Invocation 嵌入上述各步，不追加第二套 workflow。
 
 禁止先实现固定 `capture → impact → design → ...` 全量流水线，再用 UI 隐藏。
 
@@ -782,6 +802,9 @@ Slim Profile、managed PRD Capture、DesignSet 和 Provable TDD 均尚未实施�
 | 未选择 Profile | `input_required/profile_required`，不创建默认记录 |
 | 未知 Profile/definition digest | 阻塞，不回退 Lite |
 | required Module/Provider 缺失 | typed blocker + doctor 恢复建议 |
+| Standard/Governed 适用 model slot/provider 缺失 | preflight typed blocker，不降级 Lite/Manual |
+| 必需模型调用 timeout/budget/invalid output | 预算内重试，耗尽后对应 node blocked |
+| iteration narrative 失败 | Snapshot 保持完成，追加可恢复 Projection Finding |
 | Capability DAG 循环/冲突 | compile failure，不创建 Plan/Grant |
 | Standard strict_tdd 在 Plan 前仍 deferred | typed compile blocker；从 approved canonical DesignSet 幂等提交 accepted DesignSet + final CapabilityPlan |
 | Recommendation 未决 | Operation 暂停，不继续旧授权 |
@@ -803,6 +826,7 @@ Slim Profile、managed PRD Capture、DesignSet 和 Provable TDD 均尚未实施�
 7. Override reason 是不可信文本，不获得指令优先级。
 8. 降级不删除历史 Evidence，也不降低开放 Operation 已签发授权的复验要求。
 9. Profile selection/upgrade/downgrade 不允许 wildcard 或无人审计的 batch approval。
+10. 模型 Provider 只读 purpose-bound Bundle，不挂载项目、Ledger 或 Evidence sink；每个 slot/purpose 独立 prompt、Schema、budget、conversation、run identity 和 Evidence。
 
 ## 20. 测试策略
 
@@ -822,6 +846,7 @@ Slim Profile、managed PRD Capture、DesignSet 和 Provable TDD 均尚未实施�
 - Lite 未启用 Module 永远无 DAG node/Port call/output record；
 - Project Policy 只能收紧 Profile；
 - Policy deny 永远不能被 Override。
+- Standard/Governed 模型 Provider closure 对适用 slot/purpose 完整，Lite 未启用槽位永远无 binding/Invocation/Result。
 
 ### 20.3 Profile Matrix
 
@@ -833,6 +858,7 @@ Slim Profile、managed PRD Capture、DesignSet 和 Provable TDD 均尚未实施�
 - Standard mandatory Impact/Design/Evaluation；
 - Standard per-Task TDD strategy；
 - Governed applicable Task 全部 strict TDD；
+- Standard/Governed 的 Impact/Design Review/Plan/Feedback/Grounded 调用矩阵，以及 narrative 非阻塞例外；
 - 五类 proof/applicability/profile state 不混淆。
 
 ### 20.4 Selection/Approval
@@ -877,7 +903,8 @@ Slim Profile、managed PRD Capture、DesignSet 和 Provable TDD 均尚未实施�
 9. Profile downgrade only future iteration；
 10. Dashboard progressive disclosure；
 11. Lite zero optional artifacts assertion；
-12. Policy deny cannot be overridden。
+12. Policy deny cannot be overridden；
+13. Standard/Governed 真实模型 Port 调用、Provider 缺失/失败、会话独立、citation 和 narrative 补偿。
 
 ## 21. 完成定义
 
@@ -898,9 +925,10 @@ Slim Profile、managed PRD Capture、DesignSet 和 Provable TDD 均尚未实施�
 15. CLI 默认只有六个主入口，旧高级命令兼容一个 major。
 16. Dashboard 一套实现渐进披露，稳定 URL/API，正确区分五类状态。
 17. Lite 硬复杂度预算全部进入自动验收。
-18. Slim/PRD Capture/DesignSet/TDD 作为同一 Protocol 1.1 依赖序列交付。
+18. Slim/PRD Capture/DesignSet/TDD/Model Advisory 作为同一 Protocol 1.1 依赖序列交付。
 19. Unit、Property、Integration、Fault、Migration、CLI、Dashboard、E2E 全部通过。
 20. 至少一个真实项目分别完成 Lite、Standard 和 Governed dogfood，并比较工件数、批准原因和运行成本；Lite 还必须报告单 Requirement 录入墙钟时间、用户输入轮次、手填字段数、上下文预填命中率、Review 修订率和人工批准等待时间。
+21. 四个模型建议 Port 和 GroundedSynthesis 四 purpose 都有版本化 Schema、conformance、独立 Evidence 和真实 Standard/Governed dogfood；结构化业务 claim 的 citation coverage 为 100%。
 
 ## 22. 被否决的替代方案
 
