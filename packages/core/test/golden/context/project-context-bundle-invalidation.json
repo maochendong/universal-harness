@@ -1,0 +1,9 @@
+{
+  "protocol_version": "1.1.0",
+  "record_kind": "project_context_bundle_invalidation",
+  "invalidation_id": "context-bundle-invalidation_f7b9dbaa-0e20-5904-af06-73d515481047",
+  "bundle_id": "project-context-bundle_3913b44e-b6b4-5836-8b08-d9e39e8ccf75",
+  "bundle_digest": "c973dada9ae33b1b649d0b3762b821798fb39abbe42e3286dbd143c5abe44bba",
+  "reasons": ["baseline_drift"],
+  "record_digest": "4048f66d435dc65f2c459537fc158ba35e2bc5cce9f3da8fbd513a8bb56339e0"
+}

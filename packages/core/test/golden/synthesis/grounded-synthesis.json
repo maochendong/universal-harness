@@ -1,0 +1,57 @@
+{
+  "protocol_version": "1.1.0",
+  "record_kind": "grounded_synthesis",
+  "grounded_synthesis_id": "grounded-synthesis_4a3d3d19-a987-5a91-8f06-d90121b6fbfa",
+  "purpose": "project_discovery",
+  "session_id": "capture-session_01K1ABCDEFGHIJKLMNO",
+  "profile_decision_digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "binding_digest": "1111111111111111111111111111111111111111111111111111111111111111",
+  "bundle_digest": "f63dc93d1a963564c41e052c87490085e94d4c4fb4f27051525213b0e05d255a",
+  "conversation_id": "grounded-conversation_fffaf002-2cb8-541c-8ec0-54c90972a234",
+  "run_id": "grounded-run_90e57809-63cf-55c3-8cdd-ab618434eba0",
+  "input_digest": "3cb4efcfa9cc6e8d2c8ae0337794903f7aee4bbed53d286670fa8287f5ec41df",
+  "output": {
+    "purpose": "project_discovery",
+    "schema_version": "project-discovery.v1",
+    "bundle_digest": "f63dc93d1a963564c41e052c87490085e94d4c4fb4f27051525213b0e05d255a",
+    "facts": [
+      {
+        "fact": "这是一个 Node 服务项目",
+        "confidence": "high",
+        "source_refs": [
+          {
+            "locator": "package.json",
+            "source_digest": "5e25883a530749b8e01553f92ecb10c48444bedd0ddf2fce3b001f0f77b3357e"
+          }
+        ]
+      }
+    ],
+    "capability_candidates": [
+      {
+        "capability_id": "impact_analysis",
+        "rationale": "README 描述了跨组件订单流程",
+        "confidence": "medium",
+        "source_refs": [
+          {
+            "locator": "README.md",
+            "source_digest": "31c5b7fac7cce9fd45fa5cf3de047871c384a4c4c54083c6e12b92d2a187956c"
+          }
+        ]
+      }
+    ],
+    "gate_candidates": [
+      {
+        "gate_id": "unit-tests",
+        "rationale": "package.json 声明了 test 脚本",
+        "confidence": "low",
+        "source_refs": [
+          {
+            "locator": "package.json",
+            "source_digest": "5e25883a530749b8e01553f92ecb10c48444bedd0ddf2fce3b001f0f77b3357e"
+          }
+        ]
+      }
+    ]
+  },
+  "record_digest": "b412ca966458678b08350d766f6dbac395c64489d7beacf6aeffc572b8dd8756"
+}

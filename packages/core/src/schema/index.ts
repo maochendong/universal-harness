@@ -1,6 +1,7 @@
 export { PERSISTED_SOURCES } from "./common.js";
 export * from "./capability.js";
 export * from "./capture.js";
+export * from "./context.js";
 export * from "./domain-registry.js";
 export * from "./edge.js";
 export * from "./envelope.js";
@@ -13,4 +14,5 @@ export * from "./plugin.js";
 export * from "./profile.js";
 export * from "./registry.js";
 export * from "./run-stream.js";
+export * from "./synthesis.js";
 export * from "./runtime.js";

@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.universal-harness.dev/1.1/project-context-bundle-invalidation.schema.json",
+  "additionalProperties": false,
+  "type": "object",
+  "required": [
+    "protocol_version",
+    "record_kind",
+    "invalidation_id",
+    "bundle_id",
+    "bundle_digest",
+    "reasons",
+    "record_digest"
+  ],
+  "properties": {
+    "protocol_version": { "const": "1.1.0", "type": "string" },
+    "record_kind": { "const": "project_context_bundle_invalidation", "type": "string" },
+    "invalidation_id": {
+      "minLength": 3,
+      "maxLength": 160,
+      "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+      "type": "string"
+    },
+    "bundle_id": {
+      "minLength": 3,
+      "maxLength": 160,
+      "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+      "type": "string"
+    },
+    "bundle_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
+    "reasons": {
+      "minItems": 1,
+      "uniqueItems": true,
+      "type": "array",
+      "items": {
+        "anyOf": [
+          { "const": "baseline_drift", "type": "string" },
+          { "const": "profile_drift", "type": "string" },
+          { "const": "policy_drift", "type": "string" }
+        ]
+      }
+    },
+    "record_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" }
+  }
+}

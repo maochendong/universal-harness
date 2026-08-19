@@ -1,0 +1,53 @@
+{
+  "protocol_version": "1.1.0",
+  "record_kind": "project_context_bundle",
+  "bundle_id": "project-context-bundle_3913b44e-b6b4-5836-8b08-d9e39e8ccf75",
+  "session_id": "capture-session_01K1ABCDEFGHIJKLMNO",
+  "purpose": "proposal",
+  "project_baseline_digest": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+  "profile_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "policy_digest": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+  "budget": {
+    "max_files": 8,
+    "max_bytes_per_source": 4096,
+    "max_total_bytes": 16384,
+    "max_summary_chars": 1000
+  },
+  "sources": [
+    {
+      "locator": "README.md",
+      "source_kind": "readme",
+      "source_digest": "27cfe8cd031d98864fed8f2d98500f43687691712bd1df8a2b24109971c68591",
+      "selection_reason": "matched default candidate for source kind readme",
+      "classification": "internal_project",
+      "summary": "# Demo\n\n订单服务。",
+      "truncated": false
+    },
+    {
+      "locator": "harness.config.json",
+      "source_kind": "gate",
+      "source_digest": "2be01ccca98e961b53bcde0e64ccf4b4f5dc244008939ccebccacb3325166c10",
+      "selection_reason": "matched default candidate for source kind gate",
+      "classification": "internal_project",
+      "summary": "{\"gates\":[\"test\"]}",
+      "truncated": false
+    },
+    {
+      "locator": "package.json",
+      "source_kind": "manifest",
+      "source_digest": "5e25883a530749b8e01553f92ecb10c48444bedd0ddf2fce3b001f0f77b3357e",
+      "selection_reason": "matched default candidate for source kind manifest",
+      "classification": "internal_project",
+      "summary": "{\"name\":\"demo\"}",
+      "truncated": false
+    }
+  ],
+  "exclusions": [
+    {
+      "locator": ".env",
+      "reason": "secret_pattern"
+    }
+  ],
+  "content_digest": "7afce8fc65e779ca467240f9486e634e5ba8b0bfbc9c7c7f4b59da3e34b581a6",
+  "record_digest": "c973dada9ae33b1b649d0b3762b821798fb39abbe42e3286dbd143c5abe44bba"
+}

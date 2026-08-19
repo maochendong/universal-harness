@@ -6,6 +6,10 @@ import { PROTOCOL_1_1_VERSION } from "../protocol.js";
 import { createDomainSchemaRegistry, mergeSchemaDocuments } from "./domain-registry.js";
 import { CapabilityPlanRecordSchema } from "./capability.js";
 import {
+  ProjectContextBundleInvalidationRecordSchema,
+  ProjectContextBundleRecordSchema,
+} from "./context.js";
+import {
   CaptureBlockerRecordSchema,
   CaptureCheckpointRecordSchema,
   CaptureInvocationRecordSchema,
@@ -28,6 +32,14 @@ import {
   ProjectProfileRecordSchema,
 } from "./profile.js";
 import { RuntimeSchema } from "./runtime.js";
+import {
+  ApprovalBriefOutputSchema,
+  ContextEnrichmentOutputSchema,
+  GroundedSynthesisRecordSchema,
+  IterationNarrativeOutputSchema,
+  ProjectDiscoveryInputSchema,
+  ProjectDiscoveryOutputSchema,
+} from "./synthesis.js";
 import {
   compileAjvSchema,
   compileSchemaValidator,
@@ -143,7 +155,9 @@ export const JSON_SCHEMA_DOCUMENTS = Object.fromEntries(
  * the profile definition and the Profile/Recommendation/Decision records plus
  * the Capture-scope model provider binding; Task 3 contributes the
  * CapabilityPlan record; Task 4 contributes the Capture session,
- * clarification, invocation, checkpoint and blocker records.
+ * clarification, invocation, checkpoint and blocker records; Task 5
+ * contributes the project context bundle/invalidation records, the grounded
+ * synthesis record and the versioned purpose-bound input/output schemas.
  */
 export const PROTOCOL_1_1_SCHEMA_REGISTRY = createDomainSchemaRegistry({
   protocolVersion: PROTOCOL_1_1_VERSION,
@@ -160,6 +174,17 @@ export const PROTOCOL_1_1_SCHEMA_REGISTRY = createDomainSchemaRegistry({
     { key: "capture-invocation", schema: CaptureInvocationRecordSchema },
     { key: "capture-checkpoint", schema: CaptureCheckpointRecordSchema },
     { key: "capture-blocker", schema: CaptureBlockerRecordSchema },
+    { key: "project-context-bundle", schema: ProjectContextBundleRecordSchema },
+    {
+      key: "project-context-bundle-invalidation",
+      schema: ProjectContextBundleInvalidationRecordSchema,
+    },
+    { key: "grounded-synthesis", schema: GroundedSynthesisRecordSchema },
+    { key: "project-discovery-input", schema: ProjectDiscoveryInputSchema },
+    { key: "project-discovery-output", schema: ProjectDiscoveryOutputSchema },
+    { key: "context-enrichment-output", schema: ContextEnrichmentOutputSchema },
+    { key: "approval-brief-output", schema: ApprovalBriefOutputSchema },
+    { key: "iteration-narrative-output", schema: IterationNarrativeOutputSchema },
   ],
 });
 
