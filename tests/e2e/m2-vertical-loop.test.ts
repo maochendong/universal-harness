@@ -85,10 +85,13 @@ describe("M2 governed vertical loop", { timeout: 120_000 }, () => {
   it("runs iterate through live observation, Judge, approvals, evaluation and snapshot", async () => {
     const parent = makeTempDir("harness-m2-vertical-");
     const newId = sequentialIds();
-    let result = await runJson(["new", "m2-loop", "--intent", "create the governed baseline"], {
-      cwd: parent,
-      runtime: makeHarness(parent, newId).runtime,
-    });
+    let result = await runJson(
+      ["new", "m2-loop", "--intent", "create the governed baseline", "--profile", "lite"],
+      {
+        cwd: parent,
+        runtime: makeHarness(parent, newId).runtime,
+      },
+    );
     const projectRoot = join(parent, "m2-loop");
     result = await complete(result, {
       cwd: projectRoot,

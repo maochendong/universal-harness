@@ -1,5 +1,4 @@
-import { Ajv2020, type ErrorObject, type ValidateFunction } from "ajv/dist/2020.js";
-import addFormatsImport, { type FormatsPlugin } from "ajv-formats";
+import type { ValidateFunction } from "ajv/dist/2020.js";
 import type { TSchema } from "@sinclair/typebox";
 
 import { isProtocolCompatible } from "../version.js";
@@ -12,7 +11,29 @@ import { NodeSchema } from "./node.js";
 import { ObservationEventSchema } from "./observation.js";
 import { LedgerOperationSchema, OperationSchema, WorkflowOperationSchema } from "./operation.js";
 import { PluginManifestSchema } from "./plugin.js";
+import {
+  CaptureModelProviderBindingRecordSchema,
+  ProfileDecisionRecordSchema,
+  ProfileDefinitionSchema,
+  ProfileRecommendationRecordSchema,
+  ProjectProfileRecordSchema,
+} from "./profile.js";
 import { RuntimeSchema } from "./runtime.js";
+import {
+  compileAjvSchema,
+  compileSchemaValidator,
+  normalizeErrors,
+  type CompiledSchemaValidator,
+  type ValidationIssue,
+  type ValidationResult,
+} from "./validator.js";
+
+export {
+  compileSchemaValidator,
+  type CompiledSchemaValidator,
+  type ValidationIssue,
+  type ValidationResult,
+};
 
 export const SCHEMA_KEYS = [
   "node",
@@ -42,34 +63,9 @@ export const SCHEMA_REGISTRY = {
   plugin: PluginManifestSchema,
 } as const satisfies Record<SchemaKey, TSchema>;
 
-const ajv = new Ajv2020({
-  allErrors: true,
-  strict: true,
-  validateFormats: true,
-});
-const addFormats = addFormatsImport as unknown as FormatsPlugin;
-addFormats(ajv);
-
 const validators = new Map<SchemaKey, ValidateFunction>(
-  SCHEMA_KEYS.map((key) => [key, ajv.compile(SCHEMA_REGISTRY[key])]),
+  SCHEMA_KEYS.map((key) => [key, compileAjvSchema(SCHEMA_REGISTRY[key])]),
 );
-
-export type ValidationIssue = {
-  instancePath: string;
-  keyword: string;
-  message: string;
-};
-
-export type ValidationResult =
-  { valid: true; errors: [] } | { valid: false; errors: ValidationIssue[] };
-
-function normalizeErrors(errors: ErrorObject[] | null | undefined): ValidationIssue[] {
-  return (errors ?? []).map((error) => ({
-    instancePath: error.instancePath,
-    keyword: error.keyword,
-    message: error.message ?? "schema validation failed",
-  }));
-}
 
 function protocolVersionOf(value: unknown): string | undefined {
   if (typeof value !== "object" || value === null || !("protocol_version" in value)) {
@@ -77,29 +73,6 @@ function protocolVersionOf(value: unknown): string | undefined {
   }
   const protocolVersion = value.protocol_version;
   return typeof protocolVersion === "string" ? protocolVersion : undefined;
-}
-
-/**
- * Compiled validator for an arbitrary JSON Schema 2020-12 document, used by
- * versioned Tool Descriptors whose input/output schemas are provider data
- * rather than fixed protocol schemas (design 13.5). The `$id` keyword is
- * stripped before compilation so two tools may share a schema document
- * without colliding in the Ajv registry; every other keyword keeps its
- * strict-mode semantics.
- */
-export type CompiledSchemaValidator = (value: unknown) => ValidationResult;
-
-export function compileSchemaValidator(schema: unknown): CompiledSchemaValidator {
-  if (typeof schema !== "object" || schema === null || Array.isArray(schema)) {
-    throw new Error("a compilable schema must be a JSON Schema object");
-  }
-  const document = { ...(schema as Record<string, unknown>) };
-  delete document.$id;
-  const validate = ajv.compile(document);
-  return (value: unknown): ValidationResult =>
-    validate(value)
-      ? { valid: true, errors: [] }
-      : { valid: false, errors: normalizeErrors(validate.errors) };
 }
 
 export function validateSchema(key: SchemaKey, value: unknown): ValidationResult {
@@ -157,12 +130,19 @@ export const JSON_SCHEMA_DOCUMENTS = Object.fromEntries(
 
 /**
  * Protocol 1.1 domain schemas register here as their owning tasks land
- * (Profile T2, Capability T3, Capture T4-T7, and so on). Task 1 ships only
- * the extensible plumbing, so the registry starts empty.
+ * (Profile T2, Capability T3, Capture T4-T7, and so on). Task 2 contributes
+ * the profile definition and the Profile/Recommendation/Decision records plus
+ * the Capture-scope model provider binding.
  */
 export const PROTOCOL_1_1_SCHEMA_REGISTRY = createDomainSchemaRegistry({
   protocolVersion: PROTOCOL_1_1_VERSION,
-  entries: [],
+  entries: [
+    { key: "profile-definition", schema: ProfileDefinitionSchema },
+    { key: "project-profile", schema: ProjectProfileRecordSchema },
+    { key: "profile-recommendation", schema: ProfileRecommendationRecordSchema },
+    { key: "profile-decision", schema: ProfileDecisionRecordSchema },
+    { key: "model-provider-binding", schema: CaptureModelProviderBindingRecordSchema },
+  ],
 });
 
 /** Every document scripts/write-schemas.mjs persists into `schemas/`. */

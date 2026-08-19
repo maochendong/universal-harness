@@ -45,9 +45,21 @@ import type { SemanticSeedProvider } from "@universal-harness-internal/plugin-sd
 import { materializeLedger, pageEdges, pageNodes } from "@universal-harness-internal/graph";
 import {
   contentDigest,
+  appendProfileDecisionRecord,
+  appendProjectProfileRecord,
+  createProfileDecisionRecord,
+  createProjectProfileRecord,
+  readLatestProjectProfile,
+  readManagedManifest,
+  resolveIterationProfile,
+  resolveProfileSelection,
+  ProfileSelectionError,
+  DEFAULT_PROFILE_POLICY_DIGEST,
   type EdgeRecord,
   type NodeRecord,
   type ObservationEvent,
+  type ProfileId,
+  type ProjectProfileRecord,
 } from "@universal-harness-internal/core";
 
 import type { GateDefinition, ToolRegistry } from "@universal-harness-internal/runtime";
@@ -108,6 +120,15 @@ export interface OrchestratedServiceOptions {
   /** Receives the same disposable observation appended to the live spool. */
   readonly onObservation?: (event: ObservationEvent) => void;
   readonly semanticProvider?: SemanticSeedProvider;
+  /**
+   * Interactive profile chooser (protocol 1.1): invoked only when the session
+   * is interactive and no explicit --profile was passed. Returning null (EOF,
+   * Ctrl-C) is never a silent default; the command returns input_required.
+   */
+  readonly selectProfile?: (
+    options: readonly ProfileId[],
+    preview: string,
+  ) => Promise<string | null>;
 }
 
 /** Interactive stdin prompt; only constructed when the CLI runs on a TTY. */
@@ -129,6 +150,26 @@ export function createReadlinePrompter(io: CliIo): ApprovalPrompter {
         rl.on("close", () => settle(null));
       }),
   };
+}
+
+/** Interactive profile chooser over stdin; only used on a TTY. */
+export function createReadlineProfileChooser(
+  io: CliIo,
+): (options: readonly ProfileId[], preview: string) => Promise<string | null> {
+  return (choices, preview) =>
+    new Promise<string | null>((resolvePromise) => {
+      const rl = createInterface({ input: process.stdin, output: process.stderr });
+      let settled = false;
+      const settle = (answer: string | null): void => {
+        if (settled) return;
+        settled = true;
+        rl.close();
+        resolvePromise(answer);
+      };
+      io.writeStderr(`${preview}\n`);
+      rl.question(`profile (${choices.join("/")}): `, (answer) => settle(answer));
+      rl.on("close", () => settle(null));
+    });
 }
 
 /** Evaluation port backed by the eval package's deterministic scorers. */
@@ -394,17 +435,183 @@ export function createOrchestratedRuntimeService(
     }
   };
 
+  const clock = options.now ?? (() => new Date().toISOString());
+
+  /**
+   * Protocol 1.1 profile selection (slim-profiles design 10): explicit flag,
+   * interactive confirmation, or a typed input_required — never a default.
+   */
+  const resolveProjectProfile = async (
+    command: string,
+    explicit: string | undefined,
+    migration?: string,
+  ): Promise<
+    | { readonly ok: true; readonly profileId: ProfileId; readonly source: string }
+    | { readonly ok: false; readonly result: CommandResult }
+  > => {
+    const chooser = options.io.isInteractive
+      ? (options.selectProfile ?? createReadlineProfileChooser(options.io))
+      : undefined;
+    try {
+      const outcome = await resolveProfileSelection({
+        ...(explicit === undefined ? {} : { explicit }),
+        interactive: chooser !== undefined,
+        ...(chooser === undefined ? {} : { choose: chooser }),
+      });
+      if (outcome.status === "input_required") {
+        return {
+          ok: false,
+          result: {
+            command,
+            status: "input_required",
+            message:
+              "project profile required: pass --profile lite|standard|governed " +
+              "(interactive sessions choose and confirm a tier explicitly)",
+            data: {
+              reason: outcome.reason,
+              options: [...outcome.options],
+              ...(migration === undefined ? {} : { migration }),
+            },
+          },
+        };
+      }
+      return { ok: true, profileId: outcome.profile_id, source: outcome.source };
+    } catch (error) {
+      if (error instanceof ProfileSelectionError) {
+        return {
+          ok: false,
+          result: { command, status: "failed", message: error.message, data: { kind: error.kind } },
+        };
+      }
+      throw error;
+    }
+  };
+
+  const projectIdFor = (projectRoot: string): string =>
+    `project_${readManagedManifest(projectRoot).name}`;
+
+  /** Persist the initial profile baseline and its decision (append-only). */
+  const persistInitialProfile = (
+    projectRoot: string,
+    profileId: ProfileId,
+  ): ProjectProfileRecord => {
+    const projectId = projectIdFor(projectRoot);
+    const record = createProjectProfileRecord({
+      project_id: projectId,
+      revision: 1,
+      profile_id: profileId,
+      policy_digest: DEFAULT_PROFILE_POLICY_DIGEST,
+      actor,
+      effective_from: clock(),
+    });
+    appendProjectProfileRecord(projectRoot, record);
+    appendProfileDecisionRecord(
+      projectRoot,
+      createProfileDecisionRecord({
+        decision_kind: "project_profile_change",
+        project_id: projectId,
+        actor,
+        idempotency_key: `profile-select:${projectId}:revision:1`,
+        current_profile_id: profileId,
+        decided_profile_id: profileId,
+        policy_digest: DEFAULT_PROFILE_POLICY_DIGEST,
+        decided_at: clock(),
+      }),
+    );
+    return record;
+  };
+
+  /**
+   * An explicit project profile change appends a new revision bound to the
+   * previous one; historical revisions and decisions stay untouched, so the
+   * change only ever affects future operations (design 10.4).
+   */
+  const changeProjectProfile = (
+    projectRoot: string,
+    latest: ProjectProfileRecord,
+    profileId: ProfileId,
+  ): ProjectProfileRecord => {
+    const record = createProjectProfileRecord({
+      project_id: latest.project_id,
+      revision: latest.revision + 1,
+      profile_id: profileId,
+      policy_digest: latest.policy_digest,
+      actor,
+      effective_from: clock(),
+      supersedes_digest: latest.record_digest,
+    });
+    appendProjectProfileRecord(projectRoot, record);
+    appendProfileDecisionRecord(
+      projectRoot,
+      createProfileDecisionRecord({
+        decision_kind: "project_profile_change",
+        project_id: latest.project_id,
+        actor,
+        idempotency_key: `profile-change:${latest.project_id}:revision:${String(latest.revision + 1)}`,
+        current_profile_id: latest.profile_id,
+        decided_profile_id: profileId,
+        policy_digest: latest.policy_digest,
+        decided_at: clock(),
+      }),
+    );
+    return record;
+  };
+
+  const profileResultExtra = (profile: ProjectProfileRecord): Record<string, unknown> => ({
+    profile_id: profile.profile_id,
+    profile_revision: profile.revision,
+    profile_record_digest: profile.record_digest,
+  });
+
   const iterateImpl = async (request: IterateRequest): Promise<CommandResult> =>
     guard("iterate", async () => {
+      // `iterate` always binds the current project profile revision; a legacy
+      // project without any record must be migrated by an explicit selection.
+      const projectId = projectIdFor(request.projectRoot);
+      const resolution = resolveIterationProfile(
+        readLatestProjectProfile(request.projectRoot, projectId),
+      );
+      let active: ProjectProfileRecord;
+      if (resolution.status === "input_required") {
+        const selection = await resolveProjectProfile(
+          "iterate",
+          request.profile,
+          resolution.migration,
+        );
+        if (!selection.ok) return selection.result;
+        active = persistInitialProfile(request.projectRoot, selection.profileId);
+      } else {
+        active = resolution.profile;
+        if (request.profile !== undefined) {
+          const selection = await resolveProjectProfile("iterate", request.profile);
+          if (!selection.ok) return selection.result;
+          if (selection.profileId !== active.profile_id) {
+            active = changeProjectProfile(request.projectRoot, active, selection.profileId);
+          }
+        }
+      }
       const outcome = await runIteration(orchestratorDeps(request.projectRoot), {
         intent: request.text,
         intentShape: "pack-converted",
       });
-      return outcomeToResult("iterate", outcome);
+      return outcomeToResult("iterate", outcome, profileResultExtra(active));
     });
 
   const resumeImpl = async (request: ResumeRequest): Promise<CommandResult> =>
     guard("resume", async () => {
+      const projectId = projectIdFor(request.projectRoot);
+      const resolution = resolveIterationProfile(
+        readLatestProjectProfile(request.projectRoot, projectId),
+      );
+      if (resolution.status === "input_required") {
+        const selection = await resolveProjectProfile(
+          "resume",
+          request.profile,
+          resolution.migration,
+        );
+        if (!selection.ok) return selection.result;
+        persistInitialProfile(request.projectRoot, selection.profileId);
+      }
       const outcome = await resumeIteration(
         orchestratorDeps(request.projectRoot),
         request.workflowOperationId,
@@ -437,6 +644,7 @@ export function createOrchestratedRuntimeService(
     request: AdoptProjectRequest,
     stagingOperationId: string,
     previewDigest: string,
+    profileId: ProfileId,
   ): Promise<CommandResult> => {
     const projectRoot = resolve(options.cwd, request.path);
     const committed = await bootstrap.commitAdoption({
@@ -460,6 +668,7 @@ export function createOrchestratedRuntimeService(
         data: { staging_operation_id: stagingOperationId },
       };
     }
+    const profile = persistInitialProfile(projectRoot, profileId);
     const outcome = await runIteration(orchestratorDeps(projectRoot), {
       intent: request.intent,
       intentShape: "pack-converted",
@@ -470,12 +679,15 @@ export function createOrchestratedRuntimeService(
     return outcomeToResult("adopt", outcome, {
       project_root: projectRoot,
       baseline_commit: committed.value.baselineCommit,
+      ...profileResultExtra(profile),
     });
   };
 
   return {
     newProject: async (request: NewProjectRequest): Promise<CommandResult> =>
       guard("new", async () => {
+        const selection = await resolveProjectProfile("new", request.profile);
+        if (!selection.ok) return selection.result;
         const outcome = await bootstrap.newProject({
           parentDirectory: options.cwd,
           name: request.name,
@@ -489,6 +701,8 @@ export function createOrchestratedRuntimeService(
             data: { kind: outcome.error.kind },
           };
         }
+        // The chosen tier is an auditable fact committed before any capture.
+        const profile = persistInitialProfile(outcome.value.projectRoot, selection.profileId);
         const iteration = await runIteration(orchestratorDeps(outcome.value.projectRoot), {
           intent: request.intent,
           intentShape: "pack-converted",
@@ -499,11 +713,14 @@ export function createOrchestratedRuntimeService(
           name: outcome.value.name,
           baseline_commit: outcome.value.baselineCommit,
           branch: outcome.value.branch,
+          ...profileResultExtra(profile),
         });
       }),
 
     adoptProject: async (request: AdoptProjectRequest): Promise<CommandResult> =>
       guard("adopt", async () => {
+        const selection = await resolveProjectProfile("adopt", request.profile);
+        if (!selection.ok) return selection.result;
         const projectRoot = resolve(options.cwd, request.path);
         if (request.approveStaging !== undefined) {
           const staged = readStagedAdoptionPreview(projectRoot, request.approveStaging);
@@ -515,7 +732,12 @@ export function createOrchestratedRuntimeService(
               data: { staging_operation_id: request.approveStaging },
             };
           }
-          return adoptCommitAndIterate(request, request.approveStaging, staged.previewDigest);
+          return adoptCommitAndIterate(
+            request,
+            request.approveStaging,
+            staged.previewDigest,
+            selection.profileId,
+          );
         }
         const preview = await bootstrap.prepareAdoption({ projectRoot, intent: request.intent });
         if (!preview.ok) {
@@ -526,7 +748,7 @@ export function createOrchestratedRuntimeService(
             data: { kind: preview.error.kind },
           };
         }
-        const resumeCommand = `harness adopt ${request.path} --intent ${JSON.stringify(request.intent)} --approve ${preview.value.stagingOperationId}`;
+        const resumeCommand = `harness adopt ${request.path} --intent ${JSON.stringify(request.intent)} --profile ${selection.profileId} --approve ${preview.value.stagingOperationId}`;
         if (prompter !== undefined) {
           const raw = await prompter.prompt(
             `Adoption preview for ${preview.value.name}: stack ${preview.value.preview.stack.primary}, ` +
@@ -542,6 +764,7 @@ export function createOrchestratedRuntimeService(
               request,
               preview.value.stagingOperationId,
               preview.value.previewDigest,
+              selection.profileId,
             );
           }
           if (decision === "reject") {

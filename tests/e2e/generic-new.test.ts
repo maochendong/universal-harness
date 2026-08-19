@@ -28,10 +28,13 @@ describe("generic new E2E", { timeout: 60000 }, () => {
     const newId = sequentialIds();
     const bootstrapHarness = makeHarness(parent, newId);
 
-    let result = await runJson(["new", "demo-app", "--intent", "build the first capability"], {
-      cwd: parent,
-      runtime: bootstrapHarness.runtime,
-    });
+    let result = await runJson(
+      ["new", "demo-app", "--intent", "build the first capability", "--profile", "lite"],
+      {
+        cwd: parent,
+        runtime: bootstrapHarness.runtime,
+      },
+    );
     expect(result.exitCode).toBe(EXIT_CODES.approvalRequired);
     let data = result.json["data"] as Record<string, unknown>;
     expect(data["object_type"]).toBe("RequirementBaseline");

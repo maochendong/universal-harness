@@ -73,10 +73,13 @@ describe("harness new route", () => {
   it("bootstraps the project and pauses at the mandatory baseline approval", async () => {
     const parent = makeTempDir("harness-cli-new-");
     const captured = captureIo();
-    const exitCode = await runCli(["new", "demo-app", "--intent", "build a demo", "--json"], {
-      io: captured.io,
-      cwd: parent,
-    });
+    const exitCode = await runCli(
+      ["new", "demo-app", "--intent", "build a demo", "--profile", "lite", "--json"],
+      {
+        io: captured.io,
+        cwd: parent,
+      },
+    );
     expect(exitCode).toBe(EXIT_CODES.approvalRequired);
     // stderr now carries the streamed phase-progress lines; every line must
     // be a valid PhaseProgressEvent NDJSON record (no stray noise allowed).
@@ -108,10 +111,13 @@ describe("harness new route", () => {
     const parent = makeTempDir("harness-cli-new-existing-");
     mkdirSync(join(parent, "demo-app"));
     const captured = captureIo();
-    const exitCode = await runCli(["new", "demo-app", "--intent", "build a demo", "--json"], {
-      io: captured.io,
-      cwd: parent,
-    });
+    const exitCode = await runCli(
+      ["new", "demo-app", "--intent", "build a demo", "--profile", "lite", "--json"],
+      {
+        io: captured.io,
+        cwd: parent,
+      },
+    );
     expect(exitCode).toBe(EXIT_CODES.operationFailed);
     const result = JSON.parse(captured.stdout()) as Record<string, unknown>;
     expect((result["data"] as Record<string, unknown>)["kind"]).toBe("target_exists");
@@ -123,10 +129,13 @@ describe("harness adopt route", () => {
     const repo = makeRepo();
     const headBefore = git(repo, "rev-parse", "HEAD").trim();
     const captured = captureIo();
-    const exitCode = await runCli(["adopt", repo, "--intent", "change it", "--json"], {
-      io: captured.io,
-      cwd: "/",
-    });
+    const exitCode = await runCli(
+      ["adopt", repo, "--intent", "change it", "--profile", "lite", "--json"],
+      {
+        io: captured.io,
+        cwd: "/",
+      },
+    );
     expect(exitCode).toBe(EXIT_CODES.approvalRequired);
     const result = JSON.parse(captured.stdout()) as Record<string, unknown>;
     const data = result["data"] as Record<string, unknown>;
@@ -144,10 +153,13 @@ describe("harness adopt route", () => {
   it("rejects adopting a path that is not a repository", async () => {
     const outside = makeTempDir("harness-cli-adopt-outside-");
     const captured = captureIo();
-    const exitCode = await runCli(["adopt", outside, "--intent", "change it", "--json"], {
-      io: captured.io,
-      cwd: "/",
-    });
+    const exitCode = await runCli(
+      ["adopt", outside, "--intent", "change it", "--profile", "lite", "--json"],
+      {
+        io: captured.io,
+        cwd: "/",
+      },
+    );
     expect(exitCode).toBe(EXIT_CODES.operationFailed);
     const result = JSON.parse(captured.stdout()) as Record<string, unknown>;
     expect((result["data"] as Record<string, unknown>)["kind"]).toBe("not_a_repository");

@@ -17,7 +17,7 @@ import { drivePastApprovals, expect, git, makeRuntime, makeTempDir, runJson } fr
 const parent = makeTempDir("harness-example-new-");
 try {
   const intent = "build the first capability";
-  const first = await runJson(["new", "example-app", "--intent", intent], {
+  const first = await runJson(["new", "example-app", "--intent", intent, "--profile", "lite"], {
     cwd: parent,
     runtime: makeRuntime(parent),
   });

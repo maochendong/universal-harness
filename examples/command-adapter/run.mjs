@@ -42,10 +42,13 @@ try {
       evidence_dir: evidenceDir,
     }).run(envelope, { mode: "supervised" });
 
-  const first = await runJson(["new", "command-app", "--intent", "build the first capability"], {
-    cwd: parent,
-    runtime: makeRuntime(parent, { execute }),
-  });
+  const first = await runJson(
+    ["new", "command-app", "--intent", "build the first capability", "--profile", "lite"],
+    {
+      cwd: parent,
+      runtime: makeRuntime(parent, { execute }),
+    },
+  );
   const projectRoot = join(parent, "command-app");
   const session = { cwd: projectRoot, runtime: makeRuntime(projectRoot, { execute }) };
   const { result } = await drivePastApprovals(first, session);

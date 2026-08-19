@@ -1,0 +1,89 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.universal-harness.dev/1.1/profile-recommendation.schema.json",
+  "additionalProperties": false,
+  "type": "object",
+  "required": [
+    "protocol_version",
+    "record_kind",
+    "profile_recommendation_id",
+    "project_id",
+    "iteration_id",
+    "current_profile_id",
+    "recommended_profile_id",
+    "triggers",
+    "risk_object_digest",
+    "requirement_digest",
+    "scope_digest",
+    "policy_digest",
+    "rationale",
+    "record_digest"
+  ],
+  "properties": {
+    "protocol_version": { "const": "1.1.0", "type": "string" },
+    "record_kind": { "const": "profile_recommendation", "type": "string" },
+    "profile_recommendation_id": {
+      "minLength": 3,
+      "maxLength": 160,
+      "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+      "type": "string"
+    },
+    "project_id": {
+      "minLength": 3,
+      "maxLength": 160,
+      "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+      "type": "string"
+    },
+    "iteration_id": {
+      "minLength": 3,
+      "maxLength": 160,
+      "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+      "type": "string"
+    },
+    "current_profile_id": {
+      "anyOf": [
+        { "const": "lite", "type": "string" },
+        { "const": "standard", "type": "string" },
+        { "const": "governed", "type": "string" }
+      ]
+    },
+    "recommended_profile_id": {
+      "anyOf": [
+        { "const": "lite", "type": "string" },
+        { "const": "standard", "type": "string" },
+        { "const": "governed", "type": "string" }
+      ]
+    },
+    "triggers": {
+      "minItems": 1,
+      "uniqueItems": true,
+      "type": "array",
+      "items": {
+        "anyOf": [
+          { "const": "cross_component_change", "type": "string" },
+          { "const": "public_api_change", "type": "string" },
+          { "const": "data_schema_or_migration_change", "type": "string" },
+          { "const": "security_or_supply_chain_surface", "type": "string" },
+          { "const": "medium_high_impact_uncertainty", "type": "string" },
+          {
+            "const": "independent_evaluation_or_design_contract_required",
+            "type": "string"
+          },
+          { "const": "insufficient_gate_foundation", "type": "string" },
+          { "const": "critical_risk", "type": "string" },
+          { "const": "regulatory_or_audit_constraint", "type": "string" },
+          { "const": "irreversible_external_effect", "type": "string" },
+          { "const": "production_or_sensitive_data_access", "type": "string" },
+          { "const": "policy_mandated_governance", "type": "string" }
+        ]
+      }
+    },
+    "risk_object_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
+    "requirement_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
+    "scope_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
+    "policy_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
+    "rationale": { "minLength": 1, "type": "string" },
+    "scope_reduction_hint": { "minLength": 1, "type": "string" },
+    "record_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" }
+  }
+}

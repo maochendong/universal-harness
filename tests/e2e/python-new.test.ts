@@ -32,7 +32,7 @@ describe("python new E2E", { timeout: 90000 }, () => {
     const newId = sequentialIds();
     const intent = "build the first python capability";
 
-    const result = await runJson(["new", "demo-app", "--intent", intent], {
+    const result = await runJson(["new", "demo-app", "--intent", intent, "--profile", "lite"], {
       cwd: parent,
       runtime: makeHarness(parent, newId).runtime,
     });

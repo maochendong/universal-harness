@@ -130,37 +130,47 @@ Global options:
 `;
 
 exports[`harness CLI help and version > prints per-command help 1`] = `
-"Usage: harness new <name> --intent <text> [--json]
+"Usage: harness new <name> --intent <text> [--profile <lite|standard|governed>] [--json]
 
 Create a managed project directory, initialize the .harness control plane
 (manifest, pack lock, ledger, managed .gitignore/.gitattributes) and run the
-first full iteration for the given intent.
+first full iteration for the given intent. The project profile is always an
+explicit choice: interactive sessions select and confirm a tier, and
+non-interactive sessions must pass --profile (otherwise the command returns
+input_required without creating anything).
 "
 `;
 
 exports[`harness CLI help and version > prints per-command help 2`] = `
-"Usage: harness adopt [path] --intent <text> [--approve <staging-operation-id>] [--json]
+"Usage: harness adopt [path] --intent <text> [--profile <lite|standard|governed>] [--approve <staging-operation-id>] [--json]
 
 Adopt an existing project: scan it into staging, approve the deterministic
 baseline, then run the requested iteration. Nothing outside .harness is
 modified, and the project root .gitignore is never touched. Non-interactive
-sessions approve a staged preview with --approve.
+sessions approve a staged preview with --approve and must pass --profile;
+the staged response's resume_command carries both.
 "
 `;
 
 exports[`harness CLI help and version > prints per-command help 3`] = `
-"Usage: harness iterate <text> [--json]
+"Usage: harness iterate <text> [--profile <lite|standard|governed>] [--json]
 
 Run the full closed loop (capture, plan, execute, verify, evaluate, repair,
-snapshot) for a follow-up change inside the current managed project.
+snapshot) for a follow-up change inside the current managed project, bound to
+the current project profile revision. A legacy project without a profile
+record returns input_required until --profile selects one explicitly; passing
+a different --profile records a new project profile revision that only
+affects future operations.
 "
 `;
 
 exports[`harness CLI help and version > prints per-command help 4`] = `
-"Usage: harness resume <workflow-operation-id> [--json]
+"Usage: harness resume <workflow-operation-id> [--profile <lite|standard|governed>] [--json]
 
 Resume a paused orchestration from its last committed checkpoint. The
-workflow operation id is returned by earlier blocked or deferred runs.
+workflow operation id is returned by earlier blocked or deferred runs. A
+legacy project without a profile record must pass --profile once to migrate
+explicitly before resuming.
 "
 `;
 
@@ -395,16 +405,16 @@ exports[`harness CLI usage errors > rejects unknown options as usage errors 1`] 
 `;
 
 exports[`harness CLI usage errors > reports structured JSON usage errors in --json mode 1`] = `
-"{"category":"usage_error","message":"harness new requires --intent <text>; usage: harness new <name> --intent <text>","status":"error"}
+"{"category":"usage_error","message":"harness new requires --intent <text>; usage: harness new <name> --intent <text> [--profile <lite|standard|governed>]","status":"error"}
 "
 `;
 
 exports[`harness CLI usage errors > requires --intent for new and adopt 1`] = `
-"error [usage_error]: harness new requires --intent <text>; usage: harness new <name> --intent <text>
+"error [usage_error]: harness new requires --intent <text>; usage: harness new <name> --intent <text> [--profile <lite|standard|governed>]
 "
 `;
 
 exports[`harness CLI usage errors > requires --intent for new and adopt 2`] = `
-"error [usage_error]: harness adopt requires --intent <text>; usage: harness adopt [path] --intent <text> [--approve <staging-operation-id>]
+"error [usage_error]: harness adopt requires --intent <text>; usage: harness adopt [path] --intent <text> [--profile <lite|standard|governed>] [--approve <staging-operation-id>]
 "
 `;

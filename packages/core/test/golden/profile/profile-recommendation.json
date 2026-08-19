@@ -1,0 +1,17 @@
+{
+  "current_profile_id": "lite",
+  "iteration_id": "iteration_01K1ABCDEFGHIJKLMNO",
+  "policy_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "profile_recommendation_id": "profile-recommendation_6497151f-cbbb-5f09-922a-2d234eb93797",
+  "project_id": "project_demo-app",
+  "protocol_version": "1.1.0",
+  "rationale": "本次变更触及公共 API 并跨多个组件，建议至少 Standard。",
+  "recommended_profile_id": "standard",
+  "record_digest": "c956e28a6891914ab789ac2880dee44f368c111d15c7f47b7cd709417474dff3",
+  "record_kind": "profile_recommendation",
+  "requirement_digest": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+  "risk_object_digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "scope_digest": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+  "scope_reduction_hint": "可将公共 API 变更拆分为独立迭代以降低档位。",
+  "triggers": ["cross_component_change", "public_api_change"]
+}

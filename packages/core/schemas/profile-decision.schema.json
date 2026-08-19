@@ -1,0 +1,82 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.universal-harness.dev/1.1/profile-decision.schema.json",
+  "additionalProperties": false,
+  "type": "object",
+  "required": [
+    "protocol_version",
+    "record_kind",
+    "profile_decision_id",
+    "idempotency_key",
+    "decision_kind",
+    "project_id",
+    "actor",
+    "current_profile_id",
+    "decided_profile_id",
+    "policy_digest",
+    "approval_digest",
+    "decided_at",
+    "record_digest"
+  ],
+  "properties": {
+    "protocol_version": { "const": "1.1.0", "type": "string" },
+    "record_kind": { "const": "profile_decision", "type": "string" },
+    "profile_decision_id": {
+      "minLength": 3,
+      "maxLength": 160,
+      "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+      "type": "string"
+    },
+    "idempotency_key": { "minLength": 1, "maxLength": 200, "type": "string" },
+    "decision_kind": {
+      "anyOf": [
+        { "const": "keep", "type": "string" },
+        { "const": "temporary_upgrade", "type": "string" },
+        { "const": "project_profile_change", "type": "string" },
+        { "const": "override_recommendation", "type": "string" }
+      ]
+    },
+    "project_id": {
+      "minLength": 3,
+      "maxLength": 160,
+      "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+      "type": "string"
+    },
+    "iteration_id": {
+      "minLength": 3,
+      "maxLength": 160,
+      "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+      "type": "string"
+    },
+    "actor": { "minLength": 1, "maxLength": 200, "type": "string" },
+    "reason": { "minLength": 1, "type": "string" },
+    "recommendation_id": {
+      "minLength": 3,
+      "maxLength": 160,
+      "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+      "type": "string"
+    },
+    "recommendation_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
+    "current_profile_id": {
+      "anyOf": [
+        { "const": "lite", "type": "string" },
+        { "const": "standard", "type": "string" },
+        { "const": "governed", "type": "string" }
+      ]
+    },
+    "decided_profile_id": {
+      "anyOf": [
+        { "const": "lite", "type": "string" },
+        { "const": "standard", "type": "string" },
+        { "const": "governed", "type": "string" }
+      ]
+    },
+    "requirement_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
+    "risk_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
+    "scope_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
+    "policy_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
+    "approval_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
+    "decided_at": { "format": "date-time", "type": "string" },
+    "record_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" }
+  }
+}

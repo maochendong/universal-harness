@@ -39,10 +39,13 @@ afterEach(() => {
 describe("harness status rendering", () => {
   it("shows a live active_run until its disposable stream terminates", async () => {
     const parent = tempRoot();
-    await runCli(["new", "active-demo", "--intent", "exercise live status", "--json"], {
-      io: captureIo().io,
-      cwd: parent,
-    });
+    await runCli(
+      ["new", "active-demo", "--intent", "exercise live status", "--profile", "lite", "--json"],
+      {
+        io: captureIo().io,
+        cwd: parent,
+      },
+    );
     const projectRoot = join(parent, "active-demo");
     const publisher = new ObservationPublisher(new FileLiveSpool(projectRoot), {
       projectId: "project_active-demo",
@@ -71,10 +74,13 @@ describe("harness status rendering", () => {
   it("keeps compatibility arrays in JSON but renders only grouped Finding summaries for humans", async () => {
     const parent = tempRoot();
     const bootstrap = captureIo();
-    await runCli(["new", "status-demo", "--intent", "exercise status", "--json"], {
-      io: bootstrap.io,
-      cwd: parent,
-    });
+    await runCli(
+      ["new", "status-demo", "--intent", "exercise status", "--profile", "lite", "--json"],
+      {
+        io: bootstrap.io,
+        cwd: parent,
+      },
+    );
     const projectRoot = join(parent, "status-demo");
 
     const human = captureIo();

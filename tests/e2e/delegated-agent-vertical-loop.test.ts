@@ -19,10 +19,13 @@ describe("delegated Agent governed vertical loop", { timeout: 60_000 }, () => {
   it("keeps Run handoff, passes TaskVerdict and exposes unambiguous commit refs", async () => {
     const parent = makeTempDir("harness-e2e-governed-agent-");
     const newId = sequentialIds();
-    let result = await runJson(["new", "governed-agent", "--intent", "ship governed work"], {
-      cwd: parent,
-      runtime: makeHarness(parent, newId).runtime,
-    });
+    let result = await runJson(
+      ["new", "governed-agent", "--intent", "ship governed work", "--profile", "lite"],
+      {
+        cwd: parent,
+        runtime: makeHarness(parent, newId).runtime,
+      },
+    );
     const projectRoot = join(parent, "governed-agent");
     const harness = makeHarness(projectRoot, newId);
     const session = { cwd: projectRoot, runtime: harness.runtime };

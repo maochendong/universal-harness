@@ -183,7 +183,10 @@ export async function runAdoptLoop(
   const harness = makeHarness(repo, newId);
   const session: Session = { cwd: repo, runtime: harness.runtime };
 
-  let result = await runJson(["adopt", ".", "--intent", spec.adoptIntent], session);
+  let result = await runJson(
+    ["adopt", ".", "--intent", spec.adoptIntent, "--profile", "lite"],
+    session,
+  );
   expect(result.json["status"]).toBe("approval_required");
   const preview = data(result);
   expect(preview["object_type"]).toBe("AdoptionBaseline");
@@ -194,7 +197,7 @@ export async function runAdoptLoop(
   const stagingId = preview["staging_operation_id"] as string;
 
   result = await runJson(
-    ["adopt", ".", "--intent", spec.adoptIntent, "--approve", stagingId],
+    ["adopt", ".", "--intent", spec.adoptIntent, "--profile", "lite", "--approve", stagingId],
     session,
   );
   expect(lockedPackNames(repo)).toContain(spec.packName);

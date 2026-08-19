@@ -43,7 +43,10 @@ describe("generic adopt E2E", { timeout: 60000 }, () => {
 
     // Staging is deterministic and touches no authoritative state.
     const headBefore = git(repo, "rev-parse", "HEAD").trim();
-    let result = await runJson(["adopt", ".", "--intent", "introduce the change"], session);
+    let result = await runJson(
+      ["adopt", ".", "--intent", "introduce the change", "--profile", "lite"],
+      session,
+    );
     expect(result.exitCode).toBe(EXIT_CODES.approvalRequired);
     let data = result.json["data"] as Record<string, unknown>;
     expect(data["object_type"]).toBe("AdoptionBaseline");
@@ -53,7 +56,16 @@ describe("generic adopt E2E", { timeout: 60000 }, () => {
     // The non-interactive approval commits the baseline and runs the first
     // iteration until the mandatory requirement-baseline approval.
     result = await runJson(
-      ["adopt", ".", "--intent", "introduce the change", "--approve", stagingId],
+      [
+        "adopt",
+        ".",
+        "--intent",
+        "introduce the change",
+        "--profile",
+        "lite",
+        "--approve",
+        stagingId,
+      ],
       session,
     );
     expect(result.exitCode).toBe(EXIT_CODES.approvalRequired);

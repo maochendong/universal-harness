@@ -37,10 +37,13 @@ describe("generic iterate E2E", { timeout: 90000 }, () => {
     const newId = sequentialIds();
 
     // First iteration via `new`.
-    let result = await runJson(["new", "demo-app", "--intent", "build the first capability"], {
-      cwd: parent,
-      runtime: makeHarness(parent, newId).runtime,
-    });
+    let result = await runJson(
+      ["new", "demo-app", "--intent", "build the first capability", "--profile", "lite"],
+      {
+        cwd: parent,
+        runtime: makeHarness(parent, newId).runtime,
+      },
+    );
     expect(result.exitCode).toBe(EXIT_CODES.approvalRequired);
     const projectRoot = join(parent, "demo-app");
     const harness = makeHarness(projectRoot, newId);

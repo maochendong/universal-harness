@@ -1,0 +1,22 @@
+{
+  "actor": "human:reviewer",
+  "approval_digest": "1cdbb3e9aaeb7cab9f6f4d92d9b49dc4846d005b00e300f7eb2666f5c638a304",
+  "current_profile_id": "lite",
+  "decided_at": "2026-08-19T00:00:00.000Z",
+  "decided_profile_id": "lite",
+  "decision_kind": "override_recommendation",
+  "idempotency_key": "profile-decision:iteration_01K1ABCDEFGHIJKLMNO:1",
+  "iteration_id": "iteration_01K1ABCDEFGHIJKLMNO",
+  "policy_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "profile_decision_id": "profile-decision_588f1352-071d-5d43-84fa-e0e5fe331061",
+  "project_id": "project_demo-app",
+  "protocol_version": "1.1.0",
+  "reason": "团队确认公共 API 变更仅影响内部消费者，接受本次保持 Lite。",
+  "recommendation_digest": "c956e28a6891914ab789ac2880dee44f368c111d15c7f47b7cd709417474dff3",
+  "recommendation_id": "profile-recommendation_6497151f-cbbb-5f09-922a-2d234eb93797",
+  "record_digest": "fd86c3e64c02f6fc142567382d6118bcdad736b068b17ad9f80446b67602d27a",
+  "record_kind": "profile_decision",
+  "requirement_digest": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+  "risk_digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "scope_digest": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+}

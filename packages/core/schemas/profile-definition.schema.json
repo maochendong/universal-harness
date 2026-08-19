@@ -1,0 +1,77 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.universal-harness.dev/1.1/profile-definition.schema.json",
+  "additionalProperties": false,
+  "type": "object",
+  "required": [
+    "profile_id",
+    "protocol_version",
+    "capabilities",
+    "approval_policy_id",
+    "dashboard_presentation_id",
+    "cli_presentation_id",
+    "definition_digest"
+  ],
+  "properties": {
+    "profile_id": {
+      "anyOf": [
+        { "const": "lite", "type": "string" },
+        { "const": "standard", "type": "string" },
+        { "const": "governed", "type": "string" }
+      ]
+    },
+    "protocol_version": { "const": "1.1.0", "type": "string" },
+    "capabilities": {
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "impact_analysis",
+        "design_governance",
+        "independent_evaluation",
+        "strict_tdd",
+        "advanced_audit"
+      ],
+      "properties": {
+        "impact_analysis": {
+          "anyOf": [
+            { "const": "required", "type": "string" },
+            { "const": "conditional", "type": "string" },
+            { "const": "disabled", "type": "string" }
+          ]
+        },
+        "design_governance": {
+          "anyOf": [
+            { "const": "required", "type": "string" },
+            { "const": "conditional", "type": "string" },
+            { "const": "disabled", "type": "string" }
+          ]
+        },
+        "independent_evaluation": {
+          "anyOf": [
+            { "const": "required", "type": "string" },
+            { "const": "conditional", "type": "string" },
+            { "const": "disabled", "type": "string" }
+          ]
+        },
+        "strict_tdd": {
+          "anyOf": [
+            { "const": "required", "type": "string" },
+            { "const": "conditional", "type": "string" },
+            { "const": "disabled", "type": "string" }
+          ]
+        },
+        "advanced_audit": {
+          "anyOf": [
+            { "const": "required", "type": "string" },
+            { "const": "conditional", "type": "string" },
+            { "const": "disabled", "type": "string" }
+          ]
+        }
+      }
+    },
+    "approval_policy_id": { "minLength": 1, "type": "string" },
+    "dashboard_presentation_id": { "minLength": 1, "type": "string" },
+    "cli_presentation_id": { "minLength": 1, "type": "string" },
+    "definition_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" }
+  }
+}

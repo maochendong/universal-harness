@@ -5,7 +5,7 @@ import {
   compileSchemaValidator,
   type CompiledSchemaValidator,
   type ValidationResult,
-} from "./registry.js";
+} from "./validator.js";
 
 /**
  * Extensible per-protocol schema registry. Protocol 1.1 domain tasks register

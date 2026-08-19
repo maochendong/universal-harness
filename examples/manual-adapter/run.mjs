@@ -47,10 +47,13 @@ try {
   expect(adapter.manifest.control === "manual", "manual adapter declares manual control");
 
   const execute = (envelope) => adapter.run(envelope, { mode: "supervised" });
-  const first = await runJson(["new", "manual-app", "--intent", "build the first capability"], {
-    cwd: parent,
-    runtime: makeRuntime(parent, { execute }),
-  });
+  const first = await runJson(
+    ["new", "manual-app", "--intent", "build the first capability", "--profile", "lite"],
+    {
+      cwd: parent,
+      runtime: makeRuntime(parent, { execute }),
+    },
+  );
   const projectRoot = join(parent, "manual-app");
   const session = { cwd: projectRoot, runtime: makeRuntime(projectRoot, { execute }) };
   const { result } = await drivePastApprovals(first, session);

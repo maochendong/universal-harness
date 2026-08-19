@@ -1,4 +1,4 @@
-import { Type, type TProperties } from "@sinclair/typebox";
+import { Type, type TLiteral, type TProperties, type TObject } from "@sinclair/typebox";
 
 import { contentDigest } from "../identity/digest.js";
 import { PROTOCOL_1_1_VERSION, isKnownProtocol } from "../protocol.js";
@@ -29,7 +29,10 @@ export class RecordEnvelopeError extends Error {
 }
 
 /** Envelope properties with the protocol version and record kind pinned as literals. */
-export function recordEnvelopeProperties(recordKind: string): TProperties {
+export function recordEnvelopeProperties(recordKind: string): {
+  protocol_version: TLiteral<typeof PROTOCOL_1_1_VERSION>;
+  record_kind: TLiteral<string>;
+} {
   if (!RECORD_KIND_REGEX.test(recordKind)) {
     throw new RecordEnvelopeError(`record kind must be snake_case: ${recordKind}`);
   }
@@ -40,12 +43,29 @@ export function recordEnvelopeProperties(recordKind: string): TProperties {
 }
 
 /** Strict record schema: envelope plus domain properties plus the digest field. */
-export function recordEnvelopeSchema<T extends TProperties>(recordKind: string, properties: T) {
+export function recordEnvelopeSchema<T extends TProperties>(
+  recordKind: string,
+  properties: T,
+): TObject<
+  T & {
+    protocol_version: TLiteral<typeof PROTOCOL_1_1_VERSION>;
+    record_kind: TLiteral<string>;
+    record_digest: typeof DigestSchema;
+  }
+> {
+  // The spread of the generic `T` computes the same property set at runtime;
+  // the intersection in the return type is the statically checkable form.
   return strictObject({
     ...recordEnvelopeProperties(recordKind),
     ...properties,
     [RECORD_DIGEST_FIELD]: DigestSchema,
-  });
+  }) as unknown as TObject<
+    T & {
+      protocol_version: TLiteral<typeof PROTOCOL_1_1_VERSION>;
+      record_kind: TLiteral<string>;
+      record_digest: typeof DigestSchema;
+    }
+  >;
 }
 
 /** SHA-256 over the canonical record with the digest field itself excluded. */

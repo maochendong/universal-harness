@@ -30,7 +30,7 @@ try {
   git(projectRoot, "commit", "-m", "legacy baseline");
 
   const intent = "introduce the requested change";
-  const staged = await runJson(["adopt", "legacy-app", "--intent", intent], {
+  const staged = await runJson(["adopt", "legacy-app", "--intent", intent, "--profile", "lite"], {
     cwd: parent,
     runtime: makeRuntime(parent),
   });
@@ -45,7 +45,16 @@ try {
   );
 
   const committed = await runJson(
-    ["adopt", "legacy-app", "--intent", intent, "--approve", staged.json.data.staging_operation_id],
+    [
+      "adopt",
+      "legacy-app",
+      "--intent",
+      intent,
+      "--profile",
+      "lite",
+      "--approve",
+      staged.json.data.staging_operation_id,
+    ],
     { cwd: parent, runtime: makeRuntime(parent) },
   );
   const session = { cwd: projectRoot, runtime: makeRuntime(projectRoot) };

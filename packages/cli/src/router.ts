@@ -50,6 +50,8 @@ export const CLI_VERSION = "0.0.0" as const;
 export interface NewProjectRequest {
   readonly name: string;
   readonly intent: string;
+  /** Explicit profile tier (protocol 1.1); without it non-interactive runs return input_required. */
+  readonly profile?: string;
 }
 
 export interface AdoptProjectRequest {
@@ -57,16 +59,22 @@ export interface AdoptProjectRequest {
   readonly intent: string;
   /** Commit a previously staged adoption preview (the non-interactive approval path). */
   readonly approveStaging?: string;
+  /** Explicit profile tier (protocol 1.1); without it non-interactive runs return input_required. */
+  readonly profile?: string;
 }
 
 export interface IterateRequest {
   readonly text: string;
   readonly projectRoot: string;
+  /** Migrate a legacy (profile-less) project or change the project profile explicitly. */
+  readonly profile?: string;
 }
 
 export interface ResumeRequest {
   readonly workflowOperationId: string;
   readonly projectRoot: string;
+  /** Migrate a legacy (profile-less) project explicitly before resuming. */
+  readonly profile?: string;
 }
 
 export interface AbortRequest {
@@ -294,28 +302,38 @@ Global options:
 `;
 
 const COMMAND_HELP: Readonly<Record<string, string>> = {
-  new: `Usage: harness new <name> --intent <text> [--json]
+  new: `Usage: harness new <name> --intent <text> [--profile <lite|standard|governed>] [--json]
 
 Create a managed project directory, initialize the .harness control plane
 (manifest, pack lock, ledger, managed .gitignore/.gitattributes) and run the
-first full iteration for the given intent.
+first full iteration for the given intent. The project profile is always an
+explicit choice: interactive sessions select and confirm a tier, and
+non-interactive sessions must pass --profile (otherwise the command returns
+input_required without creating anything).
 `,
-  adopt: `Usage: harness adopt [path] --intent <text> [--approve <staging-operation-id>] [--json]
+  adopt: `Usage: harness adopt [path] --intent <text> [--profile <lite|standard|governed>] [--approve <staging-operation-id>] [--json]
 
 Adopt an existing project: scan it into staging, approve the deterministic
 baseline, then run the requested iteration. Nothing outside .harness is
 modified, and the project root .gitignore is never touched. Non-interactive
-sessions approve a staged preview with --approve.
+sessions approve a staged preview with --approve and must pass --profile;
+the staged response's resume_command carries both.
 `,
-  iterate: `Usage: harness iterate <text> [--json]
+  iterate: `Usage: harness iterate <text> [--profile <lite|standard|governed>] [--json]
 
 Run the full closed loop (capture, plan, execute, verify, evaluate, repair,
-snapshot) for a follow-up change inside the current managed project.
+snapshot) for a follow-up change inside the current managed project, bound to
+the current project profile revision. A legacy project without a profile
+record returns input_required until --profile selects one explicitly; passing
+a different --profile records a new project profile revision that only
+affects future operations.
 `,
-  resume: `Usage: harness resume <workflow-operation-id> [--json]
+  resume: `Usage: harness resume <workflow-operation-id> [--profile <lite|standard|governed>] [--json]
 
 Resume a paused orchestration from its last committed checkpoint. The
-workflow operation id is returned by earlier blocked or deferred runs.
+workflow operation id is returned by earlier blocked or deferred runs. A
+legacy project without a profile record must pass --profile once to migrate
+explicitly before resuming.
 `,
   abort: `Usage: harness abort <workflow-operation-id> [--actor <id>] [--json]
 

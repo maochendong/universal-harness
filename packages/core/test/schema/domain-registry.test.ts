@@ -114,15 +114,30 @@ describe("domain schema export boundary", () => {
 });
 
 describe("protocol 1.1 schema plumbing", () => {
-  it("ships an empty 1.1 domain registry until domain tasks register their schemas", () => {
+  it("registers the Task 2 profile schemas under the 1.1 domain registry", () => {
     expect(PROTOCOL_1_1_SCHEMA_REGISTRY.protocolVersion).toBe("1.1.0");
-    expect(PROTOCOL_1_1_SCHEMA_REGISTRY.keys).toEqual([]);
+    expect(PROTOCOL_1_1_SCHEMA_REGISTRY.keys).toEqual([
+      "profile-definition",
+      "project-profile",
+      "profile-recommendation",
+      "profile-decision",
+      "model-provider-binding",
+    ]);
     expect(PROTOCOL_1_1_SCHEMA_REGISTRY.validate("project-profile", {})).toMatchObject({
+      valid: false,
+    });
+    expect(PROTOCOL_1_1_SCHEMA_REGISTRY.validate("capture-session", {})).toMatchObject({
       valid: false,
     });
   });
 
   it("aggregates export documents without drifting from the M1 baseline", () => {
-    expect(SCHEMA_EXPORT_DOCUMENTS).toEqual(JSON_SCHEMA_DOCUMENTS);
+    const m1Keys = Object.keys(JSON_SCHEMA_DOCUMENTS);
+    for (const key of m1Keys) {
+      expect(SCHEMA_EXPORT_DOCUMENTS[key]).toEqual(JSON_SCHEMA_DOCUMENTS[key]);
+    }
+    expect([...Object.keys(SCHEMA_EXPORT_DOCUMENTS)].sort()).toEqual(
+      [...m1Keys, ...PROTOCOL_1_1_SCHEMA_REGISTRY.keys.map((key) => `${key}.schema.json`)].sort(),
+    );
   });
 });

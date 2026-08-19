@@ -41,7 +41,7 @@ describe("harness impact --semantic", () => {
     const parent = mkdtempSync(join(tmpdir(), "harness-cli-impact-route-"));
     roots.push(parent);
     const bootstrapIo = captureIo();
-    await runCli(["new", "project", "--intent", "route semantic impact"], {
+    await runCli(["new", "project", "--intent", "route semantic impact", "--profile", "lite"], {
       cwd: parent,
       io: bootstrapIo.io,
     });
@@ -75,10 +75,13 @@ describe("harness impact --semantic", () => {
     const parent = mkdtempSync(join(tmpdir(), "harness-cli-impact-failure-"));
     roots.push(parent);
     const bootstrapIo = captureIo();
-    await runCli(["new", "project", "--intent", "preserve structural impact", "--json"], {
-      cwd: parent,
-      io: bootstrapIo.io,
-    });
+    await runCli(
+      ["new", "project", "--intent", "preserve structural impact", "--profile", "lite", "--json"],
+      {
+        cwd: parent,
+        io: bootstrapIo.io,
+      },
+    );
     const projectRoot = join(parent, "project");
     const { database } = materializeLedger({ projectRoot, databasePath: ":memory:" });
     const seedNodeId = pageNodes(database, { limit: 1 }).items[0]?.id;

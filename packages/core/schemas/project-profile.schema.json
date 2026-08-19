@@ -1,0 +1,59 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.universal-harness.dev/1.1/project-profile.schema.json",
+  "additionalProperties": false,
+  "type": "object",
+  "required": [
+    "protocol_version",
+    "record_kind",
+    "project_profile_id",
+    "project_id",
+    "revision",
+    "profile_id",
+    "profile_definition_digest",
+    "policy_digest",
+    "approval_request_id",
+    "approval_digest",
+    "effective_from",
+    "record_digest"
+  ],
+  "properties": {
+    "protocol_version": { "const": "1.1.0", "type": "string" },
+    "record_kind": { "const": "project_profile", "type": "string" },
+    "project_profile_id": {
+      "minLength": 3,
+      "maxLength": 160,
+      "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+      "type": "string"
+    },
+    "project_id": {
+      "minLength": 3,
+      "maxLength": 160,
+      "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+      "type": "string"
+    },
+    "revision": { "minimum": 1, "type": "integer" },
+    "profile_id": {
+      "anyOf": [
+        { "const": "lite", "type": "string" },
+        { "const": "standard", "type": "string" },
+        { "const": "governed", "type": "string" }
+      ]
+    },
+    "profile_definition_digest": {
+      "pattern": "^[a-f0-9]{64}$",
+      "type": "string"
+    },
+    "policy_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
+    "approval_request_id": {
+      "minLength": 3,
+      "maxLength": 160,
+      "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+      "type": "string"
+    },
+    "approval_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
+    "effective_from": { "format": "date-time", "type": "string" },
+    "supersedes_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
+    "record_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" }
+  }
+}

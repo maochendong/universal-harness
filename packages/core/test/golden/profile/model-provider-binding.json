@@ -1,0 +1,37 @@
+{
+  "baseline_digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "bindings": [
+    {
+      "budget_profile": "capture-standard",
+      "config_digest": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "failure_mode": "block",
+      "prompt_version": "approval-brief.v1",
+      "provider_identity": "provider_anthropic",
+      "purpose": "approval_brief",
+      "required": true,
+      "schema_version": "approval-brief-result.v1",
+      "slot_id": "grounded_synthesis"
+    },
+    {
+      "budget_profile": "capture-standard",
+      "config_digest": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "failure_mode": "block",
+      "prompt_version": "project-discovery.v1",
+      "provider_identity": "provider_anthropic",
+      "purpose": "project_discovery",
+      "required": true,
+      "schema_version": "project-discovery-result.v1",
+      "slot_id": "grounded_synthesis"
+    }
+  ],
+  "config_digest": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+  "model_provider_binding_id": "model-provider-binding_ced33bd4-6d80-5dfc-bd0e-ceda9def1140",
+  "policy_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "profile_decision_digest": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+  "profile_decision_id": "profile-decision_01K1ABCDEFGHIJKLMNO",
+  "project_id": "project_demo-app",
+  "protocol_version": "1.1.0",
+  "record_digest": "2a23449a62f8e36577c2c9219a66c54b2ae9bd644c2cdcc4b2ea0d1f30a72237",
+  "record_kind": "model_provider_binding",
+  "scope": "capture"
+}

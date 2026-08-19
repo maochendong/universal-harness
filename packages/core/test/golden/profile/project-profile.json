@@ -1,0 +1,14 @@
+{
+  "approval_digest": "0aed1c725244be8dd7ce826cefee825b94743657f2bf17dafc0dec5e6d0bed7f",
+  "approval_request_id": "profile-approval_ec590990-24ed-5bc1-b642-d2807d689269",
+  "effective_from": "2026-08-19T00:00:00.000Z",
+  "policy_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "profile_definition_digest": "5c921bc9535d369ea8c2594800e9a1e2a27e09fadb0c1c808128daeda57026d1",
+  "profile_id": "lite",
+  "project_id": "project_demo-app",
+  "project_profile_id": "project-profile_f16b4a06-280b-5f5d-8ba1-9be662472815",
+  "protocol_version": "1.1.0",
+  "record_digest": "c4e718ba4477431f7053f0faea0bf50c23e36cc76883e77d63d4a2d0fb30e49f",
+  "record_kind": "project_profile",
+  "revision": 1
+}

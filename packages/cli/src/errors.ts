@@ -11,6 +11,7 @@ export const EXIT_CODES = {
   stageUnavailable: 10,
   approvalRequired: 11,
   blocked: 12,
+  inputRequired: 13,
 } as const;
 
 export type ExitCode = (typeof EXIT_CODES)[keyof typeof EXIT_CODES];

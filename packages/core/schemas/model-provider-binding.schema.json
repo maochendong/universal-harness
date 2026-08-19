@@ -1,0 +1,100 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.universal-harness.dev/1.1/model-provider-binding.schema.json",
+  "additionalProperties": false,
+  "type": "object",
+  "required": [
+    "protocol_version",
+    "record_kind",
+    "model_provider_binding_id",
+    "scope",
+    "project_id",
+    "profile_decision_id",
+    "profile_decision_digest",
+    "policy_digest",
+    "config_digest",
+    "baseline_digest",
+    "bindings",
+    "record_digest"
+  ],
+  "properties": {
+    "protocol_version": { "const": "1.1.0", "type": "string" },
+    "record_kind": { "const": "model_provider_binding", "type": "string" },
+    "model_provider_binding_id": {
+      "minLength": 3,
+      "maxLength": 160,
+      "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+      "type": "string"
+    },
+    "scope": { "const": "capture", "type": "string" },
+    "project_id": {
+      "minLength": 3,
+      "maxLength": 160,
+      "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+      "type": "string"
+    },
+    "profile_decision_id": {
+      "minLength": 3,
+      "maxLength": 160,
+      "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+      "type": "string"
+    },
+    "profile_decision_digest": {
+      "pattern": "^[a-f0-9]{64}$",
+      "type": "string"
+    },
+    "policy_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
+    "config_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
+    "baseline_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
+    "bindings": {
+      "minItems": 1,
+      "type": "array",
+      "items": {
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "slot_id",
+          "required",
+          "provider_identity",
+          "config_digest",
+          "prompt_version",
+          "schema_version",
+          "budget_profile",
+          "failure_mode"
+        ],
+        "properties": {
+          "slot_id": {
+            "anyOf": [
+              { "const": "impact_advisory", "type": "string" },
+              { "const": "design_review", "type": "string" },
+              { "const": "plan_proposal", "type": "string" },
+              { "const": "feedback_analysis", "type": "string" },
+              { "const": "grounded_synthesis", "type": "string" }
+            ]
+          },
+          "purpose": {
+            "anyOf": [
+              { "const": "project_discovery", "type": "string" },
+              { "const": "context_enrichment", "type": "string" },
+              { "const": "approval_brief", "type": "string" },
+              { "const": "iteration_narrative", "type": "string" }
+            ]
+          },
+          "required": { "type": "boolean" },
+          "provider_identity": { "minLength": 1, "type": "string" },
+          "config_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
+          "prompt_version": { "minLength": 1, "type": "string" },
+          "schema_version": { "minLength": 1, "type": "string" },
+          "budget_profile": { "minLength": 1, "type": "string" },
+          "failure_mode": {
+            "anyOf": [
+              { "const": "block", "type": "string" },
+              { "const": "projection_finding", "type": "string" }
+            ]
+          }
+        }
+      }
+    },
+    "record_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" }
+  }
+}
