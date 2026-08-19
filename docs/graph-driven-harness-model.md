@@ -1,6 +1,6 @@
 # Harness Graph-native 驱动模型
 
-本文完整解释 Universal Harness 如何用 Node、Edge 与 Event 驱动一次可审计的软件迭代。代码中的 Schema、关系兼容矩阵和传播策略是唯一权威来源；本文只提供中英双语的人类可读投影，不参与 Runtime 决策或 Ledger 写入。
+本文完整解释 Universal Harness 如何用 Node、Edge、Event、Profile-aware Capability DAG 与受管模型 Adapter 驱动一次可审计的软件迭代。代码中的 Schema、关系兼容矩阵、传播策略、Capability registry 和领域 Validator 是唯一权威来源；本文只提供中英双语的人类可读投影，不参与 Runtime 决策或 Ledger 写入。
 
 ## 0. 一张图理解完整 Harness 驱动模型
 
@@ -13,10 +13,10 @@ _如果上方 SVG 未渲染（例如纯文本阅读器），展开下面的 Merm
 
 ```mermaid
 flowchart TB
-  subgraph NODE_GRAPH["① 权威 Node Graph / 26 类节点"]
+  subgraph NODE_GRAPH["① 权威 Node Graph / 28 类节点"]
     direction LR
     AUTH["权威上下文<br/>项目 Project · 仓库 Repository · 迭代 Iteration<br/><br/>确定所有记录、授权与快照的归属"]
-    DESIGN["意图与设计<br/>意图 Intent · 需求 Requirement · 约束 Constraint<br/>决策 Decision · 组件 Component · 代码产物 CodeArtifact<br/><br/>解释为什么改、设计怎样落到代码"]
+    DESIGN["意图与设计<br/>意图 Intent · 需求 Requirement · 约束 Constraint<br/>设计集 DesignSet · 决策 Decision · 组件 Component<br/>设计资产 DesignArtifact · 代码产物 CodeArtifact<br/><br/>解释为什么改、设计怎样落到代码"]
     GOVERN["影响与治理<br/>影响集 ImpactSet · 执行计划 ExecutionPlan · 任务 Task · 策略 Policy<br/>批准请求 ApprovalRequest · 批准 Approval<br/>工具定义 ToolDefinition · 上下文包 ContextBundle<br/><br/>计算波及范围并在执行前收窄权限"]
     EXECUTION["执行与验证<br/>运行 Run · 门禁 Gate · 检查点 Checkpoint<br/>证据 Evidence · 测试 Test · 评估用例 EvaluationCase<br/><br/>用真实门禁与证据确立完成事实"]
     FEEDBACK["反馈修复<br/>发现 Finding · 根因分析 RootCauseAnalysis<br/>改进候选 ImprovementCandidate<br/><br/>把失败路由回真正拥有修改权的上游层"]
@@ -28,17 +28,18 @@ flowchart TB
     FEEDBACK -->|"TRIGGERS 新 ImpactSet"| GOVERN
   end
 
-  PHASES["② 纵向闭环<br/>录入 Capture → 影响 Impact → 计划 Plan → 上下文 Context → 执行 Execute → 验证 Verify → 评估 Evaluate → 快照 Snapshot ↺"]
+  PROFILE["ProjectProfile + Risk + Policy + Provider<br/>→ final CapabilityPlan / Operation DAG"]
+  PHASES["② Capability-aware 纵向闭环<br/>录入 Capture → 影响 Impact → 设计 Design → 计划 Plan → 上下文 Context<br/>→ 执行 Execute → 验证 Verify → [评估 Evaluate] → 快照 Snapshot ↺"]
 
-  subgraph EDGE_MODEL["③ Edge 语义 / 31 类关系"]
+  subgraph EDGE_MODEL["③ Edge 语义 / 32 类关系"]
     direction LR
-    PROPAGATION["17 条影响传播关系<br/>REFUTES · VIOLATES · BLOCKS · VERIFIES · ADDRESSES · SHAPES<br/>REALIZES · IMPLEMENTS · DECOMPOSES_TO · CONSTRAINED_BY<br/>GOVERNED_BY · DEPENDS_ON · DERIVES_FROM · SUPERSEDES<br/>DIAGNOSED_BY · PROPOSES_CHANGE_TO · MAY_IMPACT<br/><br/>每条规则固定方向、默认风险与推理边许可"]
+    PROPAGATION["18 条影响传播关系<br/>REFUTES · VIOLATES · BLOCKS · VERIFIES · ADDRESSES · SHAPES · SPECIFIES<br/>REALIZES · IMPLEMENTS · DECOMPOSES_TO · CONSTRAINED_BY<br/>GOVERNED_BY · DEPENDS_ON · DERIVES_FROM · SUPERSEDES<br/>DIAGNOSED_BY · PROPOSES_CHANGE_TO · MAY_IMPACT<br/><br/>每条规则固定方向、默认风险与推理边许可"]
     STRUCTURAL["14 条非传播结构关系<br/>GENERATED_BY · RESUMES · EVALUATES · EXECUTES · INVOKES<br/>PRODUCES · SUPPORTS · CONTAINS · USES_CONTEXT · CAPTURES<br/>REQUESTS_APPROVAL_FOR · RESOLVES · APPROVES · TRIGGERS<br/><br/>参与完整性、查询和审计，但不被 Impact BFS 自动穿越"]
   end
 
   subgraph EVENT_MODEL["④ Event 驱动 / 权威事实与实时观察"]
     direction LR
-    LIFECYCLE["15 类 Lifecycle Event / 权威治理事实<br/>OperationStarted · PlanAccepted · BeforeContextCompile · ContextCompiled<br/>BeforeToolCall · AfterToolCall · ApprovalRequired · CheckpointCommitted<br/>GateCompleted · EvaluationCompleted · FindingCreated · FindingAccepted<br/>FindingClosed · FindingSuperseded · OperationCompleted"]
+    LIFECYCLE["43+ 类 Lifecycle Event / 权威治理事实<br/>15 类通用工作流事件 · 19 类受管 Capture 事件 · 9 类 TDD 事件<br/><br/>记录批准、提交、失效与恢复事实"]
     OBSERVATION["11 类 Observation Event / 实时运行信号<br/>PhaseStarted · PhaseCompleted · PhasePaused · GateStarted · GateCompleted<br/>RunStarted · RunHeartbeat · RunOutputSummary · RunTerminated<br/>BudgetUpdated · ApprovalRequired"]
   end
 
@@ -47,6 +48,7 @@ flowchart TB
   SQLITE["SQLite Projection<br/>可确定性重建的查询缓存"]
   READERS["Dashboard · Markdown Projection · Audit · Resume · Snapshot"]
 
+  PROFILE --> PHASES
   NODE_GRAPH --> PHASES
   EDGE_MODEL -->|"约束 Impact"| PHASES
   PHASES --> EVENT_MODEL
@@ -60,18 +62,70 @@ flowchart TB
 
 </details>
 
-这张图分四层阅读：
+这张图分五层阅读：
 
-1. **Node Graph** 定义 Harness 当前知道什么，以及需求、设计、执行、证据和反馈分别由谁负责。
-2. **Edge 语义**决定对象怎样关联。17 条传播关系约束 Impact，14 条结构关系保存执行和审计事实但不自动扩散变更。
-3. **Event 驱动**记录状态怎样变化。Lifecycle Event 证明已经提交的事实，Observation Event 展示此刻发生的事情。
-4. **存储与读取**保持完成真相清晰：Ledger 是唯一权威来源；Live Spool 是可删除的实时观察；SQLite 是可确定性重建的查询缓存。
+1. **Profile 与 CapabilityPlan** 决定本次 Operation 真实启用哪些 Module、Provider、审批对象和 DAG 节点；Lite 不为未启用能力生成空壳。
+2. **Node Graph** 定义 Harness 当前知道什么，以及需求、设计、执行、证据和反馈分别由谁负责。
+3. **Edge 语义**决定对象怎样关联。18 条传播关系约束 Impact，14 条结构关系保存执行和审计事实但不自动扩散变更。
+4. **Event 驱动**记录状态怎样变化。Lifecycle Event 证明已经提交的事实，Observation Event 展示此刻发生的事情。
+5. **存储与读取**保持完成真相清晰：Ledger 是唯一权威来源；Live Spool 是可删除的实时观察；SQLite 是可确定性重建的查询缓存。
 
 若当前 Markdown 阅读器中的 Mermaid 无法渲染，可先查看上方的 SVG 总览图，或展开 Mermaid 源码；后续 Node、Edge 和 Event 表格包含同一模型的完整文字降级，不会丢失语义。
 
+### 0.1 Capability DAG 内的模型子状态
+
+模型调用不新增公共 phase，也不拥有 Capability Node。它们作为现有 DAG 节点内部的受管子状态运行：
+
+```mermaid
+flowchart LR
+  CAPTURE["Capture<br/>project discovery → managed clarification → accepted PRD"]
+  IMPACT["[Impact]<br/>propagate → advise → validate → approve"]
+  DESIGN["[Design]<br/>propose → validate → independent review → human approve"]
+  PLAN["Plan<br/>propose → compile → validate"]
+  CONTEXT["Context<br/>select → enrich → compile"]
+  EXECUTE["Execute<br/>Agent + Baseline → Red → Green → Refactor"]
+  VERIFY["Verify → [Evaluate]"]
+  FEEDBACK["Feedback<br/>deterministic RCA → semantic analysis → route"]
+  SNAPSHOT["Snapshot<br/>commit → narrative projection"]
+
+  CAPTURE --> IMPACT --> DESIGN --> PLAN --> CONTEXT --> EXECUTE --> VERIFY --> SNAPSHOT
+  VERIFY --> FEEDBACK
+  FEEDBACK -->|"Change Seed / precise invalidation"| CAPTURE
+  FEEDBACK -->|"Impact / Design / Plan"| IMPACT
+```
+
+五个模型 Port 的权威边界固定如下：
+
+| Port | 输入位置 | 结构化输出 | 不可越过的确定性边界 |
+| --- | --- | --- | --- |
+| `ImpactAdvisoryPort` | 确定性传播结果、受控图邻域、18 种关系规则 | 增补 Impact/Edge/Risk/Missing-fact 候选 | 不能删除确定性 entry、降低风险、改方向或激活禁止的推理边 |
+| `DesignReviewPort` | 已通过纯 Validator 的 Design Proposal | `accept_recommended / revision_required / blocked` 与 Findings | Critical Finding 阻止 ApprovalRequest；Reviewer 无批准权 |
+| `PlanProposalPort` | canonical Assertion descriptors、accepted PRD/Impact/Design、Gate/TDD/路径预算 | Task/Cluster/DAG/并行/Context budget 候选 | Harness 独占 Assertion 与 Task identity、路径、Gate、TDD Contract 和最终 DAG |
+| `FeedbackAnalysisPort` | 未分类或冲突 RCA、Gate/Evaluation Evidence、上下游 bindings | Diagnosis/Change Seed/verification 候选、confidence、source refs | 不覆盖确定性 RCA，不决定 target layer、失效范围或 privileged route |
+| `GroundedSynthesisPort` | 四种 purpose-bound 只读 Bundle | 带逐 claim 来源引用的结构化中文提炼 | 不修改 Graph、审批对象、Context 权限、Snapshot、Evidence 或 Verdict |
+
+`GroundedSynthesisPort` 只允许四种固定 purpose：
+
+| Purpose | 使用时机 | 产出 |
+| --- | --- | --- |
+| `project_discovery` | adopt 扫描后的受管 Capture 前 | 项目事实、候选 Capability/Gate、置信度与来源 |
+| `context_enrichment` | 确定性 Context selection 后 | 术语、分段摘要、相关性解释与来源 |
+| `approval_brief` | 真实批准对象和 Invocation 已提交后 | 变化、风险、权衡、待决问题与来源 |
+| `iteration_narrative` | 权威 Snapshot 提交后 | 结果、Evidence、遗留风险、后续建议与来源 |
+
+所有 Port/purpose 的 prompt、Schema、budget、conversation、run identity 和 Evidence 相互独立；可以共用 vendor/model/executable，但不能共享隐藏历史。Standard/Governed 对适用槽位强制 Provider，缺失或必需调用耗尽重试后阻塞；`iteration_narrative` 是唯一非阻塞例外，失败只产生可恢复 Projection Finding。
+
+Profile 决定能力深度，但不改变 Evidence Kernel 的真实性：
+
+| Profile | 典型 Capability DAG | 模型 Provider | 人工批准 |
+| --- | --- | --- | --- |
+| Lite | Capture → Plan → Context → Execute → Verify → Snapshot；风险/Policy 可临时激活高级 Module | 默认确定性 Kernel/Planner；未启用槽位零 binding/Invocation/Result | 风险自适应，只保留必要的真实业务对象批准 |
+| Standard | Capture → Impact → Design → Plan → Context → Execute → Verify → Evaluate → Snapshot；按 test_strategy 选择 Strict TDD | Impact Advisory、Design Review、Plan Proposal 及适用 Grounded purpose 强制；Feedback 命中条件时强制 | 物质性 PRD/Impact/Design/Override 等对象人工批准 |
+| Governed | Standard 全部能力 + 全适用 Task Strict TDD + Advanced Audit/更严 Policy | Standard 强制项全部启用，Policy 可要求 Proposal/Review 不同模型或更严留存 | 不免除批准，可要求职责分离或双人规则 |
+
 ## 1. Node：Harness 当前知道什么
 
-26 类 Node 分成五个职责域。它们共同回答：当前工作属于哪个项目和迭代、为什么修改、准备怎样修改、实际发生了什么，以及失败应该回到哪一层修复。
+28 类 Node 分成五个职责域。它们共同回答：当前工作属于哪个项目和迭代、为什么修改、设计怎样冻结、准备怎样修改、实际发生了什么，以及失败应该回到哪一层修复。
 
 <!-- graph-model:nodes:start -->
 
@@ -83,8 +137,10 @@ flowchart TB
 | `Intent` | 意图 | 意图与设计 | 保存用户原始目标和澄清结果，是需求分解的起点。 |
 | `Requirement` | 需求 | 意图与设计 | 描述系统必须提供的业务能力或可验证结果。 |
 | `Constraint` | 约束 | 意图与设计 | 描述安全、合规、性能、兼容性或工程边界。 |
+| `DesignSet` | 设计集 | 意图与设计 | 聚合一次迭代批准的 Decision、Component、DesignArtifact 与关系边，是 impact → design → plan 的原子审批边界。 |
 | `Decision` | 决策 | 意图与设计 | 记录为满足需求和约束而选择的架构或实现方向。 |
 | `Component` | 组件 | 意图与设计 | 表示承担明确职责的系统模块或边界。 |
+| `DesignArtifact` | 设计资产 | 意图与设计 | 保存 API/Data 契约、测试策略或 UI 设计；由 SPECIFIES 精确连接被规定对象。 |
 | `CodeArtifact` | 代码产物 | 意图与设计 | 表示实现组件、需求或决策的源文件及其他代码对象。 |
 | `ImpactSet` | 影响集 | 影响与治理 | 固化 Change Seed、解释路径、风险和需要修改或检查的对象。 |
 | `ExecutionPlan` | 执行计划 | 影响与治理 | 把已批准影响分解为有依赖关系的声明式任务。 |
@@ -109,16 +165,16 @@ flowchart TB
 ### 五个职责域
 
 - **权威上下文**确定“在哪个项目、哪个仓库、哪次迭代”工作，是所有记录、授权和快照的归属根。
-- **意图与设计**把自然语言目标变成需求、约束、决策、组件和代码对象，形成“为什么改”的依据。
+- **意图与设计**把自然语言目标变成 accepted PRD、需求、约束、DesignSet、决策、组件、设计资产和代码对象，形成“为什么改、批准了怎样的设计”的依据。
 - **影响与治理**计算波及范围，把已批准影响转成任务，并在执行前收窄策略、能力、工具和上下文。
 - **执行与验证**在受控能力内执行任务，用门禁、测试和评估产生证据；Agent 自述不能替代完成事实。
 - **反馈修复**把失败升级为结构化问题，定位根因与归属层，再触发新影响分析，禁止下游越层改写上游事实。
 
 ## 2. Edge：对象怎样关联，变化怎样传播
 
-31 类 Edge 共同构成 Artifact Graph 与 Execution Graph。它们不是同一种语义：17 类关系允许 Impact Engine 在规则约束下传播变更，另 14 类关系只表达结构、执行或审计事实。
+32 类 Edge 共同构成 Artifact Graph 与 Execution Graph。它们不是同一种语义：18 类关系允许 Impact Engine 在规则约束下传播变更，另 14 类关系只表达结构、执行或审计事实。
 
-### 2.1 17 条影响传播关系
+### 2.1 18 条影响传播关系
 
 当 `Requirement`、`Decision`、`CodeArtifact`、`Finding` 等节点成为 Change Seed 时，Impact Engine 不能沿全部相邻边盲目扩散。每条传播规则固定三个参数：
 
@@ -138,6 +194,7 @@ flowchart TB
 | `VERIFIES` | 验证 | both ↔ | medium | 是 | 测试和被验证需求或约束任一侧变化，都可能要求检查另一侧。 |
 | `ADDRESSES` | 回应需求 | inverse ← | medium | 是 | 需求变化时反向找到回应它的 Decision；从 Decision 出发不顺向扩散到需求。 |
 | `SHAPES` | 塑造组件 | forward → | medium | 是 | Decision 变化时顺向检查由它塑造的 Component。 |
+| `SPECIFIES` | 具体规定 | both ↔ | high | 否 | DesignArtifact 与 Requirement、Decision、Component 或 Test 任一侧变化，都高风险检查对应契约或策略。 |
 | `REALIZES` | 实现组件 | inverse ← | high | 是 | Component 变化时反向找到实现它的 CodeArtifact，并提升为高风险。 |
 | `IMPLEMENTS` | 实施需求或决策 | inverse ← | medium | 是 | Requirement 或 Decision 变化时反向找到承担实现的 Task。 |
 | `DECOMPOSES_TO` | 分解为 | forward → | medium | 否 | Intent 变化时顺向检查由它分解出的 Requirement。 |
@@ -154,10 +211,10 @@ flowchart TB
 
 传播采用按 ID 稳定排序的 BFS。相同图和 Change Seed 在每次重建中都会得到相同的最短解释路径；默认最大深度为 6，硬上限为 10。端点缺失由图完整性审计报告，Impact Engine 会忽略损坏边，不把它当作有效传播依据。
 
-17 条关系还可以按业务目的理解：
+18 条关系还可以按业务目的理解：
 
 - **失败与约束链**：`REFUTES`、`VIOLATES`、`BLOCKS` 把失败事实推向必须复核的对象。
-- **需求—设计—实现链**：`VERIFIES`、`ADDRESSES`、`SHAPES`、`REALIZES`、`IMPLEMENTS`、`DECOMPOSES_TO` 连接意图、设计、实现和验证。
+- **需求—设计—实现链**：`VERIFIES`、`ADDRESSES`、`SHAPES`、`SPECIFIES`、`REALIZES`、`IMPLEMENTS`、`DECOMPOSES_TO` 连接意图、设计、契约、实现和验证。
 - **治理与演化链**：`CONSTRAINED_BY`、`GOVERNED_BY`、`DEPENDS_ON`、`DERIVES_FROM`、`SUPERSEDES` 处理约束、策略、依赖和版本演化。
 - **反馈修复链**：`DIAGNOSED_BY`、`PROPOSES_CHANGE_TO` 把失败路由回真正拥有修改权的上游层。
 - **语义候选链**：`MAY_IMPACT` 允许模型或索引提出候选，但不允许其自我批准。
@@ -189,11 +246,13 @@ flowchart TB
 
 <!-- graph-model:structural-edges:end -->
 
+DesignSet 同时扩展既有关系端点：`DesignSet DERIVES_FROM ImpactSet` 绑定设计来源；`DesignSet CONTAINS Decision / Component / DesignArtifact` 聚合本次批准资产；`Task IMPLEMENTS Requirement / Decision / DesignArtifact` 证明任务实施哪些需求、决策和契约。Proposal 中的边在批准前只是 Ledger 候选，只有 DesignCommitter 原子提交后的 EdgeRecord 才能进入活动图和 Impact 传播。
+
 ## 3. Event：哪些事实已经发生，此刻又在发生什么
 
-Harness 使用两条不同生命周期的事件流。Lifecycle Event 是写入 Git-native Ledger 的权威治理事实；Observation Event 是写入 Live Spool 的实时观察。两者可以在读取侧关联展示，但不能互相替代。
+Harness 使用两条不同生命周期的事件流。43+ 类 Lifecycle Event 是写入 Git-native Ledger 的权威治理事实；11 类 Observation Event 是写入 Live Spool 的实时观察。两者可以在读取侧关联展示，但不能互相替代。
 
-### 3.1 15 类权威 Lifecycle Event
+### 3.1 15 类通用 Lifecycle Event
 
 Lifecycle Event 记录一次受治理操作已经发生的关键里程碑。每条事件绑定 `project_id`、`iteration_id`、`workflow_operation_id`、`ledger_operation_id`、单调 `sequence`、`timestamp` 和结构化 `payload`。它们随 append-only Ledger 提交，可重放、可验证，并参与恢复、审计、投影和完成状态判断。
 
@@ -221,7 +280,41 @@ Lifecycle Event 记录一次受治理操作已经发生的关键里程碑。每�
 
 Lifecycle Event 是“已经提交了什么治理事实”。Dashboard、Projection、Audit 和 Resume 可以重放这些记录；实时通知即使名称相同，也不能替代 Ledger 中的事件。
 
-### 3.2 11 类实时 Observation Event
+### 3.2 19 类受管 Capture Lifecycle Event
+
+Capture 的权威状态主要由 append-only record 与 checkpoint 重建；以下事件陈述已经提交的会话、澄清、评审、风险和接受事实：
+
+| 分组 | Event | 权威含义 |
+| --- | --- | --- |
+| 会话与上下文 | `CaptureSessionStarted`、`ContextCompilationStarted`、`ContextCompilationCompleted` | 建立 Capture 会话，并固定 Proposal/Review purpose 的上下文编译边界。 |
+| Proposal 与校验 | `PrdProposalRequested`、`PrdProposalReceived`、`PrdValidationCompleted` | 证明 Proposal 调用与确定性硬门禁结果。 |
+| 澄清 | `ClarificationRequested`、`ClarificationAnswered` | 把 Question、Answer、session revision 和 SourceBinding 串成可复验 lineage。 |
+| 独立评审 | `PrdReviewRequested`、`PrdReviewCompleted` | 记录与 Proposal 会话隔离的独立 Review。 |
+| 风险与 Profile | `CaptureRiskAssessed`、`CaptureProfileRecommendationCreated` | 保存风险自适应批准输入与三档建议。 |
+| 批准 | `PrdApprovalRequired`、`PrdApprovalDecisionApplied`、`PrdApprovalDeferred` | 将人类/Policy 决议绑定到精确 Proposal 与 object digest。 |
+| 终态与修订 | `PrdAccepted`、`PrdRevisionRequested`、`CaptureBlocked`、`CaptureCancelled` | 记录不可变 accepted PRD、回退修订、typed blocker 或显式取消。 |
+
+accepted PRD、RequirementBaseline、Intent/Requirement/Constraint/Test Nodes、lineage 和 Graph edges 在同一 Ledger transaction 原子提交；Review 通过或模型自述都不能单独产生 `PrdAccepted`。
+
+### 3.3 9 类可证明 TDD Lifecycle Event
+
+TDD 事件证明测试补丁冻结、Red/Green 顺序、生产写权限解锁和 Cycle 完成事实：
+
+| Event | 权威含义 |
+| --- | --- |
+| `TddCycleStarted` | 绑定 TaskTddContract、Assertion、DesignSet、Plan、baseline 与 attempt。 |
+| `TddBaselineAccepted` | 证明实现前基线健康，排除已有失败伪装成 Red。 |
+| `TddTestPatchFrozen` | 冻结 canonical test patch；后续漂移使 Cycle 失效。 |
+| `TddRedAccepted` | 证明同一测试按 Failure Oracle 得到预期失败。 |
+| `TddImplementationUnlocked` | Red 被接受后才签发 production write Grant。 |
+| `TddGreenAccepted` | 证明同一 patch、Gate、framework 和 environment 已通过。 |
+| `TddRefactorAccepted` | 记录不改变外部行为且完整门禁仍通过的重构。 |
+| `TddCycleCompleted` | 形成当前有效的 Baseline/Red/Green 配对记录。 |
+| `TddCycleInvalidated` | 任一 Contract、patch、Gate、environment 或上游 digest 漂移后使旧证明失效。 |
+
+这些事件与统一 Evidence Node、`TddCycleRecord` 和 `TaskVerdict` 配合，机械证明“先红再绿”；stdout、文件时间戳和 Agent 完成声明不参与 proof。
+
+### 3.4 11 类实时 Observation Event
 
 Observation Event 回答长运行过程“现在进行到哪里、是否仍有心跳、预算怎样变化、为什么暂停”。每条事件绑定 `stream_id`、单调 `sequence`、`observation_key`、project、iteration 和 workflow operation，写入可删除的 Live Spool。
 
@@ -247,19 +340,37 @@ Observation Event 回答长运行过程“现在进行到哪里、是否仍有�
 
 Live Spool 可以安全删除。丢失 Observation Event 只影响实时体验，不影响 Ledger 重放、SQLite 重建、审计结论、Evidence 绑定或 Iteration Snapshot。
 
+### 3.5 受管模型调用记录
+
+模型调用状态通过 Ledger runtime records 留存，不为每个调用制造 Graph Node 或公共 phase：
+
+```text
+ModelInvocationPlanned
+  → ModelInvocationStarted
+  → ModelInvocationCompleted | ModelInvocationFailed | ModelInvocationIndeterminate
+  → ModelResultValidated | ModelResultRejected
+  → ModelResultConsumed | ModelResultInvalidated
+```
+
+`ModelInvocationRecord` 绑定 port/purpose、input/prompt/Schema/model/config/budget digest、conversation/run/attempt identity、token/step/duration、raw output artifact、normalized result 和 typed failure。领域结果分别保存在 `ImpactAdvisoryRecord`、`DesignReviewRecord`、`PlanProposalRecord`、`FeedbackAnalysisRecord` 与 `GroundedSynthesisRecord`；只有通过确定性 Validator、领域审批和原子提交后，accepted 工程事实才进入 Graph。
+
 ## 4. 一次变更如何穿过整条闭环
 
 以下例子从一个已接受 `Requirement` 内容变化开始：
 
-1. **Capture** 把需求修订记录为 Change Seed，并保留旧 revision，不覆盖历史。
-2. **Impact** 从 Requirement 出发：沿 inverse `ADDRESSES` 找到回应需求的 Decision；再沿 forward `SHAPES` 找到 Component；从 Component 沿 inverse `REALIZES` 找到 CodeArtifact；同时沿 inverse `IMPLEMENTS` 找到承担实现的 Task。
-3. Impact Engine 对每条最短解释路径累计风险。若路径经过 high-risk `REALIZES`，目标至少是 high risk；若经过 proposed 或低置信度推理边，目标只能进入 `inspect`。
-4. 结果固化为 proposed `ImpactSet`。只有内容 digest 获得有效 Approval 后，Planning 才能据此生成声明式 `ExecutionPlan` 和原子 `Task`。
-5. **Context** 为每个 Task 编译最小 `ContextBundle`，Policy、Approval、Impact coverage、能力和预算在 RunStarted 前共同形成执行授权。
-6. **Execute** 由直接执行、受控 Agent Adapter 或人工完成。`Run` 记录 Provider 的真实 outcome；Checkpoint 支持中断恢复，工具调用前后写入权威生命周期事件。
-7. **Verify / Evaluate** 执行 Gate、Test 与 EvaluationCase，并形成 `Run PRODUCES Evidence`、`Evidence SUPPORTS / REFUTES ...` 的审计链。Agent 的完成声明不能替代 Gate 和 Evidence。
-8. 若验证失败，系统创建 `Finding → RootCauseAnalysis → ImprovementCandidate`。改进候选通过 `PROPOSES_CHANGE_TO` 指向真正的上游对象，并用 `TRIGGERS` 记录新的 ImpactSet，重新进入 Impact，而不是由下游相位越权改写需求或架构。
-9. 所有必要 Gate、Evaluation、审计和 Evidence 通过后，**Snapshot** 记录 source commit、ledger commit 和完成状态；否则生成 blocked 状态并路由到对应上游相位。
+1. **Profile / Capability**：用户确认 Lite、Standard 或 Governed。Capability Compiler 结合风险、Policy、Provider 和依赖闭包生成 final CapabilityPlan；Workflow Engine 只运行实际启用的 DAG node。
+2. **Capture**：adopt 时由 `project_discovery` 先提供带来源的项目事实候选；受管澄清状态机把 Intent 变成结构化 PrdProposal，经过硬门禁、独立 Review、风险评估和必要批准后，原子提交 accepted PRD、RequirementBaseline、Criterion/Test seeds 与 Graph facts。需求修订成为 Change Seed，旧 revision 不被覆盖。
+3. **Impact**：确定性引擎从 Requirement 出发，沿 inverse `ADDRESSES`、forward `SHAPES`、both `SPECIFIES`、inverse `REALIZES` 和 inverse `IMPLEMENTS` 找到设计契约、组件、代码与任务，并对稳定最短路径累计风险。
+4. **Impact Advisory**：模型只能增补遗漏候选和风险信号。Harness 拒绝删除确定性 entry、降低风险、改写传播方向、激活禁止推理边或缺少来源的结果；完整 ImpactSet 仍需统一校验和批准。
+5. **Design**：DesignProposalPort 提出 Decision、Component、API/Data/UI 契约和 test_strategy；纯 Validator 检查覆盖、关系、冲突与风险；独立 DesignReviewPort 返回结构化 Findings。Critical Finding 阻止 ApprovalRequest，人工批准后 DesignCommitter 才原子物化 accepted DesignSet、DesignArtifact 和关系边。
+6. **Plan**：Harness 先从每个原子 Criterion 确定性编译 canonical Assertion；PlanProposalPort 只建议 Task/Cluster/DAG/并行和 Context budget。Plan Compiler 独占 Assertion 与 Task identity、覆盖唯一性、路径、Gate、TDD Contract 和最终 DAG。
+7. **Context**：确定性 selector 为每个 Task 选择最小、fresh、受预算约束的 ContextBundle；`context_enrichment` 只补充带来源的术语、摘要和相关性解释，不能删除 mandatory source 或扩大读取/执行权限。ExecutionPreflight 复验所有启用能力的 digest。
+8. **Execute / TDD**：直接执行、受控 Agent 或人工在 CapabilityGrant 内工作。strict_tdd 适用时，隔离工作区固定执行 Baseline → 冻结测试补丁 → Red → 解锁 production Grant → Green → Refactor；Red 前无法写生产路径。
+9. **Verify / Evaluate**：Gate、Test 与 EvaluationCase 形成 `Run PRODUCES Evidence`、`Evidence SUPPORTS / REFUTES ...` 审计链。TaskVerdict 逐 Assertion 消费当前有效 Evidence；Agent、模型或 transcript 的完成声明不能替代它。
+10. **Feedback**：验证或评审失败创建 Finding。确定性 RCA 规则优先；只有未分类、多个信号冲突或 Policy 要求语义解释时才调用 FeedbackAnalysisPort。低置信度/高风险候选经人工复核后，Router 才决定 Capture/Impact/Design/Plan 的目标层和精确失效范围。
+11. **Cascade**：已验证的 Change Seed 通过 `PROPOSES_CHANGE_TO` 和 `TRIGGERS` 回到真正拥有修改权的上游层；旧 Approval、Plan、Context、Grant、TDD Cycle 与 Evidence 只追加 invalidation/supersede，不改写历史。
+12. **Snapshot**：所有必要 Gate、Evaluation、审计、TaskVerdict 和 Evidence 通过后，先提交权威 Snapshot，记录 source commit、ledger commit 和完成状态。
+13. **Narrative**：`iteration_narrative` 在 Snapshot 之后生成带引用的结果、证据、遗留风险与后续建议。失败只创建可恢复 Projection Finding，不反向改变 Snapshot/Verdict。
 
 这条链说明 Harness 的核心不是让 Agent 自由循环，而是让 Graph 提供可解释范围、让 Policy 和 Approval 提供控制、让 Event 与 Evidence 提供完成真相，再把失败可靠地反馈为下一轮受治理变化。
 
@@ -267,12 +378,12 @@ Live Spool 可以安全删除。丢失 Observation Event 只影响实时体验�
 
 | 层 | 保存什么 | 是否决定完成真相 | 丢失后的影响 |
 | --- | --- | --- | --- |
-| Git-native Ledger | Node、Edge、Lifecycle Event、批准、Evidence 和 Snapshot 等权威记录 | 是 | 必须从 Git 恢复，不能由缓存推断替代 |
+| Git-native Ledger | Node、Edge、Lifecycle Event、Profile/Capability/Capture/Design/TDD/Model Invocation records、批准、Evidence 和 Snapshot 等权威记录 | 是 | 必须从 Git 恢复，不能由缓存推断替代 |
 | Live Spool | Phase、Run、Gate、预算、心跳和等待批准等 Observation Event | 否 | 只损失实时展示，不影响恢复和审计 |
 | SQLite Projection | 从 Ledger 物化的分页、邻域、路径和 Dashboard 查询索引 | 否 | 删除后由 Ledger 确定性重建 |
 | Markdown Projection | PRD、Architecture、Spec、Plan、tasks 和 Snapshot 的人类可读投影 | 否 | 检测漂移后从权威图重新生成 |
 
-读取 Dashboard 时，服务可以把 Ledger 生命周期事实、SQLite 查询结果和 Live Spool 观察合并为一个视图。这个合并只发生在 Read API，不会把实时观察或缓存状态写回权威账本。
+读取 Dashboard 时，服务可以把 Ledger 生命周期事实、SQLite 查询结果、受管模型用量/来源和 Live Spool 观察合并为一个视图。这个合并只发生在 Read API，不会把实时观察、模型摘要或缓存状态写回权威账本。Approval 卡片可优先展示 `approval_brief`，但必须同时保留 Harness 从 canonical object 确定性生成的对象、风险、范围和 digest。
 
 ## 6. 代码权威来源
 
@@ -283,5 +394,11 @@ Live Spool 可以安全删除。丢失 Observation Event 只影响实时体验�
 - [风险与分类](../packages/graph/src/impact/scoring.ts)：`must-change`、`inspect`、`informational`
 - [Lifecycle Event Schema](../packages/core/src/schema/event.ts)：`EVENT_TYPES`
 - [Observation Event Schema](../packages/core/src/schema/observation.ts)：`OBSERVATION_EVENT_TYPES`
+- [Slim Profiles 与 Capability Kernel](superpowers/specs/2026-08-18-harness-slim-profiles-design.md)
+- [受管 PRD Capture](superpowers/specs/2026-08-18-intent-to-prd-capture-design.md)
+- [DesignSet 生命周期与 SPECIFIES](superpowers/specs/2026-08-18-designset-lifecycle-design.md)
+- [可证明 TDD 事件与 Evidence](superpowers/specs/2026-08-18-provable-tdd-protocol-design.md)
+- [模型建议 Adapter 与 Grounded Synthesis](superpowers/specs/2026-08-19-model-advisory-adapters-design.md)
+- [Protocol 1.1 统一 19-task 计划](superpowers/plans/2026-08-18-protocol-1.1-unified-implementation-plan.md)
 
-`RELATION_COMPATIBILITY` 决定某种 Edge 允许连接哪些 source / target Node 类型；`PROPAGATION_RULES` 决定 Impact Engine 是否以及怎样穿越其中 17 种关系。合法端点不等于允许传播，这两个注册表必须同时阅读。
+`RELATION_COMPATIBILITY` 决定某种 Edge 允许连接哪些 source / target Node 类型；`PROPAGATION_RULES` 决定 Impact Engine 是否以及怎样穿越其中 18 种关系。Capability registry 决定本次 Operation 是否物化 Impact、Design、Evaluation、Strict TDD、Audit 与对应模型 slot。合法端点不等于允许传播，模型建议也不等于 accepted Graph fact；关系注册表、CapabilityPlan、领域 Validator 与批准记录必须一起阅读。
