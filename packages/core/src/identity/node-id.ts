@@ -33,7 +33,8 @@ function bytesToUuid(bytes: Buffer): string {
 
 let cachedIdentityNamespace: string | undefined;
 
-function identityNamespace(): string {
+/** Shared UUIDv5 namespace from which all deterministic harness IDs derive. */
+export function identityNamespace(): string {
   cachedIdentityNamespace ??= uuidv5(UUID_URL_NAMESPACE, IDENTITY_NAMESPACE_NAME);
   return cachedIdentityNamespace;
 }

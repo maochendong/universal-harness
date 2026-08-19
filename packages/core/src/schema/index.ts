@@ -1,5 +1,7 @@
 export { PERSISTED_SOURCES } from "./common.js";
+export * from "./domain-registry.js";
 export * from "./edge.js";
+export * from "./envelope.js";
 export * from "./event.js";
 export * from "./feedback.js";
 export * from "./node.js";

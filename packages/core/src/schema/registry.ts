@@ -3,6 +3,8 @@ import addFormatsImport, { type FormatsPlugin } from "ajv-formats";
 import type { TSchema } from "@sinclair/typebox";
 
 import { isProtocolCompatible } from "../version.js";
+import { PROTOCOL_1_1_VERSION } from "../protocol.js";
+import { createDomainSchemaRegistry, mergeSchemaDocuments } from "./domain-registry.js";
 import { EdgeSchema } from "./edge.js";
 import { EventSchema } from "./event.js";
 import { FeedbackSchema } from "./feedback.js";
@@ -152,3 +154,19 @@ export const JSON_SCHEMA_DOCUMENTS = Object.fromEntries(
     schemaDocument(`${key}.schema.json`, SCHEMA_REGISTRY[key]),
   ]),
 ) as Record<string, Record<string, unknown>>;
+
+/**
+ * Protocol 1.1 domain schemas register here as their owning tasks land
+ * (Profile T2, Capability T3, Capture T4-T7, and so on). Task 1 ships only
+ * the extensible plumbing, so the registry starts empty.
+ */
+export const PROTOCOL_1_1_SCHEMA_REGISTRY = createDomainSchemaRegistry({
+  protocolVersion: PROTOCOL_1_1_VERSION,
+  entries: [],
+});
+
+/** Every document scripts/write-schemas.mjs persists into `schemas/`. */
+export const SCHEMA_EXPORT_DOCUMENTS = mergeSchemaDocuments(
+  JSON_SCHEMA_DOCUMENTS,
+  PROTOCOL_1_1_SCHEMA_REGISTRY.documents(),
+);
