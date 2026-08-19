@@ -39,10 +39,7 @@
       "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
       "type": "string"
     },
-    "profile_decision_digest": {
-      "pattern": "^[a-f0-9]{64}$",
-      "type": "string"
-    },
+    "profile_decision_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
     "policy_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
     "config_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
     "baseline_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },

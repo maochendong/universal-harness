@@ -1,0 +1,83 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.universal-harness.dev/1.1/clarification-question.schema.json",
+  "additionalProperties": false,
+  "type": "object",
+  "required": [
+    "protocol_version",
+    "record_kind",
+    "question_id",
+    "session_id",
+    "round",
+    "source",
+    "target_kind",
+    "missing_dimension",
+    "question",
+    "required",
+    "status",
+    "content_digest",
+    "record_digest"
+  ],
+  "properties": {
+    "protocol_version": { "const": "1.1.0", "type": "string" },
+    "record_kind": { "const": "clarification_question", "type": "string" },
+    "question_id": {
+      "minLength": 3,
+      "maxLength": 160,
+      "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+      "type": "string"
+    },
+    "session_id": {
+      "minLength": 3,
+      "maxLength": 160,
+      "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+      "type": "string"
+    },
+    "round": { "minimum": 1, "type": "integer" },
+    "source": {
+      "anyOf": [
+        { "const": "deterministic_gate", "type": "string" },
+        { "const": "proposal", "type": "string" },
+        { "const": "review", "type": "string" },
+        { "const": "human", "type": "string" }
+      ]
+    },
+    "target_kind": {
+      "anyOf": [
+        { "const": "intent", "type": "string" },
+        { "const": "prd_section", "type": "string" },
+        { "const": "requirement", "type": "string" },
+        { "const": "constraint", "type": "string" },
+        { "const": "acceptance_criterion", "type": "string" },
+        { "const": "risk", "type": "string" },
+        { "const": "glossary", "type": "string" }
+      ]
+    },
+    "target_id": { "minLength": 1, "type": "string" },
+    "missing_dimension": { "minLength": 1, "type": "string" },
+    "question": { "minLength": 1, "type": "string" },
+    "options": {
+      "minItems": 1,
+      "type": "array",
+      "items": {
+        "additionalProperties": false,
+        "type": "object",
+        "required": ["option_id", "label"],
+        "properties": {
+          "option_id": { "minLength": 1, "maxLength": 120, "type": "string" },
+          "label": { "minLength": 1, "type": "string" }
+        }
+      }
+    },
+    "required": { "type": "boolean" },
+    "status": {
+      "anyOf": [
+        { "const": "open", "type": "string" },
+        { "const": "answered", "type": "string" },
+        { "const": "superseded", "type": "string" }
+      ]
+    },
+    "content_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
+    "record_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" }
+  }
+}

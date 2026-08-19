@@ -1,0 +1,25 @@
+{
+  "protocol_version": "1.1.0",
+  "record_kind": "clarification_question",
+  "question_id": "clarification-question_ddeae800-8227-5ce1-b8bc-67e387401fa4",
+  "session_id": "capture-session_6939dbbf-4ffb-5e86-beea-06e8fafa4a8c",
+  "round": 1,
+  "source": "proposal",
+  "target_kind": "constraint",
+  "missing_dimension": "verification_intent",
+  "question": "幂等约束如何验证？",
+  "options": [
+    {
+      "option_id": "contract-test",
+      "label": "契约测试"
+    },
+    {
+      "option_id": "integration-test",
+      "label": "集成测试"
+    }
+  ],
+  "required": false,
+  "status": "open",
+  "content_digest": "ba290bf968b20f6335b175ef10c5e33da0c44b977b98b8cbeb91ccbf325b95d0",
+  "record_digest": "96435e965ea9cc0c0ea0ce8bccac26e1a37e40c5cefe80c35207cf63162241ce"
+}

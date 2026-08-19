@@ -1,0 +1,122 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.universal-harness.dev/1.1/capture-session.schema.json",
+  "additionalProperties": false,
+  "type": "object",
+  "required": [
+    "protocol_version",
+    "record_kind",
+    "session_id",
+    "revision",
+    "workflow_operation_id",
+    "iteration_id",
+    "state",
+    "intent_text",
+    "intent_digest",
+    "project_profile_digest",
+    "profile_decision_digest",
+    "capture_policy_digest",
+    "project_baseline_digest",
+    "pending_question_ids",
+    "round",
+    "budget_use",
+    "record_digest"
+  ],
+  "properties": {
+    "protocol_version": { "const": "1.1.0", "type": "string" },
+    "record_kind": { "const": "capture_session", "type": "string" },
+    "session_id": {
+      "minLength": 3,
+      "maxLength": 160,
+      "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+      "type": "string"
+    },
+    "revision": { "minimum": 1, "type": "integer" },
+    "workflow_operation_id": {
+      "minLength": 3,
+      "maxLength": 160,
+      "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+      "type": "string"
+    },
+    "iteration_id": {
+      "minLength": 3,
+      "maxLength": 160,
+      "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+      "type": "string"
+    },
+    "state": {
+      "anyOf": [
+        { "const": "intent_received", "type": "string" },
+        { "const": "context_compiling", "type": "string" },
+        { "const": "proposing", "type": "string" },
+        { "const": "validating", "type": "string" },
+        { "const": "clarification_required", "type": "string" },
+        { "const": "reviewing", "type": "string" },
+        { "const": "review_input_required", "type": "string" },
+        { "const": "risk_assessing", "type": "string" },
+        { "const": "revision_required", "type": "string" },
+        { "const": "profile_decision_required", "type": "string" },
+        { "const": "approval_required", "type": "string" },
+        { "const": "approval_deferred", "type": "string" },
+        { "const": "accepted", "type": "string" },
+        { "const": "blocked", "type": "string" },
+        { "const": "cancelled", "type": "string" }
+      ]
+    },
+    "blocked_reason": {
+      "anyOf": [
+        { "const": "review_provider_required", "type": "string" },
+        { "const": "capture_budget_exhausted", "type": "string" },
+        { "const": "review_blocked", "type": "string" },
+        { "const": "risk_policy_denied", "type": "string" }
+      ]
+    },
+    "intent_text": { "minLength": 1, "type": "string" },
+    "intent_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
+    "project_profile_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
+    "profile_decision_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
+    "capture_policy_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
+    "project_baseline_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
+    "proposal_context_bundle_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
+    "review_context_bundle_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
+    "current_proposal_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
+    "current_validation_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
+    "current_review_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
+    "current_risk_assessment_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
+    "current_approval_request_id": {
+      "minLength": 3,
+      "maxLength": 160,
+      "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+      "type": "string"
+    },
+    "applied_approval_decision_id": {
+      "minLength": 3,
+      "maxLength": 160,
+      "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+      "type": "string"
+    },
+    "pending_question_ids": {
+      "uniqueItems": true,
+      "type": "array",
+      "items": {
+        "minLength": 3,
+        "maxLength": 160,
+        "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+        "type": "string"
+      }
+    },
+    "round": { "minimum": 0, "type": "integer" },
+    "budget_use": {
+      "additionalProperties": false,
+      "type": "object",
+      "required": ["clarification_rounds", "proposal_invocations", "review_invocations"],
+      "properties": {
+        "clarification_rounds": { "minimum": 0, "type": "integer" },
+        "proposal_invocations": { "minimum": 0, "type": "integer" },
+        "review_invocations": { "minimum": 0, "type": "integer" }
+      }
+    },
+    "supersedes_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
+    "record_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" }
+  }
+}

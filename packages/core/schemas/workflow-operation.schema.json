@@ -4,20 +4,9 @@
   "additionalProperties": false,
   "allOf": [
     {
-      "if": {
-        "properties": { "state": { "const": "blocked" } },
-        "required": ["state"]
-      },
-      "then": {
-        "properties": { "resume_state": {} },
-        "required": ["resume_state"]
-      },
-      "else": {
-        "not": {
-          "properties": { "resume_state": {} },
-          "required": ["resume_state"]
-        }
-      }
+      "if": { "properties": { "state": { "const": "blocked" } }, "required": ["state"] },
+      "then": { "properties": { "resume_state": {} }, "required": ["resume_state"] },
+      "else": { "not": { "properties": { "resume_state": {} }, "required": ["resume_state"] } }
     }
   ],
   "type": "object",

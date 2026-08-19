@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.universal-harness.dev/1.1/clarification-answer.schema.json",
+  "additionalProperties": false,
+  "type": "object",
+  "required": [
+    "protocol_version",
+    "record_kind",
+    "answer_id",
+    "session_id",
+    "question_id",
+    "answer_kind",
+    "value",
+    "actor",
+    "expected_session_digest",
+    "content_digest",
+    "record_digest"
+  ],
+  "properties": {
+    "protocol_version": { "const": "1.1.0", "type": "string" },
+    "record_kind": { "const": "clarification_answer", "type": "string" },
+    "answer_id": {
+      "minLength": 3,
+      "maxLength": 160,
+      "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+      "type": "string"
+    },
+    "session_id": {
+      "minLength": 3,
+      "maxLength": 160,
+      "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+      "type": "string"
+    },
+    "question_id": {
+      "minLength": 3,
+      "maxLength": 160,
+      "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+      "type": "string"
+    },
+    "answer_kind": {
+      "anyOf": [
+        { "const": "selected_option", "type": "string" },
+        { "const": "free_text", "type": "string" },
+        { "const": "structured", "type": "string" }
+      ]
+    },
+    "value": {},
+    "actor": { "minLength": 1, "maxLength": 200, "type": "string" },
+    "expected_session_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
+    "content_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
+    "record_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" }
+  }
+}

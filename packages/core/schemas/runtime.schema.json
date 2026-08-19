@@ -269,10 +269,7 @@
             { "const": "handoff", "type": "string" }
           ]
         },
-        "termination_reason": {
-          "const": "process_interruption",
-          "type": "string"
-        },
+        "termination_reason": { "const": "process_interruption", "type": "string" },
         "partial_evidence_ids": {
           "uniqueItems": true,
           "type": "array",
@@ -379,10 +376,7 @@
           "items": { "pattern": "^[a-f0-9]{64}$", "type": "string" }
         },
         "impact_set_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
-        "impact_coverage_digest": {
-          "pattern": "^[a-f0-9]{64}$",
-          "type": "string"
-        },
+        "impact_coverage_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
         "context_bundle_digests": {
           "minItems": 1,
           "uniqueItems": true,
@@ -396,10 +390,7 @@
           "items": { "pattern": "^[a-f0-9]{64}$", "type": "string" }
         },
         "policy_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
-        "adapter_profile_digest": {
-          "pattern": "^[a-f0-9]{64}$",
-          "type": "string"
-        },
+        "adapter_profile_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
         "baseline_commit": { "pattern": "^[0-9a-f]{7,40}$", "type": "string" },
         "effective_risk": {
           "anyOf": [
@@ -548,30 +539,15 @@
               "type": "array",
               "items": { "pattern": "^[a-f0-9]{64}$", "type": "string" }
             },
-            "effective_policy_digest": {
-              "pattern": "^[a-f0-9]{64}$",
-              "type": "string"
-            },
+            "effective_policy_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
             "plan_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
-            "context_bundle_digest": {
-              "pattern": "^[a-f0-9]{64}$",
-              "type": "string"
-            },
-            "adapter_profile_digest": {
-              "pattern": "^[a-f0-9]{64}$",
-              "type": "string"
-            },
-            "baseline_commit": {
-              "pattern": "^[0-9a-f]{7,40}$",
-              "type": "string"
-            },
+            "context_bundle_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
+            "adapter_profile_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
+            "baseline_commit": { "pattern": "^[0-9a-f]{7,40}$", "type": "string" },
             "spec_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" }
           }
         },
-        "authorization_digest": {
-          "pattern": "^[a-f0-9]{64}$",
-          "type": "string"
-        },
+        "authorization_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
         "issued_at": { "format": "date-time", "type": "string" },
         "digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
         "extensions": {

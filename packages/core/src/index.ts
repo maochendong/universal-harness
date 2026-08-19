@@ -1,4 +1,5 @@
 export * from "./capability/index.js";
+export * from "./capture/index.js";
 export * from "./identity/index.js";
 export * from "./ledger/index.js";
 export * from "./profile/index.js";

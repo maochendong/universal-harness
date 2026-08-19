@@ -56,10 +56,7 @@
       ]
     },
     "project_profile_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
-    "profile_decision_digest": {
-      "pattern": "^[a-f0-9]{64}$",
-      "type": "string"
-    },
+    "profile_decision_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
     "requirement_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
     "risk_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
     "policy_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
@@ -155,11 +152,7 @@
               "checkpoint"
             ],
             "properties": {
-              "node_id": {
-                "minLength": 1,
-                "pattern": "^[a-z][a-z0-9_]*$",
-                "type": "string"
-              },
+              "node_id": { "minLength": 1, "pattern": "^[a-z][a-z0-9_]*$", "type": "string" },
               "node_kind": {
                 "anyOf": [
                   { "const": "kernel", "type": "string" },
@@ -177,11 +170,7 @@
               },
               "depends_on": {
                 "type": "array",
-                "items": {
-                  "minLength": 1,
-                  "pattern": "^[a-z][a-z0-9_]*$",
-                  "type": "string"
-                }
+                "items": { "minLength": 1, "pattern": "^[a-z][a-z0-9_]*$", "type": "string" }
               },
               "consumes": {
                 "type": "array",

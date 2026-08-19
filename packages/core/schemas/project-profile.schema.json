@@ -40,10 +40,7 @@
         { "const": "governed", "type": "string" }
       ]
     },
-    "profile_definition_digest": {
-      "pattern": "^[a-f0-9]{64}$",
-      "type": "string"
-    },
+    "profile_definition_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
     "policy_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
     "approval_request_id": {
       "minLength": 3,

@@ -4,36 +4,16 @@
   "additionalProperties": false,
   "allOf": [
     {
-      "if": {
-        "properties": { "type": { "const": "Iteration" } },
-        "required": ["type"]
-      },
-      "then": {
-        "properties": { "iteration_state": {} },
-        "required": ["iteration_state"]
-      },
+      "if": { "properties": { "type": { "const": "Iteration" } }, "required": ["type"] },
+      "then": { "properties": { "iteration_state": {} }, "required": ["iteration_state"] },
       "else": {
-        "not": {
-          "properties": { "iteration_state": {} },
-          "required": ["iteration_state"]
-        }
+        "not": { "properties": { "iteration_state": {} }, "required": ["iteration_state"] }
       }
     },
     {
-      "if": {
-        "properties": { "type": { "const": "Policy" } },
-        "required": ["type"]
-      },
-      "then": {
-        "properties": { "policy_fields": {} },
-        "required": ["policy_fields"]
-      },
-      "else": {
-        "not": {
-          "properties": { "policy_fields": {} },
-          "required": ["policy_fields"]
-        }
-      }
+      "if": { "properties": { "type": { "const": "Policy" } }, "required": ["type"] },
+      "then": { "properties": { "policy_fields": {} }, "required": ["policy_fields"] },
+      "else": { "not": { "properties": { "policy_fields": {} }, "required": ["policy_fields"] } }
     }
   ],
   "type": "object",

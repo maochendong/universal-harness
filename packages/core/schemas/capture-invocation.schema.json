@@ -1,0 +1,60 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.universal-harness.dev/1.1/capture-invocation.schema.json",
+  "additionalProperties": false,
+  "type": "object",
+  "required": [
+    "protocol_version",
+    "record_kind",
+    "invocation_id",
+    "session_id",
+    "session_revision",
+    "session_digest",
+    "workflow_operation_id",
+    "purpose",
+    "invocation_key",
+    "binding_digests",
+    "record_digest"
+  ],
+  "properties": {
+    "protocol_version": { "const": "1.1.0", "type": "string" },
+    "record_kind": { "const": "capture_invocation", "type": "string" },
+    "invocation_id": {
+      "minLength": 3,
+      "maxLength": 160,
+      "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+      "type": "string"
+    },
+    "session_id": {
+      "minLength": 3,
+      "maxLength": 160,
+      "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+      "type": "string"
+    },
+    "session_revision": { "minimum": 1, "type": "integer" },
+    "session_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
+    "workflow_operation_id": {
+      "minLength": 3,
+      "maxLength": 160,
+      "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+      "type": "string"
+    },
+    "purpose": {
+      "anyOf": [
+        { "const": "context_proposal", "type": "string" },
+        { "const": "context_review", "type": "string" },
+        { "const": "proposal", "type": "string" },
+        { "const": "review", "type": "string" },
+        { "const": "project_discovery", "type": "string" },
+        { "const": "approval_brief", "type": "string" }
+      ]
+    },
+    "invocation_key": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
+    "binding_digests": {
+      "uniqueItems": true,
+      "type": "array",
+      "items": { "pattern": "^[a-f0-9]{64}$", "type": "string" }
+    },
+    "record_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" }
+  }
+}

@@ -1,0 +1,10 @@
+{
+  "protocol_version": "1.1.0",
+  "record_kind": "capture_checkpoint",
+  "checkpoint_id": "capture-checkpoint_77f3eed6-6f11-5761-9d19-9426f61b3cc9",
+  "session_id": "capture-session_6939dbbf-4ffb-5e86-beea-06e8fafa4a8c",
+  "session_revision": 1,
+  "state": "intent_received",
+  "session_digest": "f0103e048dd6fa9d9a3db656e8795e5e5b1953b85e9b3c30a5ed509e40e49cd2",
+  "record_digest": "22b1b240fb7a3c799b3e62bce39a4d30881a23458d7dc147b70ca5504a8a9d74"
+}

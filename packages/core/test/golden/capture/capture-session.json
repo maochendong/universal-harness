@@ -1,0 +1,23 @@
+{
+  "protocol_version": "1.1.0",
+  "record_kind": "capture_session",
+  "session_id": "capture-session_6939dbbf-4ffb-5e86-beea-06e8fafa4a8c",
+  "revision": 1,
+  "workflow_operation_id": "operation_01K1ABCDEFGHIJKLMNO",
+  "iteration_id": "iteration_01K1ABCDEFGHIJKLMNO",
+  "state": "intent_received",
+  "intent_text": "为订单服务增加幂等重试。",
+  "intent_digest": "019eeab7d81913cc58708a8347de6bffaaa8adfde67ff571658cbc0c7aded000",
+  "project_profile_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "profile_decision_digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "capture_policy_digest": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+  "project_baseline_digest": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+  "pending_question_ids": [],
+  "round": 0,
+  "budget_use": {
+    "clarification_rounds": 0,
+    "proposal_invocations": 0,
+    "review_invocations": 0
+  },
+  "record_digest": "f0103e048dd6fa9d9a3db656e8795e5e5b1953b85e9b3c30a5ed509e40e49cd2"
+}

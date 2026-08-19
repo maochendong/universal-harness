@@ -1,0 +1,13 @@
+{
+  "protocol_version": "1.1.0",
+  "record_kind": "clarification_answer",
+  "answer_id": "clarification-answer_0cd64e97-e4de-5bfb-ac79-04b3bd254627",
+  "session_id": "capture-session_6939dbbf-4ffb-5e86-beea-06e8fafa4a8c",
+  "question_id": "clarification-question_ddeae800-8227-5ce1-b8bc-67e387401fa4",
+  "answer_kind": "free_text",
+  "value": "重复请求返回相同订单且副作用只发生一次。",
+  "actor": "human:reviewer",
+  "expected_session_digest": "f0103e048dd6fa9d9a3db656e8795e5e5b1953b85e9b3c30a5ed509e40e49cd2",
+  "content_digest": "695fe39c5278c05415969006b9439d050b5b1847de58f1600aa7e5bc14f5578a",
+  "record_digest": "7b575afc2ab43a13f871bc8af2062fc89ff9ea21836d77ad1b08e9950fec2d9f"
+}

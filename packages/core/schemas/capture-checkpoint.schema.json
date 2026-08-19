@@ -1,0 +1,54 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.universal-harness.dev/1.1/capture-checkpoint.schema.json",
+  "additionalProperties": false,
+  "type": "object",
+  "required": [
+    "protocol_version",
+    "record_kind",
+    "checkpoint_id",
+    "session_id",
+    "session_revision",
+    "state",
+    "session_digest",
+    "record_digest"
+  ],
+  "properties": {
+    "protocol_version": { "const": "1.1.0", "type": "string" },
+    "record_kind": { "const": "capture_checkpoint", "type": "string" },
+    "checkpoint_id": {
+      "minLength": 3,
+      "maxLength": 160,
+      "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+      "type": "string"
+    },
+    "session_id": {
+      "minLength": 3,
+      "maxLength": 160,
+      "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+      "type": "string"
+    },
+    "session_revision": { "minimum": 1, "type": "integer" },
+    "state": {
+      "anyOf": [
+        { "const": "intent_received", "type": "string" },
+        { "const": "context_compiling", "type": "string" },
+        { "const": "proposing", "type": "string" },
+        { "const": "validating", "type": "string" },
+        { "const": "clarification_required", "type": "string" },
+        { "const": "reviewing", "type": "string" },
+        { "const": "review_input_required", "type": "string" },
+        { "const": "risk_assessing", "type": "string" },
+        { "const": "revision_required", "type": "string" },
+        { "const": "profile_decision_required", "type": "string" },
+        { "const": "approval_required", "type": "string" },
+        { "const": "approval_deferred", "type": "string" },
+        { "const": "accepted", "type": "string" },
+        { "const": "blocked", "type": "string" },
+        { "const": "cancelled", "type": "string" }
+      ]
+    },
+    "session_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
+    "record_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" }
+  }
+}

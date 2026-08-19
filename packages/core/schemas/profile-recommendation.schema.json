@@ -65,10 +65,7 @@
           { "const": "data_schema_or_migration_change", "type": "string" },
           { "const": "security_or_supply_chain_surface", "type": "string" },
           { "const": "medium_high_impact_uncertainty", "type": "string" },
-          {
-            "const": "independent_evaluation_or_design_contract_required",
-            "type": "string"
-          },
+          { "const": "independent_evaluation_or_design_contract_required", "type": "string" },
           { "const": "insufficient_gate_foundation", "type": "string" },
           { "const": "critical_risk", "type": "string" },
           { "const": "regulatory_or_audit_constraint", "type": "string" },
