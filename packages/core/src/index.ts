@@ -5,6 +5,7 @@ export * from "./identity/index.js";
 export * from "./ledger/index.js";
 export * from "./profile/index.js";
 export * from "./project/index.js";
+export * from "./proposal/index.js";
 export * from "./protocol.js";
 export * from "./schema/index.js";
 export * from "./synthesis/index.js";

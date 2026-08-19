@@ -123,6 +123,22 @@ export function readProjectContextBundle(
   return readRecord<ProjectContextBundleRecord>(absolute);
 }
 
+/** Every committed bundle, sorted by file name (bundle id). */
+export function readProjectContextBundles(projectRoot: string): ProjectContextBundleRecord[] {
+  const harnessRoot = harnessRootFor(projectRoot);
+  const directory = resolveHarnessPath(harnessRoot, "artifacts/project-context-bundles");
+  if (!existsSync(directory)) return [];
+  return readdirSync(directory, { withFileTypes: true })
+    .filter((entry) => entry.isFile() && entry.name.endsWith(".json"))
+    .map((entry) => entry.name)
+    .sort()
+    .map((name) =>
+      readRecord<ProjectContextBundleRecord>(
+        resolveHarnessPath(harnessRoot, `artifacts/project-context-bundles/${name}`),
+      ),
+    );
+}
+
 export function appendProjectContextBundleInvalidationRecord(
   projectRoot: string,
   record: ProjectContextBundleInvalidationRecord,

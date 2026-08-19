@@ -1,0 +1,913 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.universal-harness.dev/1.1/prd-proposal-draft.schema.json",
+  "additionalProperties": false,
+  "type": "object",
+  "required": [
+    "schema_version",
+    "intent",
+    "problem_statement",
+    "goals",
+    "non_goals",
+    "actors",
+    "scenarios",
+    "requirements",
+    "constraints",
+    "acceptance_criteria",
+    "assumptions",
+    "dependencies",
+    "risks",
+    "open_questions",
+    "glossary",
+    "context_source_refs"
+  ],
+  "properties": {
+    "schema_version": { "const": "1.1.0", "type": "string" },
+    "intent": {
+      "additionalProperties": false,
+      "type": "object",
+      "required": ["text", "digest"],
+      "properties": {
+        "text": { "maxLength": 16000, "type": "string" },
+        "digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" }
+      }
+    },
+    "problem_statement": { "maxLength": 16000, "type": "string" },
+    "goals": {
+      "type": "array",
+      "items": {
+        "additionalProperties": false,
+        "type": "object",
+        "required": ["draft_key", "lineage", "proposed_source_bindings", "statement"],
+        "properties": {
+          "draft_key": { "minLength": 1, "maxLength": 160, "type": "string" },
+          "lineage": {
+            "anyOf": [
+              {
+                "additionalProperties": false,
+                "type": "object",
+                "required": ["kind"],
+                "properties": { "kind": { "const": "new", "type": "string" } }
+              },
+              {
+                "additionalProperties": false,
+                "type": "object",
+                "required": ["kind", "previous_entity_id"],
+                "properties": {
+                  "kind": { "const": "continues", "type": "string" },
+                  "previous_entity_id": {
+                    "minLength": 3,
+                    "maxLength": 160,
+                    "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+                    "type": "string"
+                  }
+                }
+              }
+            ]
+          },
+          "proposed_source_bindings": {
+            "minItems": 1,
+            "type": "array",
+            "items": {
+              "additionalProperties": false,
+              "type": "object",
+              "required": ["source_kind", "source_id", "source_digest"],
+              "properties": {
+                "source_kind": {
+                  "anyOf": [
+                    { "const": "intent", "type": "string" },
+                    { "const": "clarification_answer", "type": "string" },
+                    { "const": "project_context", "type": "string" },
+                    { "const": "accepted_prd", "type": "string" },
+                    { "const": "validation_finding", "type": "string" },
+                    { "const": "review_finding", "type": "string" }
+                  ]
+                },
+                "source_id": { "minLength": 1, "maxLength": 400, "type": "string" },
+                "source_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" }
+              }
+            }
+          },
+          "statement": { "maxLength": 4000, "type": "string" }
+        }
+      }
+    },
+    "non_goals": {
+      "type": "array",
+      "items": {
+        "additionalProperties": false,
+        "type": "object",
+        "required": ["draft_key", "lineage", "proposed_source_bindings", "statement"],
+        "properties": {
+          "draft_key": { "minLength": 1, "maxLength": 160, "type": "string" },
+          "lineage": {
+            "anyOf": [
+              {
+                "additionalProperties": false,
+                "type": "object",
+                "required": ["kind"],
+                "properties": { "kind": { "const": "new", "type": "string" } }
+              },
+              {
+                "additionalProperties": false,
+                "type": "object",
+                "required": ["kind", "previous_entity_id"],
+                "properties": {
+                  "kind": { "const": "continues", "type": "string" },
+                  "previous_entity_id": {
+                    "minLength": 3,
+                    "maxLength": 160,
+                    "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+                    "type": "string"
+                  }
+                }
+              }
+            ]
+          },
+          "proposed_source_bindings": {
+            "minItems": 1,
+            "type": "array",
+            "items": {
+              "additionalProperties": false,
+              "type": "object",
+              "required": ["source_kind", "source_id", "source_digest"],
+              "properties": {
+                "source_kind": {
+                  "anyOf": [
+                    { "const": "intent", "type": "string" },
+                    { "const": "clarification_answer", "type": "string" },
+                    { "const": "project_context", "type": "string" },
+                    { "const": "accepted_prd", "type": "string" },
+                    { "const": "validation_finding", "type": "string" },
+                    { "const": "review_finding", "type": "string" }
+                  ]
+                },
+                "source_id": { "minLength": 1, "maxLength": 400, "type": "string" },
+                "source_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" }
+              }
+            }
+          },
+          "statement": { "maxLength": 4000, "type": "string" }
+        }
+      }
+    },
+    "actors": {
+      "type": "array",
+      "items": {
+        "additionalProperties": false,
+        "type": "object",
+        "required": ["draft_key", "lineage", "proposed_source_bindings", "name", "description"],
+        "properties": {
+          "draft_key": { "minLength": 1, "maxLength": 160, "type": "string" },
+          "lineage": {
+            "anyOf": [
+              {
+                "additionalProperties": false,
+                "type": "object",
+                "required": ["kind"],
+                "properties": { "kind": { "const": "new", "type": "string" } }
+              },
+              {
+                "additionalProperties": false,
+                "type": "object",
+                "required": ["kind", "previous_entity_id"],
+                "properties": {
+                  "kind": { "const": "continues", "type": "string" },
+                  "previous_entity_id": {
+                    "minLength": 3,
+                    "maxLength": 160,
+                    "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+                    "type": "string"
+                  }
+                }
+              }
+            ]
+          },
+          "proposed_source_bindings": {
+            "minItems": 1,
+            "type": "array",
+            "items": {
+              "additionalProperties": false,
+              "type": "object",
+              "required": ["source_kind", "source_id", "source_digest"],
+              "properties": {
+                "source_kind": {
+                  "anyOf": [
+                    { "const": "intent", "type": "string" },
+                    { "const": "clarification_answer", "type": "string" },
+                    { "const": "project_context", "type": "string" },
+                    { "const": "accepted_prd", "type": "string" },
+                    { "const": "validation_finding", "type": "string" },
+                    { "const": "review_finding", "type": "string" }
+                  ]
+                },
+                "source_id": { "minLength": 1, "maxLength": 400, "type": "string" },
+                "source_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" }
+              }
+            }
+          },
+          "name": { "maxLength": 400, "type": "string" },
+          "description": { "maxLength": 4000, "type": "string" }
+        }
+      }
+    },
+    "scenarios": {
+      "type": "array",
+      "items": {
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "draft_key",
+          "lineage",
+          "proposed_source_bindings",
+          "actor_id",
+          "precondition",
+          "action",
+          "observable_outcome",
+          "scenario_kind"
+        ],
+        "properties": {
+          "draft_key": { "minLength": 1, "maxLength": 160, "type": "string" },
+          "lineage": {
+            "anyOf": [
+              {
+                "additionalProperties": false,
+                "type": "object",
+                "required": ["kind"],
+                "properties": { "kind": { "const": "new", "type": "string" } }
+              },
+              {
+                "additionalProperties": false,
+                "type": "object",
+                "required": ["kind", "previous_entity_id"],
+                "properties": {
+                  "kind": { "const": "continues", "type": "string" },
+                  "previous_entity_id": {
+                    "minLength": 3,
+                    "maxLength": 160,
+                    "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+                    "type": "string"
+                  }
+                }
+              }
+            ]
+          },
+          "proposed_source_bindings": {
+            "minItems": 1,
+            "type": "array",
+            "items": {
+              "additionalProperties": false,
+              "type": "object",
+              "required": ["source_kind", "source_id", "source_digest"],
+              "properties": {
+                "source_kind": {
+                  "anyOf": [
+                    { "const": "intent", "type": "string" },
+                    { "const": "clarification_answer", "type": "string" },
+                    { "const": "project_context", "type": "string" },
+                    { "const": "accepted_prd", "type": "string" },
+                    { "const": "validation_finding", "type": "string" },
+                    { "const": "review_finding", "type": "string" }
+                  ]
+                },
+                "source_id": { "minLength": 1, "maxLength": 400, "type": "string" },
+                "source_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" }
+              }
+            }
+          },
+          "actor_id": { "minLength": 1, "maxLength": 160, "type": "string" },
+          "precondition": { "maxLength": 4000, "type": "string" },
+          "action": { "maxLength": 4000, "type": "string" },
+          "observable_outcome": { "maxLength": 4000, "type": "string" },
+          "scenario_kind": {
+            "anyOf": [
+              { "const": "primary", "type": "string" },
+              { "const": "failure", "type": "string" },
+              { "const": "boundary", "type": "string" },
+              { "const": "security", "type": "string" },
+              { "const": "compatibility", "type": "string" }
+            ]
+          }
+        }
+      }
+    },
+    "requirements": {
+      "type": "array",
+      "items": {
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "draft_key",
+          "lineage",
+          "proposed_source_bindings",
+          "statement",
+          "priority",
+          "change_kind",
+          "scenario_ids",
+          "acceptance_criterion_ids"
+        ],
+        "properties": {
+          "draft_key": { "minLength": 1, "maxLength": 160, "type": "string" },
+          "lineage": {
+            "anyOf": [
+              {
+                "additionalProperties": false,
+                "type": "object",
+                "required": ["kind"],
+                "properties": { "kind": { "const": "new", "type": "string" } }
+              },
+              {
+                "additionalProperties": false,
+                "type": "object",
+                "required": ["kind", "previous_entity_id"],
+                "properties": {
+                  "kind": { "const": "continues", "type": "string" },
+                  "previous_entity_id": {
+                    "minLength": 3,
+                    "maxLength": 160,
+                    "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+                    "type": "string"
+                  }
+                }
+              }
+            ]
+          },
+          "proposed_source_bindings": {
+            "minItems": 1,
+            "type": "array",
+            "items": {
+              "additionalProperties": false,
+              "type": "object",
+              "required": ["source_kind", "source_id", "source_digest"],
+              "properties": {
+                "source_kind": {
+                  "anyOf": [
+                    { "const": "intent", "type": "string" },
+                    { "const": "clarification_answer", "type": "string" },
+                    { "const": "project_context", "type": "string" },
+                    { "const": "accepted_prd", "type": "string" },
+                    { "const": "validation_finding", "type": "string" },
+                    { "const": "review_finding", "type": "string" }
+                  ]
+                },
+                "source_id": { "minLength": 1, "maxLength": 400, "type": "string" },
+                "source_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" }
+              }
+            }
+          },
+          "statement": { "maxLength": 4000, "type": "string" },
+          "priority": {
+            "anyOf": [
+              { "const": "must", "type": "string" },
+              { "const": "should", "type": "string" },
+              { "const": "could", "type": "string" }
+            ]
+          },
+          "change_kind": {
+            "anyOf": [
+              { "const": "must_change", "type": "string" },
+              { "const": "preserve", "type": "string" }
+            ]
+          },
+          "scenario_ids": {
+            "type": "array",
+            "items": { "minLength": 1, "maxLength": 160, "type": "string" }
+          },
+          "acceptance_criterion_ids": {
+            "type": "array",
+            "items": { "minLength": 1, "maxLength": 160, "type": "string" }
+          }
+        }
+      }
+    },
+    "constraints": {
+      "type": "array",
+      "items": {
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "draft_key",
+          "lineage",
+          "proposed_source_bindings",
+          "statement",
+          "category",
+          "verification_intent"
+        ],
+        "properties": {
+          "draft_key": { "minLength": 1, "maxLength": 160, "type": "string" },
+          "lineage": {
+            "anyOf": [
+              {
+                "additionalProperties": false,
+                "type": "object",
+                "required": ["kind"],
+                "properties": { "kind": { "const": "new", "type": "string" } }
+              },
+              {
+                "additionalProperties": false,
+                "type": "object",
+                "required": ["kind", "previous_entity_id"],
+                "properties": {
+                  "kind": { "const": "continues", "type": "string" },
+                  "previous_entity_id": {
+                    "minLength": 3,
+                    "maxLength": 160,
+                    "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+                    "type": "string"
+                  }
+                }
+              }
+            ]
+          },
+          "proposed_source_bindings": {
+            "minItems": 1,
+            "type": "array",
+            "items": {
+              "additionalProperties": false,
+              "type": "object",
+              "required": ["source_kind", "source_id", "source_digest"],
+              "properties": {
+                "source_kind": {
+                  "anyOf": [
+                    { "const": "intent", "type": "string" },
+                    { "const": "clarification_answer", "type": "string" },
+                    { "const": "project_context", "type": "string" },
+                    { "const": "accepted_prd", "type": "string" },
+                    { "const": "validation_finding", "type": "string" },
+                    { "const": "review_finding", "type": "string" }
+                  ]
+                },
+                "source_id": { "minLength": 1, "maxLength": 400, "type": "string" },
+                "source_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" }
+              }
+            }
+          },
+          "statement": { "maxLength": 4000, "type": "string" },
+          "category": {
+            "anyOf": [
+              { "const": "business", "type": "string" },
+              { "const": "technical", "type": "string" },
+              { "const": "security", "type": "string" },
+              { "const": "compliance", "type": "string" },
+              { "const": "compatibility", "type": "string" },
+              { "const": "operational", "type": "string" }
+            ]
+          },
+          "verification_intent": { "maxLength": 4000, "type": "string" }
+        }
+      }
+    },
+    "acceptance_criteria": {
+      "type": "array",
+      "items": {
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "draft_key",
+          "lineage",
+          "proposed_source_bindings",
+          "requirement_id",
+          "precondition",
+          "action",
+          "observable_outcome",
+          "verification_intent",
+          "scenario_kind"
+        ],
+        "properties": {
+          "draft_key": { "minLength": 1, "maxLength": 160, "type": "string" },
+          "lineage": {
+            "anyOf": [
+              {
+                "additionalProperties": false,
+                "type": "object",
+                "required": ["kind"],
+                "properties": { "kind": { "const": "new", "type": "string" } }
+              },
+              {
+                "additionalProperties": false,
+                "type": "object",
+                "required": ["kind", "previous_entity_id"],
+                "properties": {
+                  "kind": { "const": "continues", "type": "string" },
+                  "previous_entity_id": {
+                    "minLength": 3,
+                    "maxLength": 160,
+                    "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+                    "type": "string"
+                  }
+                }
+              }
+            ]
+          },
+          "proposed_source_bindings": {
+            "minItems": 1,
+            "type": "array",
+            "items": {
+              "additionalProperties": false,
+              "type": "object",
+              "required": ["source_kind", "source_id", "source_digest"],
+              "properties": {
+                "source_kind": {
+                  "anyOf": [
+                    { "const": "intent", "type": "string" },
+                    { "const": "clarification_answer", "type": "string" },
+                    { "const": "project_context", "type": "string" },
+                    { "const": "accepted_prd", "type": "string" },
+                    { "const": "validation_finding", "type": "string" },
+                    { "const": "review_finding", "type": "string" }
+                  ]
+                },
+                "source_id": { "minLength": 1, "maxLength": 400, "type": "string" },
+                "source_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" }
+              }
+            }
+          },
+          "requirement_id": { "minLength": 1, "maxLength": 160, "type": "string" },
+          "precondition": { "maxLength": 4000, "type": "string" },
+          "action": { "maxLength": 4000, "type": "string" },
+          "observable_outcome": { "maxLength": 4000, "type": "string" },
+          "verification_intent": { "maxLength": 4000, "type": "string" },
+          "test_first_example": { "maxLength": 4000, "type": "string" },
+          "scenario_kind": {
+            "anyOf": [
+              { "const": "primary", "type": "string" },
+              { "const": "failure", "type": "string" },
+              { "const": "boundary", "type": "string" },
+              { "const": "security", "type": "string" },
+              { "const": "compatibility", "type": "string" }
+            ]
+          },
+          "criterion_semantic_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" }
+        }
+      }
+    },
+    "assumptions": {
+      "type": "array",
+      "items": {
+        "additionalProperties": false,
+        "type": "object",
+        "required": ["draft_key", "lineage", "proposed_source_bindings", "statement"],
+        "properties": {
+          "draft_key": { "minLength": 1, "maxLength": 160, "type": "string" },
+          "lineage": {
+            "anyOf": [
+              {
+                "additionalProperties": false,
+                "type": "object",
+                "required": ["kind"],
+                "properties": { "kind": { "const": "new", "type": "string" } }
+              },
+              {
+                "additionalProperties": false,
+                "type": "object",
+                "required": ["kind", "previous_entity_id"],
+                "properties": {
+                  "kind": { "const": "continues", "type": "string" },
+                  "previous_entity_id": {
+                    "minLength": 3,
+                    "maxLength": 160,
+                    "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+                    "type": "string"
+                  }
+                }
+              }
+            ]
+          },
+          "proposed_source_bindings": {
+            "minItems": 1,
+            "type": "array",
+            "items": {
+              "additionalProperties": false,
+              "type": "object",
+              "required": ["source_kind", "source_id", "source_digest"],
+              "properties": {
+                "source_kind": {
+                  "anyOf": [
+                    { "const": "intent", "type": "string" },
+                    { "const": "clarification_answer", "type": "string" },
+                    { "const": "project_context", "type": "string" },
+                    { "const": "accepted_prd", "type": "string" },
+                    { "const": "validation_finding", "type": "string" },
+                    { "const": "review_finding", "type": "string" }
+                  ]
+                },
+                "source_id": { "minLength": 1, "maxLength": 400, "type": "string" },
+                "source_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" }
+              }
+            }
+          },
+          "statement": { "maxLength": 4000, "type": "string" }
+        }
+      }
+    },
+    "dependencies": {
+      "type": "array",
+      "items": {
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "draft_key",
+          "lineage",
+          "proposed_source_bindings",
+          "dependency_kind",
+          "description",
+          "required_by_ids"
+        ],
+        "properties": {
+          "draft_key": { "minLength": 1, "maxLength": 160, "type": "string" },
+          "lineage": {
+            "anyOf": [
+              {
+                "additionalProperties": false,
+                "type": "object",
+                "required": ["kind"],
+                "properties": { "kind": { "const": "new", "type": "string" } }
+              },
+              {
+                "additionalProperties": false,
+                "type": "object",
+                "required": ["kind", "previous_entity_id"],
+                "properties": {
+                  "kind": { "const": "continues", "type": "string" },
+                  "previous_entity_id": {
+                    "minLength": 3,
+                    "maxLength": 160,
+                    "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+                    "type": "string"
+                  }
+                }
+              }
+            ]
+          },
+          "proposed_source_bindings": {
+            "minItems": 1,
+            "type": "array",
+            "items": {
+              "additionalProperties": false,
+              "type": "object",
+              "required": ["source_kind", "source_id", "source_digest"],
+              "properties": {
+                "source_kind": {
+                  "anyOf": [
+                    { "const": "intent", "type": "string" },
+                    { "const": "clarification_answer", "type": "string" },
+                    { "const": "project_context", "type": "string" },
+                    { "const": "accepted_prd", "type": "string" },
+                    { "const": "validation_finding", "type": "string" },
+                    { "const": "review_finding", "type": "string" }
+                  ]
+                },
+                "source_id": { "minLength": 1, "maxLength": 400, "type": "string" },
+                "source_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" }
+              }
+            }
+          },
+          "dependency_kind": {
+            "anyOf": [
+              { "const": "internal", "type": "string" },
+              { "const": "external", "type": "string" }
+            ]
+          },
+          "description": { "maxLength": 4000, "type": "string" },
+          "required_by_ids": {
+            "type": "array",
+            "items": { "minLength": 1, "maxLength": 160, "type": "string" }
+          }
+        }
+      }
+    },
+    "risks": {
+      "type": "array",
+      "items": {
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "draft_key",
+          "lineage",
+          "proposed_source_bindings",
+          "category",
+          "description",
+          "likelihood",
+          "impact",
+          "mitigation"
+        ],
+        "properties": {
+          "draft_key": { "minLength": 1, "maxLength": 160, "type": "string" },
+          "lineage": {
+            "anyOf": [
+              {
+                "additionalProperties": false,
+                "type": "object",
+                "required": ["kind"],
+                "properties": { "kind": { "const": "new", "type": "string" } }
+              },
+              {
+                "additionalProperties": false,
+                "type": "object",
+                "required": ["kind", "previous_entity_id"],
+                "properties": {
+                  "kind": { "const": "continues", "type": "string" },
+                  "previous_entity_id": {
+                    "minLength": 3,
+                    "maxLength": 160,
+                    "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+                    "type": "string"
+                  }
+                }
+              }
+            ]
+          },
+          "proposed_source_bindings": {
+            "minItems": 1,
+            "type": "array",
+            "items": {
+              "additionalProperties": false,
+              "type": "object",
+              "required": ["source_kind", "source_id", "source_digest"],
+              "properties": {
+                "source_kind": {
+                  "anyOf": [
+                    { "const": "intent", "type": "string" },
+                    { "const": "clarification_answer", "type": "string" },
+                    { "const": "project_context", "type": "string" },
+                    { "const": "accepted_prd", "type": "string" },
+                    { "const": "validation_finding", "type": "string" },
+                    { "const": "review_finding", "type": "string" }
+                  ]
+                },
+                "source_id": { "minLength": 1, "maxLength": 400, "type": "string" },
+                "source_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" }
+              }
+            }
+          },
+          "category": {
+            "anyOf": [
+              { "const": "security", "type": "string" },
+              { "const": "privacy", "type": "string" },
+              { "const": "compliance", "type": "string" },
+              { "const": "financial", "type": "string" },
+              { "const": "data_integrity", "type": "string" },
+              { "const": "availability", "type": "string" },
+              { "const": "compatibility", "type": "string" },
+              { "const": "migration", "type": "string" },
+              { "const": "operational", "type": "string" },
+              { "const": "delivery", "type": "string" },
+              { "const": "other", "type": "string" }
+            ]
+          },
+          "description": { "maxLength": 4000, "type": "string" },
+          "likelihood": {
+            "anyOf": [
+              { "const": "low", "type": "string" },
+              { "const": "medium", "type": "string" },
+              { "const": "high", "type": "string" },
+              { "const": "unknown", "type": "string" }
+            ]
+          },
+          "impact": {
+            "anyOf": [
+              { "const": "low", "type": "string" },
+              { "const": "medium", "type": "string" },
+              { "const": "high", "type": "string" },
+              { "const": "critical", "type": "string" },
+              { "const": "unknown", "type": "string" }
+            ]
+          },
+          "mitigation": { "maxLength": 4000, "type": "string" }
+        }
+      }
+    },
+    "open_questions": {
+      "type": "array",
+      "items": {
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "draft_key",
+          "lineage",
+          "proposed_source_bindings",
+          "question",
+          "blocking",
+          "owner"
+        ],
+        "properties": {
+          "draft_key": { "minLength": 1, "maxLength": 160, "type": "string" },
+          "lineage": {
+            "anyOf": [
+              {
+                "additionalProperties": false,
+                "type": "object",
+                "required": ["kind"],
+                "properties": { "kind": { "const": "new", "type": "string" } }
+              },
+              {
+                "additionalProperties": false,
+                "type": "object",
+                "required": ["kind", "previous_entity_id"],
+                "properties": {
+                  "kind": { "const": "continues", "type": "string" },
+                  "previous_entity_id": {
+                    "minLength": 3,
+                    "maxLength": 160,
+                    "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+                    "type": "string"
+                  }
+                }
+              }
+            ]
+          },
+          "proposed_source_bindings": {
+            "minItems": 1,
+            "type": "array",
+            "items": {
+              "additionalProperties": false,
+              "type": "object",
+              "required": ["source_kind", "source_id", "source_digest"],
+              "properties": {
+                "source_kind": {
+                  "anyOf": [
+                    { "const": "intent", "type": "string" },
+                    { "const": "clarification_answer", "type": "string" },
+                    { "const": "project_context", "type": "string" },
+                    { "const": "accepted_prd", "type": "string" },
+                    { "const": "validation_finding", "type": "string" },
+                    { "const": "review_finding", "type": "string" }
+                  ]
+                },
+                "source_id": { "minLength": 1, "maxLength": 400, "type": "string" },
+                "source_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" }
+              }
+            }
+          },
+          "question": { "maxLength": 4000, "type": "string" },
+          "blocking": { "type": "boolean" },
+          "owner": { "maxLength": 400, "type": "string" }
+        }
+      }
+    },
+    "glossary": {
+      "type": "array",
+      "items": {
+        "additionalProperties": false,
+        "type": "object",
+        "required": ["draft_key", "lineage", "proposed_source_bindings", "term", "definition"],
+        "properties": {
+          "draft_key": { "minLength": 1, "maxLength": 160, "type": "string" },
+          "lineage": {
+            "anyOf": [
+              {
+                "additionalProperties": false,
+                "type": "object",
+                "required": ["kind"],
+                "properties": { "kind": { "const": "new", "type": "string" } }
+              },
+              {
+                "additionalProperties": false,
+                "type": "object",
+                "required": ["kind", "previous_entity_id"],
+                "properties": {
+                  "kind": { "const": "continues", "type": "string" },
+                  "previous_entity_id": {
+                    "minLength": 3,
+                    "maxLength": 160,
+                    "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+                    "type": "string"
+                  }
+                }
+              }
+            ]
+          },
+          "proposed_source_bindings": {
+            "minItems": 1,
+            "type": "array",
+            "items": {
+              "additionalProperties": false,
+              "type": "object",
+              "required": ["source_kind", "source_id", "source_digest"],
+              "properties": {
+                "source_kind": {
+                  "anyOf": [
+                    { "const": "intent", "type": "string" },
+                    { "const": "clarification_answer", "type": "string" },
+                    { "const": "project_context", "type": "string" },
+                    { "const": "accepted_prd", "type": "string" },
+                    { "const": "validation_finding", "type": "string" },
+                    { "const": "review_finding", "type": "string" }
+                  ]
+                },
+                "source_id": { "minLength": 1, "maxLength": 400, "type": "string" },
+                "source_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" }
+              }
+            }
+          },
+          "term": { "maxLength": 400, "type": "string" },
+          "definition": { "maxLength": 4000, "type": "string" }
+        }
+      }
+    },
+    "context_source_refs": {
+      "type": "array",
+      "items": { "minLength": 1, "maxLength": 400, "type": "string" }
+    }
+  }
+}

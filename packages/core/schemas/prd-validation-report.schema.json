@@ -1,0 +1,91 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.universal-harness.dev/1.1/prd-validation-report.schema.json",
+  "additionalProperties": false,
+  "type": "object",
+  "required": [
+    "protocol_version",
+    "record_kind",
+    "validation_report_id",
+    "session_id",
+    "proposal_digest",
+    "rule_set_digest",
+    "passed",
+    "results",
+    "blocking_question_ids",
+    "report_digest",
+    "record_digest"
+  ],
+  "properties": {
+    "protocol_version": { "const": "1.1.0", "type": "string" },
+    "record_kind": { "const": "prd_validation_report", "type": "string" },
+    "validation_report_id": {
+      "minLength": 3,
+      "maxLength": 160,
+      "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+      "type": "string"
+    },
+    "session_id": {
+      "minLength": 3,
+      "maxLength": 160,
+      "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+      "type": "string"
+    },
+    "proposal_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
+    "rule_set_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
+    "passed": { "type": "boolean" },
+    "results": {
+      "type": "array",
+      "items": {
+        "additionalProperties": false,
+        "type": "object",
+        "required": ["rule_id", "passed", "findings"],
+        "properties": {
+          "rule_id": { "minLength": 1, "maxLength": 80, "type": "string" },
+          "passed": { "type": "boolean" },
+          "findings": {
+            "type": "array",
+            "items": {
+              "additionalProperties": false,
+              "type": "object",
+              "required": ["severity", "target_kind", "message"],
+              "properties": {
+                "severity": {
+                  "anyOf": [
+                    { "const": "critical", "type": "string" },
+                    { "const": "warning", "type": "string" }
+                  ]
+                },
+                "target_kind": {
+                  "anyOf": [
+                    { "const": "intent", "type": "string" },
+                    { "const": "prd_section", "type": "string" },
+                    { "const": "requirement", "type": "string" },
+                    { "const": "constraint", "type": "string" },
+                    { "const": "acceptance_criterion", "type": "string" },
+                    { "const": "risk", "type": "string" },
+                    { "const": "glossary", "type": "string" }
+                  ]
+                },
+                "target_id": { "minLength": 1, "type": "string" },
+                "message": { "minLength": 1, "type": "string" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "blocking_question_ids": {
+      "uniqueItems": true,
+      "type": "array",
+      "items": {
+        "minLength": 3,
+        "maxLength": 160,
+        "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+        "type": "string"
+      }
+    },
+    "report_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
+    "record_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" }
+  }
+}

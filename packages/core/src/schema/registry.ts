@@ -31,6 +31,13 @@ import {
   ProfileRecommendationRecordSchema,
   ProjectProfileRecordSchema,
 } from "./profile.js";
+import {
+  PrdEntityLineageRecordSchema,
+  PrdProposalContentSchema,
+  PrdProposalDraftSchema,
+  PrdProposalRecordSchema,
+  PrdValidationReportRecordSchema,
+} from "./proposal.js";
 import { RuntimeSchema } from "./runtime.js";
 import {
   ApprovalBriefOutputSchema,
@@ -158,6 +165,8 @@ export const JSON_SCHEMA_DOCUMENTS = Object.fromEntries(
  * clarification, invocation, checkpoint and blocker records; Task 5
  * contributes the project context bundle/invalidation records, the grounded
  * synthesis record and the versioned purpose-bound input/output schemas.
+ * Task 6 contributes the PRD proposal record/content/draft, the entity
+ * lineage record and the deterministic validation report.
  */
 export const PROTOCOL_1_1_SCHEMA_REGISTRY = createDomainSchemaRegistry({
   protocolVersion: PROTOCOL_1_1_VERSION,
@@ -185,6 +194,11 @@ export const PROTOCOL_1_1_SCHEMA_REGISTRY = createDomainSchemaRegistry({
     { key: "context-enrichment-output", schema: ContextEnrichmentOutputSchema },
     { key: "approval-brief-output", schema: ApprovalBriefOutputSchema },
     { key: "iteration-narrative-output", schema: IterationNarrativeOutputSchema },
+    { key: "prd-proposal", schema: PrdProposalRecordSchema },
+    { key: "prd-proposal-content", schema: PrdProposalContentSchema },
+    { key: "prd-proposal-draft", schema: PrdProposalDraftSchema },
+    { key: "prd-entity-lineage", schema: PrdEntityLineageRecordSchema },
+    { key: "prd-validation-report", schema: PrdValidationReportRecordSchema },
   ],
 });
 

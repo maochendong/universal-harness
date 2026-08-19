@@ -1,0 +1,776 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.universal-harness.dev/1.1/prd-proposal.schema.json",
+  "additionalProperties": false,
+  "type": "object",
+  "required": [
+    "protocol_version",
+    "record_kind",
+    "proposal_id",
+    "session_id",
+    "revision",
+    "status",
+    "input_binding",
+    "content",
+    "content_digest",
+    "record_digest"
+  ],
+  "properties": {
+    "protocol_version": { "const": "1.1.0", "type": "string" },
+    "record_kind": { "const": "prd_proposal", "type": "string" },
+    "proposal_id": {
+      "minLength": 3,
+      "maxLength": 160,
+      "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+      "type": "string"
+    },
+    "session_id": {
+      "minLength": 3,
+      "maxLength": 160,
+      "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+      "type": "string"
+    },
+    "revision": { "minimum": 1, "type": "integer" },
+    "status": {
+      "anyOf": [
+        { "const": "proposed", "type": "string" },
+        { "const": "superseded", "type": "string" },
+        { "const": "rejected", "type": "string" },
+        { "const": "accepted", "type": "string" }
+      ]
+    },
+    "input_binding": {
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "session_digest",
+        "proposal_context_bundle_digest",
+        "answers_digest",
+        "adapter_profile_digest",
+        "prompt_version_digest",
+        "producer_identity",
+        "invocation_id",
+        "conversation_id",
+        "evidence_locator"
+      ],
+      "properties": {
+        "session_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
+        "proposal_context_bundle_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
+        "answers_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
+        "adapter_profile_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
+        "prompt_version_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
+        "producer_identity": { "minLength": 1, "maxLength": 200, "type": "string" },
+        "invocation_id": {
+          "minLength": 3,
+          "maxLength": 160,
+          "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+          "type": "string"
+        },
+        "conversation_id": {
+          "minLength": 3,
+          "maxLength": 160,
+          "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+          "type": "string"
+        },
+        "evidence_locator": { "minLength": 1, "maxLength": 400, "type": "string" }
+      }
+    },
+    "content": {
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "schema_version",
+        "intent",
+        "problem_statement",
+        "goals",
+        "non_goals",
+        "actors",
+        "scenarios",
+        "requirements",
+        "constraints",
+        "acceptance_criteria",
+        "assumptions",
+        "dependencies",
+        "risks",
+        "open_questions",
+        "glossary",
+        "context_source_refs"
+      ],
+      "properties": {
+        "schema_version": { "const": "1.1.0", "type": "string" },
+        "intent": {
+          "additionalProperties": false,
+          "type": "object",
+          "required": ["text", "digest"],
+          "properties": {
+            "text": { "maxLength": 16000, "type": "string" },
+            "digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" }
+          }
+        },
+        "problem_statement": { "maxLength": 16000, "type": "string" },
+        "goals": {
+          "type": "array",
+          "items": {
+            "additionalProperties": false,
+            "type": "object",
+            "required": ["id", "statement", "source_bindings"],
+            "properties": {
+              "id": {
+                "minLength": 3,
+                "maxLength": 160,
+                "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+                "type": "string"
+              },
+              "statement": { "maxLength": 4000, "type": "string" },
+              "source_bindings": {
+                "minItems": 1,
+                "type": "array",
+                "items": {
+                  "additionalProperties": false,
+                  "type": "object",
+                  "required": ["source_kind", "source_id", "source_digest"],
+                  "properties": {
+                    "source_kind": {
+                      "anyOf": [
+                        { "const": "intent", "type": "string" },
+                        { "const": "clarification_answer", "type": "string" },
+                        { "const": "project_context", "type": "string" },
+                        { "const": "accepted_prd", "type": "string" },
+                        { "const": "validation_finding", "type": "string" },
+                        { "const": "review_finding", "type": "string" }
+                      ]
+                    },
+                    "source_id": { "minLength": 1, "maxLength": 400, "type": "string" },
+                    "source_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "non_goals": {
+          "type": "array",
+          "items": {
+            "additionalProperties": false,
+            "type": "object",
+            "required": ["id", "statement", "source_bindings"],
+            "properties": {
+              "id": {
+                "minLength": 3,
+                "maxLength": 160,
+                "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+                "type": "string"
+              },
+              "statement": { "maxLength": 4000, "type": "string" },
+              "source_bindings": {
+                "minItems": 1,
+                "type": "array",
+                "items": {
+                  "additionalProperties": false,
+                  "type": "object",
+                  "required": ["source_kind", "source_id", "source_digest"],
+                  "properties": {
+                    "source_kind": {
+                      "anyOf": [
+                        { "const": "intent", "type": "string" },
+                        { "const": "clarification_answer", "type": "string" },
+                        { "const": "project_context", "type": "string" },
+                        { "const": "accepted_prd", "type": "string" },
+                        { "const": "validation_finding", "type": "string" },
+                        { "const": "review_finding", "type": "string" }
+                      ]
+                    },
+                    "source_id": { "minLength": 1, "maxLength": 400, "type": "string" },
+                    "source_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "actors": {
+          "type": "array",
+          "items": {
+            "additionalProperties": false,
+            "type": "object",
+            "required": ["id", "name", "description", "source_bindings"],
+            "properties": {
+              "id": {
+                "minLength": 3,
+                "maxLength": 160,
+                "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+                "type": "string"
+              },
+              "name": { "maxLength": 400, "type": "string" },
+              "description": { "maxLength": 4000, "type": "string" },
+              "source_bindings": {
+                "minItems": 1,
+                "type": "array",
+                "items": {
+                  "additionalProperties": false,
+                  "type": "object",
+                  "required": ["source_kind", "source_id", "source_digest"],
+                  "properties": {
+                    "source_kind": {
+                      "anyOf": [
+                        { "const": "intent", "type": "string" },
+                        { "const": "clarification_answer", "type": "string" },
+                        { "const": "project_context", "type": "string" },
+                        { "const": "accepted_prd", "type": "string" },
+                        { "const": "validation_finding", "type": "string" },
+                        { "const": "review_finding", "type": "string" }
+                      ]
+                    },
+                    "source_id": { "minLength": 1, "maxLength": 400, "type": "string" },
+                    "source_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "scenarios": {
+          "type": "array",
+          "items": {
+            "additionalProperties": false,
+            "type": "object",
+            "required": [
+              "id",
+              "actor_id",
+              "precondition",
+              "action",
+              "observable_outcome",
+              "scenario_kind",
+              "source_bindings"
+            ],
+            "properties": {
+              "id": {
+                "minLength": 3,
+                "maxLength": 160,
+                "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+                "type": "string"
+              },
+              "actor_id": {
+                "minLength": 3,
+                "maxLength": 160,
+                "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+                "type": "string"
+              },
+              "precondition": { "maxLength": 4000, "type": "string" },
+              "action": { "maxLength": 4000, "type": "string" },
+              "observable_outcome": { "maxLength": 4000, "type": "string" },
+              "scenario_kind": {
+                "anyOf": [
+                  { "const": "primary", "type": "string" },
+                  { "const": "failure", "type": "string" },
+                  { "const": "boundary", "type": "string" },
+                  { "const": "security", "type": "string" },
+                  { "const": "compatibility", "type": "string" }
+                ]
+              },
+              "source_bindings": {
+                "minItems": 1,
+                "type": "array",
+                "items": {
+                  "additionalProperties": false,
+                  "type": "object",
+                  "required": ["source_kind", "source_id", "source_digest"],
+                  "properties": {
+                    "source_kind": {
+                      "anyOf": [
+                        { "const": "intent", "type": "string" },
+                        { "const": "clarification_answer", "type": "string" },
+                        { "const": "project_context", "type": "string" },
+                        { "const": "accepted_prd", "type": "string" },
+                        { "const": "validation_finding", "type": "string" },
+                        { "const": "review_finding", "type": "string" }
+                      ]
+                    },
+                    "source_id": { "minLength": 1, "maxLength": 400, "type": "string" },
+                    "source_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "requirements": {
+          "type": "array",
+          "items": {
+            "additionalProperties": false,
+            "type": "object",
+            "required": [
+              "id",
+              "statement",
+              "priority",
+              "change_kind",
+              "scenario_ids",
+              "acceptance_criterion_ids",
+              "source_bindings"
+            ],
+            "properties": {
+              "id": {
+                "minLength": 3,
+                "maxLength": 160,
+                "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+                "type": "string"
+              },
+              "statement": { "maxLength": 4000, "type": "string" },
+              "priority": {
+                "anyOf": [
+                  { "const": "must", "type": "string" },
+                  { "const": "should", "type": "string" },
+                  { "const": "could", "type": "string" }
+                ]
+              },
+              "change_kind": {
+                "anyOf": [
+                  { "const": "must_change", "type": "string" },
+                  { "const": "preserve", "type": "string" }
+                ]
+              },
+              "scenario_ids": {
+                "uniqueItems": true,
+                "type": "array",
+                "items": {
+                  "minLength": 3,
+                  "maxLength": 160,
+                  "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+                  "type": "string"
+                }
+              },
+              "acceptance_criterion_ids": {
+                "uniqueItems": true,
+                "type": "array",
+                "items": {
+                  "minLength": 3,
+                  "maxLength": 160,
+                  "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+                  "type": "string"
+                }
+              },
+              "source_bindings": {
+                "minItems": 1,
+                "type": "array",
+                "items": {
+                  "additionalProperties": false,
+                  "type": "object",
+                  "required": ["source_kind", "source_id", "source_digest"],
+                  "properties": {
+                    "source_kind": {
+                      "anyOf": [
+                        { "const": "intent", "type": "string" },
+                        { "const": "clarification_answer", "type": "string" },
+                        { "const": "project_context", "type": "string" },
+                        { "const": "accepted_prd", "type": "string" },
+                        { "const": "validation_finding", "type": "string" },
+                        { "const": "review_finding", "type": "string" }
+                      ]
+                    },
+                    "source_id": { "minLength": 1, "maxLength": 400, "type": "string" },
+                    "source_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "constraints": {
+          "type": "array",
+          "items": {
+            "additionalProperties": false,
+            "type": "object",
+            "required": ["id", "statement", "category", "verification_intent", "source_bindings"],
+            "properties": {
+              "id": {
+                "minLength": 3,
+                "maxLength": 160,
+                "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+                "type": "string"
+              },
+              "statement": { "maxLength": 4000, "type": "string" },
+              "category": {
+                "anyOf": [
+                  { "const": "business", "type": "string" },
+                  { "const": "technical", "type": "string" },
+                  { "const": "security", "type": "string" },
+                  { "const": "compliance", "type": "string" },
+                  { "const": "compatibility", "type": "string" },
+                  { "const": "operational", "type": "string" }
+                ]
+              },
+              "verification_intent": { "maxLength": 4000, "type": "string" },
+              "source_bindings": {
+                "minItems": 1,
+                "type": "array",
+                "items": {
+                  "additionalProperties": false,
+                  "type": "object",
+                  "required": ["source_kind", "source_id", "source_digest"],
+                  "properties": {
+                    "source_kind": {
+                      "anyOf": [
+                        { "const": "intent", "type": "string" },
+                        { "const": "clarification_answer", "type": "string" },
+                        { "const": "project_context", "type": "string" },
+                        { "const": "accepted_prd", "type": "string" },
+                        { "const": "validation_finding", "type": "string" },
+                        { "const": "review_finding", "type": "string" }
+                      ]
+                    },
+                    "source_id": { "minLength": 1, "maxLength": 400, "type": "string" },
+                    "source_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "acceptance_criteria": {
+          "type": "array",
+          "items": {
+            "additionalProperties": false,
+            "type": "object",
+            "required": [
+              "criterion_id",
+              "requirement_id",
+              "precondition",
+              "action",
+              "observable_outcome",
+              "verification_intent",
+              "scenario_kind",
+              "criterion_semantic_digest",
+              "source_bindings"
+            ],
+            "properties": {
+              "criterion_id": {
+                "minLength": 3,
+                "maxLength": 160,
+                "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+                "type": "string"
+              },
+              "requirement_id": {
+                "minLength": 3,
+                "maxLength": 160,
+                "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+                "type": "string"
+              },
+              "precondition": { "maxLength": 4000, "type": "string" },
+              "action": { "maxLength": 4000, "type": "string" },
+              "observable_outcome": { "maxLength": 4000, "type": "string" },
+              "verification_intent": { "maxLength": 4000, "type": "string" },
+              "test_first_example": { "maxLength": 4000, "type": "string" },
+              "scenario_kind": {
+                "anyOf": [
+                  { "const": "primary", "type": "string" },
+                  { "const": "failure", "type": "string" },
+                  { "const": "boundary", "type": "string" },
+                  { "const": "security", "type": "string" },
+                  { "const": "compatibility", "type": "string" }
+                ]
+              },
+              "criterion_semantic_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
+              "source_bindings": {
+                "minItems": 1,
+                "type": "array",
+                "items": {
+                  "additionalProperties": false,
+                  "type": "object",
+                  "required": ["source_kind", "source_id", "source_digest"],
+                  "properties": {
+                    "source_kind": {
+                      "anyOf": [
+                        { "const": "intent", "type": "string" },
+                        { "const": "clarification_answer", "type": "string" },
+                        { "const": "project_context", "type": "string" },
+                        { "const": "accepted_prd", "type": "string" },
+                        { "const": "validation_finding", "type": "string" },
+                        { "const": "review_finding", "type": "string" }
+                      ]
+                    },
+                    "source_id": { "minLength": 1, "maxLength": 400, "type": "string" },
+                    "source_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "assumptions": {
+          "type": "array",
+          "items": {
+            "additionalProperties": false,
+            "type": "object",
+            "required": ["id", "statement", "source_bindings"],
+            "properties": {
+              "id": {
+                "minLength": 3,
+                "maxLength": 160,
+                "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+                "type": "string"
+              },
+              "statement": { "maxLength": 4000, "type": "string" },
+              "source_bindings": {
+                "minItems": 1,
+                "type": "array",
+                "items": {
+                  "additionalProperties": false,
+                  "type": "object",
+                  "required": ["source_kind", "source_id", "source_digest"],
+                  "properties": {
+                    "source_kind": {
+                      "anyOf": [
+                        { "const": "intent", "type": "string" },
+                        { "const": "clarification_answer", "type": "string" },
+                        { "const": "project_context", "type": "string" },
+                        { "const": "accepted_prd", "type": "string" },
+                        { "const": "validation_finding", "type": "string" },
+                        { "const": "review_finding", "type": "string" }
+                      ]
+                    },
+                    "source_id": { "minLength": 1, "maxLength": 400, "type": "string" },
+                    "source_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "dependencies": {
+          "type": "array",
+          "items": {
+            "additionalProperties": false,
+            "type": "object",
+            "required": [
+              "id",
+              "dependency_kind",
+              "description",
+              "required_by_ids",
+              "source_bindings"
+            ],
+            "properties": {
+              "id": {
+                "minLength": 3,
+                "maxLength": 160,
+                "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+                "type": "string"
+              },
+              "dependency_kind": {
+                "anyOf": [
+                  { "const": "internal", "type": "string" },
+                  { "const": "external", "type": "string" }
+                ]
+              },
+              "description": { "maxLength": 4000, "type": "string" },
+              "required_by_ids": {
+                "uniqueItems": true,
+                "type": "array",
+                "items": {
+                  "minLength": 3,
+                  "maxLength": 160,
+                  "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+                  "type": "string"
+                }
+              },
+              "source_bindings": {
+                "minItems": 1,
+                "type": "array",
+                "items": {
+                  "additionalProperties": false,
+                  "type": "object",
+                  "required": ["source_kind", "source_id", "source_digest"],
+                  "properties": {
+                    "source_kind": {
+                      "anyOf": [
+                        { "const": "intent", "type": "string" },
+                        { "const": "clarification_answer", "type": "string" },
+                        { "const": "project_context", "type": "string" },
+                        { "const": "accepted_prd", "type": "string" },
+                        { "const": "validation_finding", "type": "string" },
+                        { "const": "review_finding", "type": "string" }
+                      ]
+                    },
+                    "source_id": { "minLength": 1, "maxLength": 400, "type": "string" },
+                    "source_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "risks": {
+          "type": "array",
+          "items": {
+            "additionalProperties": false,
+            "type": "object",
+            "required": [
+              "id",
+              "category",
+              "description",
+              "likelihood",
+              "impact",
+              "mitigation",
+              "source_bindings"
+            ],
+            "properties": {
+              "id": {
+                "minLength": 3,
+                "maxLength": 160,
+                "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+                "type": "string"
+              },
+              "category": {
+                "anyOf": [
+                  { "const": "security", "type": "string" },
+                  { "const": "privacy", "type": "string" },
+                  { "const": "compliance", "type": "string" },
+                  { "const": "financial", "type": "string" },
+                  { "const": "data_integrity", "type": "string" },
+                  { "const": "availability", "type": "string" },
+                  { "const": "compatibility", "type": "string" },
+                  { "const": "migration", "type": "string" },
+                  { "const": "operational", "type": "string" },
+                  { "const": "delivery", "type": "string" },
+                  { "const": "other", "type": "string" }
+                ]
+              },
+              "description": { "maxLength": 4000, "type": "string" },
+              "likelihood": {
+                "anyOf": [
+                  { "const": "low", "type": "string" },
+                  { "const": "medium", "type": "string" },
+                  { "const": "high", "type": "string" },
+                  { "const": "unknown", "type": "string" }
+                ]
+              },
+              "impact": {
+                "anyOf": [
+                  { "const": "low", "type": "string" },
+                  { "const": "medium", "type": "string" },
+                  { "const": "high", "type": "string" },
+                  { "const": "critical", "type": "string" },
+                  { "const": "unknown", "type": "string" }
+                ]
+              },
+              "mitigation": { "maxLength": 4000, "type": "string" },
+              "source_bindings": {
+                "minItems": 1,
+                "type": "array",
+                "items": {
+                  "additionalProperties": false,
+                  "type": "object",
+                  "required": ["source_kind", "source_id", "source_digest"],
+                  "properties": {
+                    "source_kind": {
+                      "anyOf": [
+                        { "const": "intent", "type": "string" },
+                        { "const": "clarification_answer", "type": "string" },
+                        { "const": "project_context", "type": "string" },
+                        { "const": "accepted_prd", "type": "string" },
+                        { "const": "validation_finding", "type": "string" },
+                        { "const": "review_finding", "type": "string" }
+                      ]
+                    },
+                    "source_id": { "minLength": 1, "maxLength": 400, "type": "string" },
+                    "source_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "open_questions": {
+          "type": "array",
+          "items": {
+            "additionalProperties": false,
+            "type": "object",
+            "required": ["id", "question", "blocking", "owner", "source_bindings"],
+            "properties": {
+              "id": {
+                "minLength": 3,
+                "maxLength": 160,
+                "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+                "type": "string"
+              },
+              "question": { "maxLength": 4000, "type": "string" },
+              "blocking": { "type": "boolean" },
+              "owner": { "maxLength": 400, "type": "string" },
+              "source_bindings": {
+                "minItems": 1,
+                "type": "array",
+                "items": {
+                  "additionalProperties": false,
+                  "type": "object",
+                  "required": ["source_kind", "source_id", "source_digest"],
+                  "properties": {
+                    "source_kind": {
+                      "anyOf": [
+                        { "const": "intent", "type": "string" },
+                        { "const": "clarification_answer", "type": "string" },
+                        { "const": "project_context", "type": "string" },
+                        { "const": "accepted_prd", "type": "string" },
+                        { "const": "validation_finding", "type": "string" },
+                        { "const": "review_finding", "type": "string" }
+                      ]
+                    },
+                    "source_id": { "minLength": 1, "maxLength": 400, "type": "string" },
+                    "source_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "glossary": {
+          "type": "array",
+          "items": {
+            "additionalProperties": false,
+            "type": "object",
+            "required": ["id", "term", "definition", "source_bindings"],
+            "properties": {
+              "id": {
+                "minLength": 3,
+                "maxLength": 160,
+                "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+                "type": "string"
+              },
+              "term": { "maxLength": 400, "type": "string" },
+              "definition": { "maxLength": 4000, "type": "string" },
+              "source_bindings": {
+                "minItems": 1,
+                "type": "array",
+                "items": {
+                  "additionalProperties": false,
+                  "type": "object",
+                  "required": ["source_kind", "source_id", "source_digest"],
+                  "properties": {
+                    "source_kind": {
+                      "anyOf": [
+                        { "const": "intent", "type": "string" },
+                        { "const": "clarification_answer", "type": "string" },
+                        { "const": "project_context", "type": "string" },
+                        { "const": "accepted_prd", "type": "string" },
+                        { "const": "validation_finding", "type": "string" },
+                        { "const": "review_finding", "type": "string" }
+                      ]
+                    },
+                    "source_id": { "minLength": 1, "maxLength": 400, "type": "string" },
+                    "source_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "context_source_refs": {
+          "uniqueItems": true,
+          "type": "array",
+          "items": { "minLength": 1, "maxLength": 400, "type": "string" }
+        }
+      }
+    },
+    "content_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
+    "supersedes_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
+    "record_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" }
+  }
+}

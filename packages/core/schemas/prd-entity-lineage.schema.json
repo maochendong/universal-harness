@@ -1,0 +1,88 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.universal-harness.dev/1.1/prd-entity-lineage.schema.json",
+  "additionalProperties": false,
+  "type": "object",
+  "required": [
+    "protocol_version",
+    "record_kind",
+    "lineage_record_id",
+    "session_id",
+    "proposal_content_digest",
+    "entity_kind",
+    "entity_id",
+    "lineage_kind",
+    "source_bindings",
+    "record_digest"
+  ],
+  "properties": {
+    "protocol_version": { "const": "1.1.0", "type": "string" },
+    "record_kind": { "const": "prd_entity_lineage", "type": "string" },
+    "lineage_record_id": {
+      "minLength": 3,
+      "maxLength": 160,
+      "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+      "type": "string"
+    },
+    "session_id": {
+      "minLength": 3,
+      "maxLength": 160,
+      "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+      "type": "string"
+    },
+    "proposal_content_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
+    "entity_kind": {
+      "anyOf": [
+        { "const": "goal", "type": "string" },
+        { "const": "non_goal", "type": "string" },
+        { "const": "actor", "type": "string" },
+        { "const": "scenario", "type": "string" },
+        { "const": "requirement", "type": "string" },
+        { "const": "constraint", "type": "string" },
+        { "const": "acceptance_criterion", "type": "string" },
+        { "const": "assumption", "type": "string" },
+        { "const": "dependency", "type": "string" },
+        { "const": "risk", "type": "string" },
+        { "const": "open_question", "type": "string" },
+        { "const": "glossary_term", "type": "string" }
+      ]
+    },
+    "entity_id": {
+      "minLength": 3,
+      "maxLength": 160,
+      "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+      "type": "string"
+    },
+    "lineage_kind": {
+      "anyOf": [
+        { "const": "new", "type": "string" },
+        { "const": "continues", "type": "string" }
+      ]
+    },
+    "source_bindings": {
+      "minItems": 1,
+      "type": "array",
+      "items": {
+        "additionalProperties": false,
+        "type": "object",
+        "required": ["source_kind", "source_id", "source_digest"],
+        "properties": {
+          "source_kind": {
+            "anyOf": [
+              { "const": "intent", "type": "string" },
+              { "const": "clarification_answer", "type": "string" },
+              { "const": "project_context", "type": "string" },
+              { "const": "accepted_prd", "type": "string" },
+              { "const": "validation_finding", "type": "string" },
+              { "const": "review_finding", "type": "string" }
+            ]
+          },
+          "source_id": { "minLength": 1, "maxLength": 400, "type": "string" },
+          "source_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" }
+        }
+      }
+    },
+    "previous_proposal_content_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
+    "record_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" }
+  }
+}

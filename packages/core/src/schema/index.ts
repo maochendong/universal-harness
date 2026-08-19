@@ -12,6 +12,7 @@ export * from "./observation.js";
 export * from "./operation.js";
 export * from "./plugin.js";
 export * from "./profile.js";
+export * from "./proposal.js";
 export * from "./registry.js";
 export * from "./run-stream.js";
 export * from "./synthesis.js";
