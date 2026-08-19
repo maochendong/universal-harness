@@ -940,7 +940,7 @@ Review Adapter 缺失时进入 `blocked`，并记录 `blocked_reason: "review_pr
 
 Capture Proposal、PRD Review 和执行 Agent 是三个 Adapter identity。即使共用 dsh executable/model，也分别拥有 env allowlist、timeout、token/output ceiling、prompt digest、conversation、Harness-owned evidence sink 和 usage accounting；Evidence sink 不挂载给 provider 进程。
 
-`project_discovery`/`approval_brief` 使用全局 `GroundedSynthesisPort` 配置槽，不复用 Proposal/Review conversation。Standard/Governed adopt 的 discovery 和实际人工审批 brief 是 required binding；Lite 未启用时不调用。配置、Invocation、Evidence 和失败契约见模型建议 Adapter 设计。
+`project_discovery`/`approval_brief` 使用 ProfileDecision 级 Capture-scope binding（见模型建议 Adapter 设计 §11.1 的双作用域定义），在 Capture 启动前提交，不复用 Proposal/Review conversation。Standard/Governed adopt 的 discovery 和实际人工审批 brief 是 required binding；Lite 未启用时不调用。配置、Invocation、Evidence 和失败契约见模型建议 Adapter 设计。
 
 ### 11.2 权限
 

@@ -143,7 +143,7 @@ export type ImpactAdvisoryResult =
   | { readonly status: "failed"; readonly failure: ModelPortFailure };
 ```
 
-输入绑定 Change Seed、accepted PRD/RequirementBaseline、确定性传播结果与解释路径、受控图邻域、`SemanticSeedProvider` 候选、17 种关系规则版本、Policy、CapabilityPlan 和 Git baseline。
+输入绑定 Change Seed、accepted PRD/RequirementBaseline、确定性传播结果与解释路径、受控图邻域、`SemanticSeedProvider` 候选、版本化关系规则注册表（registry version + digest）、Policy、CapabilityPlan 和 Git baseline。
 
 校验器必须拒绝：
 
@@ -273,6 +273,13 @@ export interface ModelProviderBinding {
   readonly failure_mode: "block" | "projection_finding";
 }
 ```
+
+Binding 按生命周期分两个互不重叠的作用域持有：
+
+- **Capture-scope**：`project_discovery` 与 Capture 阶段 `approval_brief` 在 CapabilityPlan 编译（accepted PRD 之后的 `capability_decision`）之前运行，其 binding 由 ProfileDecision 级 Capture-scope binding record 持有，在 Capture 启动前提交，绑定 ProfileDecision、Policy、配置、baseline 和版本摘要。
+- **Operation-scope**：accepted PRD 之后的全部领域 Port 与 Grounded purpose binding 由 CapabilityPlan 持有。
+
+两类 binding 使用同一 Schema；同一 slot/purpose 不得同时存在于两类 binding，Capability Compiler 确定性验证作用域不重叠。
 
 Provider closure 在 preflight 确定性复验。Standard/Governed 对当前 Operation 适用的新槽位强制配置 Provider，配置缺失不得降级 Lite/Manual/确定性假结果。Lite 未启用时不编译 binding，也不调用 Port。
 

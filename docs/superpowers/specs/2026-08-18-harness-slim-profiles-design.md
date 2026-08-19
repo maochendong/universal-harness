@@ -194,7 +194,7 @@ export interface CapabilityModuleDefinition {
 }
 ```
 
-CapabilityPlan 还会为实际启用的模型 seam 编译版本化 `ModelProviderBinding`，其包含 slot/purpose、required、provider/config/prompt/Schema/budget digest 和 `block | projection_finding` 失败模式。这些 binding 是 Module/Kernel node 的 Provider 依赖，不是新的公共 Capability 或 Graph Node。
+CapabilityPlan 还会为实际启用的模型 seam 编译版本化 `ModelProviderBinding`，其包含 slot/purpose、required、provider/config/prompt/Schema/budget digest 和 `block | projection_finding` 失败模式。这些 binding 是 Module/Kernel node 的 Provider 依赖，不是新的公共 Capability 或 Graph Node。Capture 前运行的槽位（`project_discovery` 与 Capture 阶段 `approval_brief`）不进入 CapabilityPlan，由 ProfileDecision 级 Capture-scope binding 持有，两类作用域互不重叠（见模型建议 Adapter 设计 §11.1）。
 
 Module 实现必须回答：
 
