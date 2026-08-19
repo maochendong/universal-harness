@@ -47,6 +47,21 @@ function sorted(values: readonly string[]): string[] {
   return [...values].sort((left, right) => left.localeCompare(right));
 }
 
+// Protocol 1.1 文档先行对齐（77bfb3b）：DesignSet/DesignArtifact 节点与
+// SPECIFIES 传播关系由实施计划 T11 落地。落地后删除这些集合，测试恢复严格相等。
+const PENDING_1_1_NODE_TYPES = ["DesignArtifact", "DesignSet"] as const;
+const PENDING_1_1_EDGE_TYPES = ["SPECIFIES"] as const;
+const PENDING_1_1_PROPAGATION_RULE = {
+  type: "SPECIFIES",
+  direction: "both",
+  defaultRisk: "high",
+  allowsInference: false,
+} as const;
+
+function withoutPending(values: readonly string[], pending: readonly string[]): string[] {
+  return values.filter((value) => !pending.includes(value));
+}
+
 function propagationRows(section: string): Array<{
   type: string;
   direction: string;
@@ -75,7 +90,8 @@ describe("Graph-native model documentation", () => {
     const documented = firstColumnEnums(markedSection(modelDocument(), "nodes"));
 
     expect(documented).toHaveLength(new Set(documented).size);
-    expect(sorted(documented)).toEqual(sorted(NODE_TYPES));
+    for (const pending of PENDING_1_1_NODE_TYPES) expect(documented).toContain(pending);
+    expect(sorted(withoutPending(documented, PENDING_1_1_NODE_TYPES))).toEqual(sorted(NODE_TYPES));
   });
 
   it("partitions every Edge type into propagation or structural semantics", () => {
@@ -86,7 +102,10 @@ describe("Graph-native model documentation", () => {
     expect(propagation).toHaveLength(new Set(propagation).size);
     expect(structural).toHaveLength(new Set(structural).size);
     expect(propagation.filter((type) => structural.includes(type))).toEqual([]);
-    expect(sorted([...propagation, ...structural])).toEqual(sorted(RELATION_TYPES));
+    for (const pending of PENDING_1_1_EDGE_TYPES) expect(propagation).toContain(pending);
+    expect(
+      sorted(withoutPending([...propagation, ...structural], PENDING_1_1_EDGE_TYPES)),
+    ).toEqual(sorted(RELATION_TYPES));
   });
 
   it("documents the executable propagation policy without drift", () => {
@@ -98,7 +117,11 @@ describe("Graph-native model documentation", () => {
       allowsInference: rule.allowsInference,
     }));
 
-    expect(documented).toEqual(authoritative);
+    const pendingRule = documented.find((rule) => rule.type === PENDING_1_1_PROPAGATION_RULE.type);
+    expect(pendingRule).toEqual(PENDING_1_1_PROPAGATION_RULE);
+    expect(documented.filter((rule) => rule.type !== PENDING_1_1_PROPAGATION_RULE.type)).toEqual(
+      authoritative,
+    );
   });
 
   it("publishes authoritative and live event streams without conflating them", () => {
@@ -133,7 +156,7 @@ describe("Graph-native model documentation", () => {
     expect(markdown).toContain("## Graph-native 驱动模型");
     expect(overview).toContain("```mermaid");
     for (const type of NODE_TYPES) expect(overview).toContain(type);
-    expect(overview).toContain("17 条影响传播关系");
+    expect(overview).toContain("18 条影响传播关系");
     expect(overview).toContain("14 条非传播结构关系");
     expect(overview).toContain("Lifecycle Event");
     expect(overview).toContain("Observation Event");
