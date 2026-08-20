@@ -1,6 +1,7 @@
 export * from "./impact/advisory.js";
 export * from "./impact/advisory-port.js";
 export * from "./impact/advisory-record.js";
+export * from "./impact/escalation.js";
 export * from "./impact/impact-set.js";
 export * from "./impact/prompt-contract.js";
 export * from "./impact/propagation.js";

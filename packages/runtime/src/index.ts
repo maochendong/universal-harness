@@ -887,9 +887,16 @@ export {
   type PhaseLifecycleEventSpec,
 } from "./orchestration/lifecycle-events.js";
 export {
+  MODULE_STATUS_MAPPINGS,
+  deriveModuleDomainStatus,
+  isModuleStatusCapability,
+  type ModuleStatusCapabilityId,
+} from "./orchestration/module-status.js";
+export {
   moduleContributionsForProfile,
   projectProfileModuleStatus,
   resolveProfileModules,
+  type ModuleStatusEvidence,
   type ProfileModuleResolution,
   type ProfileModuleStatusEntry,
 } from "./orchestration/profile-modules.js";

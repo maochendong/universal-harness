@@ -650,6 +650,7 @@ export function collectProjectStatus(projectRoot: string): ProjectStatus {
       graph_cache: cache.status,
       capabilities: projectProfileModuleStatus(
         readLatestProjectProfile(projectRoot, `project_${manifest.name}`),
+        { nodes },
       ),
       ...derived,
       ...(activeRun === undefined ? {} : { active_run: activeRun }),
