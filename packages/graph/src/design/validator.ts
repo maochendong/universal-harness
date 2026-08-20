@@ -188,9 +188,9 @@ interface ArtifactContent {
   readonly body: unknown;
 }
 
-/** Read and shape-check the harness.design_artifact extension of an asset. */
+/** Read and shape-check the harness.design.artifact extension of an asset. */
 function artifactContentOf(asset: AssetRef | undefined): ArtifactContent | undefined {
-  const extension = asset?.extensions?.["harness.design_artifact"];
+  const extension = asset?.extensions?.["harness.design.artifact"];
   if (extension === undefined) return undefined;
   const result = PROTOCOL_1_1_SCHEMA_REGISTRY.validate("design-artifact-content", extension);
   if (!result.valid) return undefined;

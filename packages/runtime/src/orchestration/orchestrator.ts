@@ -142,7 +142,9 @@ export async function runIteration(
     started.operation.workflow_operation_id,
     started.operation.iteration_id,
     input,
-    moduleContributionsForProfile(deps.projectRoot, projectId),
+    moduleContributionsForProfile(deps.projectRoot, projectId, {
+      ...(deps.design === undefined ? {} : { design: deps.design }),
+    }),
   );
   if ("outcome" in context) return context.outcome;
   return drivePipeline(context, "capture", input.untilPhase);
@@ -228,6 +230,9 @@ export async function resumeIteration(
     moduleContributionsForProfile(
       deps.projectRoot,
       `project_${readManagedManifest(deps.projectRoot).name}`,
+      {
+        ...(deps.design === undefined ? {} : { design: deps.design }),
+      },
     ),
   );
   if ("outcome" in context) return context.outcome;

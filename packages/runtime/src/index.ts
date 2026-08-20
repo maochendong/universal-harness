@@ -893,6 +893,11 @@ export {
   type ModuleStatusCapabilityId,
 } from "./orchestration/module-status.js";
 export {
+  createDesignContribution,
+  phaseDesign,
+  type DesignContributionOptions,
+} from "./orchestration/contributors/design-contributor.js";
+export {
   moduleContributionsForProfile,
   projectProfileModuleStatus,
   resolveProfileModules,

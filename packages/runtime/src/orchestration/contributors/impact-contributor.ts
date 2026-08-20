@@ -32,7 +32,7 @@ export async function phaseImpact(
     ctx.impactSet = frozen;
     await ctx.engine.commitCheckpoint(ctx.workflowOperationId, {
       boundary: PHASE_CHECKPOINT_BOUNDARY.impact,
-      proposal: { phase: "plan" },
+      proposal: { phase: "design" },
     });
     refreshWorkingState(ctx);
     return { continue: true };
@@ -105,7 +105,7 @@ export async function phaseImpact(
   ctx.impactSet = frozenSet;
   await ctx.engine.commitCheckpoint(ctx.workflowOperationId, {
     boundary: PHASE_CHECKPOINT_BOUNDARY.impact,
-    proposal: { phase: "plan" },
+    proposal: { phase: "design" },
   });
   refreshWorkingState(ctx);
   return { continue: true };

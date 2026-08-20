@@ -176,7 +176,10 @@ describe("module status projection through the shared projector", () => {
       domain_status: "audit_warnings_open",
       generic_status: "proven",
     });
-    expect(byId.get("design_governance")?.generic_status).toBe("not_enabled_by_profile");
+    // design_governance activates under Standard (T12): active, but without
+    // graph evidence it makes no proof claim at all.
+    expect(byId.get("design_governance")).toMatchObject({ resolution: "active" });
+    expect(byId.get("design_governance")?.generic_status).toBeUndefined();
     expect(byId.get("strict_tdd")?.generic_status).toBe("not_enabled_by_profile");
   });
 

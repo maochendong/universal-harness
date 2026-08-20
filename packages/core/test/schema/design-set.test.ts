@@ -85,7 +85,7 @@ function goldenContent() {
         node_type: "DesignArtifact",
         target_revision: 1,
         proposed_extensions: {
-          "harness.design_artifact": {
+          "harness.design.artifact": {
             artifact_kind: "api_contract",
             title: "Items API",
             summary: "read-only items endpoint",

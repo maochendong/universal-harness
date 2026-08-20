@@ -18,6 +18,7 @@ describe("orchestration phases", () => {
     expect(ORCHESTRATION_PHASES).toEqual([
       "capture",
       "impact",
+      "design",
       "plan",
       "context",
       "execute",
@@ -28,6 +29,8 @@ describe("orchestration phases", () => {
     expect(phaseRank("capture")).toBe(0);
     expect(phaseRank("snapshot")).toBe(ORCHESTRATION_PHASES.length - 1);
     expect(nextPhase("capture")).toBe("impact");
+    expect(nextPhase("impact")).toBe("design");
+    expect(nextPhase("design")).toBe("plan");
     expect(nextPhase("snapshot")).toBeUndefined();
   });
 

@@ -586,6 +586,7 @@ export interface PipelineContext {
   /** Module contributors registered for this operation; empty means Kernel-only. */
   readonly modules: ModuleContributions;
   impactSet?: NodeRecord;
+  designSet?: NodeRecord;
   plan?: { readonly node: NodeRecord; readonly content: ExecutionPlanContent };
   bundles: Map<string, ContextBundleRecord>;
   envelope?: TaskEnvelope;
@@ -830,6 +831,19 @@ export function loadFrozenImpactSet(ctx: PipelineContext): NodeRecord | undefine
     return graph.nodes.find(
       (node) =>
         node.type === "ImpactSet" &&
+        node.provenance.iteration_id === ctx.iterationId &&
+        node.status === "accepted",
+    );
+  } finally {
+    graph.close();
+  }
+}
+export function loadAcceptedDesignSet(ctx: PipelineContext): NodeRecord | undefined {
+  const graph = materializeProjectGraph(ctx.deps.projectRoot);
+  try {
+    return graph.nodes.find(
+      (node) =>
+        node.type === "DesignSet" &&
         node.provenance.iteration_id === ctx.iterationId &&
         node.status === "accepted",
     );
@@ -1682,6 +1696,19 @@ async function phasePlan(ctx: PipelineContext, gateIds: readonly string[]): Prom
     return { continue: true };
   }
   const frozenImpactSet = ctx.impactSet ?? loadFrozenImpactSet(ctx);
+  if (ctx.modules.design !== undefined) {
+    // design_governance is active for this operation: plan compiles only from
+    // an accepted DesignSet, never from a proposal or a wish (designset
+    // lifecycle design 5.2 — no accepted DesignSet, no Plan).
+    const designSet = ctx.designSet ?? loadAcceptedDesignSet(ctx);
+    if (designSet === undefined) {
+      throw new OrchestrationError(
+        "binding_drift",
+        "plan phase requires an accepted DesignSet while design_governance is active",
+      );
+    }
+    ctx.designSet = designSet;
+  }
   const kernelDerived = frozenImpactSet === undefined;
   const impactSet = frozenImpactSet ?? deriveKernelImpactSet(ctx);
   ctx.impactSet = impactSet;
@@ -3109,6 +3136,12 @@ export interface ImpactContribution {
   readonly runPhase: ModulePhaseStep;
 }
 
+/** design_governance module: the `design` phase between impact and plan. */
+export interface DesignContribution {
+  readonly capability_id: "design_governance";
+  readonly runPhase: ModulePhaseStep;
+}
+
 /** independent_evaluation module: per-run evaluation plus the `evaluate` phase. */
 export interface EvaluateContribution {
   readonly capability_id: "independent_evaluation";
@@ -3128,6 +3161,7 @@ export interface AuditContribution {
 
 export interface ModuleContributions {
   readonly impact?: ImpactContribution;
+  readonly design?: DesignContribution;
   readonly evaluate?: EvaluateContribution;
   readonly audit?: AuditContribution;
 }
@@ -3525,7 +3559,7 @@ async function advanceIntoPhase(ctx: PipelineContext, phase: OrchestrationPhase)
     );
   }
   const target =
-    phase === "capture" || phase === "impact"
+    phase === "capture" || phase === "impact" || phase === "design"
       ? "awaiting_approval"
       : phase === "plan"
         ? "planned"
@@ -3581,6 +3615,7 @@ export async function drivePipeline(
   };
   const moduleSteps: Readonly<Record<string, ModulePhaseStep | undefined>> = {
     impact: ctx.modules.impact?.runPhase,
+    design: ctx.modules.design?.runPhase,
     evaluate: ctx.modules.evaluate?.runPhase,
   };
   for (const phase of ORCHESTRATION_PHASES.slice(phaseRank(fromPhase))) {

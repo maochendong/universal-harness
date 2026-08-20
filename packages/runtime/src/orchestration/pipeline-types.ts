@@ -1,5 +1,7 @@
 import {
   type CommitHooks,
+  type DesignProposalPort,
+  type DesignReviewPort,
   type EdgeRecord,
   type LockTuning,
   type NodeRecord,
@@ -172,6 +174,11 @@ export interface OrchestratorDependencies {
   readonly gates?: readonly GateDefinition[];
   readonly toolRegistry?: ToolRegistry;
   readonly evaluate?: EvaluationPort;
+  /** Design module ports; an active design_governance without ports blocks. */
+  readonly design?: {
+    readonly proposal?: DesignProposalPort;
+    readonly review?: DesignReviewPort;
+  };
   readonly tasksProjection?: TasksProjectionPort;
   readonly planTasks?: PlanTasksPort;
   readonly taskEnvelopeScope?: TaskEnvelopeScopePort;

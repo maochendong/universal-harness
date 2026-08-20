@@ -84,7 +84,7 @@ const STRATEGY_ARTIFACT_ID = "designartifact_01K1TST";
 
 function testStrategyExtension(requirementId: string) {
   return {
-    "harness.design_artifact": {
+    "harness.design.artifact": {
       artifact_kind: "test_strategy",
       title: "items strategy",
       summary: "contract and unit tests",
@@ -123,7 +123,7 @@ function testStrategyExtension(requirementId: string) {
 
 function apiContractExtension() {
   return {
-    "harness.design_artifact": {
+    "harness.design.artifact": {
       artifact_kind: "api_contract",
       title: "Items API",
       summary: "read-only items endpoint",

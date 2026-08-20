@@ -2644,7 +2644,14 @@ describe("phase orchestrator", { timeout: 30000 }, () => {
     if (outcome.status !== "completed") throw new Error("expected completion");
 
     const timeline = events.map((event) => `${event.type}:${event.phase}`);
+    // Module phases without a registered contribution are skipped entirely —
+    // no step, no checkpoint, no events (plan Task 8-A). This legacy project
+    // activates impact, evaluate and audit but not design (T12).
     for (const phase of ORCHESTRATION_PHASES) {
+      if (phase === "design") {
+        expect(timeline).not.toContain(`phase_started:${phase}`);
+        continue;
+      }
       expect(timeline).toContain(`phase_started:${phase}`);
       expect(timeline).toContain(`phase_completed:${phase}`);
     }
