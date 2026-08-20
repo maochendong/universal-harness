@@ -2,7 +2,7 @@
 
 > 日期：2026-08-20
 >
-> 状态：待评审，未授权实施
+> 状态：已批准实施
 >
 > 设计输入：[Prompt Governance 增补设计](../specs/2026-08-20-prompt-governance-addendum-design.md)
 >
@@ -12,7 +12,7 @@
 
 ## 1. 目标
 
-现有 19-task 已完成 T1–T7，T8-A 正在工作区开发。本增补在不停止主计划的前提下交付以下能力：
+现有 19-task 已完成 T1–T7，T8-A 也已由 `dcecd50` 完成。本增补从 PG-0 接续主计划并交付以下能力：
 
 1. 每个模型 Port/purpose 使用领域拥有、版本化且可摘要的 `PromptContract`。
 2. Provider/Adapter 配置不再只绑定可读的 `prompt_version`，还绑定 contract、输出 Schema 和实际编译 Prompt 摘要。
@@ -32,13 +32,13 @@
 - `ModelProviderBinding` 已有 slot/purpose、Provider、config、`prompt_version`、`schema_version`、budget 和 failure mode。
 - Capture 已有 Proposal/Review Adapter Profile 的 `prompt_version_digest`。
 - T5/T7 已有 `project_discovery`、`approval_brief` 的严格输入输出 Schema、citation validator 和 InMemory 契约。
-- T8-A 的 DAG Engine、Kernel Coordinator、Module contributors 与兼容 facade 正在未提交工作区开发。
+- T8-A 的 DAG Engine、Kernel Coordinator、Module contributors 与兼容 facade 已由 `dcecd50` 提交；全量 `259/259` Test Files、`1726/1726` Tests 通过。
 
 ### 2.2 强制切入顺序
 
 ```text
-完成并独立提交 T8-A
-  → PG-0：T1–T7 additive compatibility patch
+T8-A dcecd50（已完成）
+  → PG-0：T1–T7 additive compatibility patch（可开始）
   → PG-1：T8-B PromptCompiler 深模块
   → PG-2：T8-B Managed Runner + Capture 接线
   → T9 Lite 闭环
@@ -47,7 +47,7 @@
   → PG-9 随 T19 E2E/发布验收
 ```
 
-在 T8-A 提交前不得开始 PG-0；PG-0 不得修改 T8-A 的 runtime/orchestrator 工作文件。当前图模型文档与 SVG 也保持独立提交，不能混入 Prompt Governance 代码提交。
+PG-0 已具备开工前提，但不得修改 `dcecd50` 已交付的 orchestration/workflow 文件及其测试。当前图模型文档与 SVG 也保持独立提交，不能混入 Prompt Governance 代码提交。
 
 ## 3. 与现有 19-task 的映射
 
@@ -136,6 +136,7 @@ git diff --check
 
 - `packages/core/src/schema/prompt.ts`
 - `packages/core/src/prompt/contracts.ts`
+- `packages/core/src/prompt/failure-mapping.ts`
 - `packages/core/src/prompt/registry.ts`
 - `packages/core/src/prompt/policy-clauses.ts`
 - `packages/core/src/prompt/index.ts`
@@ -144,6 +145,7 @@ git diff --check
 - `packages/core/src/synthesis/prompt-contracts.ts`
 - `packages/core/test/prompt/contract-registry.test.ts`
 - `packages/core/test/prompt/contracts.test.ts`
+- `packages/core/test/prompt/failure-mapping.test.ts`
 - `packages/core/test/golden/prompt/`
 
 **修改主要文件**：
@@ -162,22 +164,25 @@ git diff --check
 
 1. `PromptContract` unknown field、空 segment、错误 digest、未知 Profile、未知 Schema 被拒绝。
 2. 相同 `(contract_id, version)` 注册不同内容时 Registry 启动失败。
-3. Registry 只能按 port/purpose/version 精确解析，不能按“最接近版本”猜测。
-4. `ModelProviderBinding` 缺 `prompt_contract_id`、`prompt_contract_digest` 或 `output_schema_digest` 时失败。
+3. Registry 只能按 port/purpose/`prompt_version` selector 精确解析；selector 必须唯一映射到 contract id/version/digest/output Schema，未知、歧义或 binding 不一致返回 `prompt_contract_version_mismatch`，不能只告警或按“最接近版本”猜测。
+4. `ModelProviderBinding` 缺 `prompt_contract_id`、`prompt_contract_version`、`prompt_contract_digest` 或 `output_schema_digest` 时失败。
 5. model-backed `CaptureProposalProfile`、`CaptureReviewProfile` 缺 `prompt_contract_id/version/digest` 或 `output_schema_digest` 时配置失败；Manual/InMemory 变体缺少这些字段仍合法，且产生零 Prompt 编译/Invocation。
 6. Profile/Capability Compiler 从注入的 Registry 解析 digest；调用方提供摘要或摘要不匹配时 fail closed。
 7. Capture/Operation scope overlap、Lite 零 binding 与现有 Provider closure 语义不变。
 8. Schema canonical ordering、golden export 和 package export drift 被机械检测。
+9. 既有 binding/schema golden digest 变化必须逐个列出并核对来源；测试或提交不得以无解释的批量 snapshot 刷新通过。
+10. 每个 preparation、invocation 和 domain validation code 只有一个权威层级/载体；`GroundedSynthesisFailure` 只能投影已存在事实，未知 code fail closed。
 
 **实现步骤**：
 
 1. 定义严格 `PromptSegment`、`PromptContract`、`PromptPreparationFailure` Schema 与 canonical digest helper。
 2. 实现只读 `PromptContractRegistry`；注册结束后冻结，不提供 runtime mutation API。
 3. 定义 allowlisted Policy clause registry 的数据契约，但本工作包不编译 Prompt。
-4. 为 PRD Proposal/Review、project discovery、approval brief 注册领域拥有的首版 Contract。
-5. 扩展 ModelProviderBinding，并把 Proposal/Review Adapter Profile 演进为 model-backed/non-model 判别联合；前者显式增加 `prompt_contract_version`，`prompt_version`/`prompt_version_digest` 继续保留为人类配置与兼容字段。
-6. 向 Profile/Capability Compiler 显式注入 `PromptContractResolver`，由 Compiler 解析并写入 digest；用户配置不接受手填 digest。
-7. 更新全部 Protocol 1.1 fixtures 和 JSON Schema 导出；Protocol 1.0 reader 与历史 fixture 不改写。
+4. 建立固定 failure code→层级→权威载体映射；Grounded failure 只做 projection，未知 code fail closed。
+5. 为 PRD Proposal/Review、project discovery、approval brief 注册领域拥有的首版 Contract。
+6. 扩展 ModelProviderBinding，并把 Proposal/Review Adapter Profile 演进为 model-backed/non-model 判别联合；`prompt_version` 是 Registry selector/兼容 alias，model-backed binding 显式保存解析后的 `prompt_contract_version`，任何映射漂移均 fail closed。
+7. 向 Profile/Capability Compiler 显式注入 `PromptContractResolver`，由 Compiler 解析并写入 digest；用户配置不接受手填 digest。
+8. 更新全部 Protocol 1.1 fixtures 和 JSON Schema 导出；对每个变化的 binding/schema golden 逐项人工核对字段来源和 digest 轮换原因，并在提交说明中列出，禁止无解释批量刷新。Protocol 1.0 reader 与历史 fixture 不改写。
 
 **目标测试命令**：
 
@@ -188,7 +193,7 @@ pnpm --filter @universal-harness-internal/core typecheck
 pnpm verify
 ```
 
-**完成条件**：四个已落 Capture 合同可解析；所有新 binding digest 由 Registry 派生；T8-A diff 零变化。
+**完成条件**：四个已落 Capture 合同可解析；所有新 binding digest 由 Registry 派生；PG-0 不修改 `dcecd50` 已交付的 `packages/runtime/src/orchestration/`、`packages/runtime/src/workflow/` 及对应 T8-A 测试文件；全部 golden digest 变化均有逐项审核说明。
 
 ## 7. PG-1：T8-B PromptCompiler 深模块
 
@@ -450,17 +455,18 @@ pnpm test:release
 
 ## 16. 失败与恢复统一矩阵
 
-| 失败发生点 | 权威表示 | Provider 是否启动 | 是否消耗 Provider budget | 恢复方式 |
+| 层级/失败发生点 | 权威表示 | Invocation 状态 | Provider/budget | 恢复方式 |
 | --- | --- | --- | --- | --- |
-| Contract 缺失/版本或 digest 不匹配 | `PromptPreparationFailure` blocker | 否 | 否 | 修复 Registry/配置后同 checkpoint resume |
-| Profile Overlay 缺失 | `PromptPreparationFailure` blocker | 否 | 否 | 补齐版本化 Overlay 后 resume |
-| Policy clause 非法 | `PromptPreparationFailure` blocker | 否 | 否 | 修复 Policy clause/参数后 resume |
-| output Schema 不一致 | `PromptPreparationFailure` blocker | 否 | 否 | 对齐 Contract/Schema binding 后 resume |
-| untrusted boundary/size 失败 | `PromptPreparationFailure` blocker | 否 | 否 | 缩减/清洗 typed bundle 后重编 |
-| timeout/budget/provider unavailable | `ModelPortFailure` | 是或已尝试 | 是 | 受控重试、对账或人工修复 Provider |
-| invalid output/citation | `ModelPortFailure` + validation Finding | 是 | 是 | 预算内重提；耗尽后 blocked |
-| contract/input/policy drift | Result invalidation | 历史不改写 | 不追加旧 attempt | 新 binding 下重新编译/调用 |
-| iteration narrative 失败 | Projection Finding | 视失败点 | 视失败点 | Snapshot 保持完成，单独重试 Projection |
+| Contract 缺失、selector/version/digest 不匹配 | checkpoint blocker/Finding 中的 `PromptPreparationFailure` | 不创建 Planned/Started | 零调用、零预算 | 修复 Registry/配置后同 checkpoint resume |
+| Profile Overlay、Policy clause、output Schema、untrusted boundary/size 失败 | checkpoint blocker/Finding 中的 `PromptPreparationFailure` | 不创建 Planned/Started | 零调用、零预算 | 修复 Overlay/Policy/Schema/bundle 后重编 |
+| `provider_required`/`provider_unavailable` | `ModelInvocationRecord` + `ModelPortFailure` | Planned，可在 Started 前失败 | 零调用或未启动、零 Provider 用量 | 修复 Provider 后对账/resume |
+| timeout/budget/invalid output/independence/version/policy/uncertain | `ModelInvocationRecord` + `ModelPortFailure` | Planned 且按实际 attempt 记录 Started/Completed/Failed | 按实际尝试记录用量 | 受控重试、对账；耗尽后 blocked |
+| `binding_drift`/`bundle_stale`/`unknown_purpose` | owning Domain typed outcome/Validation/Finding | preflight 命中时不创建新 Invocation | 可零调用、零预算 | 刷新 binding/bundle/purpose 后 resume |
+| `citation_missing`/`citation_invalid` | ModelResultRejected + owning Domain Validation/Finding | Completed 但不得 Consumed | 已调用并记录实际用量 | 预算内重提；耗尽后 blocked |
+| contract/input/policy drift | Result invalidation | 历史 Invocation 不改写 | 不追加旧 attempt | 新 binding 下重新编译/调用 |
+| iteration narrative 失败 | 按失败层记录底层事实，并投影 Projection Finding | 视底层失败点 | 视实际尝试 | Snapshot 保持完成，单独重试 Projection |
+
+`GroundedSynthesisFailure` 只投影调用层或领域层的既有失败事实，不另建权威 record。PG-0/PG-2 必须提供 code→层级→载体映射测试，未知 code fail closed。
 
 任何失败都不得静默换 Prompt、换 Provider、降级 Manual、跳过 required slot 或用模型自述标记完成。
 
@@ -488,12 +494,14 @@ test(protocol): prove prompt governance end to end
 - [ ] 11 个 Port/purpose 都有领域拥有、版本化且不可静默修改的 Prompt Contract。
 - [ ] 四个领域建议 Port 与 Grounded 四 purpose 使用 `ModelProviderBinding`；`PrdProposalPort`、`PrdReviewPort`、`DesignProposalPort` 保留判别式 Adapter Profile，不扩张五槽位模型。
 - [ ] Binding/Profile 固定 contract/version/digest 与 output Schema digest；Invocation 固定 compiled prompt digest。
+- [ ] `prompt_version` 只作为 Registry selector/兼容 alias，必须唯一解析到 binding 中的 contract id/version/digest/Schema；不一致时 fail closed。
 - [ ] Adapter/调用方没有 raw system prompt、动态 Schema 或隐藏 history 注入口。
 - [ ] PromptCompiler 固定七段顺序，项目内容永远只进入 untrusted partition。
 - [ ] Lite/Standard/Governed Overlay 只增加深度，不能弱化 Authority、Schema、风险或审批。
 - [ ] Policy 只通过 allowlisted clause id/参数注入，原始 Policy Markdown 不是指令。
 - [ ] Preparation failure 在 Provider 前 fail closed、零调用、零预算且可恢复。
 - [ ] Provider failure 与 Preparation failure 具有不同 Schema、事件、Dashboard 文案和恢复动作。
+- [ ] preparation、invocation、domain validation 三层失败码具有唯一映射和权威载体；Grounded failure 不形成第二份 truth。
 - [ ] Prompt/cache/conversation/run/Evidence 在 Port/purpose 与 Proposal/Review 间完全隔离。
 - [ ] Prompt 漂移只失效未消费 Result，历史 Invocation 与 Protocol 1.0 不改写。
 - [ ] Impact 不能降风险，Design accept 不能代替人工批准，Plan 不能改 Assertion/Grant，Feedback 不能覆盖确定性 RCA。
@@ -501,6 +509,7 @@ test(protocol): prove prompt governance end to end
 - [ ] Lite 未启用槽位零 Prompt 编译、Invocation、Result、Evidence 和 Dashboard 空壳。
 - [ ] Dashboard 默认不泄露完整 Prompt，审计展开只读取脱敏受控 artifact。
 - [ ] Prompt injection、越权输出、citation 语义错误、漂移、crash/resume 和 Provider 对账测试全部通过。
+- [ ] Protocol 1.1 binding/schema golden 的每次 digest 轮换均有逐项人工审核说明，Protocol 1.0 fixture 不改写。
 - [ ] `pnpm test:release`、三档真实 dogfood 和中文验收报告全部完成。
 
 ## 19. 明确不做

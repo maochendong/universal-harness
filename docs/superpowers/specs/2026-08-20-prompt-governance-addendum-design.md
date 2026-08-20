@@ -2,11 +2,11 @@
 
 日期：2026-08-20
 
-状态：已复核，批准制定实施计划
+状态：已复核，批准实施
 
 目标版本：Protocol 1.1.0
 
-实施约束：现有 19-task 已进入 T8-A 开发；本增补不新增公共 Phase，不重开 T1–T7 业务逻辑，不增加 Task 20。
+实施约束：现有 19-task 的 T8-A 已由 `dcecd50` 完成；本增补从 PG-0 接入，不新增公共 Phase，不重开 T1–T7 业务逻辑，不增加 Task 20。
 
 关联设计：
 
@@ -21,7 +21,7 @@ Protocol 1.1 已经规定每个模型 Port/purpose 使用独立 prompt、Schema�
 
 本增补引入中心化 `PromptContractRegistry` 与内部 `PromptCompiler`。领域 Module 拥有版本化 Prompt Contract；Runner 只消费经过确定性编译和安全检查的 `CompiledPrompt`。Prompt 负责提高理解和输出质量，Schema 负责约束形状，领域 Validator/Compiler、Policy、Approval 和 Evidence 继续决定权威事实。
 
-当前实施已经完成 T1–T7，T8-A 的 DAG Engine 与 Orchestrator 拆分正在工作区开发。本设计采用最小兼容回补：先扩展现有 Provider binding 与 Protocol 1.1 fixtures，再在 T8-B 落公共 Prompt 编译深模块，后续领域 Task 按原顺序注册各自 Prompt Contract。
+当前实施已经完成 T1–T7，T8-A 的 DAG Engine 与 Orchestrator 拆分也已由 `dcecd50` 提交并通过全量测试。本设计采用最小兼容回补：先扩展现有 Provider binding 与 Protocol 1.1 fixtures，再在 T8-B 落公共 Prompt 编译深模块，后续领域 Task 按原顺序注册各自 Prompt Contract。
 
 ## 2. 已确认决策
 
@@ -47,7 +47,7 @@ Protocol 1.1 已经规定每个模型 Port/purpose 使用独立 prompt、Schema�
 1. 为每个 LLM Port/purpose 提供针对性的角色、领域 rubric、Profile 深度和输出引导。
 2. 使 Prompt 模板、Profile Overlay、Policy Overlay、Schema 和编译结果全部版本化、可摘要、可恢复、可审计。
 3. 防止 Adapter 临时拼接 Prompt、跨 Port 复用隐藏历史或让项目文本覆盖 Harness 指令。
-4. 在不打断 T8-A 的前提下，把公共 Prompt 编译能力放入 T8-B，并让后续领域 Task 自治注册模板。
+4. 在不修改 T8-A 已冻结边界的前提下，把公共 Prompt 编译能力放入 T8-B，并让后续领域 Task 自治注册模板。
 5. 建立 Prompt 级 golden、攻击、漂移和真实模型回归测试。
 
 ### 3.2 非目标
@@ -127,12 +127,13 @@ interface ModelProviderBinding {
 
   // Prompt Governance addendum
   readonly prompt_contract_id: string;
+  readonly prompt_contract_version: string;
   readonly prompt_contract_digest: string;
   readonly output_schema_digest: string;
 }
 ```
 
-`prompt_version` 继续作为用户配置和人类可读版本。Profile/Capability Compiler 从内置 Registry 解析 contract/digest，用户不手填摘要。Capture-scope 与 Operation-scope binding 继续使用同一 Schema，并保持 slot/purpose 作用域互斥。
+`prompt_version` 继续作为用户配置和人类可读的 Registry selector/兼容 alias，不要求其字符串直接等于 Contract 的 semver。Profile/Capability Compiler 必须用它唯一解析出 `prompt_contract_id/version/digest` 与 `output_schema_digest`；解析结果与 binding 任一字段不一致时 fail closed，使用 `prompt_contract_version_mismatch`，不能只告警或选择“最接近版本”。用户不手填摘要。Capture-scope 与 Operation-scope binding 继续使用同一 Schema，并保持 slot/purpose 作用域互斥。
 
 上述 `ModelProviderBinding` 扩展只覆盖模型建议设计定义的四个领域建议槽位与 `GroundedSynthesisPort` 四种 purpose。`PrdProposalPort`、`PrdReviewPort` 和 `DesignProposalPort` 已有独立 Adapter Profile/identity，不新增或伪装成第五类 Provider slot；只有它们的 model-backed Adapter Profile 变体增加 `prompt_contract_id`、`prompt_contract_version`、`prompt_contract_digest` 与 `output_schema_digest`，并保留既有 `prompt_version_digest`。模型实现仍必须经过受管 Runner；Manual/InMemory 变体只保留既有 `adapter_profile_digest` 行为版本，不要求 Prompt Contract，也不产生 Prompt 编译或模型 Invocation。这样既覆盖全部 LLM Prompt，又不改变已批准的五槽位模型、Lite 非模型路径或 Provider 配置真相。
 
@@ -275,13 +276,23 @@ export type PromptPreparationFailureCode =
 失败时：
 
 1. 追加 checkpoint blocker/Finding；
-2. 不产生 `ModelInvocationStarted`；
+2. 不产生 `ModelInvocationPlanned` 或 `ModelInvocationStarted`；
 3. 不消耗 Provider budget；
 4. Standard/Governed 必需槽位保持 blocked；
 5. 不静默切换 Manual、其他模型或其他 Prompt；
 6. Registry/配置修复后从同一 checkpoint 恢复。
 
-Provider 调用后的 timeout、budget、invalid output、citation missing 等继续使用 `ModelPortFailure`。
+### 9.1.1 失败码命名空间与权威载体
+
+失败不能只按“Provider 调用前/后”二分，因为 Provider 缺失、输入漂移和领域校验可能在不同子阶段被发现。Protocol 1.1 固定以下三层映射：
+
+| 层级 | 典型 code | 允许出现的权威载体 | Invocation 语义 |
+| --- | --- | --- | --- |
+| Prompt 准备 | `prompt_contract_required`、`prompt_contract_version_mismatch`、`prompt_contract_digest_mismatch`、`profile_overlay_missing`、`policy_overlay_invalid`、`output_schema_mismatch`、`untrusted_source_boundary_failed`、`prompt_size_exceeded` | checkpoint blocker/Finding 中的 `PromptPreparationFailure` payload | 发生在 `ModelInvocationPlanned` 前，不创建 Invocation record |
+| 模型调用编排/执行 | `provider_required`、`provider_unavailable`、`timeout`、`budget_exhausted`、`invalid_output`、`independence_violation`、`version_mismatch`、`policy_denied`、`uncertain` | `ModelInvocationRecord` 的 planned/attempt/failure/validation 状态与规范化 `ModelPortFailure` | `provider_required/unavailable` 可在 Started 前失败；timeout/budget/output 类失败发生在调用尝试后 |
+| 领域预检、校验与消费 | `binding_drift`、`bundle_stale`、`unknown_purpose`、`citation_missing`、`citation_invalid` | owning Domain 的 typed Port outcome、Validation Record/Finding；完成输出被拒绝时同时写 Result rejected 状态 | preflight 命中时可零 Provider 调用；citation 类通常发生在 Provider 返回后 |
+
+`GroundedSynthesisFailure` 是 `GroundedSynthesisPort` 对上述调用层或领域层失败的只读投影，不是新的权威失败记录；同一底层失败不得在两个 Ledger record 中各自成为 truth。实现必须提供固定 code→层级→载体映射，未知 code fail closed。Prompt preparation code 不得写入 `ModelInvocationRecord`，领域 validation code 不得伪装成 Prompt 编译失败。
 
 ### 9.2 精确失效
 
@@ -351,9 +362,9 @@ Proposal/Review、不同 purpose、不同 Profile 或不同 Policy Overlay 不�
 
 `prompt_version` 配置继续可用。用户无需手工维护 digest。
 
-### 13.2 T8-A 不受影响
+### 13.2 T8-A 已完成且边界不受影响
 
-当前 DAG contract、checkpoint、Kernel Coordinator 和 Orchestrator 拆分不依赖 Prompt 内容。增补不修改 T8-A 的公共接口；PromptCompiler、Preparation blocker 和 Runner 接线只进入 T8-B。
+`dcecd50` 已提交 DAG contract、checkpoint、Kernel Coordinator 和 Orchestrator 拆分，且全量 `259/259` Test Files、`1726/1726` Tests 通过。增补不修改 T8-A 的公共接口或交付文件；PromptCompiler、Preparation blocker 和 Runner 接线只进入 T8-B。
 
 ### 13.3 后续领域 Task
 
