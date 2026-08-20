@@ -2,7 +2,7 @@
 
 日期：2026-08-20
 
-状态：设计已确认，待文档复核
+状态：已复核，批准制定实施计划
 
 目标版本：Protocol 1.1.0
 
@@ -134,6 +134,8 @@ interface ModelProviderBinding {
 
 `prompt_version` 继续作为用户配置和人类可读版本。Profile/Capability Compiler 从内置 Registry 解析 contract/digest，用户不手填摘要。Capture-scope 与 Operation-scope binding 继续使用同一 Schema，并保持 slot/purpose 作用域互斥。
 
+上述 `ModelProviderBinding` 扩展只覆盖模型建议设计定义的四个领域建议槽位与 `GroundedSynthesisPort` 四种 purpose。`PrdProposalPort`、`PrdReviewPort` 和 `DesignProposalPort` 已有独立 Adapter Profile/identity，不新增或伪装成第五类 Provider slot；只有它们的 model-backed Adapter Profile 变体增加 `prompt_contract_id`、`prompt_contract_version`、`prompt_contract_digest` 与 `output_schema_digest`，并保留既有 `prompt_version_digest`。模型实现仍必须经过受管 Runner；Manual/InMemory 变体只保留既有 `adapter_profile_digest` 行为版本，不要求 Prompt Contract，也不产生 Prompt 编译或模型 Invocation。这样既覆盖全部 LLM Prompt，又不改变已批准的五槽位模型、Lite 非模型路径或 Provider 配置真相。
+
 ### 5.3 CompiledPrompt
 
 ```ts
@@ -153,7 +155,7 @@ export interface CompiledPrompt {
 
 ### 5.4 PromptBinding 与 Invocation
 
-`PromptBinding` 不是新的权威记录类型，而是现有 `ModelProviderBinding` 中的 Contract 字段与单次 Invocation 编译摘要形成的逻辑视图，避免出现第二套 Provider binding truth。
+`PromptBinding` 不是新的权威记录类型，而是调用所属的现有 `ModelProviderBinding` 或 Adapter Profile 中的 Contract 字段，与单次 Invocation 编译摘要形成的逻辑视图，避免出现第二套 Provider/Adapter binding truth。
 
 Provider 调用前，`ModelInvocationRecord` 至少绑定：
 
@@ -237,7 +239,7 @@ Profile Overlay 只改变审查深度、预算建议和必查维度，不改变�
 
 ```text
 Coordinator 编译 Typed InputBundle
-  → 解析 Capture-scope / Operation-scope ModelProviderBinding
+  → 解析调用对应的 ModelProviderBinding / model-backed Adapter Profile
   → Registry 解析 PromptContract
   → PromptCompiler 叠加 Profile / Policy Overlay
   → 确定性 Prompt 安全检查
@@ -341,6 +343,7 @@ Proposal/Review、不同 purpose、不同 Profile 或不同 Policy Overlay 不�
 不重写已完成业务逻辑，只增加：
 
 - `PromptContract`、`PromptPreparationFailure` 与扩展 Binding Schema；
+- model-backed Proposal/Review Adapter Profile 的 contract version/digest/output Schema digest 扩展，不新增模型槽位；
 - Registry 解析和 canonical/golden fixtures；
 - Profile/Capability Compiler 的 contract digest 解析；
 - Capture-scope binding 的 contract/output Schema digest；
