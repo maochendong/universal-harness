@@ -934,4 +934,6 @@ export function createRuntimeService(deps: BootstrapDependencies): RuntimeServic
   };
 }
 
+export * from "./model/index.js";
+
 export const workspacePackageName = "@universal-harness-internal/runtime" as const;
