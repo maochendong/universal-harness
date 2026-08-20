@@ -266,3 +266,25 @@ export const DesignSetProposalRecordSchema = recordEnvelopeSchema("design_set_pr
   content_digest: DigestSchema,
 });
 export type DesignSetProposalRecord = Static<typeof DesignSetProposalRecordSchema>;
+
+export const DESIGN_PROPOSAL_SCHEMA_VERSION = "design_proposal.v1" as const;
+
+export const DesignProposalQuestionSchema = strictObject({
+  question: Type.String({ minLength: 1 }),
+  target_id: Type.Optional(Type.String({ minLength: 1, maxLength: 400 })),
+});
+export type DesignProposalQuestion = Static<typeof DesignProposalQuestionSchema>;
+
+/**
+ * The raw DesignProposalPort output (model advisory design 6, PG-4): either
+ * a proposed DesignSet content, clarification questions, or neither — port
+ * failures are typed harness errors, never model output. The content is
+ * untrusted until the deterministic validator and human approval pass.
+ */
+export const DesignProposalOutputSchema = strictObject({
+  purpose: Type.Literal("design_proposal"),
+  schema_version: Type.Literal(DESIGN_PROPOSAL_SCHEMA_VERSION),
+  proposal: Type.Optional(DesignSetContentSchema),
+  questions: Type.Array(DesignProposalQuestionSchema),
+});
+export type DesignProposalOutput = Static<typeof DesignProposalOutputSchema>;

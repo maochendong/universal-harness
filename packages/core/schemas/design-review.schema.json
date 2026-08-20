@@ -1,0 +1,195 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.universal-harness.dev/1.1/design-review.schema.json",
+  "additionalProperties": false,
+  "type": "object",
+  "required": [
+    "protocol_version",
+    "record_kind",
+    "review_id",
+    "workflow_operation_id",
+    "iteration_id",
+    "proposal_digest",
+    "proposal_content_digest",
+    "validation_digest",
+    "review_bundle_digest",
+    "reviewer_port",
+    "conversation_id",
+    "run_id",
+    "output",
+    "record_digest"
+  ],
+  "properties": {
+    "protocol_version": { "const": "1.1.0", "type": "string" },
+    "record_kind": { "const": "design_review", "type": "string" },
+    "review_id": {
+      "minLength": 3,
+      "maxLength": 160,
+      "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+      "type": "string"
+    },
+    "workflow_operation_id": {
+      "minLength": 3,
+      "maxLength": 160,
+      "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+      "type": "string"
+    },
+    "iteration_id": {
+      "minLength": 3,
+      "maxLength": 160,
+      "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+      "type": "string"
+    },
+    "proposal_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
+    "proposal_content_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
+    "validation_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
+    "review_bundle_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
+    "reviewer_port": { "minLength": 1, "maxLength": 120, "type": "string" },
+    "conversation_id": {
+      "minLength": 3,
+      "maxLength": 160,
+      "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+      "type": "string"
+    },
+    "run_id": {
+      "minLength": 3,
+      "maxLength": 160,
+      "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+      "type": "string"
+    },
+    "output": {
+      "additionalProperties": false,
+      "type": "object",
+      "required": ["verdict", "findings", "coverage_assessment", "residual_risks", "summary"],
+      "properties": {
+        "verdict": {
+          "anyOf": [
+            { "const": "accept_recommended", "type": "string" },
+            { "const": "revision_required", "type": "string" },
+            { "const": "blocked", "type": "string" }
+          ]
+        },
+        "findings": {
+          "type": "array",
+          "items": {
+            "additionalProperties": false,
+            "type": "object",
+            "required": [
+              "finding_id",
+              "severity",
+              "category",
+              "source_refs",
+              "observed_problem",
+              "recommended_revision",
+              "suggested_verification"
+            ],
+            "properties": {
+              "finding_id": {
+                "minLength": 3,
+                "maxLength": 160,
+                "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+                "type": "string"
+              },
+              "severity": {
+                "anyOf": [
+                  { "const": "info", "type": "string" },
+                  { "const": "warning", "type": "string" },
+                  { "const": "critical", "type": "string" }
+                ]
+              },
+              "category": {
+                "anyOf": [
+                  { "const": "coverage_gap", "type": "string" },
+                  { "const": "contract_conflict", "type": "string" },
+                  { "const": "traceability_gap", "type": "string" },
+                  { "const": "risk_omission", "type": "string" },
+                  { "const": "oracle_gap", "type": "string" },
+                  { "const": "feasibility_risk", "type": "string" }
+                ]
+              },
+              "affected_asset_id": {
+                "minLength": 3,
+                "maxLength": 160,
+                "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+                "type": "string"
+              },
+              "affected_criterion_id": {
+                "minLength": 3,
+                "maxLength": 160,
+                "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+                "type": "string"
+              },
+              "source_refs": {
+                "minItems": 1,
+                "type": "array",
+                "items": {
+                  "additionalProperties": false,
+                  "type": "object",
+                  "required": ["kind", "ref", "digest"],
+                  "properties": {
+                    "kind": {
+                      "anyOf": [
+                        { "const": "bundle_source", "type": "string" },
+                        { "const": "proposal_content", "type": "string" }
+                      ]
+                    },
+                    "ref": { "minLength": 1, "maxLength": 400, "type": "string" },
+                    "digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" }
+                  }
+                }
+              },
+              "observed_problem": { "minLength": 1, "type": "string" },
+              "recommended_revision": { "minLength": 1, "type": "string" },
+              "suggested_verification": { "minLength": 1, "type": "string" }
+            }
+          }
+        },
+        "coverage_assessment": {
+          "type": "array",
+          "items": {
+            "additionalProperties": false,
+            "type": "object",
+            "required": ["requirement_id", "status"],
+            "properties": {
+              "requirement_id": {
+                "minLength": 3,
+                "maxLength": 160,
+                "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+                "type": "string"
+              },
+              "status": {
+                "anyOf": [
+                  { "const": "covered", "type": "string" },
+                  { "const": "deficient", "type": "string" }
+                ]
+              },
+              "notes": { "minLength": 1, "type": "string" }
+            }
+          }
+        },
+        "residual_risks": {
+          "type": "array",
+          "items": {
+            "additionalProperties": false,
+            "type": "object",
+            "required": ["description", "level"],
+            "properties": {
+              "description": { "minLength": 1, "type": "string" },
+              "level": {
+                "anyOf": [
+                  { "const": "low", "type": "string" },
+                  { "const": "medium", "type": "string" },
+                  { "const": "high", "type": "string" },
+                  { "const": "critical", "type": "string" }
+                ]
+              },
+              "mitigation": { "minLength": 1, "type": "string" }
+            }
+          }
+        },
+        "summary": { "minLength": 1, "type": "string" }
+      }
+    },
+    "record_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" }
+  }
+}

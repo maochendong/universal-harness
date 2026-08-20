@@ -4,6 +4,7 @@ export * from "./capability.js";
 export * from "./capture.js";
 export * from "./context.js";
 export * from "./domain-registry.js";
+export * from "./design-review.js";
 export * from "./design-set.js";
 export * from "./edge.js";
 export * from "./envelope.js";
