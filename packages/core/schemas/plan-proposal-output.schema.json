@@ -1,0 +1,102 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.universal-harness.dev/1.1/plan-proposal-output.schema.json",
+  "additionalProperties": false,
+  "type": "object",
+  "required": ["purpose", "schema_version", "tasks", "questions"],
+  "properties": {
+    "purpose": { "const": "plan_proposal", "type": "string" },
+    "schema_version": { "const": "plan_proposal.v1", "type": "string" },
+    "tasks": {
+      "type": "array",
+      "items": {
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "task_key",
+          "goal",
+          "atomicity_rationale",
+          "assertion_ids",
+          "requirement_ids",
+          "decision_ids",
+          "design_artifact_ids",
+          "depends_on",
+          "suggested_gate_ids",
+          "suggested_write_paths"
+        ],
+        "properties": {
+          "task_key": { "minLength": 1, "maxLength": 120, "type": "string" },
+          "goal": { "minLength": 1, "type": "string" },
+          "atomicity_rationale": { "minLength": 1, "type": "string" },
+          "assertion_ids": {
+            "type": "array",
+            "items": {
+              "minLength": 3,
+              "maxLength": 160,
+              "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+              "type": "string"
+            }
+          },
+          "requirement_ids": {
+            "type": "array",
+            "items": {
+              "minLength": 3,
+              "maxLength": 160,
+              "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+              "type": "string"
+            }
+          },
+          "decision_ids": {
+            "type": "array",
+            "items": {
+              "minLength": 3,
+              "maxLength": 160,
+              "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+              "type": "string"
+            }
+          },
+          "design_artifact_ids": {
+            "type": "array",
+            "items": {
+              "minLength": 3,
+              "maxLength": 160,
+              "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+              "type": "string"
+            }
+          },
+          "depends_on": {
+            "type": "array",
+            "items": { "minLength": 1, "maxLength": 120, "type": "string" }
+          },
+          "parallelism_rationale": { "minLength": 1, "type": "string" },
+          "suggested_gate_ids": {
+            "type": "array",
+            "items": {
+              "minLength": 3,
+              "maxLength": 160,
+              "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+              "type": "string"
+            }
+          },
+          "suggested_write_paths": {
+            "type": "array",
+            "items": { "minLength": 1, "type": "string" }
+          },
+          "suggested_context_budget": { "minimum": 1, "type": "integer" }
+        }
+      }
+    },
+    "questions": {
+      "type": "array",
+      "items": {
+        "additionalProperties": false,
+        "type": "object",
+        "required": ["question"],
+        "properties": {
+          "question": { "minLength": 1, "type": "string" },
+          "target_id": { "minLength": 1, "maxLength": 400, "type": "string" }
+        }
+      }
+    }
+  }
+}

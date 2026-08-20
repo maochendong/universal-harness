@@ -320,6 +320,26 @@ export {
   type PlanningErrorKind,
 } from "./planning/validator.js";
 export {
+  LEGACY_PLAN_TASKS_DEPRECATION,
+  PLAN_PROPOSAL_ALLOCATION_ISSUE_CODES,
+  createInMemoryPlanProposalPort,
+  createLegacyPlanTasksAdapter,
+  mapLegacyTaskSpecifications,
+  materializePlanTasks,
+  parsePlanProposalOutput,
+  validatePlanProposalAllocation,
+  type PlanProposalAllocationIssue,
+  type PlanProposalInput,
+  type PlanProposalPort,
+  type PlanProposalResult,
+} from "./planning/plan-proposal.js";
+export {
+  PLAN_PROPOSAL_PROMPT_CONTRACT,
+  PLAN_PROPOSAL_PROMPT_PORT_ID,
+  PLAN_PROPOSAL_PROMPT_REGISTRATION,
+  PLAN_PROPOSAL_PROMPT_VERSION,
+} from "./planning/plan-prompt-contract.js";
+export {
   CONTEXT_EXTENSION_KEY,
   compileContextBundle,
   type BundleBindings,

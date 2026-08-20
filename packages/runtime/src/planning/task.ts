@@ -24,6 +24,15 @@ export interface TaskAcceptanceCriterion {
 /** Atomic, machine-checkable acceptance binding for newly authorized Agent work. */
 export interface TaskAcceptanceAssertion {
   readonly assertion_id: string;
+  /**
+   * T13 canonical kinds: `criterion_assertion` binds exactly one accepted
+   * criterion (id + semantic digest mandatory); `task_internal_assertion`
+   * carries neither and never satisfies criterion coverage. Legacy plans may
+   * omit the kind; the plan-level validator enforces the invariant.
+   */
+  readonly assertion_kind?: "criterion_assertion" | "task_internal_assertion";
+  readonly acceptance_criterion_id?: string;
+  readonly criterion_semantic_digest?: string;
   /** Accepted Test graph nodes that prove this assertion. */
   readonly test_ids: readonly string[];
   readonly required_gate_ids: readonly string[];

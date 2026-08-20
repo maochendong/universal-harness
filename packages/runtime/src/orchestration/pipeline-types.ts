@@ -19,6 +19,7 @@ import {
   type ObservationStreamIdentity,
 } from "../observability/publisher.js";
 import { type IntentShape } from "../planning/mode-selector.js";
+import { type PlanProposalPort } from "../planning/plan-proposal.js";
 import { type TaskSpecification } from "../planning/task.js";
 import {
   type ClarificationQuestion,
@@ -174,6 +175,11 @@ export interface OrchestratorDependencies {
   readonly gates?: readonly GateDefinition[];
   readonly toolRegistry?: ToolRegistry;
   readonly evaluate?: EvaluationPort;
+  /**
+   * T13 plan proposal port; mutually exclusive with the legacy `planTasks`
+   * channel — configuring both is a configuration error.
+   */
+  readonly planProposal?: PlanProposalPort;
   /** Design module ports; an active design_governance without ports blocks. */
   readonly design?: {
     readonly proposal?: DesignProposalPort;

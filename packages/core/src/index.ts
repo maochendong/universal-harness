@@ -5,6 +5,7 @@ export * from "./context/index.js";
 export * from "./design/index.js";
 export * from "./identity/index.js";
 export * from "./ledger/index.js";
+export * from "./plan/index.js";
 export * from "./profile/index.js";
 export * from "./project/index.js";
 export * from "./prompt/index.js";

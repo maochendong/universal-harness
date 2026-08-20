@@ -1,0 +1,369 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.universal-harness.dev/1.1/task-tdd-contract.schema.json",
+  "additionalProperties": false,
+  "allOf": [
+    {
+      "if": {
+        "properties": { "contract_mode": { "const": "required" } },
+        "required": ["contract_mode"]
+      },
+      "then": {
+        "properties": {
+          "assertion_clusters": { "type": "array", "minItems": 1, "maxItems": 1 },
+          "not_applicable_binding": false,
+          "framework_bootstrap_profile": false
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": { "contract_mode": { "const": "not_applicable" } },
+        "required": ["contract_mode"]
+      },
+      "then": {
+        "properties": {
+          "assertion_clusters": { "type": "array", "maxItems": 0 },
+          "framework_bootstrap_profile": false
+        },
+        "required": ["not_applicable_binding"]
+      }
+    },
+    {
+      "if": {
+        "properties": { "contract_mode": { "const": "framework_bootstrap" } },
+        "required": ["contract_mode"]
+      },
+      "then": {
+        "properties": {
+          "assertion_clusters": { "type": "array", "maxItems": 0 },
+          "not_applicable_binding": false
+        },
+        "required": ["framework_bootstrap_profile"]
+      }
+    }
+  ],
+  "type": "object",
+  "required": [
+    "contract_id",
+    "task_id",
+    "contract_mode",
+    "accepted_prd_digest",
+    "requirement_baseline_digest",
+    "impact_set_digest",
+    "design_set_digest",
+    "capability_plan_digest",
+    "test_strategy_asset_id",
+    "test_strategy_digest",
+    "plan_digest",
+    "assertion_clusters",
+    "phase_budgets",
+    "contract_digest"
+  ],
+  "properties": {
+    "contract_id": {
+      "minLength": 3,
+      "maxLength": 160,
+      "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+      "type": "string"
+    },
+    "task_id": {
+      "minLength": 3,
+      "maxLength": 160,
+      "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+      "type": "string"
+    },
+    "contract_mode": {
+      "anyOf": [
+        { "const": "required", "type": "string" },
+        { "const": "not_applicable", "type": "string" },
+        { "const": "framework_bootstrap", "type": "string" }
+      ]
+    },
+    "accepted_prd_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
+    "requirement_baseline_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
+    "impact_set_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
+    "design_set_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
+    "capability_plan_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
+    "test_strategy_asset_id": {
+      "minLength": 3,
+      "maxLength": 160,
+      "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+      "type": "string"
+    },
+    "test_strategy_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
+    "plan_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
+    "assertion_clusters": {
+      "type": "array",
+      "items": {
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "cluster_id",
+          "logical_cycle_id",
+          "requirement_ids",
+          "acceptance_criterion_ids",
+          "assertion_ids",
+          "test_node_ids",
+          "target_gate_id",
+          "target_test_selectors",
+          "baseline_guard_gate_ids",
+          "failure_oracle",
+          "path_policy",
+          "framework_profile_digest",
+          "refactor_policy"
+        ],
+        "properties": {
+          "cluster_id": {
+            "minLength": 3,
+            "maxLength": 160,
+            "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+            "type": "string"
+          },
+          "logical_cycle_id": {
+            "minLength": 3,
+            "maxLength": 160,
+            "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+            "type": "string"
+          },
+          "requirement_ids": {
+            "minItems": 1,
+            "type": "array",
+            "items": {
+              "minLength": 3,
+              "maxLength": 160,
+              "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+              "type": "string"
+            }
+          },
+          "acceptance_criterion_ids": {
+            "minItems": 1,
+            "type": "array",
+            "items": {
+              "minLength": 3,
+              "maxLength": 160,
+              "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+              "type": "string"
+            }
+          },
+          "assertion_ids": {
+            "minItems": 1,
+            "type": "array",
+            "items": {
+              "minLength": 3,
+              "maxLength": 160,
+              "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+              "type": "string"
+            }
+          },
+          "test_node_ids": {
+            "minItems": 1,
+            "type": "array",
+            "items": {
+              "minLength": 3,
+              "maxLength": 160,
+              "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+              "type": "string"
+            }
+          },
+          "target_gate_id": {
+            "minLength": 3,
+            "maxLength": 160,
+            "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+            "type": "string"
+          },
+          "target_test_selectors": {
+            "minItems": 1,
+            "type": "array",
+            "items": { "minLength": 1, "type": "string" }
+          },
+          "baseline_guard_gate_ids": {
+            "type": "array",
+            "items": {
+              "minLength": 3,
+              "maxLength": 160,
+              "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+              "type": "string"
+            }
+          },
+          "failure_oracle": {
+            "additionalProperties": false,
+            "type": "object",
+            "required": ["selector_ids", "allowed_failure_kinds", "assertion_ids"],
+            "properties": {
+              "selector_ids": {
+                "minItems": 1,
+                "type": "array",
+                "items": { "minLength": 1, "type": "string" }
+              },
+              "allowed_failure_kinds": {
+                "minItems": 1,
+                "type": "array",
+                "items": {
+                  "anyOf": [
+                    { "const": "assertion_failure", "type": "string" },
+                    { "const": "contract_mismatch", "type": "string" },
+                    { "const": "expected_exception_not_thrown", "type": "string" },
+                    { "const": "missing_symbol", "type": "string" }
+                  ]
+                }
+              },
+              "assertion_ids": {
+                "minItems": 1,
+                "type": "array",
+                "items": {
+                  "minLength": 3,
+                  "maxLength": 160,
+                  "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+                  "type": "string"
+                }
+              },
+              "expected_error_codes": {
+                "type": "array",
+                "items": { "minLength": 1, "type": "string" }
+              },
+              "expected_symbols": {
+                "type": "array",
+                "items": { "minLength": 1, "type": "string" }
+              },
+              "normalized_message_patterns": {
+                "type": "array",
+                "items": { "minLength": 1, "type": "string" }
+              }
+            }
+          },
+          "path_policy": {
+            "additionalProperties": false,
+            "type": "object",
+            "required": ["test", "test_config", "production", "immutable"],
+            "properties": {
+              "test": { "type": "array", "items": { "minLength": 1, "type": "string" } },
+              "test_config": { "type": "array", "items": { "minLength": 1, "type": "string" } },
+              "production": { "type": "array", "items": { "minLength": 1, "type": "string" } },
+              "immutable": { "type": "array", "items": { "minLength": 1, "type": "string" } }
+            }
+          },
+          "framework_profile_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
+          "refactor_policy": {
+            "anyOf": [
+              { "const": "planned", "type": "string" },
+              { "const": "not_planned", "type": "string" }
+            ]
+          }
+        }
+      }
+    },
+    "not_applicable_binding": {
+      "additionalProperties": false,
+      "type": "object",
+      "required": ["category", "reason"],
+      "properties": {
+        "category": {
+          "anyOf": [
+            { "const": "documentation_only", "type": "string" },
+            { "const": "research_only", "type": "string" },
+            { "const": "non_executable_projection", "type": "string" }
+          ]
+        },
+        "reason": { "minLength": 1, "type": "string" }
+      }
+    },
+    "framework_bootstrap_profile": {
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "framework_profile_id",
+        "discovery_gate_id",
+        "pass_fixture_id",
+        "fail_fixture_id",
+        "expected_failure_kind",
+        "test_write_paths",
+        "test_config_write_paths"
+      ],
+      "properties": {
+        "framework_profile_id": {
+          "minLength": 3,
+          "maxLength": 160,
+          "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+          "type": "string"
+        },
+        "discovery_gate_id": {
+          "minLength": 3,
+          "maxLength": 160,
+          "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+          "type": "string"
+        },
+        "pass_fixture_id": {
+          "minLength": 3,
+          "maxLength": 160,
+          "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+          "type": "string"
+        },
+        "fail_fixture_id": {
+          "minLength": 3,
+          "maxLength": 160,
+          "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+          "type": "string"
+        },
+        "expected_failure_kind": {
+          "anyOf": [
+            { "const": "assertion_failure", "type": "string" },
+            { "const": "contract_mismatch", "type": "string" },
+            { "const": "expected_exception_not_thrown", "type": "string" },
+            { "const": "missing_symbol", "type": "string" }
+          ]
+        },
+        "test_write_paths": {
+          "minItems": 1,
+          "type": "array",
+          "items": { "minLength": 1, "type": "string" }
+        },
+        "test_config_write_paths": {
+          "type": "array",
+          "items": { "minLength": 1, "type": "string" }
+        }
+      }
+    },
+    "phase_budgets": {
+      "additionalProperties": false,
+      "type": "object",
+      "required": ["test_authoring", "implementation"],
+      "properties": {
+        "test_authoring": {
+          "additionalProperties": false,
+          "type": "object",
+          "required": ["max_runs", "max_duration_ms"],
+          "properties": {
+            "max_runs": { "minimum": 1, "type": "integer" },
+            "max_duration_ms": { "minimum": 1, "type": "integer" },
+            "max_steps": { "minimum": 1, "type": "integer" },
+            "max_tokens": { "minimum": 1, "type": "integer" }
+          }
+        },
+        "implementation": {
+          "additionalProperties": false,
+          "type": "object",
+          "required": ["max_runs", "max_duration_ms"],
+          "properties": {
+            "max_runs": { "minimum": 1, "type": "integer" },
+            "max_duration_ms": { "minimum": 1, "type": "integer" },
+            "max_steps": { "minimum": 1, "type": "integer" },
+            "max_tokens": { "minimum": 1, "type": "integer" }
+          }
+        },
+        "refactor": {
+          "additionalProperties": false,
+          "type": "object",
+          "required": ["max_runs", "max_duration_ms"],
+          "properties": {
+            "max_runs": { "minimum": 1, "type": "integer" },
+            "max_duration_ms": { "minimum": 1, "type": "integer" },
+            "max_steps": { "minimum": 1, "type": "integer" },
+            "max_tokens": { "minimum": 1, "type": "integer" }
+          }
+        }
+      }
+    },
+    "contract_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" }
+  }
+}

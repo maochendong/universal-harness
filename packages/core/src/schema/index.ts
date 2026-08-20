@@ -15,6 +15,7 @@ export * from "./model-invocation.js";
 export * from "./node.js";
 export * from "./observation.js";
 export * from "./operation.js";
+export * from "./plan.js";
 export * from "./plugin.js";
 export * from "./profile.js";
 export * from "./prompt.js";

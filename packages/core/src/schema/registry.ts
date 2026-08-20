@@ -39,6 +39,11 @@ import {
   DesignSetProposalRecordSchema,
 } from "./design-set.js";
 import { DesignReviewOutputSchema, DesignReviewRecordSchema } from "./design-review.js";
+import {
+  TaskTddContractSchema,
+  PlanProposalOutputSchema,
+  PlanProposalRecordSchema,
+} from "./plan.js";
 import { ModelInvocationRecordSchema, ModelPortFailureSchema } from "./model-invocation.js";
 import { PromptContractSchema, PromptPreparationFailureSchema } from "./prompt.js";
 import {
@@ -210,6 +215,9 @@ export const PROTOCOL_1_1_SCHEMA_REGISTRY = createDomainSchemaRegistry({
     { key: "design-proposal-output", schema: DesignProposalOutputSchema },
     { key: "design-review", schema: DesignReviewRecordSchema },
     { key: "design-review-output", schema: DesignReviewOutputSchema },
+    { key: "task-tdd-contract", schema: TaskTddContractSchema },
+    { key: "plan-proposal", schema: PlanProposalRecordSchema },
+    { key: "plan-proposal-output", schema: PlanProposalOutputSchema },
     { key: "capability-plan", schema: CapabilityPlanRecordSchema },
     { key: "capture-session", schema: CaptureSessionRecordSchema },
     { key: "clarification-question", schema: ClarificationQuestionRecordSchema },

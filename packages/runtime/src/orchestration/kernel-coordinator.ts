@@ -4,6 +4,7 @@ import {
   PROTOCOL_VERSION,
   canonicalizeJson,
   canonicalizeLocator,
+  compileCriterionAssertions,
   contentDigest,
   harnessRootFor,
   readCommittedOperations,
@@ -21,6 +22,7 @@ import {
   materializeLedger,
   pageEdges,
   pageNodes,
+  readDesignSetExtension,
   readImpactSetContent,
   type ChangeSeed,
   type IterationKind,
@@ -105,6 +107,8 @@ import {
   type ExecutionPlanContent,
 } from "../planning/execution-plan.js";
 import { type IntentShape } from "../planning/mode-selector.js";
+import { materializePlanTasks, type PlanProposalInput } from "../planning/plan-proposal.js";
+import { PlanningError } from "../planning/validator.js";
 import { type TaskSpecification } from "../planning/task.js";
 import { deriveActualRunChanges } from "../planning/scope-drift.js";
 import {
@@ -1479,11 +1483,11 @@ async function phaseCapture(ctx: PipelineContext): Promise<PhaseStep> {
  * With a single requirement this degenerates to exactly the historical
  * single-task plan, id and digest included.
  */
-function taskSpecificationsFor(
+async function taskSpecificationsFor(
   ctx: PipelineContext,
   impactSet: NodeRecord,
   gateIds: readonly string[],
-): readonly TaskSpecification[] {
+): Promise<readonly TaskSpecification[]> {
   const content = readImpactSetContent(impactSet);
   const impactPaths = content.entries.map((entry) => [...entry.path]);
   const acceptedTestIds = content.entries
@@ -1518,6 +1522,15 @@ function taskSpecificationsFor(
     testIds:
       index === 0 ? [...requirement.testIds, ...unassignedTestIds].sort(byId) : requirement.testIds,
   }));
+  if (ctx.deps.planTasks !== undefined && ctx.deps.planProposal !== undefined) {
+    throw new OrchestrationError(
+      "configuration",
+      "planTasks and planProposal are mutually exclusive; configure PlanProposalPort (the legacy adapter keeps one major)",
+    );
+  }
+  if (ctx.deps.planProposal !== undefined) {
+    return planProposalSpecificationsFor(ctx, impactSet, gateIds, impactPaths);
+  }
   if (ctx.deps.planTasks !== undefined) {
     return ctx.deps.planTasks({
       goal: ctx.goal,
@@ -1553,6 +1566,149 @@ function taskSpecificationsFor(
 }
 function byId(left: string, right: string): number {
   return left < right ? -1 : left > right ? 1 : 0;
+}
+/**
+ * The T13 plan proposal channel: canonical criterion assertions compile from
+ * accepted Test seeds (with primary strategy bindings when an accepted
+ * DesignSet exists), the port only allocates them, and every authoritative
+ * field — task ids, dependencies, gates, assertion bindings — is compiled by
+ * the Harness when the candidates materialize. A failed or
+ * clarification-only proposal is a typed planning error; nothing reaches the
+ * ledger.
+ */
+async function planProposalSpecificationsFor(
+  ctx: PipelineContext,
+  impactSet: NodeRecord,
+  gateIds: readonly string[],
+  impactPaths: readonly (readonly string[])[],
+): Promise<readonly TaskSpecification[]> {
+  const port = ctx.deps.planProposal;
+  if (port === undefined) {
+    throw new OrchestrationError("configuration", "plan proposal channel missing");
+  }
+  const graph = materializeProjectGraph(ctx.deps.projectRoot);
+  try {
+    const nodes = [...graph.nodes];
+    const criteria = nodes
+      .filter((node) => node.type === "Test" && node.status === "accepted")
+      .flatMap((node) => {
+        const extension = node.extensions ?? {};
+        const criterion = extension["acceptance_criterion_id"];
+        const semanticDigest = extension["criterion_semantic_digest"];
+        const verifies = extension["verifies"];
+        return typeof criterion === "string" &&
+          typeof semanticDigest === "string" &&
+          typeof verifies === "string"
+          ? [
+              {
+                criterion_id: criterion,
+                criterion_semantic_digest: semanticDigest,
+                requirement_id: verifies,
+                test_node_id: node.id,
+              },
+            ]
+          : [];
+      });
+    const strategies: Record<string, string> = {};
+    let designSetDigest: string | undefined;
+    if (ctx.designSet !== undefined) {
+      const extension = readDesignSetExtension(ctx.designSet);
+      designSetDigest = extension.content_digest;
+      for (const entry of extension.content.coverage) {
+        for (const binding of entry.test_strategy_coverage) {
+          strategies[`${binding.acceptance_criterion_id}#${binding.test_node_id}`] =
+            binding.primary_test_strategy_id;
+        }
+      }
+    }
+    const canonical = compileCriterionAssertions(criteria, { primary_strategies: strategies });
+    const knownIds = (type: NodeRecord["type"]) =>
+      nodes
+        .filter((node) => node.type === type && node.status === "accepted")
+        .map((node) => node.id)
+        .sort(byId);
+    const proposalInput: PlanProposalInput = {
+      workflow_operation_id: ctx.workflowOperationId,
+      iteration_id: ctx.iterationId,
+      requirement_baseline_digest: ctx.baselineDigest,
+      impact_set_digest: readImpactSetContent(impactSet).content_digest,
+      policy_digest: ctx.workingState.policy_digest,
+      ...(designSetDigest === undefined ? {} : { design_set_digest: designSetDigest }),
+      canonical_assertions: canonical,
+      known_requirement_ids: knownIds("Requirement"),
+      known_decision_ids: knownIds("Decision"),
+      known_design_artifact_ids: knownIds("DesignArtifact"),
+      known_gate_ids: [...gateIds].sort(byId),
+      // Suggested paths are advisory until the envelope work (T15) owns the
+      // authorized set; unconstrained here, never widened into the plan.
+      allowed_write_paths: ["**"],
+      max_tasks: 24,
+      bundle_digest: contentDigest({
+        canonical_assertions: canonical,
+        impact_set_digest: readImpactSetContent(impactSet).content_digest,
+      }),
+      conversation_id: `plan-proposal-conversation_${ctx.workflowOperationId.replace(/^[a-z][a-z0-9-]*_/u, "")}`,
+      run_id: `plan-proposal-run_${currentAttemptId(ctx)}`,
+    };
+    const result = await port.propose(proposalInput);
+    if (result.status === "failed") {
+      throw new PlanningError(
+        "invalid_specification",
+        `plan proposal failed: ${result.failure.summary}`,
+      );
+    }
+    if (result.status === "clarification_required") {
+      throw new PlanningError(
+        "invalid_specification",
+        `plan proposal requires clarification: ${result.questions
+          .map((question) => question.question)
+          .join("; ")}`,
+      );
+    }
+    // Mirror the default decomposition's test assignment: accepted Test
+    // entries verify their requirements through VERIFIES edges, and
+    // unassigned tests attach to the first requirement.
+    const acceptedTestIds = readImpactSetContent(impactSet)
+      .entries.filter((entry) => entry.node_type === "Test")
+      .map((entry) => entry.node_id)
+      .sort(byId);
+    const acceptedTests = new Set(acceptedTestIds);
+    const testsByRequirement = new Map<string, string[]>();
+    for (const edge of graph.edges) {
+      if (edge.type !== "VERIFIES" || !acceptedTests.has(edge.source_id)) continue;
+      const existing = testsByRequirement.get(edge.target_id) ?? [];
+      existing.push(edge.source_id);
+      testsByRequirement.set(edge.target_id, existing);
+    }
+    const sortedRequirements = [...ctx.proposal.requirements].sort((left, right) =>
+      byId(left.id, right.id),
+    );
+    const assigned = new Set([...testsByRequirement.values()].flat());
+    const unassigned = acceptedTestIds.filter((testId) => !assigned.has(testId));
+    const requirementTestIds = Object.fromEntries(
+      sortedRequirements.map((requirement, index) => [
+        requirement.id,
+        [
+          ...(testsByRequirement.get(requirement.id) ?? []),
+          ...(index === 0 ? unassigned : []),
+        ].sort(byId),
+      ]),
+    );
+    return materializePlanTasks(result.tasks, {
+      canonical_assertions: canonical,
+      impactPaths,
+      gateIds,
+      requirement_acceptance: Object.fromEntries(
+        ctx.proposal.requirements.map((requirement) => [
+          requirement.id,
+          requirement.acceptance.map((criterion) => ({ ...criterion })),
+        ]),
+      ),
+      requirement_test_ids: requirementTestIds,
+    });
+  } finally {
+    graph.close();
+  }
 }
 /**
  * Topological order over plan task specifications (Kahn, smallest ready id
@@ -1712,7 +1868,7 @@ async function phasePlan(ctx: PipelineContext, gateIds: readonly string[]): Prom
   const kernelDerived = frozenImpactSet === undefined;
   const impactSet = frozenImpactSet ?? deriveKernelImpactSet(ctx);
   ctx.impactSet = impactSet;
-  const specifications = taskSpecificationsFor(ctx, impactSet, gateIds);
+  const specifications = await taskSpecificationsFor(ctx, impactSet, gateIds);
   const executionBinding = executionBindingFor(deps);
   const forecastPaths = [
     ...new Set(
