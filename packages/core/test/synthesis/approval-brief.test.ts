@@ -28,6 +28,7 @@ import type { GroundedSynthesisResult } from "../../src/synthesis/port.js";
 import type { ApprovalBriefInput } from "../../src/schema/synthesis.js";
 import { makeSession, makeValidDraft } from "../proposal/helpers.js";
 import { makeReviewPipelineHandlers, startCommandFor } from "../review/pipeline.js";
+import { bindingContractFields, createCapturePromptContractRegistry } from "../prompt/helpers.js";
 
 /**
  * T7 approval_brief tests (model advisory design 10/11.1, intent-to-prd design
@@ -63,6 +64,13 @@ const MATERIAL_POLICY: CaptureRiskPolicy = {
 
 /** Commit the T2 Capture-scope binding covering approval_brief. */
 function commitBriefBinding(root: string, session: CaptureSessionRecord): string {
+  const contractFields = bindingContractFields(
+    createCapturePromptContractRegistry().resolve({
+      port_id: "grounded_synthesis",
+      purpose: "approval_brief",
+      prompt_version: "approval-brief.v1",
+    }),
+  );
   const record = createCaptureModelProviderBindingRecord({
     project_id: "project_demo",
     profile_decision_id: "profile-decision_test",
@@ -77,10 +85,11 @@ function commitBriefBinding(root: string, session: CaptureSessionRecord): string
         required: true,
         provider_identity: "provider_fake",
         config_digest: "5".repeat(64),
-        prompt_version: "approval-brief-prompt.v1",
+        prompt_version: "approval-brief.v1",
         schema_version: "approval-brief.v1",
         budget_profile: "capture-standard",
         failure_mode: "block",
+        ...contractFields,
       },
     ],
   });

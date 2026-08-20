@@ -35,12 +35,50 @@ export interface PrdPortFailure {
   readonly raw_output_digest?: string;
 }
 
-/** Adapter identity and prompt versioning for the proposal slot (design 9.1). */
-export interface CaptureProposalProfile {
+/**
+ * Adapter backing kinds for the Capture proposal/review profiles (prompt
+ * governance addendum design 5.2): only the model-backed variant binds a
+ * Prompt Contract and compiles prompts through the managed runner; the
+ * manual and in-memory variants keep the digest-only behavior and never
+ * compile a prompt or mint a model invocation.
+ */
+export const CAPTURE_ADAPTER_BACKINGS = ["model", "manual", "in_memory"] as const;
+export type CaptureAdapterBacking = (typeof CAPTURE_ADAPTER_BACKINGS)[number];
+
+/** Identity fields every Capture adapter profile variant carries (design 9.1). */
+export interface CaptureProposalProfileBase {
   readonly adapter_profile_digest: string;
   readonly prompt_version_digest: string;
   readonly producer_identity: string;
 }
+
+/**
+ * The model-backed variant: it pins the resolved Prompt Contract identity and
+ * the output schema digest in addition to the legacy digests. The contract
+ * fields are derived from the PromptContractRegistry — never hand-filled.
+ */
+export interface ModelBackedCaptureProposalProfile extends CaptureProposalProfileBase {
+  readonly backing: "model";
+  readonly prompt_version: string;
+  readonly prompt_contract_id: string;
+  readonly prompt_contract_version: string;
+  readonly prompt_contract_digest: string;
+  readonly output_schema_digest: string;
+}
+
+/** The manual variant: digest-only, zero prompt compilation. */
+export interface ManualCaptureProposalProfile extends CaptureProposalProfileBase {
+  readonly backing: "manual";
+}
+
+/** The in-memory (test double) variant: digest-only, zero prompt compilation. */
+export interface InMemoryCaptureProposalProfile extends CaptureProposalProfileBase {
+  readonly backing: "in_memory";
+}
+
+/** Adapter identity and prompt versioning for the proposal slot (design 9.1). */
+export type CaptureProposalProfile =
+  ModelBackedCaptureProposalProfile | ManualCaptureProposalProfile | InMemoryCaptureProposalProfile;
 
 /** The committed invocation the proposal call runs under (design 9.1, 11.3). */
 export interface CaptureInvocationBinding {

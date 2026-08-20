@@ -26,12 +26,44 @@ export interface PrdReviewRubric {
   readonly mandatory_dimension_ids: readonly string[];
 }
 
-/** Adapter identity and prompt versioning for the review slot (design 10.1). */
-export interface CaptureReviewProfile {
+/** Identity fields every Capture review profile variant carries (design 10.1). */
+export interface CaptureReviewProfileBase {
   readonly adapter_profile_digest: string;
   readonly prompt_version_digest: string;
   readonly reviewer_identity: string;
 }
+
+/**
+ * The model-backed variant: it pins the resolved Prompt Contract identity and
+ * the output schema digest in addition to the legacy digests. The contract
+ * fields are derived from the PromptContractRegistry — never hand-filled.
+ */
+export interface ModelBackedCaptureReviewProfile extends CaptureReviewProfileBase {
+  readonly backing: "model";
+  readonly prompt_version: string;
+  readonly prompt_contract_id: string;
+  readonly prompt_contract_version: string;
+  readonly prompt_contract_digest: string;
+  readonly output_schema_digest: string;
+}
+
+/** The manual variant: digest-only, zero prompt compilation. */
+export interface ManualCaptureReviewProfile extends CaptureReviewProfileBase {
+  readonly backing: "manual";
+}
+
+/** The in-memory (test double) variant: digest-only, zero prompt compilation. */
+export interface InMemoryCaptureReviewProfile extends CaptureReviewProfileBase {
+  readonly backing: "in_memory";
+}
+
+/**
+ * Adapter identity and prompt versioning for the review slot (design 10.1,
+ * prompt governance addendum 5.2): a discriminated union over the Capture
+ * adapter backings; only the model-backed variant binds a contract.
+ */
+export type CaptureReviewProfile =
+  ModelBackedCaptureReviewProfile | ManualCaptureReviewProfile | InMemoryCaptureReviewProfile;
 
 /** The committed invocation the review call runs under (design 10.1, 11.3). */
 export interface CaptureReviewInvocationBinding {

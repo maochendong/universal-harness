@@ -1,5 +1,7 @@
 import { canonicalStringSet } from "../identity/canonical-set.js";
 import { domainRecordId } from "../identity/record-id.js";
+import { PromptContractError } from "../prompt/contracts.js";
+import type { PromptContractResolver } from "../prompt/registry.js";
 import type { ProfilePolicyConstraints } from "../profile/decisions.js";
 import { profileDefinition } from "../profile/definitions.js";
 import {
@@ -101,6 +103,13 @@ export interface CapabilityPlanCompileInput {
   readonly activations?: readonly CapabilityActivation[];
   readonly providers?: readonly ProviderCapability[];
   readonly model_providers?: readonly ModelProviderConfig[];
+  /**
+   * The prompt contract resolver every compiled binding derives its contract
+   * id/version/digest and output schema digest from (prompt governance
+   * addendum 5.2). Required whenever a binding is compiled; Lite plans with
+   * zero bindings compile without it.
+   */
+  readonly prompt_contract_resolver?: PromptContractResolver;
   /** The Capture-scope bindings (Task 2 record) for scope-overlap verification. */
   readonly capture_scope_bindings?: readonly ModelProviderBinding[];
   readonly accepted_design_set?: AcceptedDesignSetInput;
@@ -235,9 +244,26 @@ function compileModelProviderBindings(
     modelSlotDefaultsForProfile(profileId).map((slot) => [bindingScopeKey(slot), slot]),
   );
 
+  // Contract fields are always derived from the injected resolver; a config
+  // carrying them by hand fails closed before any resolution happens.
+  const handSuppliedFields = [
+    "prompt_contract_id",
+    "prompt_contract_version",
+    "prompt_contract_digest",
+    "output_schema_digest",
+  ] as const;
+
   // Validate and index every offered config first, fail closed.
   const configs = new Map<string, ModelProviderConfig>();
   for (const config of input.model_providers ?? []) {
+    for (const field of handSuppliedFields) {
+      if (field in config) {
+        throw new CapabilityCompileError(
+          "prompt_contract_digest_mismatch",
+          `contract field ${field} is derived from the PromptContractRegistry; it must not be hand-filled`,
+        );
+      }
+    }
     if (!(MODEL_SLOT_IDS as readonly string[]).includes(config.slot_id)) {
       throw new CapabilityCompileError(
         "unknown_slot",
@@ -311,6 +337,26 @@ function compileModelProviderBindings(
       );
     }
     consumed.add(key);
+    const resolver = input.prompt_contract_resolver;
+    if (resolver === undefined) {
+      throw new CapabilityCompileError(
+        "prompt_contract_required",
+        `slot ${key} compiles a model provider binding but no prompt contract resolver was injected`,
+      );
+    }
+    let resolution;
+    try {
+      resolution = resolver.resolve({
+        port_id: config.slot_id,
+        ...(config.purpose === undefined ? {} : { purpose: config.purpose }),
+        prompt_version: config.prompt_version,
+      });
+    } catch (error) {
+      if (error instanceof PromptContractError) {
+        throw new CapabilityCompileError(error.code, error.message);
+      }
+      throw error;
+    }
     bindings.push({
       slot_id: config.slot_id,
       ...(config.purpose === undefined ? {} : { purpose: config.purpose }),
@@ -318,6 +364,10 @@ function compileModelProviderBindings(
       provider_identity: config.provider_identity,
       config_digest: config.config_digest,
       prompt_version: config.prompt_version,
+      prompt_contract_id: resolution.prompt_contract_id,
+      prompt_contract_version: resolution.prompt_contract_version,
+      prompt_contract_digest: resolution.prompt_contract_digest,
+      output_schema_digest: resolution.output_schema_digest,
       schema_version: config.schema_version,
       budget_profile: config.budget_profile,
       failure_mode: slotDefault.failure_mode,

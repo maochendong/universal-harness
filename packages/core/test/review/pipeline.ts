@@ -96,6 +96,7 @@ export function makeReviewPipelineHandlers(
     projectRoot: root,
     proposal: proposalAdapter,
     adapter_profile: {
+      backing: "in_memory",
       adapter_profile_digest: ADAPTER_PROFILE_DIGEST,
       prompt_version_digest: PROMPT_VERSION_DIGEST,
       producer_identity: "in-memory-proposal",
@@ -106,6 +107,7 @@ export function makeReviewPipelineHandlers(
     review: reviewAdapter,
     rubric: REVIEW_RUBRIC,
     adapter_profile: {
+      backing: "in_memory",
       adapter_profile_digest: REVIEW_ADAPTER_PROFILE_DIGEST,
       prompt_version_digest: REVIEW_PROMPT_VERSION_DIGEST,
       reviewer_identity: "in-memory-review",

@@ -205,6 +205,7 @@ describe("PrdReviewPort adapters", () => {
       validation_report: validation,
       rubric: REVIEW_RUBRIC,
       profile: {
+        backing: "manual",
         adapter_profile_digest: REVIEW_ADAPTER_PROFILE_DIGEST,
         prompt_version_digest: REVIEW_PROMPT_VERSION_DIGEST,
         reviewer_identity: "human:reviewer",

@@ -170,6 +170,7 @@ export function makeProposalInput(
     proposal_context_bundle: makeBundle(session),
     accepted_answers: [],
     profile: {
+      backing: "in_memory",
       adapter_profile_digest: ADAPTER_PROFILE_DIGEST,
       prompt_version_digest: PROMPT_VERSION_DIGEST,
       producer_identity: "test-producer",

@@ -1,5 +1,7 @@
 import { contentDigest } from "../identity/digest.js";
 import { domainRecordId } from "../identity/record-id.js";
+import { PromptContractError } from "../prompt/contracts.js";
+import type { PromptContractResolver } from "../prompt/registry.js";
 import { PROTOCOL_1_1_VERSION } from "../protocol.js";
 import { sealRecordEnvelope } from "../schema/envelope.js";
 import type {
@@ -113,6 +115,88 @@ export function createProjectProfileRecord(
     ...(input.supersedes_digest === undefined
       ? {}
       : { supersedes_digest: input.supersedes_digest }),
+  });
+}
+
+/**
+ * User-facing configuration for one Capture-scope binding (prompt governance
+ * addendum 5.2): the caller pins the human-readable `prompt_version` alias;
+ * the contract id/version/digest and output schema digest are always derived
+ * from the injected PromptContractResolver, never hand-filled.
+ */
+export interface CaptureModelProviderConfig {
+  readonly slot_id: "grounded_synthesis";
+  readonly purpose: "project_discovery" | "approval_brief";
+  readonly required: boolean;
+  readonly provider_identity: string;
+  readonly config_digest: string;
+  readonly prompt_version: string;
+  readonly schema_version: string;
+  readonly budget_profile: string;
+  readonly failure_mode: ModelProviderBinding["failure_mode"];
+}
+
+/** Contract fields a caller must never supply by hand. */
+const HAND_SUPPLIED_CONTRACT_FIELDS = [
+  "prompt_contract_id",
+  "prompt_contract_version",
+  "prompt_contract_digest",
+  "output_schema_digest",
+] as const;
+
+/**
+ * Compile Capture-scope bindings from user configs: each config must be a
+ * Capture-scope slot/purpose and its `prompt_version` must resolve uniquely
+ * through the injected resolver. Unknown versions, hand-supplied digests and
+ * out-of-scope slots fail closed.
+ */
+export function compileCaptureModelProviderBindings(input: {
+  readonly prompt_contract_resolver: PromptContractResolver;
+  readonly configs: readonly CaptureModelProviderConfig[];
+}): ModelProviderBinding[] {
+  return input.configs.map((config) => {
+    for (const field of HAND_SUPPLIED_CONTRACT_FIELDS) {
+      if (field in config) {
+        throw new ProfileBindingError(
+          "prompt_contract_digest_mismatch",
+          `contract field ${field} is derived from the PromptContractRegistry; it must not be hand-filled`,
+        );
+      }
+    }
+    if (!isCaptureScopeBinding(config)) {
+      throw new ProfileBindingError(
+        "non_capture_scope_binding",
+        `slot/purpose ${bindingScopeKey(config)} is not part of the capture scope`,
+      );
+    }
+    let resolution;
+    try {
+      resolution = input.prompt_contract_resolver.resolve({
+        port_id: config.slot_id,
+        purpose: config.purpose,
+        prompt_version: config.prompt_version,
+      });
+    } catch (error) {
+      if (error instanceof PromptContractError) {
+        throw new ProfileBindingError(error.code, error.message);
+      }
+      throw error;
+    }
+    return {
+      slot_id: config.slot_id,
+      purpose: config.purpose,
+      required: config.required,
+      provider_identity: config.provider_identity,
+      config_digest: config.config_digest,
+      prompt_version: config.prompt_version,
+      prompt_contract_id: resolution.prompt_contract_id,
+      prompt_contract_version: resolution.prompt_contract_version,
+      prompt_contract_digest: resolution.prompt_contract_digest,
+      output_schema_digest: resolution.output_schema_digest,
+      schema_version: config.schema_version,
+      budget_profile: config.budget_profile,
+      failure_mode: config.failure_mode,
+    };
   });
 }
 

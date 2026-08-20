@@ -13,6 +13,7 @@ export * from "./observation.js";
 export * from "./operation.js";
 export * from "./plugin.js";
 export * from "./profile.js";
+export * from "./prompt.js";
 export * from "./proposal.js";
 export * from "./registry.js";
 export * from "./review.js";

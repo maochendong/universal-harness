@@ -5,6 +5,8 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
 import {
+  ProfileBindingError,
+  compileCaptureModelProviderBindings,
   createCaptureModelProviderBindingRecord,
   createProjectProfileRecord,
 } from "../../src/profile/records.js";
@@ -12,6 +14,8 @@ import { createProfileRecommendationRecord } from "../../src/profile/recommendat
 import { createProfileDecisionRecord } from "../../src/profile/decisions.js";
 import { verifyRecordEnvelope } from "../../src/schema/envelope.js";
 import { PROTOCOL_1_1_SCHEMA_REGISTRY } from "../../src/schema/registry.js";
+import { PROJECT_DISCOVERY_PROMPT_CONTRACT } from "../../src/synthesis/prompt-contracts.js";
+import { createCapturePromptContractRegistry } from "../prompt/helpers.js";
 
 const goldenDirectory = join(dirname(fileURLToPath(import.meta.url)), "../golden/profile");
 
@@ -76,15 +80,10 @@ function goldenDecision() {
   });
 }
 
-function goldenCaptureBinding() {
-  return createCaptureModelProviderBindingRecord({
-    project_id: PROJECT_ID,
-    profile_decision_id: "profile-decision_01K1ABCDEFGHIJKLMNO",
-    profile_decision_digest: DIGEST_E,
-    policy_digest: DIGEST_A,
-    config_digest: DIGEST_F,
-    baseline_digest: DIGEST_B,
-    bindings: [
+function goldenCaptureBindings() {
+  return compileCaptureModelProviderBindings({
+    prompt_contract_resolver: createCapturePromptContractRegistry(),
+    configs: [
       {
         slot_id: "grounded_synthesis",
         purpose: "project_discovery",
@@ -108,6 +107,18 @@ function goldenCaptureBinding() {
         failure_mode: "block",
       },
     ],
+  });
+}
+
+function goldenCaptureBinding() {
+  return createCaptureModelProviderBindingRecord({
+    project_id: PROJECT_ID,
+    profile_decision_id: "profile-decision_01K1ABCDEFGHIJKLMNO",
+    profile_decision_digest: DIGEST_E,
+    policy_digest: DIGEST_A,
+    config_digest: DIGEST_F,
+    baseline_digest: DIGEST_B,
+    bindings: goldenCaptureBindings(),
   });
 }
 
@@ -161,6 +172,24 @@ describe("profile record schemas", () => {
       }).valid,
     ).toBe(false);
     expect(validateBinding({ ...binding, bindings: [] }).valid).toBe(false);
+    // Prompt Governance: the binding must pin the resolved contract identity.
+    const firstBinding = (binding["bindings"] as Record<string, unknown>[])[0]!;
+    for (const field of [
+      "prompt_contract_id",
+      "prompt_contract_version",
+      "prompt_contract_digest",
+      "output_schema_digest",
+    ]) {
+      const incomplete = { ...firstBinding };
+      delete incomplete[field];
+      expect(validateBinding({ ...binding, bindings: [incomplete] }).valid, field).toBe(false);
+    }
+    expect(
+      validateBinding({
+        ...binding,
+        bindings: [{ ...firstBinding, prompt_contract_digest: "not-a-digest" }],
+      }).valid,
+    ).toBe(false);
   });
 
   it("produces identical ids and digests for canonically equal input in any order", () => {
@@ -196,5 +225,95 @@ describe("profile record schemas", () => {
     expect(goldenRecommendation()).toEqual(readGolden("profile-recommendation.json"));
     expect(goldenDecision()).toEqual(readGolden("profile-decision.json"));
     expect(goldenCaptureBinding()).toEqual(readGolden("model-provider-binding.json"));
+  });
+});
+
+describe("capture binding prompt contract compilation", () => {
+  function expectBindingError(
+    configs: readonly Parameters<
+      typeof compileCaptureModelProviderBindings
+    >[0]["configs"][number][],
+    kind: string,
+  ): void {
+    try {
+      compileCaptureModelProviderBindings({
+        prompt_contract_resolver: createCapturePromptContractRegistry(),
+        configs,
+      });
+      expect.unreachable(`expected binding compile failure ${kind}`);
+    } catch (error) {
+      expect(error).toBeInstanceOf(ProfileBindingError);
+      expect((error as ProfileBindingError).kind, kind).toBe(kind);
+    }
+  }
+
+  it("derives contract id/version/digest and output schema digest from the registry", () => {
+    const [discovery] = goldenCaptureBindings();
+    expect(discovery).toMatchObject({
+      slot_id: "grounded_synthesis",
+      purpose: "project_discovery",
+      prompt_version: "project-discovery.v1",
+      prompt_contract_id: PROJECT_DISCOVERY_PROMPT_CONTRACT.contract_id,
+      prompt_contract_version: PROJECT_DISCOVERY_PROMPT_CONTRACT.version,
+      prompt_contract_digest: PROJECT_DISCOVERY_PROMPT_CONTRACT.contract_digest,
+      output_schema_digest: PROJECT_DISCOVERY_PROMPT_CONTRACT.output_schema_digest,
+    });
+  });
+
+  it("rejects hand-supplied contract digests fail-closed", () => {
+    expectBindingError(
+      [
+        {
+          slot_id: "grounded_synthesis",
+          purpose: "project_discovery",
+          required: true,
+          provider_identity: "provider_anthropic",
+          config_digest: DIGEST_C,
+          prompt_version: "project-discovery.v1",
+          schema_version: "project-discovery-result.v1",
+          budget_profile: "capture-standard",
+          failure_mode: "block",
+          prompt_contract_digest: "0".repeat(64),
+        } as never,
+      ],
+      "prompt_contract_digest_mismatch",
+    );
+  });
+
+  it("rejects unknown prompt versions instead of guessing the nearest contract", () => {
+    expectBindingError(
+      [
+        {
+          slot_id: "grounded_synthesis",
+          purpose: "project_discovery",
+          required: true,
+          provider_identity: "provider_anthropic",
+          config_digest: DIGEST_C,
+          prompt_version: "project-discovery.v404",
+          schema_version: "project-discovery-result.v1",
+          budget_profile: "capture-standard",
+          failure_mode: "block",
+        },
+      ],
+      "prompt_contract_version_mismatch",
+    );
+  });
+
+  it("rejects operation-scope slots in the capture compile path", () => {
+    expectBindingError(
+      [
+        {
+          slot_id: "plan_proposal",
+          required: true,
+          provider_identity: "provider_anthropic",
+          config_digest: DIGEST_C,
+          prompt_version: "plan_proposal.v1",
+          schema_version: "plan-proposal-result.v1",
+          budget_profile: "plan-standard",
+          failure_mode: "block",
+        } as never,
+      ],
+      "non_capture_scope_binding",
+    );
   });
 });

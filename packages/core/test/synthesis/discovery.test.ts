@@ -28,6 +28,7 @@ import {
 } from "../../src/synthesis/records.js";
 import { readGroundedSynthesisRecords } from "../../src/synthesis/store.js";
 import type { GroundedSynthesisResult } from "../../src/synthesis/port.js";
+import { bindingContractFields, createCapturePromptContractRegistry } from "../prompt/helpers.js";
 
 const SESSION_ID = "capture-session_01K1ABCDEFGHIJKLMNO";
 const PROJECT_ID = "project_demo-app";
@@ -73,16 +74,24 @@ function profileDecision() {
 }
 
 function discoveryBinding(overrides: Partial<ModelProviderBinding> = {}): ModelProviderBinding {
+  const contractFields = bindingContractFields(
+    createCapturePromptContractRegistry().resolve({
+      port_id: "grounded_synthesis",
+      purpose: "project_discovery",
+      prompt_version: "project-discovery.v1",
+    }),
+  );
   return {
     slot_id: "grounded_synthesis",
     purpose: "project_discovery",
     required: true,
     provider_identity: "provider_fake",
     config_digest: DIGEST_E,
-    prompt_version: "discovery.v1",
+    prompt_version: "project-discovery.v1",
     schema_version: GROUNDED_SYNTHESIS_SCHEMA_VERSIONS.project_discovery,
     budget_profile: "capture-standard",
     failure_mode: "block",
+    ...contractFields,
     ...overrides,
   };
 }

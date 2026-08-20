@@ -17,6 +17,7 @@ import { createProfileDecisionRecord } from "../../src/profile/decisions.js";
 import { BindingScopeError } from "../../src/profile/model-slots.js";
 import { createProjectProfileRecord } from "../../src/profile/records.js";
 import type { CapabilityId, ProfileId } from "../../src/schema/profile.js";
+import { bindingContractFields, createTestPromptContractRegistry } from "../prompt/helpers.js";
 
 const DIGEST_A = "a".repeat(64);
 const DIGEST_B = "b".repeat(64);
@@ -63,6 +64,7 @@ function compileInput(
     risk_digest: DIGEST_C,
     policy_digest: DIGEST_A,
     baseline_digest: DIGEST_D,
+    prompt_contract_resolver: createTestPromptContractRegistry(),
     ...overrides,
   };
 }
@@ -519,6 +521,13 @@ describe("capability compiler: model provider binding rules", () => {
   });
 
   it("keeps capture-scope slots out of the plan and verifies the scopes stay disjoint", () => {
+    const discoveryContract = bindingContractFields(
+      createTestPromptContractRegistry().resolve({
+        port_id: "grounded_synthesis",
+        purpose: "project_discovery",
+        prompt_version: "project-discovery.v1",
+      }),
+    );
     const captureScopeBindings = [
       {
         slot_id: "grounded_synthesis" as const,
@@ -530,6 +539,7 @@ describe("capability compiler: model provider binding rules", () => {
         schema_version: "project-discovery-result.v1",
         budget_profile: "capture-standard",
         failure_mode: "block" as const,
+        ...discoveryContract,
       },
     ];
     const plan = compileCapabilityPlan(
@@ -563,6 +573,66 @@ describe("capability compiler: model provider binding rules", () => {
       compileInput("lite", { model_providers: [providerConfig("impact_advisory")] }),
       "slot_not_applicable",
     );
+  });
+
+  it("derives every binding's contract fields from the injected resolver", () => {
+    const registry = createTestPromptContractRegistry();
+    const plan = compileCapabilityPlan(standardFinal({ prompt_contract_resolver: registry }));
+    for (const binding of plan.model_provider_bindings) {
+      const resolution = registry.resolve({
+        port_id: binding.slot_id,
+        ...(binding.purpose === undefined ? {} : { purpose: binding.purpose }),
+        prompt_version: binding.prompt_version,
+      });
+      expect(binding.prompt_contract_id, binding.slot_id).toBe(resolution.prompt_contract_id);
+      expect(binding.prompt_contract_version, binding.slot_id).toBe(
+        resolution.prompt_contract_version,
+      );
+      expect(binding.prompt_contract_digest, binding.slot_id).toBe(
+        resolution.prompt_contract_digest,
+      );
+      expect(binding.output_schema_digest, binding.slot_id).toBe(resolution.output_schema_digest);
+    }
+  });
+
+  it("blocks when no resolver is injected but a binding must be compiled", () => {
+    expectCompileError(
+      standardFinal({ prompt_contract_resolver: undefined }),
+      "prompt_contract_required",
+    );
+  });
+
+  it("blocks unknown prompt versions instead of binding the nearest contract", () => {
+    expectCompileError(
+      standardFinal({
+        model_providers: OPERATION_SCOPE_CONFIGS.map((config) =>
+          config.slot_id === "design_review"
+            ? { ...config, prompt_version: "design_review.v404" }
+            : config,
+        ),
+      }),
+      "prompt_contract_version_mismatch",
+    );
+  });
+
+  it("rejects hand-supplied contract digests in provider configs fail-closed", () => {
+    expectCompileError(
+      standardFinal({
+        model_providers: OPERATION_SCOPE_CONFIGS.map((config) =>
+          config.slot_id === "design_review"
+            ? ({ ...config, prompt_contract_digest: DIGEST_G } as never)
+            : config,
+        ),
+      }),
+      "prompt_contract_digest_mismatch",
+    );
+  });
+
+  it("keeps lite compiles resolver-free when zero bindings are compiled", () => {
+    const plan = compileCapabilityPlan(
+      compileInput("lite", { prompt_contract_resolver: undefined }),
+    );
+    expect(plan.model_provider_bindings).toEqual([]);
   });
 });
 

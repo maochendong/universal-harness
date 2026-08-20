@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import {
   ProfileBindingError,
+  compileCaptureModelProviderBindings,
   createCaptureModelProviderBindingRecord,
   createProjectProfileRecord,
 } from "../../src/profile/records.js";
@@ -19,6 +20,56 @@ import {
   readProjectProfileRevisions,
   submitCaptureModelProviderBindings,
 } from "../../src/profile/store.js";
+import type { ModelProviderBinding } from "../../src/schema/profile.js";
+import {
+  bindingContractFields,
+  createCapturePromptContractRegistry,
+  createTestPromptContractRegistry,
+} from "../prompt/helpers.js";
+
+function captureScopeBindings(
+  configs: readonly {
+    readonly purpose: "project_discovery" | "approval_brief";
+    readonly prompt_version: string;
+    readonly schema_version: string;
+  }[],
+) {
+  return compileCaptureModelProviderBindings({
+    prompt_contract_resolver: createCapturePromptContractRegistry(),
+    configs: configs.map((config) => ({
+      slot_id: "grounded_synthesis" as const,
+      purpose: config.purpose,
+      required: true,
+      provider_identity: "provider_anthropic",
+      config_digest: DIGEST_C,
+      prompt_version: config.prompt_version,
+      schema_version: config.schema_version,
+      budget_profile: "capture-standard",
+      failure_mode: "block" as const,
+    })),
+  });
+}
+
+/** A fully-formed binding for a non-capture slot (resolved from the PG-0 stub registry). */
+function operationScopeBinding(): ModelProviderBinding {
+  const contractFields = bindingContractFields(
+    createTestPromptContractRegistry().resolve({
+      port_id: "plan_proposal",
+      prompt_version: "plan_proposal.v1",
+    }),
+  );
+  return {
+    slot_id: "plan_proposal",
+    required: true,
+    provider_identity: "provider_anthropic",
+    config_digest: DIGEST_C,
+    prompt_version: "plan_proposal.v1",
+    schema_version: "plan-proposal-result.v1",
+    budget_profile: "plan-standard",
+    failure_mode: "block",
+    ...contractFields,
+  };
+}
 
 const DIGEST_A = "a".repeat(64);
 const DIGEST_B = "b".repeat(64);
@@ -139,30 +190,18 @@ describe("capture-scope model provider bindings", () => {
       policy_digest: DIGEST_A,
       config_digest: DIGEST_C,
       baseline_digest: DIGEST_B,
-      bindings: [
+      bindings: captureScopeBindings([
         {
-          slot_id: "grounded_synthesis",
           purpose: "project_discovery",
-          required: true,
-          provider_identity: "provider_anthropic",
-          config_digest: DIGEST_C,
           prompt_version: "project-discovery.v1",
           schema_version: "project-discovery-result.v1",
-          budget_profile: "capture-standard",
-          failure_mode: "block",
         },
         {
-          slot_id: "grounded_synthesis",
           purpose: "approval_brief",
-          required: true,
-          provider_identity: "provider_anthropic",
-          config_digest: DIGEST_C,
           prompt_version: "approval-brief.v1",
           schema_version: "approval-brief-result.v1",
-          budget_profile: "capture-standard",
-          failure_mode: "block",
         },
-      ],
+      ]),
     });
   }
 
@@ -191,18 +230,7 @@ describe("capture-scope model provider bindings", () => {
         policy_digest: DIGEST_A,
         config_digest: DIGEST_C,
         baseline_digest: DIGEST_B,
-        bindings: [
-          {
-            slot_id: "plan_proposal",
-            required: true,
-            provider_identity: "provider_anthropic",
-            config_digest: DIGEST_C,
-            prompt_version: "plan-proposal.v1",
-            schema_version: "plan-proposal-result.v1",
-            budget_profile: "plan-standard",
-            failure_mode: "block",
-          },
-        ],
+        bindings: [operationScopeBinding()],
       }),
     ).toThrow(ProfileBindingError);
   });

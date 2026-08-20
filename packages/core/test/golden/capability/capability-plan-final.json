@@ -170,6 +170,10 @@
       "provider_identity": "provider_anthropic",
       "config_digest": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
       "prompt_version": "design_review.v1",
+      "prompt_contract_id": "harness:prompt:design-review",
+      "prompt_contract_version": "1.0.0",
+      "prompt_contract_digest": "8992eb1d259be1bf8441c8964135f8409aff1985f02fa910f2d9d8ee4e010246",
+      "output_schema_digest": "35d0ec9cf6cf4c5f4248f2d2e2f91aa13b0376cba8431e7db0f84a4df3ac9fdd",
       "schema_version": "design_review-result.v1",
       "budget_profile": "operation-standard",
       "failure_mode": "block"
@@ -180,6 +184,10 @@
       "provider_identity": "provider_anthropic",
       "config_digest": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
       "prompt_version": "feedback_analysis.v1",
+      "prompt_contract_id": "harness:prompt:feedback-analysis",
+      "prompt_contract_version": "1.0.0",
+      "prompt_contract_digest": "2755ef589689e8edee37eb66842ca867895b34c86edd46eef997b4eebcbde22b",
+      "output_schema_digest": "a82d365f3c6b548371d67fe28d776b265598b762db119b20f699852fd502b36f",
       "schema_version": "feedback_analysis-result.v1",
       "budget_profile": "operation-standard",
       "failure_mode": "block"
@@ -191,6 +199,10 @@
       "provider_identity": "provider_anthropic",
       "config_digest": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
       "prompt_version": "grounded_synthesis.v1",
+      "prompt_contract_id": "harness:prompt:context-enrichment",
+      "prompt_contract_version": "1.0.0",
+      "prompt_contract_digest": "f8ecc49c092c838008e45cc23983b2ddaaac17ee49f6998789182cf78523820b",
+      "output_schema_digest": "e6289a80281d5bef23f98a5d9ea65400b0c0bf3c3a4981cfac6830a8cacbf2e8",
       "schema_version": "grounded_synthesis-result.v1",
       "budget_profile": "operation-standard",
       "failure_mode": "block"
@@ -202,6 +214,10 @@
       "provider_identity": "provider_anthropic",
       "config_digest": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
       "prompt_version": "grounded_synthesis.v1",
+      "prompt_contract_id": "harness:prompt:iteration-narrative",
+      "prompt_contract_version": "1.0.0",
+      "prompt_contract_digest": "42a0df36ff23893c8094b975a91df3cfe7fbc503760be952e785f391ff4f1985",
+      "output_schema_digest": "995939281cceed624b18d4add69f01e7eec044dc56eb8c6fc7436adafa51b238",
       "schema_version": "grounded_synthesis-result.v1",
       "budget_profile": "operation-standard",
       "failure_mode": "projection_finding"
@@ -212,6 +228,10 @@
       "provider_identity": "provider_anthropic",
       "config_digest": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
       "prompt_version": "impact_advisory.v1",
+      "prompt_contract_id": "harness:prompt:impact-advisory",
+      "prompt_contract_version": "1.0.0",
+      "prompt_contract_digest": "f41966c111998b8c8c724fd17c1db825c0edead35cf0908867ac441f6da229e3",
+      "output_schema_digest": "a82d365f3c6b548371d67fe28d776b265598b762db119b20f699852fd502b36f",
       "schema_version": "impact_advisory-result.v1",
       "budget_profile": "operation-standard",
       "failure_mode": "block"
@@ -222,6 +242,10 @@
       "provider_identity": "provider_anthropic",
       "config_digest": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
       "prompt_version": "plan_proposal.v1",
+      "prompt_contract_id": "harness:prompt:plan-proposal",
+      "prompt_contract_version": "1.0.0",
+      "prompt_contract_digest": "296ff900d895db7119e9d019c6ef36f2b8a3175fafa72942059beec9c397f094",
+      "output_schema_digest": "4ef4a880c7f9f291dad5691d3180ba278c3be50729a37c67391303c826ac1e36",
       "schema_version": "plan_proposal-result.v1",
       "budget_profile": "operation-standard",
       "failure_mode": "block"
@@ -229,6 +253,6 @@
   ],
   "design_set_digest": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
   "test_strategy_digest": "0000000000000000000000000000000000000000000000000000000000000000",
-  "supersedes_digest": "184b69ba3500a80b11034ec2de64689e9a1938925481aefc1420b781f7315f8c",
-  "record_digest": "eb92f8bdd1c7307f8014ff180e9bbfca588487e0f30e832a236ef0caf278f1da"
+  "supersedes_digest": "1816f00eb890d060cc030d23a78b49cdfe5ee6e4a587fb7881479e2570a3549d",
+  "record_digest": "587883af84bbc56a15e1480d47501075df9b0ae609a626f2a3b6a8d9f182dead"
 }

@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.universal-harness.dev/1.1/prompt-preparation-failure.schema.json",
+  "additionalProperties": false,
+  "type": "object",
+  "required": ["code", "summary", "retryable"],
+  "properties": {
+    "code": {
+      "anyOf": [
+        { "const": "prompt_contract_required", "type": "string" },
+        { "const": "prompt_contract_version_mismatch", "type": "string" },
+        { "const": "prompt_contract_digest_mismatch", "type": "string" },
+        { "const": "profile_overlay_missing", "type": "string" },
+        { "const": "policy_overlay_invalid", "type": "string" },
+        { "const": "output_schema_mismatch", "type": "string" },
+        { "const": "untrusted_source_boundary_failed", "type": "string" },
+        { "const": "prompt_size_exceeded", "type": "string" }
+      ]
+    },
+    "summary": { "minLength": 1, "type": "string" },
+    "retryable": { "type": "boolean" },
+    "contract_id": { "pattern": "^harness:prompt:[a-z][a-z0-9]*(?:-[a-z0-9]+)*$", "type": "string" }
+  }
+}

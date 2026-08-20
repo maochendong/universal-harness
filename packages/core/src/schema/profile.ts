@@ -73,10 +73,14 @@ export const MODEL_BINDING_FAILURE_MODES = ["block", "projection_finding"] as co
 export type ModelBindingFailureMode = (typeof MODEL_BINDING_FAILURE_MODES)[number];
 
 /**
- * One provider binding for one slot/purpose (model advisory design 11.1). The
- * same shape is held by the Capture-scope record (this task) and by the
- * CapabilityPlan's operation-scope list (Task 3); the two scopes never hold
- * the same slot/purpose at once.
+ * One provider binding for one slot/purpose (model advisory design 11.1,
+ * prompt governance addendum 5.2). The same shape is held by the
+ * Capture-scope record (this task) and by the CapabilityPlan's
+ * operation-scope list (Task 3); the two scopes never hold the same
+ * slot/purpose at once. `prompt_version` is the human-readable Registry
+ * selector; the four contract fields pin the resolved Prompt Contract
+ * identity and output schema digest, always derived from the
+ * PromptContractRegistry by a compiler — never hand-filled.
  */
 export const ModelProviderBindingSchema = strictObject({
   slot_id: enumerated(MODEL_SLOT_IDS),
@@ -85,6 +89,10 @@ export const ModelProviderBindingSchema = strictObject({
   provider_identity: Type.String({ minLength: 1 }),
   config_digest: DigestSchema,
   prompt_version: Type.String({ minLength: 1 }),
+  prompt_contract_id: Type.String({ minLength: 1 }),
+  prompt_contract_version: Type.String({ minLength: 1 }),
+  prompt_contract_digest: DigestSchema,
+  output_schema_digest: DigestSchema,
   schema_version: Type.String({ minLength: 1 }),
   budget_profile: Type.String({ minLength: 1 }),
   failure_mode: enumerated(MODEL_BINDING_FAILURE_MODES),

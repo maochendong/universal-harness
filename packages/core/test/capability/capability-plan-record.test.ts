@@ -13,6 +13,7 @@ import { createProfileDecisionRecord } from "../../src/profile/decisions.js";
 import { createProjectProfileRecord } from "../../src/profile/records.js";
 import { verifyRecordEnvelope } from "../../src/schema/envelope.js";
 import { PROTOCOL_1_1_SCHEMA_REGISTRY } from "../../src/schema/registry.js";
+import { createTestPromptContractRegistry } from "../prompt/helpers.js";
 
 const goldenDirectory = join(dirname(fileURLToPath(import.meta.url)), "../golden/capability");
 
@@ -83,6 +84,7 @@ function standardCompileInput(
     policy_digest: DIGEST_A,
     baseline_digest: DIGEST_D,
     model_providers: OPERATION_SCOPE_CONFIGS,
+    prompt_contract_resolver: createTestPromptContractRegistry(),
     ...overrides,
   };
 }

@@ -70,6 +70,7 @@ function makeHandlers(
     projectRoot: root,
     proposal,
     adapter_profile: {
+      backing: "in_memory",
       adapter_profile_digest: ADAPTER_PROFILE_DIGEST,
       prompt_version_digest: PROMPT_VERSION_DIGEST,
       producer_identity: "in-memory",
@@ -299,6 +300,7 @@ describe("capture proposal stage wiring", () => {
       projectRoot: root,
       proposal: legacy,
       adapter_profile: {
+        backing: "in_memory",
         adapter_profile_digest: ADAPTER_PROFILE_DIGEST,
         prompt_version_digest: PROMPT_VERSION_DIGEST,
         producer_identity: "legacy-intent-interpreter",

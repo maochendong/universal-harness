@@ -1,0 +1,96 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.universal-harness.dev/1.1/prompt-contract.schema.json",
+  "additionalProperties": false,
+  "type": "object",
+  "required": [
+    "contract_id",
+    "port_id",
+    "version",
+    "authority_boundary",
+    "role_instruction",
+    "domain_rubric",
+    "profile_overlays",
+    "output_schema_id",
+    "output_schema_digest",
+    "source_delimiter_version",
+    "contract_digest"
+  ],
+  "properties": {
+    "contract_id": {
+      "pattern": "^harness:prompt:[a-z][a-z0-9]*(?:-[a-z0-9]+)*$",
+      "type": "string"
+    },
+    "port_id": { "minLength": 1, "maxLength": 80, "type": "string" },
+    "purpose": { "minLength": 1, "maxLength": 80, "type": "string" },
+    "version": {
+      "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$",
+      "type": "string"
+    },
+    "authority_boundary": {
+      "additionalProperties": false,
+      "type": "object",
+      "required": ["segment_id", "text"],
+      "properties": {
+        "segment_id": { "minLength": 1, "maxLength": 120, "type": "string" },
+        "text": { "minLength": 1, "type": "string" }
+      }
+    },
+    "role_instruction": {
+      "additionalProperties": false,
+      "type": "object",
+      "required": ["segment_id", "text"],
+      "properties": {
+        "segment_id": { "minLength": 1, "maxLength": 120, "type": "string" },
+        "text": { "minLength": 1, "type": "string" }
+      }
+    },
+    "domain_rubric": {
+      "additionalProperties": false,
+      "type": "object",
+      "required": ["segment_id", "text"],
+      "properties": {
+        "segment_id": { "minLength": 1, "maxLength": 120, "type": "string" },
+        "text": { "minLength": 1, "type": "string" }
+      }
+    },
+    "profile_overlays": {
+      "additionalProperties": false,
+      "type": "object",
+      "required": ["lite", "standard", "governed"],
+      "properties": {
+        "lite": {
+          "additionalProperties": false,
+          "type": "object",
+          "required": ["segment_id", "text"],
+          "properties": {
+            "segment_id": { "minLength": 1, "maxLength": 120, "type": "string" },
+            "text": { "minLength": 1, "type": "string" }
+          }
+        },
+        "standard": {
+          "additionalProperties": false,
+          "type": "object",
+          "required": ["segment_id", "text"],
+          "properties": {
+            "segment_id": { "minLength": 1, "maxLength": 120, "type": "string" },
+            "text": { "minLength": 1, "type": "string" }
+          }
+        },
+        "governed": {
+          "additionalProperties": false,
+          "type": "object",
+          "required": ["segment_id", "text"],
+          "properties": {
+            "segment_id": { "minLength": 1, "maxLength": 120, "type": "string" },
+            "text": { "minLength": 1, "type": "string" }
+          }
+        }
+      }
+    },
+    "output_schema_id": { "minLength": 1, "maxLength": 120, "type": "string" },
+    "output_schema_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
+    "source_delimiter_version": { "minLength": 1, "maxLength": 120, "type": "string" },
+    "contract_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" }
+  }
+}

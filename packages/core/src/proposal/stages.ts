@@ -3,7 +3,7 @@ import type { CaptureStageHandler } from "../capture/commands.js";
 import { readProjectContextBundles } from "../context/store.js";
 import { domainRecordId } from "../identity/record-id.js";
 import { PROTOCOL_1_1_VERSION } from "../protocol.js";
-import type { PrdProposalPort } from "./port.js";
+import type { CaptureProposalProfile, PrdProposalPort } from "./port.js";
 import { runPrdHardGates } from "./gates.js";
 import {
   ProposalRecordError,
@@ -32,11 +32,7 @@ import {
 export interface CaptureProposalStageDeps {
   readonly projectRoot: string;
   readonly proposal: PrdProposalPort;
-  readonly adapter_profile: {
-    readonly adapter_profile_digest: string;
-    readonly prompt_version_digest: string;
-    readonly producer_identity: string;
-  };
+  readonly adapter_profile: CaptureProposalProfile;
 }
 
 function stageFailure(

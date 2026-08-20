@@ -31,6 +31,7 @@ import {
   ProfileRecommendationRecordSchema,
   ProjectProfileRecordSchema,
 } from "./profile.js";
+import { PromptContractSchema, PromptPreparationFailureSchema } from "./prompt.js";
 import {
   PrdEntityLineageRecordSchema,
   PrdProposalContentSchema,
@@ -177,6 +178,8 @@ export const JSON_SCHEMA_DOCUMENTS = Object.fromEntries(
  * lineage record and the deterministic validation report. Task 7 contributes
  * the review report/draft, manual review input, risk assessment, accepted PRD
  * and requirement baseline records plus the versioned approval-brief input.
+ * PG-0 contributes the prompt contract and prompt preparation failure
+ * registry schemas.
  */
 export const PROTOCOL_1_1_SCHEMA_REGISTRY = createDomainSchemaRegistry({
   protocolVersion: PROTOCOL_1_1_VERSION,
@@ -186,6 +189,8 @@ export const PROTOCOL_1_1_SCHEMA_REGISTRY = createDomainSchemaRegistry({
     { key: "profile-recommendation", schema: ProfileRecommendationRecordSchema },
     { key: "profile-decision", schema: ProfileDecisionRecordSchema },
     { key: "model-provider-binding", schema: CaptureModelProviderBindingRecordSchema },
+    { key: "prompt-contract", schema: PromptContractSchema },
+    { key: "prompt-preparation-failure", schema: PromptPreparationFailureSchema },
     { key: "capability-plan", schema: CapabilityPlanRecordSchema },
     { key: "capture-session", schema: CaptureSessionRecordSchema },
     { key: "clarification-question", schema: ClarificationQuestionRecordSchema },

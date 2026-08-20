@@ -4,7 +4,7 @@ import { domainRecordId } from "../identity/record-id.js";
 import { PROTOCOL_1_1_VERSION } from "../protocol.js";
 import { findPrdProposalByDigest, readPrdValidationReports } from "../proposal/store.js";
 import type { ClarificationQuestionDraft } from "../capture/records.js";
-import type { PrdReviewPort, PrdReviewRubric } from "./port.js";
+import type { CaptureReviewProfile, PrdReviewPort, PrdReviewRubric } from "./port.js";
 import {
   ReviewRecordError,
   createPrdReviewReportRecord,
@@ -32,11 +32,7 @@ export interface CaptureReviewStageDeps {
   readonly projectRoot: string;
   readonly review: PrdReviewPort;
   readonly rubric: PrdReviewRubric;
-  readonly adapter_profile: {
-    readonly adapter_profile_digest: string;
-    readonly prompt_version_digest: string;
-    readonly reviewer_identity: string;
-  };
+  readonly adapter_profile: CaptureReviewProfile;
 }
 
 function stageFailure(

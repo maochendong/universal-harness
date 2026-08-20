@@ -55,6 +55,10 @@
           "provider_identity",
           "config_digest",
           "prompt_version",
+          "prompt_contract_id",
+          "prompt_contract_version",
+          "prompt_contract_digest",
+          "output_schema_digest",
           "schema_version",
           "budget_profile",
           "failure_mode"
@@ -81,6 +85,10 @@
           "provider_identity": { "minLength": 1, "type": "string" },
           "config_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
           "prompt_version": { "minLength": 1, "type": "string" },
+          "prompt_contract_id": { "minLength": 1, "type": "string" },
+          "prompt_contract_version": { "minLength": 1, "type": "string" },
+          "prompt_contract_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
+          "output_schema_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
           "schema_version": { "minLength": 1, "type": "string" },
           "budget_profile": { "minLength": 1, "type": "string" },
           "failure_mode": {

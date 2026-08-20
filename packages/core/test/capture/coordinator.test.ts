@@ -36,6 +36,7 @@ import type {
   CaptureSessionRecord,
   ClarificationQuestionRecord,
 } from "../../src/schema/capture.js";
+import { bindingContractFields, createCapturePromptContractRegistry } from "../prompt/helpers.js";
 
 const DIGEST_A = "a".repeat(64);
 const DIGEST_B = "b".repeat(64);
@@ -83,6 +84,13 @@ function profileDecision() {
 
 /** Commit the Capture-scope bindings before Capture starts (design 11.1). */
 function commitCaptureBindings(root: string, profileDecisionDigest: string): string[] {
+  const contractFields = bindingContractFields(
+    createCapturePromptContractRegistry().resolve({
+      port_id: "grounded_synthesis",
+      purpose: "project_discovery",
+      prompt_version: "project-discovery.v1",
+    }),
+  );
   const record = createCaptureModelProviderBindingRecord({
     project_id: PROJECT_ID,
     profile_decision_id: profileDecision().profile_decision_id,
@@ -97,10 +105,11 @@ function commitCaptureBindings(root: string, profileDecisionDigest: string): str
         required: true,
         provider_identity: "provider_fake",
         config_digest: DIGEST_E,
-        prompt_version: "discovery.v1",
+        prompt_version: "project-discovery.v1",
         schema_version: "discovery-result.v1",
         budget_profile: "capture-standard",
         failure_mode: "block",
+        ...contractFields,
       },
     ],
   });
