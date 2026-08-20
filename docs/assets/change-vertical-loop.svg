@@ -1,0 +1,237 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1440 1040" font-family="PingFang SC, Hiragino Sans GB, Microsoft YaHei, Noto Sans CJK SC, sans-serif">
+  <defs>
+    <marker id="loop-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#94A3B8"/>
+    </marker>
+    <marker id="loop-feedback-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#D97706"/>
+    </marker>
+  </defs>
+
+  <rect x="0" y="0" width="1440" height="1040" fill="#F8FAFC"/>
+  <text x="720" y="42" text-anchor="middle" font-size="21" font-weight="700" fill="#0F172A">一次变更如何穿过 Graph-native 纵向闭环</text>
+  <text x="720" y="68" text-anchor="middle" font-size="12" fill="#64748B">从 Intent / Change Seed 到 Snapshot：每一步都提交明确对象、关系、批准或证据；失败沿 Finding 回到最早拥有修改权的节点</text>
+
+  <!-- legend -->
+  <g font-size="10.5">
+    <rect x="286" y="92" width="18" height="12" rx="3" fill="#DBEAFE" stroke="#60A5FA"/><text x="312" y="102" fill="#475569">确定性编译 / 校验</text>
+    <rect x="466" y="92" width="18" height="12" rx="3" fill="#F3E8FF" stroke="#C084FC"/><text x="492" y="102" fill="#475569">模型候选 / 评审</text>
+    <rect x="642" y="92" width="18" height="12" rx="3" fill="#FEF3C7" stroke="#FBBF24"/><text x="668" y="102" fill="#475569">人类 / Policy 批准</text>
+    <rect x="832" y="92" width="18" height="12" rx="3" fill="#D1FAE5" stroke="#34D399"/><text x="858" y="102" fill="#475569">Gate / Evidence</text>
+    <rect x="1002" y="92" width="18" height="12" rx="3" fill="#0F172A"/><text x="1028" y="102" fill="#475569">Ledger 权威事实</text>
+  </g>
+
+  <!-- profile and change seed -->
+  <g>
+    <rect x="110" y="126" width="1220" height="66" rx="13" fill="#FFFFFF" stroke="#CBD5E1" stroke-width="1.4"/>
+    <text x="720" y="153" text-anchor="middle" font-size="14" font-weight="700" fill="#334155">ProfileDecision + Policy → Capture Binding ｜ accepted PRD + Risk → CapabilityPlan Revision / Downstream DAG</text>
+    <text x="720" y="176" text-anchor="middle" font-size="10.8" fill="#64748B">Capture-scope 与 Operation-scope Provider Binding 互不重叠；方括号节点只在 CapabilityPlan 启用时存在</text>
+  </g>
+  <line x1="720" y1="192" x2="720" y2="222" stroke="#94A3B8" stroke-width="1.5" marker-end="url(#loop-arrow)"/>
+
+  <!-- Stage cards -->
+  <g>
+    <rect x="24" y="226" width="188" height="296" rx="14" fill="#FFFFFF" stroke="#2563EB" stroke-width="1.7"/>
+    <rect x="24" y="226" width="188" height="52" rx="14" fill="#DBEAFE"/>
+    <rect x="24" y="264" width="188" height="14" fill="#DBEAFE"/>
+    <text x="42" y="248" font-size="13" font-weight="700" fill="#1D4ED8">1 · Capture</text>
+    <text x="42" y="266" font-size="9.5" fill="#1E40AF">把意图变成可验证需求</text>
+  </g>
+  <rect x="40" y="296" width="156" height="54" rx="8" fill="#F3E8FF" stroke="#D8B4FE"/>
+  <text x="50" y="316" font-size="9.5" font-weight="700" fill="#7E22CE">模型建议</text>
+  <text x="50" y="334" font-size="9" fill="#475569">project_discovery</text>
+  <text x="50" y="346" font-size="9" fill="#475569">Proposal / Review / Brief</text>
+  <rect x="40" y="362" width="156" height="64" rx="8" fill="#EFF6FF" stroke="#BFDBFE"/>
+  <text x="50" y="382" font-size="9.5" font-weight="700" fill="#1D4ED8">确定性治理</text>
+  <text x="50" y="399" font-size="9" fill="#475569">澄清状态机 · 硬门禁</text>
+  <text x="50" y="414" font-size="9" fill="#475569">Risk · Validator · lineage</text>
+  <rect x="40" y="438" width="156" height="66" rx="8" fill="#F8FAFC" stroke="#CBD5E1"/>
+  <text x="50" y="458" font-size="9.5" font-weight="700" fill="#334155">权威产物</text>
+  <text x="50" y="475" font-size="9" fill="#475569">Accepted PRD · Baseline</text>
+  <text x="50" y="490" font-size="9" fill="#475569">Requirement · Criterion / Test</text>
+
+  <g>
+    <rect x="224" y="226" width="188" height="296" rx="14" fill="#FFFFFF" stroke="#7C3AED" stroke-width="1.7"/>
+    <rect x="224" y="226" width="188" height="52" rx="14" fill="#EDE9FE"/>
+    <rect x="224" y="264" width="188" height="14" fill="#EDE9FE"/>
+    <text x="242" y="248" font-size="13" font-weight="700" fill="#6D28D9">2 · Impact</text>
+    <text x="242" y="266" font-size="9.5" fill="#5B21B6">解释波及范围与风险路径</text>
+  </g>
+  <rect x="240" y="296" width="156" height="54" rx="8" fill="#EFF6FF" stroke="#BFDBFE"/>
+  <text x="250" y="316" font-size="9.5" font-weight="700" fill="#1D4ED8">确定性传播</text>
+  <text x="250" y="334" font-size="9" fill="#475569">18 关系规则 · BFS 路径</text>
+  <text x="250" y="346" font-size="9" fill="#475569">方向 · 风险下限 · 推理许可</text>
+  <rect x="240" y="362" width="156" height="64" rx="8" fill="#F3E8FF" stroke="#D8B4FE"/>
+  <text x="250" y="382" font-size="9.5" font-weight="700" fill="#7E22CE">Impact Advisory</text>
+  <text x="250" y="399" font-size="9" fill="#475569">只可增补遗漏候选</text>
+  <text x="250" y="414" font-size="9" fill="#475569">不能删项、降风险或改方向</text>
+  <rect x="240" y="438" width="156" height="66" rx="8" fill="#FFFBEB" stroke="#FDE68A"/>
+  <text x="250" y="458" font-size="9.5" font-weight="700" fill="#92400E">批准后冻结</text>
+  <text x="250" y="475" font-size="9" fill="#475569">ImpactSet · ExplanationPath</text>
+  <text x="250" y="490" font-size="9" fill="#475569">must-change / inspect / risk</text>
+
+  <g>
+    <rect x="424" y="226" width="188" height="296" rx="14" fill="#FFFFFF" stroke="#A21CAF" stroke-width="1.7"/>
+    <rect x="424" y="226" width="188" height="52" rx="14" fill="#FAE8FF"/>
+    <rect x="424" y="264" width="188" height="14" fill="#FAE8FF"/>
+    <text x="442" y="248" font-size="13" font-weight="700" fill="#A21CAF">3 · Design</text>
+    <text x="442" y="266" font-size="9.5" fill="#86198F">冻结怎样改与怎样验证</text>
+  </g>
+  <rect x="440" y="296" width="156" height="54" rx="8" fill="#F3E8FF" stroke="#D8B4FE"/>
+  <text x="450" y="316" font-size="9.5" font-weight="700" fill="#7E22CE">Proposal + 独立 Review</text>
+  <text x="450" y="334" font-size="9" fill="#475569">Decision · Component · Contract</text>
+  <text x="450" y="346" font-size="9" fill="#475569">Critical Finding 阻止批准请求</text>
+  <rect x="440" y="362" width="156" height="64" rx="8" fill="#EFF6FF" stroke="#BFDBFE"/>
+  <text x="450" y="382" font-size="9.5" font-weight="700" fill="#1D4ED8">纯 Validator</text>
+  <text x="450" y="399" font-size="9" fill="#475569">覆盖 · 冲突 · 关系 · 策略</text>
+  <text x="450" y="414" font-size="9" fill="#475569">每个 Criterion 唯一测试主责</text>
+  <rect x="440" y="438" width="156" height="66" rx="8" fill="#FFFBEB" stroke="#FDE68A"/>
+  <text x="450" y="458" font-size="9.5" font-weight="700" fill="#92400E">人工批准后物化</text>
+  <text x="450" y="475" font-size="9" fill="#475569">DesignSet · DesignArtifact</text>
+  <text x="450" y="490" font-size="9" fill="#475569">ADDRESSES / SHAPES / SPECIFIES</text>
+
+  <g>
+    <rect x="624" y="226" width="188" height="296" rx="14" fill="#FFFFFF" stroke="#4F46E5" stroke-width="1.7"/>
+    <rect x="624" y="226" width="188" height="52" rx="14" fill="#E0E7FF"/>
+    <rect x="624" y="264" width="188" height="14" fill="#E0E7FF"/>
+    <text x="642" y="248" font-size="13" font-weight="700" fill="#4338CA">4 · Plan / Context</text>
+    <text x="642" y="266" font-size="9.5" fill="#3730A3">把批准事实编译成可执行边界</text>
+  </g>
+  <rect x="640" y="296" width="156" height="54" rx="8" fill="#F3E8FF" stroke="#D8B4FE"/>
+  <text x="650" y="316" font-size="9.5" font-weight="700" fill="#7E22CE">模型只提出候选</text>
+  <text x="650" y="334" font-size="9" fill="#475569">Task / Cluster / DAG / budget</text>
+  <text x="650" y="346" font-size="9" fill="#475569">Context 术语与相关性说明</text>
+  <rect x="640" y="362" width="156" height="64" rx="8" fill="#EFF6FF" stroke="#BFDBFE"/>
+  <text x="650" y="382" font-size="9.5" font-weight="700" fill="#1D4ED8">Harness 独占编译</text>
+  <text x="650" y="399" font-size="9" fill="#475569">Assertion / Task identity</text>
+  <text x="650" y="414" font-size="9" fill="#475569">路径 · Gate · TDD · freshness</text>
+  <rect x="640" y="438" width="156" height="66" rx="8" fill="#F8FAFC" stroke="#CBD5E1"/>
+  <text x="650" y="458" font-size="9.5" font-weight="700" fill="#334155">权威产物</text>
+  <text x="650" y="475" font-size="9" fill="#475569">ExecutionPlan · Task DAG</text>
+  <text x="650" y="490" font-size="9" fill="#475569">ContextBundle · TDD Contract</text>
+
+  <g>
+    <rect x="824" y="226" width="188" height="296" rx="14" fill="#FFFFFF" stroke="#059669" stroke-width="1.7"/>
+    <rect x="824" y="226" width="188" height="52" rx="14" fill="#D1FAE5"/>
+    <rect x="824" y="264" width="188" height="14" fill="#D1FAE5"/>
+    <text x="842" y="248" font-size="13" font-weight="700" fill="#047857">5 · Execute / TDD</text>
+    <text x="842" y="266" font-size="9.5" fill="#065F46">在受控 Grant 内改变代码</text>
+  </g>
+  <rect x="840" y="296" width="156" height="54" rx="8" fill="#EFF6FF" stroke="#BFDBFE"/>
+  <text x="850" y="316" font-size="9.5" font-weight="700" fill="#1D4ED8">ExecutionPreflight</text>
+  <text x="850" y="334" font-size="9" fill="#475569">复验所有启用 binding</text>
+  <text x="850" y="346" font-size="9" fill="#475569">漂移时禁止 RunStarted</text>
+  <rect x="840" y="362" width="156" height="64" rx="8" fill="#ECFDF5" stroke="#6EE7B7"/>
+  <text x="850" y="382" font-size="9.5" font-weight="700" fill="#047857">受控 Agent / 人工</text>
+  <text x="850" y="399" font-size="9" fill="#475569">Baseline → Red → Green</text>
+  <text x="850" y="414" font-size="9" fill="#475569">→ Refactor；Red 前禁写生产</text>
+  <rect x="840" y="438" width="156" height="66" rx="8" fill="#F8FAFC" stroke="#CBD5E1"/>
+  <text x="850" y="458" font-size="9.5" font-weight="700" fill="#334155">权威运行记录</text>
+  <text x="850" y="475" font-size="9" fill="#475569">Run · Patch · Checkpoint</text>
+  <text x="850" y="490" font-size="9" fill="#475569">Phase Grant · TDD Cycle</text>
+
+  <g>
+    <rect x="1024" y="226" width="188" height="296" rx="14" fill="#FFFFFF" stroke="#0D9488" stroke-width="1.7"/>
+    <rect x="1024" y="226" width="188" height="52" rx="14" fill="#CCFBF1"/>
+    <rect x="1024" y="264" width="188" height="14" fill="#CCFBF1"/>
+    <text x="1042" y="248" font-size="13" font-weight="700" fill="#0F766E">6 · Verify / Evaluate</text>
+    <text x="1042" y="266" font-size="9.5" fill="#115E59">用客观证据裁决任务</text>
+  </g>
+  <rect x="1040" y="296" width="156" height="54" rx="8" fill="#ECFDF5" stroke="#6EE7B7"/>
+  <text x="1050" y="316" font-size="9.5" font-weight="700" fill="#047857">机械门禁</text>
+  <text x="1050" y="334" font-size="9" fill="#475569">Gate · Test · EvaluationCase</text>
+  <text x="1050" y="346" font-size="9" fill="#475569">同一 Assertion / baseline 绑定</text>
+  <rect x="1040" y="362" width="156" height="64" rx="8" fill="#ECFDF5" stroke="#6EE7B7"/>
+  <text x="1050" y="382" font-size="9.5" font-weight="700" fill="#047857">Evidence / Verdict</text>
+  <text x="1050" y="399" font-size="9" fill="#475569">SUPPORTS / REFUTES 审计链</text>
+  <text x="1050" y="414" font-size="9" fill="#475569">模型与 Agent 自述不算证明</text>
+  <rect x="1040" y="438" width="156" height="66" rx="8" fill="#FFF7ED" stroke="#FED7AA"/>
+  <text x="1050" y="458" font-size="9.5" font-weight="700" fill="#C2410C">失败时</text>
+  <text x="1050" y="475" font-size="9" fill="#475569">Finding · deterministic RCA</text>
+  <text x="1050" y="490" font-size="9" fill="#475569">必要时 Feedback Analysis</text>
+
+  <g>
+    <rect x="1224" y="226" width="192" height="296" rx="14" fill="#FFFFFF" stroke="#D97706" stroke-width="1.7"/>
+    <rect x="1224" y="226" width="192" height="52" rx="14" fill="#FEF3C7"/>
+    <rect x="1224" y="264" width="192" height="14" fill="#FEF3C7"/>
+    <text x="1242" y="248" font-size="13" font-weight="700" fill="#B45309">7 · Snapshot</text>
+    <text x="1242" y="266" font-size="9.5" fill="#92400E">先提交完成事实，再生成叙事</text>
+  </g>
+  <rect x="1240" y="296" width="160" height="54" rx="8" fill="#ECFDF5" stroke="#6EE7B7"/>
+  <text x="1250" y="316" font-size="9.5" font-weight="700" fill="#047857">完成条件</text>
+  <text x="1250" y="334" font-size="9" fill="#475569">Gate / Eval / Verdict 通过</text>
+  <text x="1250" y="346" font-size="9" fill="#475569">无未解决 blocker</text>
+  <rect x="1240" y="362" width="160" height="64" rx="8" fill="#0F172A"/>
+  <text x="1250" y="382" font-size="9.5" font-weight="700" fill="#F8FAFC">权威 Snapshot</text>
+  <text x="1250" y="399" font-size="9" fill="#CBD5E1">source commit · ledger commit</text>
+  <text x="1250" y="414" font-size="9" fill="#CBD5E1">TaskVerdict · completion status</text>
+  <rect x="1240" y="438" width="160" height="66" rx="8" fill="#F3E8FF" stroke="#D8B4FE"/>
+  <text x="1250" y="458" font-size="9.5" font-weight="700" fill="#7E22CE">iteration_narrative</text>
+  <text x="1250" y="475" font-size="9" fill="#475569">Snapshot 后生成中文叙事</text>
+  <text x="1250" y="490" font-size="9" fill="#475569">失败只留 Projection Finding</text>
+
+  <!-- stage arrows -->
+  <g stroke="#94A3B8" stroke-width="1.5" fill="none" marker-end="url(#loop-arrow)">
+    <line x1="212" y1="374" x2="224" y2="374"/>
+    <line x1="412" y1="374" x2="424" y2="374"/>
+    <line x1="612" y1="374" x2="624" y2="374"/>
+    <line x1="812" y1="374" x2="824" y2="374"/>
+    <line x1="1012" y1="374" x2="1024" y2="374"/>
+    <line x1="1212" y1="374" x2="1224" y2="374"/>
+  </g>
+
+  <!-- graph facts lane -->
+  <text x="720" y="560" text-anchor="middle" font-size="13" font-weight="700" fill="#334155">每一阶段都把“候选”收敛为可验证的 Node / Edge / Record，再追加到同一个 Ledger</text>
+  <g font-size="9.5" fill="#475569">
+    <rect x="38" y="580" width="174" height="46" rx="8" fill="#FFFFFF" stroke="#CBD5E1"/><text x="125" y="599" text-anchor="middle">Intent → Requirement</text><text x="125" y="615" text-anchor="middle">Test VERIFIES Requirement</text>
+    <rect x="238" y="580" width="174" height="46" rx="8" fill="#FFFFFF" stroke="#CBD5E1"/><text x="325" y="599" text-anchor="middle">Change Seed → ImpactSet</text><text x="325" y="615" text-anchor="middle">关系路径与风险解释</text>
+    <rect x="438" y="580" width="174" height="46" rx="8" fill="#FFFFFF" stroke="#CBD5E1"/><text x="525" y="599" text-anchor="middle">Decision / Component</text><text x="525" y="615" text-anchor="middle">DesignArtifact SPECIFIES ...</text>
+    <rect x="638" y="580" width="174" height="46" rx="8" fill="#FFFFFF" stroke="#CBD5E1"/><text x="725" y="599" text-anchor="middle">Criterion → Assertion → Task</text><text x="725" y="615" text-anchor="middle">Task USES_CONTEXT Bundle</text>
+    <rect x="838" y="580" width="174" height="46" rx="8" fill="#FFFFFF" stroke="#CBD5E1"/><text x="925" y="599" text-anchor="middle">Run EXECUTES Task</text><text x="925" y="615" text-anchor="middle">Checkpoint CAPTURES Run</text>
+    <rect x="1038" y="580" width="174" height="46" rx="8" fill="#FFFFFF" stroke="#CBD5E1"/><text x="1125" y="599" text-anchor="middle">Run PRODUCES Evidence</text><text x="1125" y="615" text-anchor="middle">Evidence SUPPORTS / REFUTES</text>
+    <rect x="1238" y="580" width="174" height="46" rx="8" fill="#FFFFFF" stroke="#CBD5E1"/><text x="1325" y="599" text-anchor="middle">Iteration → Snapshot</text><text x="1325" y="615" text-anchor="middle">完成事实不可被叙事改写</text>
+  </g>
+  <g stroke="#94A3B8" stroke-width="1.1">
+    <line x1="118" y1="522" x2="118" y2="580" marker-end="url(#loop-arrow)"/>
+    <line x1="318" y1="522" x2="318" y2="580" marker-end="url(#loop-arrow)"/>
+    <line x1="518" y1="522" x2="518" y2="580" marker-end="url(#loop-arrow)"/>
+    <line x1="718" y1="522" x2="718" y2="580" marker-end="url(#loop-arrow)"/>
+    <line x1="918" y1="522" x2="918" y2="580" marker-end="url(#loop-arrow)"/>
+    <line x1="1118" y1="522" x2="1118" y2="580" marker-end="url(#loop-arrow)"/>
+    <line x1="1320" y1="522" x2="1320" y2="580" marker-end="url(#loop-arrow)"/>
+  </g>
+
+  <!-- feedback loop -->
+  <g>
+    <rect x="310" y="666" width="820" height="120" rx="14" fill="#FFF7ED" stroke="#F59E0B" stroke-width="1.6"/>
+    <text x="334" y="694" font-size="13" font-weight="700" fill="#B45309">失败不是在下游自由修补，而是编译成下一轮受治理变更</text>
+    <text x="334" y="720" font-size="10.5" fill="#475569">Finding → deterministic RCA → 必要时 FeedbackAnalysis 候选 → 人工复核高风险 / 低置信度 → Change Seed</text>
+    <text x="334" y="744" font-size="10.5" fill="#475569">Router 根据拥有修改权的层级，把问题送回 Capture、Impact、Design 或 Plan，并精确失效下游授权与证据</text>
+    <text x="334" y="768" font-size="10" fill="#B45309">旧 Approval、Plan、Context、Grant、TDD Cycle、Evidence 只追加 invalidation / supersede；历史从不覆盖</text>
+  </g>
+  <path d="M1118,626 L1118,650 L1138,650 L1138,726 L1130,726" fill="none" stroke="#D97706" stroke-width="1.7" marker-end="url(#loop-feedback-arrow)"/>
+  <path d="M310,726 L198,726 L198,646 L118,646 L118,626" fill="none" stroke="#D97706" stroke-width="1.7" stroke-dasharray="6 4" marker-end="url(#loop-feedback-arrow)"/>
+  <path d="M310,746 L276,746 L276,646 L318,646 L318,626" fill="none" stroke="#D97706" stroke-width="1.3" stroke-dasharray="5 4" marker-end="url(#loop-feedback-arrow)"/>
+  <path d="M1130,746 L1182,746 L1182,646 L1118,646 L1118,626" fill="none" stroke="#D97706" stroke-width="1.3" stroke-dasharray="5 4" marker-end="url(#loop-feedback-arrow)"/>
+  <text x="146" y="700" font-size="9.5" fill="#B45309">回到最早受影响节点</text>
+
+  <!-- ledger -->
+  <rect x="72" y="840" width="1296" height="96" rx="15" fill="#0F172A"/>
+  <text x="720" y="870" text-anchor="middle" font-size="15" font-weight="700" fill="#F8FAFC">Git-native Ledger · 唯一权威 · append-only · 可重放</text>
+  <text x="720" y="896" text-anchor="middle" font-size="10.8" fill="#CBD5E1">Node / Edge · Lifecycle Event · Approval · CapabilityPlan · Model Invocation / Result · Gate / Evaluation Evidence · Finding · Snapshot</text>
+  <text x="720" y="920" text-anchor="middle" font-size="10.5" fill="#93C5FD">Live Spool 只保存可删除的实时观察；SQLite、Dashboard 与 Markdown 都可从 Ledger 确定性重建</text>
+  <g stroke="#94A3B8" stroke-width="1.2" fill="none" marker-end="url(#loop-arrow)">
+    <line x1="125" y1="626" x2="125" y2="840"/>
+    <line x1="325" y1="626" x2="325" y2="666"/>
+    <line x1="525" y1="626" x2="525" y2="666"/>
+    <line x1="725" y1="626" x2="725" y2="666"/>
+    <line x1="925" y1="626" x2="925" y2="666"/>
+    <line x1="1125" y1="786" x2="1125" y2="840"/>
+    <line x1="1325" y1="626" x2="1325" y2="840"/>
+  </g>
+
+  <!-- completion invariants -->
+  <rect x="120" y="966" width="1200" height="48" rx="24" fill="#FFFFFF" stroke="#CBD5E1"/>
+  <text x="720" y="987" text-anchor="middle" font-size="11" font-weight="700" fill="#334155">权威边界：模型只能建议 · 人工只批准精确对象 · Agent 只在 Grant 内执行 · Evidence 才能证明完成</text>
+  <text x="720" y="1004" text-anchor="middle" font-size="9.8" fill="#64748B">Snapshot 先于 Narrative；反馈通过 Change Seed 重开图，不通过修改历史伪造成功</text>
+</svg>

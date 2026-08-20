@@ -115,6 +115,17 @@ flowchart LR
 
 所有 Port/purpose 的 prompt、Schema、budget、conversation、run identity 和 Evidence 相互独立；可以共用 vendor/model/executable，但不能共享隐藏历史。Standard/Governed 对适用槽位强制 Provider，缺失或必需调用耗尽重试后阻塞；`iteration_narrative` 是唯一非阻塞例外，失败只产生可恢复 Projection Finding。
 
+### 0.2 Lite、Standard、Governed 的 Graph-native 驱动形态
+
+![三种 Profile 的 Graph-native 驱动模型](assets/profile-graph-native-models.svg)
+
+这三种形态不是三套 Orchestrator，也不是把同一条重流水线做界面隐藏。它们共用同一套 Node、Edge、Event、关系传播规则、Finding 反馈语义和 Git-native Ledger；差异来自 Capability Compiler 为本次 Operation 选择了不同的**活动子图**：
+
+1. **DAG 节点不同**：只有 CapabilityPlan 实际启用的 Module 才向 Operation DAG 注册节点，未启用能力不会运行，也不会生成 placeholder checkpoint。
+2. **图谱资产不同**：活动节点只在完成确定性校验、必要批准和原子提交后，才物化对应 Node、Edge 或领域 Record。未启用 Module 保持零工件，而不是写一个“跳过”对象冒充治理事实。
+3. **模型槽位不同**：Provider Binding 跟随实际能力编译。模型只能生成候选、评审或带引用摘要，不能直接写 Graph、签发 Grant、批准对象或生成完成 Evidence。
+4. **证明深度不同**：三档都必须用 Gate、Evidence 和 Snapshot 证明完成；Standard 增加 Impact、Design、Evaluation 与选择性 TDD，Governed 再增加完整 TDD、Advanced Audit 和强化身份/审批约束。
+
 Profile 决定能力深度，但不改变 Evidence Kernel 的真实性：
 
 | Profile | 典型 Capability DAG | 模型 Provider | 人工批准 |
@@ -122,6 +133,20 @@ Profile 决定能力深度，但不改变 Evidence Kernel 的真实性：
 | Lite | Capture → Plan → Context → Execute → Verify → Snapshot；风险/Policy 可临时激活高级 Module | 默认确定性 Kernel/Planner；未启用槽位零 binding/Invocation/Result | 风险自适应，只保留必要的真实业务对象批准 |
 | Standard | Capture → Impact → Design → Plan → Context → Execute → Verify → Evaluate → Snapshot；按 test_strategy 选择 Strict TDD | Impact Advisory、Design Review、Plan Proposal 及适用 Grounded purpose 强制；Feedback 命中条件时强制 | 物质性 PRD/Impact/Design/Override 等对象人工批准 |
 | Governed | Standard 全部能力 + 全适用 Task Strict TDD + Advanced Audit/更严 Policy | Standard 强制项全部启用，Policy 可要求 Proposal/Review 不同模型或更严留存 | 不免除批准，可要求职责分离或双人规则 |
+
+#### Lite：最小但完整的 Graph-native 子图
+
+Lite 默认只物化 `Capture → Plan → Context → Execute → Verify → Snapshot` 所需事实：accepted PRD、Requirement、Criterion/Test seed、ExecutionPlan、Task、ContextBundle、Run、Gate、Evidence、Finding 和 Snapshot。ImpactSet、DesignSet、Evaluation、TDD Cycle、Advanced Audit 以及对应模型调用全部为零。风险、用户或 Policy 要求升级时，Harness 不是切换到另一套流程，而是编译新的 CapabilityPlan revision，把所需 Module 接回同一个 DAG，并从最早受影响节点恢复。
+
+#### Standard：完整工程治理图
+
+Standard 默认把 `Impact`、`Design` 和 `Evaluate` 纳入活动图。需求变化先形成带解释路径和风险的 ImpactSet，再形成经独立 Review 与人工批准的 DesignSet；Plan 必须同时绑定 accepted PRD、冻结 ImpactSet、accepted DesignSet 和 final CapabilityPlan。`DesignSet.test_strategy` 决定哪些 Task 进入 Strict TDD 子图，模型 Provider 对适用的 Impact Advisory、Design Review、Plan Proposal 和 Grounded purpose 强制配置，但所有模型输出仍要经过确定性 Validator/Compiler。
+
+#### Governed：最大证明深度的受治理图
+
+Governed 在 Standard 图上强制所有适用 Task 形成可证明的 `Baseline → Red → Green → Refactor` 链，并增加 Advanced Audit、严格 Provider/Reviewer 身份、预算、网络、留存和批准策略。Ledger 必须保存 Phase Grant、canonical test patch、成对 Red/Green Evidence、Evaluation、TaskVerdict 与审计结果；人工批准不可免除，Policy 还可以要求 Proposal/Review 使用不同身份、职责分离或双人规则。
+
+无论采用哪一档，Profile 都不能改变四条底线：**模型只提议，Graph 只物化 accepted 工程事实，Ledger 只追加不覆盖，Evidence 才能证明完成**。
 
 ## 1. Node：Harness 当前知道什么
 
@@ -356,21 +381,32 @@ ModelInvocationPlanned
 
 ## 4. 一次变更如何穿过整条闭环
 
+![一次变更穿过 Graph-native 纵向闭环](assets/change-vertical-loop.svg)
+
+上图把一次变更拆成四个同时发生、但职责不同的层次：
+
+- **最上层 Profile/Capability**分两次收窄运行边界：Capture 前由 ProfileDecision 和 Policy 提交 Capture-scope Provider Binding；accepted PRD 与风险确定后，再编译下游 CapabilityPlan、Operation-scope Binding 和 DAG。两类作用域互不重叠，方括号能力未启用时完全不物化。
+- **中间七个阶段卡片**区分模型候选、确定性编译/校验、人工或 Policy 批准，以及每一阶段最终提交的权威产物。模型可以帮助发现、设计、分解和解释，但不能跨过蓝色确定性边界或黄色批准边界。
+- **Node/Edge 事实带**展示对象怎样进入 Graph：Intent 分解为 Requirement，DesignArtifact 通过 `SPECIFIES` 固化契约，Task 绑定 Assertion 和 Context，Run 产生 Evidence，最终 Snapshot 固化完成事实。
+- **橙色反馈环**表示失败不会在下游随意修补。Finding 先经过确定性 RCA，必要时接受模型语义候选和人工复核，再形成 Change Seed，路由到 Capture、Impact、Design 或 Plan 中最早拥有修改权的节点；旧授权和证据只追加失效记录。
+- **底部 Ledger**接收所有已提交事实。Live Spool、SQLite、Dashboard 和 Markdown 都是观察或投影层，不能反向修改完成真相。
+
 以下例子从一个已接受 `Requirement` 内容变化开始：
 
-1. **Profile / Capability**：用户确认 Lite、Standard 或 Governed。Capability Compiler 结合风险、Policy、Provider 和依赖闭包生成 final CapabilityPlan；Workflow Engine 只运行实际启用的 DAG node。
+1. **Profile / Capture Binding**：用户确认 Lite、Standard 或 Governed。Capture 启动前，Harness 从 ProfileDecision、Policy、Provider 配置和 baseline 确定性提交 Capture-scope Binding；`project_discovery` 与 Capture 阶段 `approval_brief` 不等待也不伪造下游 CapabilityPlan。
 2. **Capture**：adopt 时由 `project_discovery` 先提供带来源的项目事实候选；受管澄清状态机把 Intent 变成结构化 PrdProposal，经过硬门禁、独立 Review、风险评估和必要批准后，原子提交 accepted PRD、RequirementBaseline、Criterion/Test seeds 与 Graph facts。需求修订成为 Change Seed，旧 revision 不被覆盖。
-3. **Impact**：确定性引擎从 Requirement 出发，沿 inverse `ADDRESSES`、forward `SHAPES`、both `SPECIFIES`、inverse `REALIZES` 和 inverse `IMPLEMENTS` 找到设计契约、组件、代码与任务，并对稳定最短路径累计风险。
-4. **Impact Advisory**：模型只能增补遗漏候选和风险信号。Harness 拒绝删除确定性 entry、降低风险、改写传播方向、激活禁止推理边或缺少来源的结果；完整 ImpactSet 仍需统一校验和批准。
-5. **Design**：DesignProposalPort 提出 Decision、Component、API/Data/UI 契约和 test_strategy；纯 Validator 检查覆盖、关系、冲突与风险；独立 DesignReviewPort 返回结构化 Findings。Critical Finding 阻止 ApprovalRequest，人工批准后 DesignCommitter 才原子物化 accepted DesignSet、DesignArtifact 和关系边。
-6. **Plan**：Harness 先从每个原子 Criterion 确定性编译 canonical Assertion；PlanProposalPort 只建议 Task/Cluster/DAG/并行和 Context budget。Plan Compiler 独占 Assertion 与 Task identity、覆盖唯一性、路径、Gate、TDD Contract 和最终 DAG。
-7. **Context**：确定性 selector 为每个 Task 选择最小、fresh、受预算约束的 ContextBundle；`context_enrichment` 只补充带来源的术语、摘要和相关性解释，不能删除 mandatory source 或扩大读取/执行权限。ExecutionPreflight 复验所有启用能力的 digest。
-8. **Execute / TDD**：直接执行、受控 Agent 或人工在 CapabilityGrant 内工作。strict_tdd 适用时，隔离工作区固定执行 Baseline → 冻结测试补丁 → Red → 解锁 production Grant → Green → Refactor；Red 前无法写生产路径。
-9. **Verify / Evaluate**：Gate、Test 与 EvaluationCase 形成 `Run PRODUCES Evidence`、`Evidence SUPPORTS / REFUTES ...` 审计链。TaskVerdict 逐 Assertion 消费当前有效 Evidence；Agent、模型或 transcript 的完成声明不能替代它。
-10. **Feedback**：验证或评审失败创建 Finding。确定性 RCA 规则优先；只有未分类、多个信号冲突或 Policy 要求语义解释时才调用 FeedbackAnalysisPort。低置信度/高风险候选经人工复核后，Router 才决定 Capture/Impact/Design/Plan 的目标层和精确失效范围。
-11. **Cascade**：已验证的 Change Seed 通过 `PROPOSES_CHANGE_TO` 和 `TRIGGERS` 回到真正拥有修改权的上游层；旧 Approval、Plan、Context、Grant、TDD Cycle 与 Evidence 只追加 invalidation/supersede，不改写历史。
-12. **Snapshot**：所有必要 Gate、Evaluation、审计、TaskVerdict 和 Evidence 通过后，先提交权威 Snapshot，记录 source commit、ledger commit 和完成状态。
-13. **Narrative**：`iteration_narrative` 在 Snapshot 之后生成带引用的结果、证据、遗留风险与后续建议。失败只创建可恢复 Projection Finding，不反向改变 Snapshot/Verdict。
+3. **Capability Decision**：accepted PRD 和 CaptureRiskAssessment 提供完整风险输入。Capability Compiler 结合 Profile、Policy、Provider 和依赖闭包生成下游 CapabilityPlan revision；Standard 的 Strict TDD 可先保持 provisional，只有 accepted DesignSet.test_strategy 才能原子 finalization，任何 provisional 状态都不能越过 Plan guard。
+4. **Impact**：确定性引擎从 Requirement 出发，沿 inverse `ADDRESSES`、forward `SHAPES`、both `SPECIFIES`、inverse `REALIZES` 和 inverse `IMPLEMENTS` 找到设计契约、组件、代码与任务，并对稳定最短路径累计风险。
+5. **Impact Advisory**：模型只能增补遗漏候选和风险信号。Harness 拒绝删除确定性 entry、降低风险、改写传播方向、激活禁止推理边或缺少来源的结果；完整 ImpactSet 仍需统一校验和批准。
+6. **Design**：DesignProposalPort 提出 Decision、Component、API/Data/UI 契约和 test_strategy；纯 Validator 检查覆盖、关系、冲突与风险；独立 DesignReviewPort 返回结构化 Findings。Critical Finding 阻止 ApprovalRequest，人工批准后 DesignCommitter 才原子物化 accepted DesignSet、DesignArtifact 和关系边；Standard 同事务提交 final CapabilityPlan revision。
+7. **Plan**：Harness 先从每个原子 Criterion 确定性编译 canonical Assertion；PlanProposalPort 只建议 Task/Cluster/DAG/并行和 Context budget。Plan Compiler 独占 Assertion 与 Task identity、覆盖唯一性、路径、Gate、TDD Contract 和最终 DAG。
+8. **Context**：确定性 selector 为每个 Task 选择最小、fresh、受预算约束的 ContextBundle；`context_enrichment` 只补充带来源的术语、摘要和相关性解释，不能删除 mandatory source 或扩大读取/执行权限。ExecutionPreflight 复验所有启用能力的 digest。
+9. **Execute / TDD**：直接执行、受控 Agent 或人工在 CapabilityGrant 内工作。strict_tdd 适用时，隔离工作区固定执行 Baseline → 冻结测试补丁 → Red → 解锁 production Grant → Green → Refactor；Red 前无法写生产路径。
+10. **Verify / Evaluate**：Gate、Test 与 EvaluationCase 形成 `Run PRODUCES Evidence`、`Evidence SUPPORTS / REFUTES ...` 审计链。TaskVerdict 逐 Assertion 消费当前有效 Evidence；Agent、模型或 transcript 的完成声明不能替代它。
+11. **Feedback**：验证或评审失败创建 Finding。确定性 RCA 规则优先；只有未分类、多个信号冲突或 Policy 要求语义解释时才调用 FeedbackAnalysisPort。低置信度/高风险候选经人工复核后，Router 才决定 Capture/Impact/Design/Plan 的目标层和精确失效范围。
+12. **Cascade**：已验证的 Change Seed 通过 `PROPOSES_CHANGE_TO` 和 `TRIGGERS` 回到真正拥有修改权的上游层；旧 Approval、Plan、Context、Grant、TDD Cycle 与 Evidence 只追加 invalidation/supersede，不改写历史。
+13. **Snapshot**：所有必要 Gate、Evaluation、审计、TaskVerdict 和 Evidence 通过后，先提交权威 Snapshot，记录 source commit、ledger commit 和完成状态。
+14. **Narrative**：`iteration_narrative` 在 Snapshot 之后生成带引用的结果、证据、遗留风险与后续建议。失败只创建可恢复 Projection Finding，不反向改变 Snapshot/Verdict。
 
 这条链说明 Harness 的核心不是让 Agent 自由循环，而是让 Graph 提供可解释范围、让 Policy 和 Approval 提供控制、让 Event 与 Evidence 提供完成真相，再把失败可靠地反馈为下一轮受治理变化。
 

@@ -1,0 +1,154 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1440 1060" font-family="PingFang SC, Hiragino Sans GB, Microsoft YaHei, Noto Sans CJK SC, sans-serif">
+  <defs>
+    <marker id="profile-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#94A3B8"/>
+    </marker>
+  </defs>
+
+  <rect x="0" y="0" width="1440" height="1060" fill="#F8FAFC"/>
+  <text x="720" y="42" text-anchor="middle" font-size="21" font-weight="700" fill="#0F172A">Lite · Standard · Governed 的 Graph-native 驱动形态</text>
+  <text x="720" y="68" text-anchor="middle" font-size="12" fill="#64748B">三档共用 Node / Edge / Event、Evidence Kernel 与 Git-native Ledger；Profile 只决定本次 Operation 激活哪一段图和多深的证明</text>
+
+  <!-- shared compiler -->
+  <g>
+    <rect x="120" y="94" width="1200" height="82" rx="14" fill="#FFFFFF" stroke="#CBD5E1" stroke-width="1.5"/>
+    <text x="720" y="122" text-anchor="middle" font-size="15" font-weight="700" fill="#334155">ProfileDecision + Policy + Provider Configuration + accepted PRD Risk</text>
+    <text x="720" y="146" text-anchor="middle" font-size="11" fill="#64748B">Capture 前提交 Capture-scope binding；accepted PRD 后，Capability Compiler 生成活动 Module、Operation-scope Binding 与 DAG</text>
+    <text x="720" y="164" text-anchor="middle" font-size="10.5" fill="#7C3AED">两种 binding 使用同一 Schema 且作用域不重叠；缺 required Provider、非法依赖闭包或 provisional 越界时 fail closed</text>
+  </g>
+
+  <path d="M720,176 L720,196 L240,196 L240,222" fill="none" stroke="#94A3B8" stroke-width="1.5" marker-end="url(#profile-arrow)"/>
+  <path d="M720,176 L720,222" fill="none" stroke="#94A3B8" stroke-width="1.5" marker-end="url(#profile-arrow)"/>
+  <path d="M720,176 L720,196 L1200,196 L1200,222" fill="none" stroke="#94A3B8" stroke-width="1.5" marker-end="url(#profile-arrow)"/>
+
+  <!-- Lite -->
+  <g>
+    <rect x="24" y="224" width="440" height="688" rx="16" fill="#FFFFFF" stroke="#0D9488" stroke-width="1.8"/>
+    <rect x="24" y="224" width="440" height="70" rx="16" fill="#CCFBF1"/>
+    <rect x="24" y="278" width="440" height="16" fill="#CCFBF1"/>
+    <text x="46" y="253" font-size="19" font-weight="700" fill="#0F766E">Lite</text>
+    <text x="46" y="276" font-size="11" fill="#115E59">最小但真实的活动子图：不为未启用能力制造空壳</text>
+  </g>
+
+  <text x="46" y="324" font-size="12" font-weight="700" fill="#334155">活动 Operation DAG</text>
+  <g font-size="10.5" font-weight="600">
+    <rect x="46" y="342" width="112" height="38" rx="19" fill="#F0FDFA" stroke="#5EEAD4"/><text x="102" y="365" text-anchor="middle" fill="#0F766E">Capture</text>
+    <rect x="174" y="342" width="112" height="38" rx="19" fill="#F0FDFA" stroke="#5EEAD4"/><text x="230" y="365" text-anchor="middle" fill="#0F766E">Plan</text>
+    <rect x="302" y="342" width="132" height="38" rx="19" fill="#F0FDFA" stroke="#5EEAD4"/><text x="368" y="365" text-anchor="middle" fill="#0F766E">Context</text>
+    <rect x="46" y="394" width="112" height="38" rx="19" fill="#FFFBEB" stroke="#FCD34D"/><text x="102" y="417" text-anchor="middle" fill="#92400E">Snapshot</text>
+    <rect x="174" y="394" width="112" height="38" rx="19" fill="#ECFDF5" stroke="#6EE7B7"/><text x="230" y="417" text-anchor="middle" fill="#047857">Verify</text>
+    <rect x="302" y="394" width="132" height="38" rx="19" fill="#ECFDF5" stroke="#6EE7B7"/><text x="368" y="417" text-anchor="middle" fill="#047857">Execute</text>
+  </g>
+  <path d="M158,361 L174,361 M286,361 L302,361 M368,380 L368,394 M302,413 L286,413 M174,413 L158,413" fill="none" stroke="#94A3B8" stroke-width="1.3" marker-end="url(#profile-arrow)"/>
+
+  <rect x="46" y="452" width="388" height="68" rx="10" fill="#F8FAFC" stroke="#CBD5E1" stroke-dasharray="5 4"/>
+  <text x="60" y="475" font-size="11" font-weight="700" fill="#475569">默认不物化</text>
+  <text x="60" y="494" font-size="10.5" fill="#64748B">ImpactSet · DesignSet · Evaluation · TDD Cycle · Advanced Audit</text>
+  <text x="60" y="511" font-size="9.8" fill="#0F766E">风险、用户或 Policy 激活后，才把对应 Module 接入同一 DAG</text>
+
+  <text x="46" y="552" font-size="12" font-weight="700" fill="#334155">Graph 与 Ledger 中真实存在</text>
+  <text x="46" y="576" font-size="10.5" fill="#475569">Accepted PRD · Requirement · Criterion / Test seed</text>
+  <text x="46" y="596" font-size="10.5" fill="#475569">ExecutionPlan · Task · ContextBundle · Run</text>
+  <text x="46" y="616" font-size="10.5" fill="#475569">Gate · Evidence · Finding · Snapshot</text>
+
+  <rect x="46" y="642" width="388" height="86" rx="10" fill="#F0FDFA" stroke="#99F6E4"/>
+  <text x="60" y="666" font-size="11" font-weight="700" fill="#0F766E">模型与执行</text>
+  <text x="60" y="686" font-size="10.2" fill="#475569">默认使用 Manual Capture / 确定性 Planner；未启用模型槽位</text>
+  <text x="60" y="703" font-size="10.2" fill="#475569">保持零 Binding、零 Invocation、零 Result、零模型 Evidence</text>
+  <text x="60" y="720" font-size="9.8" fill="#0F766E">Agent 仍受 Context、Grant 与 Gate 约束</text>
+
+  <rect x="46" y="746" width="388" height="86" rx="10" fill="#FFFBEB" stroke="#FDE68A"/>
+  <text x="60" y="770" font-size="11" font-weight="700" fill="#92400E">批准与完成证明</text>
+  <text x="60" y="790" font-size="10.2" fill="#475569">风险自适应，只批准真实业务对象，不按 phase 固定次数</text>
+  <text x="60" y="807" font-size="10.2" fill="#475569">完成仍必须由项目 Gate、Evidence 与 Snapshot 机械证明</text>
+  <text x="46" y="869" font-size="10.2" font-weight="600" fill="#B45309">Finding → Change Seed → 从最早受影响节点重开</text>
+
+  <!-- Standard -->
+  <g>
+    <rect x="500" y="224" width="440" height="688" rx="16" fill="#FFFFFF" stroke="#4F46E5" stroke-width="1.8"/>
+    <rect x="500" y="224" width="440" height="70" rx="16" fill="#E0E7FF"/>
+    <rect x="500" y="278" width="440" height="16" fill="#E0E7FF"/>
+    <text x="522" y="253" font-size="19" font-weight="700" fill="#4338CA">Standard</text>
+    <text x="522" y="276" font-size="11" fill="#3730A3">需求—影响—设计—计划—证据的完整工程闭环</text>
+  </g>
+
+  <text x="522" y="324" font-size="12" font-weight="700" fill="#334155">活动 Operation DAG</text>
+  <g font-size="9.8" font-weight="600">
+    <rect x="522" y="342" width="116" height="38" rx="19" fill="#EEF2FF" stroke="#A5B4FC"/><text x="580" y="365" text-anchor="middle" fill="#4338CA">Capture</text>
+    <rect x="650" y="342" width="116" height="38" rx="19" fill="#EEF2FF" stroke="#A5B4FC"/><text x="708" y="365" text-anchor="middle" fill="#4338CA">Impact</text>
+    <rect x="778" y="342" width="132" height="38" rx="19" fill="#F5F3FF" stroke="#C4B5FD"/><text x="844" y="365" text-anchor="middle" fill="#6D28D9">Design</text>
+    <rect x="522" y="394" width="116" height="38" rx="19" fill="#ECFDF5" stroke="#6EE7B7"/><text x="580" y="417" text-anchor="middle" fill="#047857">Execute</text>
+    <rect x="650" y="394" width="116" height="38" rx="19" fill="#EEF2FF" stroke="#A5B4FC"/><text x="708" y="417" text-anchor="middle" fill="#4338CA">Context</text>
+    <rect x="778" y="394" width="132" height="38" rx="19" fill="#EEF2FF" stroke="#A5B4FC"/><text x="844" y="417" text-anchor="middle" fill="#4338CA">Plan</text>
+    <rect x="522" y="446" width="116" height="38" rx="19" fill="#ECFDF5" stroke="#6EE7B7"/><text x="580" y="469" text-anchor="middle" fill="#047857">Verify</text>
+    <rect x="650" y="446" width="116" height="38" rx="19" fill="#EEF2FF" stroke="#A5B4FC"/><text x="708" y="469" text-anchor="middle" fill="#4338CA">Evaluate</text>
+    <rect x="778" y="446" width="132" height="38" rx="19" fill="#FFFBEB" stroke="#FCD34D"/><text x="844" y="469" text-anchor="middle" fill="#92400E">Snapshot</text>
+  </g>
+  <path d="M638,361 L650,361 M766,361 L778,361 M844,380 L844,394 M778,413 L766,413 M650,413 L638,413 M580,432 L580,446 M638,465 L650,465 M766,465 L778,465" fill="none" stroke="#94A3B8" stroke-width="1.3" marker-end="url(#profile-arrow)"/>
+  <text x="522" y="516" font-size="10" font-weight="600" fill="#6D28D9">Execute 内：DesignSet.test_strategy 按 Task 选择性激活 Strict TDD</text>
+
+  <text x="522" y="552" font-size="12" font-weight="700" fill="#334155">Graph 与 Ledger 中真实存在</text>
+  <text x="522" y="576" font-size="10.5" fill="#475569">Lite 基础事实 + ImpactSet · DesignSet · Decision</text>
+  <text x="522" y="596" font-size="10.5" fill="#475569">Component · DesignArtifact · Assertion / Task bindings</text>
+  <text x="522" y="616" font-size="10.5" fill="#475569">Evaluation Evidence · 适用 Task 的 TDD Contract / Cycle</text>
+
+  <rect x="522" y="642" width="388" height="86" rx="10" fill="#EEF2FF" stroke="#C7D2FE"/>
+  <text x="536" y="666" font-size="11" font-weight="700" fill="#4338CA">模型与执行</text>
+  <text x="536" y="686" font-size="10.2" fill="#475569">Impact Advisory · Design Review · Plan Proposal 强制 Provider</text>
+  <text x="536" y="703" font-size="10.2" fill="#475569">Context Enrichment 与适用 Grounded purpose 受管调用</text>
+  <text x="536" y="720" font-size="9.8" fill="#4338CA">模型只给候选；Validator、Compiler、Policy 保持权威</text>
+
+  <rect x="522" y="746" width="388" height="86" rx="10" fill="#FFFBEB" stroke="#FDE68A"/>
+  <text x="536" y="770" font-size="11" font-weight="700" fill="#92400E">批准与完成证明</text>
+  <text x="536" y="790" font-size="10.2" fill="#475569">物质性 PRD / ImpactSet / DesignSet / Override 需要人工批准</text>
+  <text x="536" y="807" font-size="10.2" fill="#475569">Gate + Evaluation + TaskVerdict + Snapshot 构成完成证明</text>
+  <text x="522" y="869" font-size="10.2" font-weight="600" fill="#B45309">Finding → RCA → Capture / Impact / Design / Plan 精确失效</text>
+
+  <!-- Governed -->
+  <g>
+    <rect x="976" y="224" width="440" height="688" rx="16" fill="#FFFFFF" stroke="#C2410C" stroke-width="1.8"/>
+    <rect x="976" y="224" width="440" height="70" rx="16" fill="#FFEDD5"/>
+    <rect x="976" y="278" width="440" height="16" fill="#FFEDD5"/>
+    <text x="998" y="253" font-size="19" font-weight="700" fill="#C2410C">Governed</text>
+    <text x="998" y="276" font-size="11" fill="#9A3412">完整图 + 可证明 TDD + Advanced Audit + 强化职责分离</text>
+  </g>
+
+  <text x="998" y="324" font-size="12" font-weight="700" fill="#334155">活动 Operation DAG</text>
+  <g font-size="9.8" font-weight="600">
+    <rect x="998" y="342" width="116" height="38" rx="19" fill="#FFF7ED" stroke="#FDBA74"/><text x="1056" y="365" text-anchor="middle" fill="#C2410C">Capture</text>
+    <rect x="1126" y="342" width="116" height="38" rx="19" fill="#FFF7ED" stroke="#FDBA74"/><text x="1184" y="365" text-anchor="middle" fill="#C2410C">Impact</text>
+    <rect x="1254" y="342" width="132" height="38" rx="19" fill="#FDF4FF" stroke="#E879F9"/><text x="1320" y="365" text-anchor="middle" fill="#A21CAF">Design</text>
+    <rect x="998" y="394" width="116" height="38" rx="19" fill="#ECFDF5" stroke="#6EE7B7"/><text x="1056" y="417" text-anchor="middle" fill="#047857">Execute</text>
+    <rect x="1126" y="394" width="116" height="38" rx="19" fill="#FFF7ED" stroke="#FDBA74"/><text x="1184" y="417" text-anchor="middle" fill="#C2410C">Context</text>
+    <rect x="1254" y="394" width="132" height="38" rx="19" fill="#FFF7ED" stroke="#FDBA74"/><text x="1320" y="417" text-anchor="middle" fill="#C2410C">Plan</text>
+    <rect x="998" y="446" width="116" height="38" rx="19" fill="#ECFDF5" stroke="#6EE7B7"/><text x="1056" y="469" text-anchor="middle" fill="#047857">Verify</text>
+    <rect x="1126" y="446" width="116" height="38" rx="19" fill="#FFF7ED" stroke="#FDBA74"/><text x="1184" y="469" text-anchor="middle" fill="#C2410C">Evaluate</text>
+    <rect x="1254" y="446" width="132" height="38" rx="19" fill="#FFFBEB" stroke="#FCD34D"/><text x="1320" y="469" text-anchor="middle" fill="#92400E">Snapshot</text>
+  </g>
+  <path d="M1114,361 L1126,361 M1242,361 L1254,361 M1320,380 L1320,394 M1254,413 L1242,413 M1126,413 L1114,413 M1056,432 L1056,446 M1114,465 L1126,465 M1242,465 L1254,465" fill="none" stroke="#94A3B8" stroke-width="1.3" marker-end="url(#profile-arrow)"/>
+  <text x="998" y="516" font-size="10" font-weight="600" fill="#C2410C">Execute 内：所有适用 Task 走 Baseline → Red → Green → Refactor</text>
+
+  <text x="998" y="552" font-size="12" font-weight="700" fill="#334155">Graph 与 Ledger 中真实存在</text>
+  <text x="998" y="576" font-size="10.5" fill="#475569">Standard 全部事实 + Baseline / Test Patch / Red / Green</text>
+  <text x="998" y="596" font-size="10.5" fill="#475569">Phase Grant · TddCycle · FrameworkEvidence · TaskVerdict</text>
+  <text x="998" y="616" font-size="10.5" fill="#475569">Advanced Audit Evidence · 完整 Provider / Approval 身份链</text>
+
+  <rect x="998" y="642" width="388" height="86" rx="10" fill="#FFF7ED" stroke="#FED7AA"/>
+  <text x="1012" y="666" font-size="11" font-weight="700" fill="#C2410C">模型与执行</text>
+  <text x="1012" y="686" font-size="10.2" fill="#475569">所有适用槽位强制 Provider；Proposal / Review 独立会话</text>
+  <text x="1012" y="703" font-size="10.2" fill="#475569">Policy 可要求不同模型、身份、预算、网络与留存策略</text>
+  <text x="1012" y="720" font-size="9.8" fill="#C2410C">缺 Provider、独立性或 Evidence 时直接阻塞</text>
+
+  <rect x="998" y="746" width="388" height="86" rx="10" fill="#FEF2F2" stroke="#FECACA"/>
+  <text x="1012" y="770" font-size="11" font-weight="700" fill="#B91C1C">批准与完成证明</text>
+  <text x="1012" y="790" font-size="10.2" fill="#475569">不免除人工批准，可要求职责分离、双人或合规审批</text>
+  <text x="1012" y="807" font-size="10.2" fill="#475569">成对 Red / Green Evidence + Gate + Eval + Audit + Snapshot</text>
+  <text x="998" y="869" font-size="10.2" font-weight="600" fill="#B45309">Finding → 审计化 RCA / Review → 受控变更种子与级联</text>
+
+  <!-- shared substrate -->
+  <path d="M244,912 L244,938 M720,912 L720,938 M1196,912 L1196,938" fill="none" stroke="#94A3B8" stroke-width="1.4" marker-end="url(#profile-arrow)"/>
+  <rect x="56" y="944" width="1328" height="82" rx="14" fill="#0F172A"/>
+  <text x="720" y="972" text-anchor="middle" font-size="14" font-weight="700" fill="#F8FAFC">共享 Graph-native Evidence Kernel</text>
+  <text x="720" y="995" text-anchor="middle" font-size="11" fill="#CBD5E1">同一 Node / Edge Registry · 同一传播规则 · 同一 append-only Git-native Ledger · 同一 Finding / Invalidation / Resume 语义</text>
+  <text x="720" y="1015" text-anchor="middle" font-size="10.5" fill="#93C5FD">Profile 改变活动子图与证明深度，不改变“模型只提议、Ledger 保存事实、Evidence 决定完成”的权威边界</text>
+</svg>
