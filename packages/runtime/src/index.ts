@@ -163,6 +163,27 @@ export {
 } from "./workflow/operation.js";
 export { resumeWorkflowOperation, type ResumeOutcome, type ResumedRun } from "./workflow/resume.js";
 export {
+  InMemoryDagCheckpointStore,
+  type DagApprovalNotice,
+  type DagCheckpointEntry,
+  type DagCheckpointStore,
+  type DagEngineEvent,
+  type DagNodeContext,
+  type DagNodeResult,
+  type DagNodeRunner,
+  type DagProducedBinding,
+  type DagRunnerRegistry,
+} from "./workflow/dag.js";
+export {
+  DAG_ENGINE_ERROR_KINDS,
+  DagEngineError,
+  WorkflowDagEngine,
+  type DagEngineErrorKind,
+  type DagRunOutcome,
+  type DagRunRequest,
+  type WorkflowDagEngineConfig,
+} from "./workflow/dag-engine.js";
+export {
   captureRequirements,
   type AcceptanceCriterionInput,
   type CaptureContext,
