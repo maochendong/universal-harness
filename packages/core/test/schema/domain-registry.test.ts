@@ -124,6 +124,8 @@ describe("protocol 1.1 schema plumbing", () => {
       "model-provider-binding",
       "prompt-contract",
       "prompt-preparation-failure",
+      "model-invocation",
+      "model-port-failure",
       "capability-plan",
       "capture-session",
       "clarification-question",

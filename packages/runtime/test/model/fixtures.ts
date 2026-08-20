@@ -47,7 +47,7 @@ export function testPromptRegistration(): PromptContractRegistration {
         text: "Additionally examine security, compliance, migrations, auditability and negative scenarios.",
       },
     },
-    output_schema_id: "prd-proposal-draft",
+    output_schema_id: "approval-brief-output",
     source_delimiter_version: "source-delimiter.v1",
   });
   return { contract, prompt_versions: [TEST_PROMPT_VERSION] };

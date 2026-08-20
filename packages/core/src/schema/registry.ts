@@ -31,6 +31,7 @@ import {
   ProfileRecommendationRecordSchema,
   ProjectProfileRecordSchema,
 } from "./profile.js";
+import { ModelInvocationRecordSchema, ModelPortFailureSchema } from "./model-invocation.js";
 import { PromptContractSchema, PromptPreparationFailureSchema } from "./prompt.js";
 import {
   PrdEntityLineageRecordSchema,
@@ -191,6 +192,8 @@ export const PROTOCOL_1_1_SCHEMA_REGISTRY = createDomainSchemaRegistry({
     { key: "model-provider-binding", schema: CaptureModelProviderBindingRecordSchema },
     { key: "prompt-contract", schema: PromptContractSchema },
     { key: "prompt-preparation-failure", schema: PromptPreparationFailureSchema },
+    { key: "model-invocation", schema: ModelInvocationRecordSchema },
+    { key: "model-port-failure", schema: ModelPortFailureSchema },
     { key: "capability-plan", schema: CapabilityPlanRecordSchema },
     { key: "capture-session", schema: CaptureSessionRecordSchema },
     { key: "clarification-question", schema: ClarificationQuestionRecordSchema },

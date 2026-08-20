@@ -8,6 +8,7 @@ export * from "./edge.js";
 export * from "./envelope.js";
 export * from "./event.js";
 export * from "./feedback.js";
+export * from "./model-invocation.js";
 export * from "./node.js";
 export * from "./observation.js";
 export * from "./operation.js";

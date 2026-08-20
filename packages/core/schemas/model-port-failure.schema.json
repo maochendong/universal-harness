@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.universal-harness.dev/1.1/model-port-failure.schema.json",
+  "additionalProperties": false,
+  "type": "object",
+  "required": ["code", "summary", "retryable"],
+  "properties": {
+    "code": {
+      "anyOf": [
+        { "const": "provider_required", "type": "string" },
+        { "const": "provider_unavailable", "type": "string" },
+        { "const": "timeout", "type": "string" },
+        { "const": "budget_exhausted", "type": "string" },
+        { "const": "invalid_output", "type": "string" },
+        { "const": "independence_violation", "type": "string" },
+        { "const": "version_mismatch", "type": "string" },
+        { "const": "policy_denied", "type": "string" },
+        { "const": "uncertain", "type": "string" }
+      ]
+    },
+    "summary": { "minLength": 1, "type": "string" },
+    "retryable": { "type": "boolean" }
+  }
+}

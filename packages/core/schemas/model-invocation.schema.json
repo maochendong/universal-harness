@@ -1,0 +1,109 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.universal-harness.dev/1.1/model-invocation.schema.json",
+  "additionalProperties": false,
+  "type": "object",
+  "required": [
+    "protocol_version",
+    "record_kind",
+    "invocation_id",
+    "conversation_id",
+    "run_id",
+    "attempt",
+    "revision",
+    "port_id",
+    "prompt_contract_id",
+    "prompt_contract_version",
+    "prompt_contract_digest",
+    "output_schema_id",
+    "output_schema_digest",
+    "profile_overlay_digest",
+    "policy_overlay_digest",
+    "input_bundle_digest",
+    "compiled_prompt_digest",
+    "provider_identity",
+    "config_digest",
+    "budget_profile",
+    "cache_key",
+    "state",
+    "record_digest"
+  ],
+  "properties": {
+    "protocol_version": { "const": "1.1.0", "type": "string" },
+    "record_kind": { "const": "model_invocation", "type": "string" },
+    "invocation_id": {
+      "minLength": 3,
+      "maxLength": 160,
+      "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+      "type": "string"
+    },
+    "conversation_id": {
+      "minLength": 3,
+      "maxLength": 160,
+      "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+      "type": "string"
+    },
+    "run_id": {
+      "minLength": 3,
+      "maxLength": 160,
+      "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+      "type": "string"
+    },
+    "attempt": { "minimum": 1, "type": "integer" },
+    "revision": { "minimum": 1, "type": "integer" },
+    "port_id": { "minLength": 1, "maxLength": 80, "type": "string" },
+    "purpose": { "minLength": 1, "maxLength": 80, "type": "string" },
+    "prompt_contract_id": {
+      "pattern": "^harness:prompt:[a-z][a-z0-9]*(?:-[a-z0-9]+)*$",
+      "type": "string"
+    },
+    "prompt_contract_version": { "minLength": 1, "type": "string" },
+    "prompt_contract_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
+    "output_schema_id": { "minLength": 1, "type": "string" },
+    "output_schema_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
+    "profile_overlay_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
+    "policy_overlay_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
+    "input_bundle_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
+    "compiled_prompt_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
+    "provider_identity": { "minLength": 1, "type": "string" },
+    "config_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
+    "budget_profile": { "minLength": 1, "type": "string" },
+    "cache_key": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
+    "state": {
+      "anyOf": [
+        { "const": "planned", "type": "string" },
+        { "const": "started", "type": "string" },
+        { "const": "completed", "type": "string" },
+        { "const": "failed", "type": "string" },
+        { "const": "validated", "type": "string" },
+        { "const": "consumed", "type": "string" },
+        { "const": "invalidated", "type": "string" }
+      ]
+    },
+    "failure": {
+      "additionalProperties": false,
+      "type": "object",
+      "required": ["code", "summary", "retryable"],
+      "properties": {
+        "code": {
+          "anyOf": [
+            { "const": "provider_required", "type": "string" },
+            { "const": "provider_unavailable", "type": "string" },
+            { "const": "timeout", "type": "string" },
+            { "const": "budget_exhausted", "type": "string" },
+            { "const": "invalid_output", "type": "string" },
+            { "const": "independence_violation", "type": "string" },
+            { "const": "version_mismatch", "type": "string" },
+            { "const": "policy_denied", "type": "string" },
+            { "const": "uncertain", "type": "string" }
+          ]
+        },
+        "summary": { "minLength": 1, "type": "string" },
+        "retryable": { "type": "boolean" }
+      }
+    },
+    "output_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
+    "artifact_locator": { "minLength": 1, "type": "string" },
+    "record_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" }
+  }
+}

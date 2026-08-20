@@ -1,8 +1,14 @@
+import {
+  MODEL_INVOCATION_FAILURE_CODES,
+  type ModelInvocationFailureCode,
+} from "../schema/model-invocation.js";
 import { PROMPT_PREPARATION_FAILURE_CODES } from "../schema/prompt.js";
 import {
   GROUNDED_SYNTHESIS_FAILURE_CODES,
   type GroundedSynthesisFailureCode,
 } from "../synthesis/port.js";
+
+export { MODEL_INVOCATION_FAILURE_CODES, type ModelInvocationFailureCode };
 
 /**
  * The fixed failure code → layer → authoritative carrier mapping (prompt
@@ -25,20 +31,6 @@ export interface PromptFailureDisposition {
   readonly layer: PromptFailureLayer;
   readonly carrier: PromptFailureCarrier;
 }
-
-/** Model invocation orchestration/execution codes (addendum design 9.1.1). */
-export const MODEL_INVOCATION_FAILURE_CODES = [
-  "provider_required",
-  "provider_unavailable",
-  "timeout",
-  "budget_exhausted",
-  "invalid_output",
-  "independence_violation",
-  "version_mismatch",
-  "policy_denied",
-  "uncertain",
-] as const;
-export type ModelInvocationFailureCode = (typeof MODEL_INVOCATION_FAILURE_CODES)[number];
 
 /** Domain preflight/validation/consumption codes (addendum design 9.1.1). */
 export const DOMAIN_VALIDATION_FAILURE_CODES = [
