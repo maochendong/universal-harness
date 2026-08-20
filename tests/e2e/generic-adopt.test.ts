@@ -74,10 +74,7 @@ describe("generic adopt E2E", { timeout: 60000 }, () => {
 
     result = await approveAndResume(result, session);
     expect(result.json["status"]).toBe("approval_required");
-    expect((result.json["data"] as Record<string, unknown>)["object_type"]).toBe("ImpactSet");
-
-    result = await approveAndResume(result, session);
-    expect(result.json["status"]).toBe("approval_required");
+    // Lite is kernel-only (plan T9): no ImpactSet approval exists.
     expect((result.json["data"] as Record<string, unknown>)["object_type"]).toBe(
       "ExecutionAuthorizationSpec",
     );

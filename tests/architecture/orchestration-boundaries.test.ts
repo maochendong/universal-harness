@@ -64,14 +64,19 @@ describe("orchestration module boundaries", () => {
     }
   });
 
-  it("keeps the facade as the only composition root wiring contributors", () => {
-    const facade = read("packages/runtime/src/orchestration/orchestrator.ts");
+  it("keeps the facade layer as the only composition root wiring contributors", () => {
+    // T9: the facade wires contributors through profile-modules.ts, the one
+    // place the persisted project profile may gate module composition.
+    const facadeLayer = [
+      read("packages/runtime/src/orchestration/orchestrator.ts"),
+      read("packages/runtime/src/orchestration/profile-modules.ts"),
+    ].join("\n");
     for (const factory of [
       "createImpactContribution",
       "createEvaluationContribution",
       "createAuditContribution",
     ]) {
-      expect(facade, factory).toContain(factory);
+      expect(facadeLayer, factory).toContain(factory);
     }
     // The coordinator must stay profile-agnostic and module-agnostic: it
     // references the built-in contributor factories nowhere.

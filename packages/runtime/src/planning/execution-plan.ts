@@ -262,6 +262,35 @@ export function generateExecutionPlan(
   context: PlanContext,
 ): ExecutionPlanRecords {
   assertApprovedImpactSet(impactSet, approvedContentDigest);
+  return compileExecutionPlan(impactSet, approvedContentDigest, input, context);
+}
+
+/**
+ * T9: the kernel-only Lite planning entry. The impact set comes from the
+ * deterministic propagation of the iteration seed — never persisted, approved
+ * or frozen — so the approval guard does not apply; every other plan
+ * invariant (declarative shape, coverage, acyclicity, path binding) still
+ * runs unchanged.
+ */
+export function generateKernelExecutionPlan(
+  impactSet: NodeRecord,
+  input: PlanGenerationInput,
+  context: PlanContext,
+): ExecutionPlanRecords {
+  return compileExecutionPlan(
+    impactSet,
+    readImpactSetContent(impactSet).content_digest,
+    input,
+    context,
+  );
+}
+
+function compileExecutionPlan(
+  impactSet: NodeRecord,
+  impactSetDigest: string,
+  input: PlanGenerationInput,
+  context: PlanContext,
+): ExecutionPlanRecords {
   const validatedTasks = validatePlanProposal(input.proposal, input.constraints);
   const impactContent = readImpactSetContent(impactSet);
   const forecasts = input.governance?.forecastPaths ?? [];
@@ -324,7 +353,7 @@ export function generateExecutionPlan(
     mode_reason: selection.reason,
     restricted: selection.restricted,
     impact_set_id: impactSet.id,
-    impact_set_digest: approvedContentDigest,
+    impact_set_digest: impactSetDigest,
     shared_context: input.shared,
     tasks,
   };

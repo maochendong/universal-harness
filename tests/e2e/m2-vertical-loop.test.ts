@@ -159,11 +159,11 @@ describe("M2 governed vertical loop", { timeout: 120_000 }, () => {
           (item) => item.event.event_type === "GateCompleted" && item.authoritative,
         ),
       ).toBe(true);
+      // Lite is kernel-only (plan T9): the evaluation module never runs, so no
+      // EvaluationCompleted event exists; the judge gate evidence still does.
       expect(
-        finalStream.items.some(
-          (item) => item.event.event_type === "EvaluationCompleted" && item.authoritative,
-        ),
-      ).toBe(true);
+        finalStream.items.some((item) => item.event.event_type === "EvaluationCompleted"),
+      ).toBe(false);
       const snapshot = readLatestSnapshot(projectRoot);
       expect(snapshot?.status).toBe("completed");
 
@@ -187,7 +187,7 @@ describe("M2 governed vertical loop", { timeout: 120_000 }, () => {
         `${JSON.stringify(
           {
             status: "passed",
-            loop: ["iterate", "live", "gate/judge", "approval", "resume", "evaluation", "snapshot"],
+            loop: ["iterate", "live", "gate/judge", "approval", "resume", "snapshot"],
             workflow_operation_id: (result.json["data"] as Record<string, unknown>)[
               "workflow_operation_id"
             ],

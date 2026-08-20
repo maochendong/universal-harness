@@ -887,6 +887,13 @@ export {
   type PhaseLifecycleEventSpec,
 } from "./orchestration/lifecycle-events.js";
 export {
+  moduleContributionsForProfile,
+  projectProfileModuleStatus,
+  resolveProfileModules,
+  type ProfileModuleResolution,
+  type ProfileModuleStatusEntry,
+} from "./orchestration/profile-modules.js";
+export {
   FileEventStream,
   EventStreamError,
   type EventStreamErrorKind,

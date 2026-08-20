@@ -49,8 +49,18 @@ describe("delegated Agent governed vertical loop", { timeout: 60_000 }, () => {
     const status = collectProjectStatus(projectRoot);
     expect(status.blockers).toEqual([]);
     expect(status.stale_evidence).toEqual([]);
-    expect(status.evaluation_coverage.runs).toMatchObject({ covered: 1, total: 1 });
+    // Lite is kernel-only (plan T9): no EVALUATES edges exist, so run-level
+    // evaluation coverage is zero; the task itself is still covered by its
+    // gate-backed verdict. The capability Read API reports why.
+    expect(status.evaluation_coverage.runs).toMatchObject({ covered: 0, total: 1 });
     expect(status.evaluation_coverage.tasks).toMatchObject({ covered: 1, total: 1 });
+    const evaluation = status.capabilities.find(
+      (entry) => entry.capability_id === "independent_evaluation",
+    );
+    expect(evaluation).toMatchObject({
+      resolution: "inactive_by_profile",
+      generic_status: "not_enabled_by_profile",
+    });
     expect(git(projectRoot, "status", "--porcelain").trim()).toBe("");
   });
 });

@@ -17,10 +17,12 @@ import {
   type NodeRecord,
 } from "@universal-harness-internal/core";
 import {
+  generateImpactSet,
   materializeLedger,
   pageEdges,
   pageNodes,
   readImpactSetContent,
+  type ChangeSeed,
   type IterationKind,
 } from "@universal-harness-internal/graph";
 import {
@@ -98,13 +100,18 @@ import { buildTaskEnvelope, type TaskEnvelope } from "../loop/task-envelope.js";
 import { resolveLoopPolicy } from "../loop/policy.js";
 import {
   generateExecutionPlan,
+  generateKernelExecutionPlan,
   readExecutionPlanContent,
   type ExecutionPlanContent,
 } from "../planning/execution-plan.js";
 import { type IntentShape } from "../planning/mode-selector.js";
 import { type TaskSpecification } from "../planning/task.js";
 import { deriveActualRunChanges } from "../planning/scope-drift.js";
-import { buildTaskVerdict, type TaskVerdictRecord } from "../evaluation/task-verdict.js";
+import {
+  buildKernelTaskVerdict,
+  buildTaskVerdict,
+  type TaskVerdictRecord,
+} from "../evaluation/task-verdict.js";
 import { projectTaskVerdict } from "../evaluation/outcome-projection.js";
 import {
   assessOpenIterationMigration,
@@ -1630,6 +1637,32 @@ function implementsEdgesFor(
   }
   return edges;
 }
+/**
+ * T9 kernel-only planning input: when no module produced and froze an impact
+ * set, plan from the deterministic propagation of the iteration seed without
+ * persisting anything — no artifact, no approval, no event. The derivation is
+ * the same pure propagation the impact module uses, so resume replays it
+ * byte-identically.
+ */
+function deriveKernelImpactSet(ctx: PipelineContext): NodeRecord {
+  const graph = materializeProjectGraph(ctx.deps.projectRoot);
+  try {
+    const seed: ChangeSeed = {
+      id: `seed_${sha256Hex(`${ctx.proposal.intent.id}:${ctx.iterationKind}`).slice(0, 16)}`,
+      nodeId: ctx.proposal.intent.id,
+      kind: "content-change",
+      iterationKind: ctx.iterationKind,
+      reason: `requirement baseline intent ${ctx.proposal.intent.id} drives this iteration`,
+    };
+    return generateImpactSet([seed], [...graph.nodes], [...graph.edges], {
+      iterationId: ctx.iterationId,
+      actor: "workflow-engine",
+      timestamp: nowOf(ctx.deps),
+    });
+  } finally {
+    graph.close();
+  }
+}
 async function phasePlan(ctx: PipelineContext, gateIds: readonly string[]): Promise<PhaseStep> {
   const { deps } = ctx;
   const existing = loadPlan(ctx);
@@ -1648,12 +1681,10 @@ async function phasePlan(ctx: PipelineContext, gateIds: readonly string[]): Prom
     refreshWorkingState(ctx);
     return { continue: true };
   }
-  const impactSet = ctx.impactSet ?? loadFrozenImpactSet(ctx);
-  if (impactSet === undefined) {
-    throw new OrchestrationError("binding_drift", "plan phase requires a frozen impact set");
-  }
+  const frozenImpactSet = ctx.impactSet ?? loadFrozenImpactSet(ctx);
+  const kernelDerived = frozenImpactSet === undefined;
+  const impactSet = frozenImpactSet ?? deriveKernelImpactSet(ctx);
   ctx.impactSet = impactSet;
-  const approvedDigest = readImpactSetContent(impactSet).content_digest;
   const specifications = taskSpecificationsFor(ctx, impactSet, gateIds);
   const executionBinding = executionBindingFor(deps);
   const forecastPaths = [
@@ -1664,36 +1695,44 @@ async function phasePlan(ctx: PipelineContext, gateIds: readonly string[]): Prom
     .map(normalizeRepoRelativePath)
     .sort()
     .map((pattern) => ({ pattern, scope: "bounded" as const, approved: true }));
-  const records = generateExecutionPlan(
-    impactSet,
-    approvedDigest,
-    {
-      executionKind: executionBinding.kind,
-      intentShape: ctx.intentShape,
-      hasExistingGraph: true,
-      deterministicWork: ctx.deterministicWork,
-      shared: {
-        goal: ctx.goal,
-        requirement_baseline_digest: ctx.baselineDigest,
-        policy_digest: ctx.workingState.policy_digest,
-      },
-      proposal: specifications.map(
-        (specification) => specification as unknown as Record<string, unknown>,
-      ),
-      constraints: { allowedCapabilities: [], knownTools: [], knownGates: gateIds },
-      ...(executionBinding.adapter_profile === undefined && forecastPaths.length === 0
-        ? {}
-        : {
-            governance: {
-              forecastPaths,
-              ...(executionBinding.adapter_profile === undefined
-                ? {}
-                : { adapterProfile: executionBinding.adapter_profile }),
-            },
-          }),
+  const planInput = {
+    executionKind: executionBinding.kind,
+    intentShape: ctx.intentShape,
+    hasExistingGraph: true,
+    deterministicWork: ctx.deterministicWork,
+    shared: {
+      goal: ctx.goal,
+      requirement_baseline_digest: ctx.baselineDigest,
+      policy_digest: ctx.workingState.policy_digest,
     },
-    { iterationId: ctx.iterationId, actor: "workflow-engine", timestamp: nowOf(deps) },
-  );
+    proposal: specifications.map(
+      (specification) => specification as unknown as Record<string, unknown>,
+    ),
+    constraints: { allowedCapabilities: [], knownTools: [], knownGates: gateIds },
+    ...(executionBinding.adapter_profile === undefined && forecastPaths.length === 0
+      ? {}
+      : {
+          governance: {
+            forecastPaths,
+            ...(executionBinding.adapter_profile === undefined
+              ? {}
+              : { adapterProfile: executionBinding.adapter_profile }),
+          },
+        }),
+  };
+  const planContext = {
+    iterationId: ctx.iterationId,
+    actor: "workflow-engine",
+    timestamp: nowOf(deps),
+  };
+  const records = kernelDerived
+    ? generateKernelExecutionPlan(impactSet, planInput, planContext)
+    : generateExecutionPlan(
+        impactSet,
+        readImpactSetContent(impactSet).content_digest,
+        planInput,
+        planContext,
+      );
   await commitArtifacts(
     deps,
     ctx.workflowOperationId,
@@ -1903,10 +1942,6 @@ async function authorizePlanExecution(
         (!profile.usage_metering ||
           !profile.side_effect_interception ||
           profile.trajectory_visibility === "external-only")));
-  const impactSet = ctx.impactSet ?? loadFrozenImpactSet(ctx);
-  if (impactSet === undefined) {
-    throw new ExecutionPreflightError("missing_binding", "execution has no frozen ImpactSet");
-  }
   const authorizationId = `authorization_${plan.content.content_digest.slice(0, 16)}`;
   const prepared = prepareExecutionPreflight({
     authorizationId,
@@ -1917,7 +1952,9 @@ async function authorizePlanExecution(
       taskDigest: contentDigest(task),
       risk: task.risk,
     })),
-    impactSetDigest: readImpactSetContent(impactSet).content_digest,
+    // The plan pins the impact-set digest at mint time; later phases read the
+    // pin instead of re-deriving from a graph the iteration itself has grown.
+    impactSetDigest: plan.content.impact_set_digest,
     impactCoverageDigest: plan.content.impact_coverage.digest,
     impactCoverageStatus: plan.content.impact_coverage.status,
     bundles: grants.map(({ bundle }) => bundle),
@@ -2604,8 +2641,7 @@ async function phaseExecute(ctx: PipelineContext): Promise<PhaseStep> {
 function verifyBindings(ctx: PipelineContext): VerifyPhaseArtifact["bindings"] {
   // Resolve bindings from the ledger, not from in-memory phase state, so a
   // resumed drive computes the exact same binding set as the original one.
-  const impactSet = ctx.impactSet ?? loadFrozenImpactSet(ctx);
-  if (impactSet !== undefined) ctx.impactSet = impactSet;
+  // The impact-set digest comes from the plan's pin, never a re-derivation.
   const plan = ctx.plan ?? loadPlan(ctx);
   if (plan !== undefined) ctx.plan = plan;
   if (ctx.bundles.size === 0) ctx.bundles = loadBundleRecords(ctx);
@@ -2613,11 +2649,12 @@ function verifyBindings(ctx: PipelineContext): VerifyPhaseArtifact["bindings"] {
     .sort((left, right) => left.task_id.localeCompare(right.task_id))
     .at(-1);
   const planDigest = plan?.content.content_digest;
+  const impactSetDigest = plan?.content.impact_set_digest;
   return {
     artifact_digests: [
       ctx.baselineDigest,
       ...(planDigest === undefined ? [] : [planDigest]),
-      ...(impactSet === undefined ? [] : [readImpactSetContent(impactSet).content_digest]),
+      ...(impactSetDigest === undefined ? [] : [impactSetDigest]),
     ].sort(),
     code_digests: [hashWorktreeCode(ctx.deps.projectRoot)],
     ...(bundle === undefined ? {} : { context_bundle_digest: bundle.digest }),
@@ -3271,10 +3308,11 @@ async function phaseSnapshot(ctx: PipelineContext): Promise<PhaseStep> {
     return { continue: false, outcome };
   }
   const taskVerdicts: TaskVerdictRecord[] = [];
+  const evaluateActive = ctx.modules.evaluate !== undefined;
   for (const [index, task] of tasks.entries()) {
     const taskRun = taskRuns[index];
     const evaluation = evaluations[index];
-    if (taskRun === undefined || evaluation === undefined) {
+    if (taskRun === undefined || (evaluateActive && evaluation === undefined)) {
       throw new OrchestrationError(
         "binding_drift",
         `task ${task.id} has no committed run evaluation`,
@@ -3284,9 +3322,9 @@ async function phaseSnapshot(ctx: PipelineContext): Promise<PhaseStep> {
       task: task.id,
       run: taskRun.runId,
       gates: verifyStored.results.map((result) => result.evidence_id),
-      evaluation: evaluation.evidenceId,
+      ...(evaluation === undefined ? {} : { evaluation: evaluation.evidenceId }),
     }).slice(0, 16)}`;
-    const verdict = buildTaskVerdict({
+    const verdictInput = {
       verdictId,
       iterationId: ctx.iterationId,
       taskId: task.id,
@@ -3297,9 +3335,15 @@ async function phaseSnapshot(ctx: PipelineContext): Promise<PhaseStep> {
         passed: result.passed,
         evidence_id: result.evidence_id,
       })),
-      evaluations: [{ passed: evaluation.passed, evidence_id: evaluation.evidenceId }],
       createdAt: nowOf(deps),
-    });
+    };
+    const verdict =
+      evaluation === undefined
+        ? buildKernelTaskVerdict(verdictInput)
+        : buildTaskVerdict({
+            ...verdictInput,
+            evaluations: [{ passed: evaluation.passed, evidence_id: evaluation.evidenceId }],
+          });
     await commitTaskVerdict(ctx, verdict);
     taskVerdicts.push(verdict);
   }

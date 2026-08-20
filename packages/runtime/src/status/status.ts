@@ -2,6 +2,7 @@ import {
   GRAPH_DATABASE_RELATIVE_PATH,
   harnessRootFor,
   readCommittedOperations,
+  readLatestProjectProfile,
   readManagedManifest,
   resolveHarnessPath,
   sha256Hex,
@@ -27,6 +28,8 @@ import {
 import { latestValidCheckpoint } from "../workflow/checkpoint.js";
 import { liveBlockerMessages } from "../workflow/blockers.js";
 import type { BudgetUse } from "../workflow/working-state.js";
+import { projectProfileModuleStatus } from "../orchestration/profile-modules.js";
+import type { ProfileModuleStatusEntry } from "../orchestration/profile-modules.js";
 import { projectFindingGroups, type FindingGroupProjection } from "../finding/groups.js";
 import { projectActiveRun, type ActiveRunProjection } from "../observability/active-run.js";
 import { readLiveObservations } from "../observability/live-spool.js";
@@ -67,6 +70,8 @@ export interface ProjectStatus {
   readonly pending_approvals: readonly string[];
   readonly budget?: BudgetUse;
   readonly budget_observations?: readonly BudgetObservation[];
+  /** T9: per-capability profile resolution, e.g. Lite's not_enabled_by_profile. */
+  readonly capabilities: readonly ProfileModuleStatusEntry[];
   readonly next_action: string;
 }
 
@@ -643,6 +648,9 @@ export function collectProjectStatus(projectRoot: string): ProjectStatus {
       committed_operations: operations.length,
       last_ledger_operation: lastOperation?.manifest.ledger_operation_id ?? "none",
       graph_cache: cache.status,
+      capabilities: projectProfileModuleStatus(
+        readLatestProjectProfile(projectRoot, `project_${manifest.name}`),
+      ),
       ...derived,
       ...(activeRun === undefined ? {} : { active_run: activeRun }),
       pending_approvals: [

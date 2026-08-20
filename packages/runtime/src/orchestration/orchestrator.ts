@@ -64,25 +64,16 @@ import type {
   OrchestratorDependencies,
   RunIterationInput,
 } from "./pipeline-types.js";
-import type { ModuleContributions } from "./kernel-coordinator.js";
-import { createAuditContribution } from "./contributors/audit-contributor.js";
-import { createEvaluationContribution } from "./contributors/evaluation-contributor.js";
-import { createImpactContribution } from "./contributors/impact-contributor.js";
+import { moduleContributionsForProfile } from "./profile-modules.js";
 
 /**
  * Compatibility facade (plan Task 8-A). The pipeline implementation lives in
  * the Kernel Coordinator (kernel-coordinator.ts) plus the capability Module
  * contributors under contributors/; this module owns the public entry
- * commands and wires the built-in contributors into every operation, so the
- * pre-split import surface keeps working unchanged.
+ * commands and wires the built-in contributors per the persisted project
+ * profile (profile-modules.ts), so the pre-split import surface keeps
+ * working unchanged.
  */
-function defaultModuleContributions(): ModuleContributions {
-  return {
-    impact: createImpactContribution(),
-    evaluate: createEvaluationContribution(),
-    audit: createAuditContribution(),
-  };
-}
 
 // Re-export the public surface the split moved into the deep modules, so
 // existing consumers of this facade keep working unchanged.
@@ -133,8 +124,9 @@ export async function runIteration(
   }
   const policy = effectivePolicy();
   const engine = new WorkflowEngine(workflowDeps(deps));
+  const projectId = `project_${readManagedManifest(deps.projectRoot).name}`;
   const started = await engine.startOperation({
-    projectId: `project_${readManagedManifest(deps.projectRoot).name}`,
+    projectId,
     iterationId:
       input.iterationId ??
       `iteration_${sha256Hex(`${input.intent}:${String(readCommittedOperations(harnessRoot(deps)).length)}`).slice(0, 16)}`,
@@ -150,7 +142,7 @@ export async function runIteration(
     started.operation.workflow_operation_id,
     started.operation.iteration_id,
     input,
-    defaultModuleContributions(),
+    moduleContributionsForProfile(deps.projectRoot, projectId),
   );
   if ("outcome" in context) return context.outcome;
   return drivePipeline(context, "capture", input.untilPhase);
@@ -233,7 +225,10 @@ export async function resumeIteration(
         : { deterministicWork: input.deterministicWork }),
       ...(input?.untilPhase === undefined ? {} : { untilPhase: input.untilPhase }),
     },
-    defaultModuleContributions(),
+    moduleContributionsForProfile(
+      deps.projectRoot,
+      `project_${readManagedManifest(deps.projectRoot).name}`,
+    ),
   );
   if ("outcome" in context) return context.outcome;
   // RESUMES edges bind run ids; both the interrupted run and its successor

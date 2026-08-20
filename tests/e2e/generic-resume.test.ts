@@ -62,30 +62,19 @@ describe("generic resume E2E", { timeout: 90000 }, () => {
     const requestsDirectory = join(projectRoot, ".harness", "artifacts", "approval-requests");
     expect(readdirSync(requestsDirectory)).toHaveLength(1);
 
-    // Approve the baseline; the next drive pauses at the impact approval.
+    // Approve the baseline; the next drive pauses at the execution
+    // authorization (Lite is kernel-only, plan T9: no impact approval).
     await approve(session, baselineRequest);
     result = await runJson(["resume", workflowOperationId], session);
     expect(result.exitCode).toBe(EXIT_CODES.approvalRequired);
-    const impactRequest = field(result, "request_id");
-    expect(impactRequest).not.toBe(baselineRequest);
-
-    // A repeated resume still reports the same impact request.
-    result = await runJson(["resume", workflowOperationId], session);
-    expect(field(result, "request_id")).toBe(impactRequest);
-    expect(readdirSync(requestsDirectory)).toHaveLength(2);
-
-    // Approve the impact set; execution still waits for its own bound
-    // authorization and repeated resume must not duplicate that request.
-    await approve(session, impactRequest);
-    result = await runJson(["resume", workflowOperationId], session);
-    expect(result.exitCode).toBe(EXIT_CODES.approvalRequired);
     const authorizationRequest = field(result, "request_id");
-    expect(authorizationRequest).not.toBe(impactRequest);
+    expect(authorizationRequest).not.toBe(baselineRequest);
     expect(field(result, "object_type")).toBe("ExecutionAuthorizationSpec");
 
+    // A repeated resume still reports the same authorization request.
     result = await runJson(["resume", workflowOperationId], session);
     expect(field(result, "request_id")).toBe(authorizationRequest);
-    expect(readdirSync(requestsDirectory)).toHaveLength(3);
+    expect(readdirSync(requestsDirectory)).toHaveLength(2);
 
     // Only the explicit execution authorization lets the Agent run.
     await approve(session, authorizationRequest);
@@ -93,9 +82,9 @@ describe("generic resume E2E", { timeout: 90000 }, () => {
     expect(result.json["status"]).toBe("ok");
     expect(typeof field(result, "snapshot_id")).toBe("string");
 
-    // No duplicated authority or side effects: exactly three requests, one
+    // No duplicated authority or side effects: exactly two requests, one
     // executor call, one run, one snapshot.
-    expect(readdirSync(requestsDirectory)).toHaveLength(3);
+    expect(readdirSync(requestsDirectory)).toHaveLength(2);
     expect(harness.executorCalls).toHaveLength(1);
     expect(readdirSync(join(projectRoot, ".harness", "artifacts", "runs"))).toHaveLength(1);
     expect(readdirSync(join(projectRoot, ".harness", "artifacts", "snapshots"))).toHaveLength(1);

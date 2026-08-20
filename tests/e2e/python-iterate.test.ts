@@ -35,11 +35,8 @@ describe("python iterate E2E", { timeout: 90000 }, () => {
       loop.session,
     );
     expect(driven.result.json["status"]).toBe("ok");
-    expect(driven.approved).toEqual([
-      "RequirementBaseline",
-      "ImpactSet",
-      "ExecutionAuthorizationSpec",
-    ]);
+    // Lite is kernel-only (plan T9): no ImpactSet approval exists.
+    expect(driven.approved).toEqual(["RequirementBaseline", "ExecutionAuthorizationSpec"]);
     expect(loop.harness.executorCalls).toHaveLength(2);
 
     const plan = await runJson(["plan"], loop.session);

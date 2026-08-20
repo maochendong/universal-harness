@@ -365,9 +365,11 @@ export interface CompleteLoopOptions {
 }
 
 /**
- * The full closed-loop artifact battery (plan Task 26 step 3): Requirement,
- * both Graph Views, ImpactSet, ExecutionPlan, ContextBundle, Run, Gate,
- * Evaluation, Approval, Evidence, human projections and the final Snapshot.
+ * The full closed-loop artifact battery (plan Task 26 step 3, T9 Lite
+ * profile): Requirement, both Graph Views, ExecutionPlan, ContextBundle, Run,
+ * Gate, Approval, Evidence, human projections and the final Snapshot — and
+ * the mechanical proof that the kernel-only loop writes zero module
+ * artifacts (no ImpactSet, no Evaluation) and zero model invocations.
  * The Provider Projection battery runs separately via
  * `assertProviderProjection`.
  */
@@ -380,17 +382,26 @@ export async function assertCompleteLoopArtifacts(
   // Requirement capture: intent and requirement artifacts are committed.
   expect(artifactFiles(projectRoot, "artifacts/intents").length).toBeGreaterThan(0);
   expect(artifactFiles(projectRoot, "artifacts/requirements").length).toBeGreaterThan(0);
-  // ImpactSet, ExecutionPlan and ContextBundle.
-  expect(artifactFiles(projectRoot, "artifacts/impact-sets").length).toBeGreaterThan(0);
+  // T9 Lite: zero module or model artifacts — the directories never exist.
+  for (const absent of [
+    "artifacts/impact-sets",
+    "artifacts/evaluations",
+    "artifacts/model-invocations",
+    "artifacts/model-provider-bindings",
+  ]) {
+    expect(existsSync(join(projectRoot, ".harness", absent)), `${absent} must not exist`).toBe(
+      false,
+    );
+  }
+  // ExecutionPlan and ContextBundle.
   expect(artifactFiles(projectRoot, "artifacts/plans").length).toBeGreaterThan(0);
   const bundles = artifactFiles(projectRoot, "artifacts/context-bundles");
   expect(bundles.length).toBeGreaterThan(0);
   const envelope = harness.executorCalls.at(-1);
   if (envelope === undefined) throw new Error("the closed loop recorded no task envelope");
   expect(bundles).toContain(`${envelope.context_bundle_id}.json`);
-  // Run and Evaluation artifacts.
+  // Run artifacts (T9 Lite: kernel verdicts need no evaluation records).
   expect(artifactFiles(projectRoot, "artifacts/runs").length).toBeGreaterThan(0);
-  expect(artifactFiles(projectRoot, "artifacts/evaluations").length).toBeGreaterThan(0);
   // Gate evidence: the universal ledger integrity gate plus injected extras.
   expect(
     artifactFiles(projectRoot, "artifacts/evidence/evidence_ledger_integrity").length,
@@ -401,7 +412,8 @@ export async function assertCompleteLoopArtifacts(
       0,
     );
   }
-  // Approval authority: at least the requirement baseline and the impact set.
+  // Approval authority: the requirement baseline plus the execution
+  // authorization (agent-bound loops); never a module object in Lite.
   expect(artifactFiles(projectRoot, "artifacts/approval-requests").length).toBeGreaterThanOrEqual(
     2,
   );

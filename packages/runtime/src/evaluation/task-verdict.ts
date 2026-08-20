@@ -51,9 +51,26 @@ function uniqueSorted(values: readonly string[]): string[] {
 
 /** Build the immutable acceptance verdict from current machine-checkable proof. */
 export function buildTaskVerdict(input: BuildTaskVerdictInput): TaskVerdictRecord {
+  return buildVerdict(input, true);
+}
+
+export type BuildKernelTaskVerdictInput = Omit<BuildTaskVerdictInput, "evaluations">;
+
+/**
+ * T9: the kernel-only verdict for a profile without the evaluation module.
+ * The evaluation dimension is absent rather than vacuously failed; a task
+ * spec that still demands evaluation evidence fails closed, because
+ * kernel-only planning must never emit such a requirement.
+ */
+export function buildKernelTaskVerdict(input: BuildKernelTaskVerdictInput): TaskVerdictRecord {
+  return buildVerdict({ ...input, evaluations: [] }, false);
+}
+
+function buildVerdict(input: BuildTaskVerdictInput, evaluationActive: boolean): TaskVerdictRecord {
   const gateById = new Map(input.gates.map((gate) => [gate.gate_id, gate]));
-  const evaluationsPass =
-    input.evaluations.length > 0 && input.evaluations.every((evaluation) => evaluation.passed);
+  const evaluationsPass = evaluationActive
+    ? input.evaluations.length > 0 && input.evaluations.every((evaluation) => evaluation.passed)
+    : true;
   const assertionVerdicts = [...input.assertions]
     .sort((left, right) => left.assertion_id.localeCompare(right.assertion_id))
     .map((assertion): TaskVerdictAssertion => {
@@ -67,7 +84,9 @@ export function buildTaskVerdict(input: BuildTaskVerdictInput): TaskVerdictRecor
       ]);
       const requirementsSatisfied = assertion.evidence_requirements.every((requirement) => {
         if (requirement === "gate_evidence") return requiredGates.length > 0;
-        if (requirement === "evaluation_evidence") return input.evaluations.length > 0;
+        if (requirement === "evaluation_evidence") {
+          return evaluationActive && input.evaluations.length > 0;
+        }
         return evidenceIds.length > 0;
       });
       return {

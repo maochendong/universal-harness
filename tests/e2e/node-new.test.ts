@@ -50,11 +50,8 @@ describe("node new E2E", { timeout: 90000 }, () => {
     const session = { cwd: projectRoot, runtime: harness.runtime };
     const driven = await drivePastApprovals(result, session);
     expect(driven.result.json["status"]).toBe("ok");
-    expect(driven.approved).toEqual([
-      "RequirementBaseline",
-      "ImpactSet",
-      "ExecutionAuthorizationSpec",
-    ]);
+    // Lite is kernel-only (plan T9): no ImpactSet approval exists.
+    expect(driven.approved).toEqual(["RequirementBaseline", "ExecutionAuthorizationSpec"]);
 
     // The project takes on real stack content; the loop is content-agnostic.
     cpSync(spec.fixtureDirectory, projectRoot, { recursive: true });

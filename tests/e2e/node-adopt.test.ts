@@ -44,11 +44,8 @@ describe("node adopt E2E", { timeout: 90000 }, () => {
     // session over the same repository must share the sequence.
     const newId = sequentialIds();
     const loop = await runAdoptLoop(spec, repo, newId);
-    expect(loop.approved).toEqual([
-      "RequirementBaseline",
-      "ImpactSet",
-      "ExecutionAuthorizationSpec",
-    ]);
+    // Lite is kernel-only (plan T9): no ImpactSet approval exists.
+    expect(loop.approved).toEqual(["RequirementBaseline", "ExecutionAuthorizationSpec"]);
 
     await assertCompleteLoopArtifacts(repo, loop.session, loop.harness, {
       intentFragment: spec.adoptIntent,

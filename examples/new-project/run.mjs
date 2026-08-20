@@ -27,7 +27,8 @@ try {
   const session = { cwd: projectRoot, runtime: makeRuntime(projectRoot) };
   const { result, approved } = await drivePastApprovals(first, session);
   expect(approved.includes("RequirementBaseline"), "baseline approval recorded");
-  expect(approved.includes("ImpactSet"), "impact set approval recorded");
+  // Lite is kernel-only (plan T9): no module object is ever approved.
+  expect(!approved.includes("ImpactSet"), "lite records no impact set approval");
   expect(typeof result.json.data.snapshot_id === "string", "completed loop lands a snapshot");
 
   const snapshot = await runJson(["snapshot"], session);

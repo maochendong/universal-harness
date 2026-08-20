@@ -39,11 +39,8 @@ describe("java adopt E2E", { timeout: 90000 }, () => {
   it("detects the java stack, pins the pack and completes the closed loop", async () => {
     const repo = makeFixtureRepo(spec);
     const loop = await runAdoptLoop(spec, repo, sequentialIds());
-    expect(loop.approved).toEqual([
-      "RequirementBaseline",
-      "ImpactSet",
-      "ExecutionAuthorizationSpec",
-    ]);
+    // Lite is kernel-only (plan T9): no ImpactSet approval exists.
+    expect(loop.approved).toEqual(["RequirementBaseline", "ExecutionAuthorizationSpec"]);
 
     await assertCompleteLoopArtifacts(repo, loop.session, loop.harness, {
       intentFragment: spec.adoptIntent,
