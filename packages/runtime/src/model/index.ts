@@ -1,4 +1,5 @@
 export * from "./capture-adapters.js";
+export * from "./impact-advisory-adapter.js";
 export * from "./invocation-records.js";
 export * from "./invocation-store.js";
 export * from "./managed-runner.js";

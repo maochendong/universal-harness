@@ -2,6 +2,8 @@ import {
   PROTOCOL_VERSION,
   contentDigest,
   type EdgeRecord,
+  type ImpactCandidate,
+  type ImpactRiskSignal,
   type NodeRecord,
 } from "@universal-harness-internal/core";
 
@@ -11,7 +13,7 @@ import {
   propagateImpact,
   type PropagationPolicy,
 } from "./propagation.js";
-import { assessImpact, type ImpactClassification, type RiskLevel } from "./scoring.js";
+import { assessImpact, maxRisk, type ImpactClassification, type RiskLevel } from "./scoring.js";
 import { ImpactError, type ChangeSeed } from "./seeds.js";
 
 /**
@@ -148,6 +150,79 @@ export function readImpactSetContent(impactSet: NodeRecord): ImpactSetContent {
 /** Digest an ApprovalRequest binds to before an ImpactSet is frozen. */
 export function impactSetContentDigest(impactSet: NodeRecord): string {
   return readImpactSetContent(impactSet).content_digest;
+}
+
+/** The additive slice of a validated advisory result that an ImpactSet absorbs. */
+export interface ImpactAdvisoryMerge {
+  readonly additions: readonly ImpactCandidate[];
+  readonly risk_signals: readonly ImpactRiskSignal[];
+}
+
+/**
+ * Fold a validated advisory into a proposed ImpactSet (model advisory design
+ * 6): additions become entries with an empty explanation path and the
+ * `advisory` seed marker, and risk signals may only raise an entry's risk.
+ * The merge fails closed on its own — an addition that targets a
+ * deterministic entry, or a set that is no longer proposed, is rejected even
+ * though `validateImpactAdvisoryMerge` would already have refused the output.
+ * The content digest is recomputed, so the approval binds to exactly the
+ * merged set the human reviewed.
+ */
+export function mergeImpactAdvisory(
+  impactSet: NodeRecord,
+  advisory: ImpactAdvisoryMerge,
+): NodeRecord {
+  if (impactSet.status !== "proposed") {
+    throw new ImpactError(`impact set ${impactSet.id} is not proposed; refusing to merge advisory`);
+  }
+  const content = readImpactSetContent(impactSet);
+  const byNode = new Map(content.entries.map((entry) => [entry.node_id, entry]));
+
+  const additions: ImpactEntry[] = [];
+  for (const addition of advisory.additions) {
+    if (byNode.has(addition.node_id)) {
+      throw new ImpactError(
+        `advisory addition targets deterministic entry ${addition.node_id}; advisory output is additive only`,
+      );
+    }
+    const entry: ImpactEntry = {
+      node_id: addition.node_id,
+      node_type: addition.node_type as NodeRecord["type"],
+      classification: addition.classification,
+      risk: addition.risk,
+      confidence: addition.confidence,
+      path: [],
+      reason: `advisory: ${addition.reason}`,
+      seed_id: "advisory",
+    };
+    additions.push(entry);
+    byNode.set(entry.node_id, entry);
+  }
+
+  const raises = new Map<string, RiskLevel>();
+  for (const signal of advisory.risk_signals) {
+    if (!byNode.has(signal.node_id)) continue;
+    const pending = raises.get(signal.node_id);
+    raises.set(signal.node_id, pending === undefined ? signal.risk : maxRisk(pending, signal.risk));
+  }
+  const entries: ImpactEntry[] = [...content.entries, ...additions]
+    .map((entry) => {
+      const raise = raises.get(entry.node_id);
+      return raise === undefined ? entry : { ...entry, risk: maxRisk(entry.risk, raise) };
+    })
+    .sort((left, right) => (left.node_id < right.node_id ? -1 : 1));
+  const mergedContent: ImpactSetContent = {
+    content_digest: digestContent(content.seeds, entries),
+    seeds: content.seeds,
+    entries,
+  };
+  const record: Record<string, unknown> = {
+    ...impactSet,
+    id: `impactset_${mergedContent.content_digest.slice(0, 16)}`,
+    extensions: { ...impactSet.extensions, [IMPACT_EXTENSION_KEY]: mergedContent },
+  };
+  delete record.digest;
+  return { ...record, digest: contentDigest(record) } as unknown as NodeRecord;
 }
 
 /**

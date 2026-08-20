@@ -1,0 +1,216 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.universal-harness.dev/1.1/impact-advisory-output.schema.json",
+  "additionalProperties": false,
+  "type": "object",
+  "required": [
+    "purpose",
+    "schema_version",
+    "impact_set_digest",
+    "additions",
+    "edge_candidates",
+    "risk_signals",
+    "missing_facts",
+    "questions"
+  ],
+  "properties": {
+    "purpose": { "const": "impact_advisory", "type": "string" },
+    "schema_version": { "const": "impact-advisory.v1", "type": "string" },
+    "impact_set_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
+    "additions": {
+      "type": "array",
+      "items": {
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "node_id",
+          "node_type",
+          "classification",
+          "risk",
+          "confidence",
+          "reason",
+          "source_refs"
+        ],
+        "properties": {
+          "node_id": {
+            "minLength": 3,
+            "maxLength": 160,
+            "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+            "type": "string"
+          },
+          "node_type": { "minLength": 1, "type": "string" },
+          "classification": {
+            "anyOf": [
+              { "const": "must-change", "type": "string" },
+              { "const": "inspect", "type": "string" },
+              { "const": "informational", "type": "string" }
+            ]
+          },
+          "risk": {
+            "anyOf": [
+              { "const": "low", "type": "string" },
+              { "const": "medium", "type": "string" },
+              { "const": "high", "type": "string" }
+            ]
+          },
+          "confidence": { "minimum": 0, "maximum": 1, "type": "number" },
+          "reason": { "minLength": 1, "type": "string" },
+          "source_refs": {
+            "minItems": 1,
+            "type": "array",
+            "items": {
+              "additionalProperties": false,
+              "type": "object",
+              "required": ["kind", "ref", "digest"],
+              "properties": {
+                "kind": {
+                  "anyOf": [
+                    { "const": "graph_node", "type": "string" },
+                    { "const": "requirement", "type": "string" },
+                    { "const": "context_source", "type": "string" }
+                  ]
+                },
+                "ref": { "minLength": 1, "maxLength": 400, "type": "string" },
+                "digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "edge_candidates": {
+      "type": "array",
+      "items": {
+        "additionalProperties": false,
+        "type": "object",
+        "required": ["source_id", "target_id", "relation", "rationale", "source_refs"],
+        "properties": {
+          "source_id": {
+            "minLength": 3,
+            "maxLength": 160,
+            "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+            "type": "string"
+          },
+          "target_id": {
+            "minLength": 3,
+            "maxLength": 160,
+            "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+            "type": "string"
+          },
+          "relation": { "minLength": 1, "type": "string" },
+          "rationale": { "minLength": 1, "type": "string" },
+          "source_refs": {
+            "minItems": 1,
+            "type": "array",
+            "items": {
+              "additionalProperties": false,
+              "type": "object",
+              "required": ["kind", "ref", "digest"],
+              "properties": {
+                "kind": {
+                  "anyOf": [
+                    { "const": "graph_node", "type": "string" },
+                    { "const": "requirement", "type": "string" },
+                    { "const": "context_source", "type": "string" }
+                  ]
+                },
+                "ref": { "minLength": 1, "maxLength": 400, "type": "string" },
+                "digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "risk_signals": {
+      "type": "array",
+      "items": {
+        "additionalProperties": false,
+        "type": "object",
+        "required": ["node_id", "signal", "risk", "rationale", "source_refs"],
+        "properties": {
+          "node_id": {
+            "minLength": 3,
+            "maxLength": 160,
+            "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+            "type": "string"
+          },
+          "signal": { "minLength": 1, "type": "string" },
+          "risk": {
+            "anyOf": [
+              { "const": "low", "type": "string" },
+              { "const": "medium", "type": "string" },
+              { "const": "high", "type": "string" }
+            ]
+          },
+          "rationale": { "minLength": 1, "type": "string" },
+          "source_refs": {
+            "minItems": 1,
+            "type": "array",
+            "items": {
+              "additionalProperties": false,
+              "type": "object",
+              "required": ["kind", "ref", "digest"],
+              "properties": {
+                "kind": {
+                  "anyOf": [
+                    { "const": "graph_node", "type": "string" },
+                    { "const": "requirement", "type": "string" },
+                    { "const": "context_source", "type": "string" }
+                  ]
+                },
+                "ref": { "minLength": 1, "maxLength": 400, "type": "string" },
+                "digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "missing_facts": {
+      "type": "array",
+      "items": {
+        "additionalProperties": false,
+        "type": "object",
+        "required": ["subject_id", "fact", "why_it_matters", "source_refs"],
+        "properties": {
+          "subject_id": { "minLength": 1, "maxLength": 400, "type": "string" },
+          "fact": { "minLength": 1, "type": "string" },
+          "why_it_matters": { "minLength": 1, "type": "string" },
+          "source_refs": {
+            "minItems": 1,
+            "type": "array",
+            "items": {
+              "additionalProperties": false,
+              "type": "object",
+              "required": ["kind", "ref", "digest"],
+              "properties": {
+                "kind": {
+                  "anyOf": [
+                    { "const": "graph_node", "type": "string" },
+                    { "const": "requirement", "type": "string" },
+                    { "const": "context_source", "type": "string" }
+                  ]
+                },
+                "ref": { "minLength": 1, "maxLength": 400, "type": "string" },
+                "digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "questions": {
+      "type": "array",
+      "items": {
+        "additionalProperties": false,
+        "type": "object",
+        "required": ["question"],
+        "properties": {
+          "question": { "minLength": 1, "type": "string" },
+          "target_id": { "minLength": 1, "maxLength": 400, "type": "string" }
+        }
+      }
+    }
+  }
+}

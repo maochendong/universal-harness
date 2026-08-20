@@ -126,6 +126,8 @@ describe("protocol 1.1 schema plumbing", () => {
       "prompt-preparation-failure",
       "model-invocation",
       "model-port-failure",
+      "impact-advisory",
+      "impact-advisory-output",
       "capability-plan",
       "capture-session",
       "clarification-question",

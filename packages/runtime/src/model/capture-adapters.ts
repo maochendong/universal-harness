@@ -64,18 +64,22 @@ export interface ModelBackedProviderConfig {
   readonly budget_profile: string;
 }
 
-export interface ModelBackedAdapterDeps {
+/** The invocation-layer dependencies every model-backed adapter shares. */
+export interface ManagedInvocationAdapterDeps {
   readonly projectRoot: string;
-  readonly registry: PromptContractRegistry;
-  readonly profile_id: ProfileId;
   readonly provider_config: ModelBackedProviderConfig;
-  readonly bundle_content: (source: ProjectContextSource) => string;
   readonly provider?: ManagedModelProviderPort;
   readonly artifact_sink?: PromptArtifactSink;
   readonly budget?: ManagedInvocationBudget;
 }
 
-const DEFAULT_BUDGET: ManagedInvocationBudget = {
+export interface ModelBackedAdapterDeps extends ManagedInvocationAdapterDeps {
+  readonly registry: PromptContractRegistry;
+  readonly profile_id: ProfileId;
+  readonly bundle_content: (source: ProjectContextSource) => string;
+}
+
+export const DEFAULT_BUDGET: ManagedInvocationBudget = {
   timeout_ms: 60_000,
   max_output_bytes: 256 * 1024,
 } as const;
@@ -102,7 +106,7 @@ function bindingOf(
   };
 }
 
-interface ManagedBackedContractFields {
+export interface ManagedBackedContractFields {
   readonly prompt_contract_id: string;
   readonly prompt_contract_version: string;
   readonly prompt_contract_digest: string;
@@ -141,8 +145,13 @@ function runIdFor(conversationId: string): string {
   return `run_${conversationId.replace(/^[a-z][a-z0-9-]*_/u, "")}`;
 }
 
-async function invoke(
-  deps: ModelBackedAdapterDeps,
+/**
+ * Invoke one compiled prompt through the managed runner (shared by every
+ * model-backed adapter): a replayed outcome cannot supply the value because
+ * raw outputs are never persisted, so it re-runs fresh exactly once.
+ */
+export async function invokeManagedPrompt(
+  deps: ManagedInvocationAdapterDeps,
   request: {
     readonly port_id: string;
     readonly purpose?: string;
@@ -202,8 +211,9 @@ async function invoke(
   return fresh;
 }
 
-function consume(
-  deps: ModelBackedAdapterDeps,
+/** Mark a validated invocation consumed; the value has left the runner. */
+export function consumeManagedInvocation(
+  deps: ManagedInvocationAdapterDeps,
   record: Parameters<typeof transitionModelInvocation>[0],
 ): void {
   appendModelInvocationRecord(deps.projectRoot, transitionModelInvocation(record, "consumed"));
@@ -298,7 +308,7 @@ export function createModelBackedPrdProposalPort(deps: ModelBackedAdapterDeps): 
         { port_id: PRD_PROPOSAL_PROMPT_PORT_ID, prompt_version: input.profile.prompt_version },
         { bundle_id: input.proposal_context_bundle.bundle_id, items },
       );
-      const outcome = await invoke(deps, {
+      const outcome = await invokeManagedPrompt(deps, {
         port_id: PRD_PROPOSAL_PROMPT_PORT_ID,
         output_schema_id: resolution.output_schema_id,
         invocation_id: input.invocation.invocation_id,
@@ -310,7 +320,7 @@ export function createModelBackedPrdProposalPort(deps: ModelBackedAdapterDeps): 
       if (outcome.status === "failed") {
         return { status: "failed", failure: toPrdPortFailure(outcome.failure) };
       }
-      consume(deps, outcome.record);
+      consumeManagedInvocation(deps, outcome.record);
       return { status: "proposed", draft: outcome.value as PrdProposalDraft };
     },
   };
@@ -367,7 +377,7 @@ export function createModelBackedPrdReviewPort(deps: ModelBackedAdapterDeps): Pr
         { port_id: PRD_REVIEW_PROMPT_PORT_ID, prompt_version: input.profile.prompt_version },
         { bundle_id: input.review_context_bundle.bundle_id, items },
       );
-      const outcome = await invoke(deps, {
+      const outcome = await invokeManagedPrompt(deps, {
         port_id: PRD_REVIEW_PROMPT_PORT_ID,
         output_schema_id: resolution.output_schema_id,
         invocation_id: input.invocation.invocation_id,
@@ -379,7 +389,7 @@ export function createModelBackedPrdReviewPort(deps: ModelBackedAdapterDeps): Pr
       if (outcome.status === "failed") {
         return { status: "failed", failure: toPrdPortFailure(outcome.failure) };
       }
-      consume(deps, outcome.record);
+      consumeManagedInvocation(deps, outcome.record);
       return { status: "completed", report: outcome.value as PrdReviewReportDraft };
     },
   };
@@ -429,7 +439,7 @@ export function createModelBackedGroundedSynthesisPort(
         },
         { bundle_id: wired.bundle.bundle_id, items },
       );
-      const outcome = await invoke(deps, {
+      const outcome = await invokeManagedPrompt(deps, {
         port_id: "grounded_synthesis",
         purpose: wired.purpose,
         output_schema_id: contract.output_schema_id,
@@ -451,7 +461,7 @@ export function createModelBackedGroundedSynthesisPort(
           failure: { code: first.code, summary: first.message, retryable: false },
         };
       }
-      consume(deps, outcome.record);
+      consumeManagedInvocation(deps, outcome.record);
       return { status: "completed", output };
     },
   };
