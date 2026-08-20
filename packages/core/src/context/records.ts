@@ -10,6 +10,7 @@ import {
   type ProjectContextBundleRecord,
   type ProjectContextExclusion,
   type ProjectContextInvalidationReason,
+  type ProjectContextPurpose,
   type ProjectContextSource,
 } from "../schema/context.js";
 import { sealRecordEnvelope } from "../schema/envelope.js";
@@ -87,7 +88,7 @@ function assertBudget(budget: ProjectContextBudget): void {
 
 export interface CreateProjectContextBundleInput {
   readonly session_id: string;
-  readonly purpose: "proposal" | "review";
+  readonly purpose: ProjectContextPurpose;
   readonly project_baseline_digest: string;
   readonly profile_digest: string;
   readonly policy_digest: string;

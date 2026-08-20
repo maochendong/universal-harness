@@ -40,6 +40,7 @@ import {
 } from "./proposal.js";
 import { RuntimeSchema } from "./runtime.js";
 import {
+  ApprovalBriefInputSchema,
   ApprovalBriefOutputSchema,
   ContextEnrichmentOutputSchema,
   GroundedSynthesisRecordSchema,
@@ -47,6 +48,13 @@ import {
   ProjectDiscoveryInputSchema,
   ProjectDiscoveryOutputSchema,
 } from "./synthesis.js";
+import { AcceptedPrdRecordSchema, RequirementBaselineRecordSchema } from "./acceptance.js";
+import {
+  ManualReviewInputRecordSchema,
+  PrdReviewReportDraftSchema,
+  PrdReviewReportRecordSchema,
+} from "./review.js";
+import { CaptureRiskAssessmentRecordSchema } from "./risk.js";
 import {
   compileAjvSchema,
   compileSchemaValidator,
@@ -166,7 +174,9 @@ export const JSON_SCHEMA_DOCUMENTS = Object.fromEntries(
  * contributes the project context bundle/invalidation records, the grounded
  * synthesis record and the versioned purpose-bound input/output schemas.
  * Task 6 contributes the PRD proposal record/content/draft, the entity
- * lineage record and the deterministic validation report.
+ * lineage record and the deterministic validation report. Task 7 contributes
+ * the review report/draft, manual review input, risk assessment, accepted PRD
+ * and requirement baseline records plus the versioned approval-brief input.
  */
 export const PROTOCOL_1_1_SCHEMA_REGISTRY = createDomainSchemaRegistry({
   protocolVersion: PROTOCOL_1_1_VERSION,
@@ -192,6 +202,7 @@ export const PROTOCOL_1_1_SCHEMA_REGISTRY = createDomainSchemaRegistry({
     { key: "project-discovery-input", schema: ProjectDiscoveryInputSchema },
     { key: "project-discovery-output", schema: ProjectDiscoveryOutputSchema },
     { key: "context-enrichment-output", schema: ContextEnrichmentOutputSchema },
+    { key: "approval-brief-input", schema: ApprovalBriefInputSchema },
     { key: "approval-brief-output", schema: ApprovalBriefOutputSchema },
     { key: "iteration-narrative-output", schema: IterationNarrativeOutputSchema },
     { key: "prd-proposal", schema: PrdProposalRecordSchema },
@@ -199,6 +210,12 @@ export const PROTOCOL_1_1_SCHEMA_REGISTRY = createDomainSchemaRegistry({
     { key: "prd-proposal-draft", schema: PrdProposalDraftSchema },
     { key: "prd-entity-lineage", schema: PrdEntityLineageRecordSchema },
     { key: "prd-validation-report", schema: PrdValidationReportRecordSchema },
+    { key: "prd-review-report", schema: PrdReviewReportRecordSchema },
+    { key: "prd-review-report-draft", schema: PrdReviewReportDraftSchema },
+    { key: "manual-review-input", schema: ManualReviewInputRecordSchema },
+    { key: "capture-risk-assessment", schema: CaptureRiskAssessmentRecordSchema },
+    { key: "accepted-prd", schema: AcceptedPrdRecordSchema },
+    { key: "requirement-baseline", schema: RequirementBaselineRecordSchema },
   ],
 });
 

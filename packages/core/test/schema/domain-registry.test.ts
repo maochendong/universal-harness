@@ -114,7 +114,7 @@ describe("domain schema export boundary", () => {
 });
 
 describe("protocol 1.1 schema plumbing", () => {
-  it("registers the Task 2-6 profile, capability, capture, context, synthesis and proposal schemas under the 1.1 domain registry", () => {
+  it("registers the Task 2-7 profile, capability, capture, context, synthesis, proposal, review, risk and acceptance schemas under the 1.1 domain registry", () => {
     expect(PROTOCOL_1_1_SCHEMA_REGISTRY.protocolVersion).toBe("1.1.0");
     expect(PROTOCOL_1_1_SCHEMA_REGISTRY.keys).toEqual([
       "profile-definition",
@@ -135,6 +135,7 @@ describe("protocol 1.1 schema plumbing", () => {
       "project-discovery-input",
       "project-discovery-output",
       "context-enrichment-output",
+      "approval-brief-input",
       "approval-brief-output",
       "iteration-narrative-output",
       "prd-proposal",
@@ -142,6 +143,12 @@ describe("protocol 1.1 schema plumbing", () => {
       "prd-proposal-draft",
       "prd-entity-lineage",
       "prd-validation-report",
+      "prd-review-report",
+      "prd-review-report-draft",
+      "manual-review-input",
+      "capture-risk-assessment",
+      "accepted-prd",
+      "requirement-baseline",
     ]);
     expect(PROTOCOL_1_1_SCHEMA_REGISTRY.validate("project-profile", {})).toMatchObject({
       valid: false,

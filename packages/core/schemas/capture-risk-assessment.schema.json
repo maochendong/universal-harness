@@ -1,0 +1,115 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.universal-harness.dev/1.1/capture-risk-assessment.schema.json",
+  "additionalProperties": false,
+  "type": "object",
+  "required": [
+    "protocol_version",
+    "record_kind",
+    "risk_assessment_id",
+    "session_id",
+    "proposal_content_digest",
+    "validation_report_digest",
+    "review_report_digest",
+    "proposal_context_bundle_digest",
+    "review_context_bundle_digest",
+    "project_profile_digest",
+    "profile_decision_digest",
+    "capture_policy_digest",
+    "policy_digest",
+    "rule_set_digest",
+    "level",
+    "materiality",
+    "confidence",
+    "triggers",
+    "assessment_digest",
+    "record_digest"
+  ],
+  "properties": {
+    "protocol_version": { "const": "1.1.0", "type": "string" },
+    "record_kind": { "const": "capture_risk_assessment", "type": "string" },
+    "risk_assessment_id": {
+      "minLength": 3,
+      "maxLength": 160,
+      "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+      "type": "string"
+    },
+    "session_id": {
+      "minLength": 3,
+      "maxLength": 160,
+      "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+      "type": "string"
+    },
+    "proposal_content_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
+    "validation_report_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
+    "review_report_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
+    "proposal_context_bundle_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
+    "review_context_bundle_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
+    "project_profile_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
+    "profile_decision_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
+    "capture_policy_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
+    "policy_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
+    "rule_set_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
+    "level": {
+      "anyOf": [
+        { "const": "low", "type": "string" },
+        { "const": "medium", "type": "string" },
+        { "const": "high", "type": "string" },
+        { "const": "critical", "type": "string" }
+      ]
+    },
+    "materiality": {
+      "anyOf": [
+        { "const": "non_material", "type": "string" },
+        { "const": "material", "type": "string" }
+      ]
+    },
+    "confidence": {
+      "anyOf": [
+        { "const": "high", "type": "string" },
+        { "const": "medium", "type": "string" },
+        { "const": "low", "type": "string" }
+      ]
+    },
+    "triggers": {
+      "type": "array",
+      "items": {
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "trigger_id",
+          "source_kind",
+          "source_id",
+          "source_digest",
+          "severity",
+          "reason"
+        ],
+        "properties": {
+          "trigger_id": { "minLength": 1, "maxLength": 160, "type": "string" },
+          "source_kind": {
+            "anyOf": [
+              { "const": "proposal", "type": "string" },
+              { "const": "validation", "type": "string" },
+              { "const": "review", "type": "string" },
+              { "const": "context_classification", "type": "string" },
+              { "const": "policy", "type": "string" }
+            ]
+          },
+          "source_id": { "minLength": 1, "maxLength": 400, "type": "string" },
+          "source_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
+          "severity": {
+            "anyOf": [
+              { "const": "low", "type": "string" },
+              { "const": "medium", "type": "string" },
+              { "const": "high", "type": "string" },
+              { "const": "critical", "type": "string" }
+            ]
+          },
+          "reason": { "minLength": 1, "maxLength": 4000, "type": "string" }
+        }
+      }
+    },
+    "assessment_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
+    "record_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" }
+  }
+}

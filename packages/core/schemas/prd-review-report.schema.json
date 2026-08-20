@@ -1,0 +1,160 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.universal-harness.dev/1.1/prd-review-report.schema.json",
+  "additionalProperties": false,
+  "type": "object",
+  "required": [
+    "protocol_version",
+    "record_kind",
+    "review_report_id",
+    "session_id",
+    "proposal_digest",
+    "review_context_bundle_digest",
+    "validation_digest",
+    "reviewer_adapter_profile_digest",
+    "reviewer_identity",
+    "prompt_version_digest",
+    "invocation_id",
+    "conversation_id",
+    "evidence_locator",
+    "verdict",
+    "dimensions",
+    "findings",
+    "suggested_questions",
+    "report_digest",
+    "record_digest"
+  ],
+  "properties": {
+    "protocol_version": { "const": "1.1.0", "type": "string" },
+    "record_kind": { "const": "prd_review_report", "type": "string" },
+    "review_report_id": {
+      "minLength": 3,
+      "maxLength": 160,
+      "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+      "type": "string"
+    },
+    "session_id": {
+      "minLength": 3,
+      "maxLength": 160,
+      "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+      "type": "string"
+    },
+    "proposal_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
+    "review_context_bundle_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
+    "validation_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
+    "reviewer_adapter_profile_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
+    "reviewer_identity": { "minLength": 1, "maxLength": 200, "type": "string" },
+    "prompt_version_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
+    "invocation_id": {
+      "minLength": 3,
+      "maxLength": 160,
+      "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+      "type": "string"
+    },
+    "conversation_id": {
+      "minLength": 3,
+      "maxLength": 160,
+      "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+      "type": "string"
+    },
+    "evidence_locator": { "minLength": 1, "maxLength": 400, "type": "string" },
+    "verdict": {
+      "anyOf": [
+        { "const": "accept", "type": "string" },
+        { "const": "revise", "type": "string" },
+        { "const": "clarify", "type": "string" },
+        { "const": "blocked", "type": "string" }
+      ]
+    },
+    "dimensions": {
+      "type": "array",
+      "items": {
+        "additionalProperties": false,
+        "type": "object",
+        "required": ["dimension_id", "status", "notes"],
+        "properties": {
+          "dimension_id": { "minLength": 1, "maxLength": 120, "type": "string" },
+          "status": {
+            "anyOf": [
+              { "const": "satisfied", "type": "string" },
+              { "const": "deficient", "type": "string" }
+            ]
+          },
+          "notes": { "maxLength": 4000, "type": "string" }
+        }
+      }
+    },
+    "findings": {
+      "type": "array",
+      "items": {
+        "additionalProperties": false,
+        "type": "object",
+        "required": ["finding_id", "severity", "target_kind", "message"],
+        "properties": {
+          "finding_id": { "minLength": 1, "maxLength": 160, "type": "string" },
+          "severity": {
+            "anyOf": [
+              { "const": "info", "type": "string" },
+              { "const": "warning", "type": "string" },
+              { "const": "critical", "type": "string" }
+            ]
+          },
+          "target_kind": {
+            "anyOf": [
+              { "const": "intent", "type": "string" },
+              { "const": "prd_section", "type": "string" },
+              { "const": "requirement", "type": "string" },
+              { "const": "constraint", "type": "string" },
+              { "const": "acceptance_criterion", "type": "string" },
+              { "const": "risk", "type": "string" },
+              { "const": "glossary", "type": "string" }
+            ]
+          },
+          "target_id": { "minLength": 1, "maxLength": 160, "type": "string" },
+          "message": { "minLength": 1, "maxLength": 4000, "type": "string" },
+          "recommended_revision": { "minLength": 1, "maxLength": 4000, "type": "string" }
+        }
+      }
+    },
+    "suggested_questions": {
+      "type": "array",
+      "items": {
+        "additionalProperties": false,
+        "type": "object",
+        "required": ["target_kind", "missing_dimension", "question", "required"],
+        "properties": {
+          "target_kind": {
+            "anyOf": [
+              { "const": "intent", "type": "string" },
+              { "const": "prd_section", "type": "string" },
+              { "const": "requirement", "type": "string" },
+              { "const": "constraint", "type": "string" },
+              { "const": "acceptance_criterion", "type": "string" },
+              { "const": "risk", "type": "string" },
+              { "const": "glossary", "type": "string" }
+            ]
+          },
+          "target_id": { "minLength": 1, "type": "string" },
+          "missing_dimension": { "minLength": 1, "type": "string" },
+          "question": { "minLength": 1, "type": "string" },
+          "options": {
+            "minItems": 1,
+            "type": "array",
+            "items": {
+              "additionalProperties": false,
+              "type": "object",
+              "required": ["option_id", "label"],
+              "properties": {
+                "option_id": { "minLength": 1, "maxLength": 120, "type": "string" },
+                "label": { "minLength": 1, "type": "string" }
+              }
+            }
+          },
+          "required": { "type": "boolean" }
+        }
+      }
+    },
+    "report_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
+    "record_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" }
+  }
+}

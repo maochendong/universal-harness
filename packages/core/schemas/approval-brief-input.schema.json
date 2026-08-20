@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://schemas.universal-harness.dev/1.1/project-discovery-input.schema.json",
+  "$id": "https://schemas.universal-harness.dev/1.1/approval-brief-input.schema.json",
   "additionalProperties": false,
   "type": "object",
   "required": [
@@ -9,11 +9,12 @@
     "binding_digest",
     "conversation_id",
     "run_id",
-    "bundle"
+    "bundle",
+    "approval_object"
   ],
   "properties": {
-    "purpose": { "const": "project_discovery", "type": "string" },
-    "schema_version": { "const": "project-discovery.v1", "type": "string" },
+    "purpose": { "const": "approval_brief", "type": "string" },
+    "schema_version": { "const": "approval-brief.v1", "type": "string" },
     "binding_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
     "conversation_id": {
       "minLength": 3,
@@ -152,6 +153,35 @@
         "record_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" }
       }
     },
-    "operator_intent": { "minLength": 1, "type": "string" }
+    "approval_object": {
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "proposal_id",
+        "proposal_content_digest",
+        "validation_report_digest",
+        "review_report_digest",
+        "risk_assessment_digest",
+        "approval_request_id"
+      ],
+      "properties": {
+        "proposal_id": {
+          "minLength": 3,
+          "maxLength": 160,
+          "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+          "type": "string"
+        },
+        "proposal_content_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
+        "validation_report_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
+        "review_report_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
+        "risk_assessment_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
+        "approval_request_id": {
+          "minLength": 3,
+          "maxLength": 160,
+          "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+          "type": "string"
+        }
+      }
+    }
   }
 }

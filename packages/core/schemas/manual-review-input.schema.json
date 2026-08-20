@@ -1,0 +1,70 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.universal-harness.dev/1.1/manual-review-input.schema.json",
+  "additionalProperties": false,
+  "type": "object",
+  "required": [
+    "protocol_version",
+    "record_kind",
+    "manual_review_input_id",
+    "session_id",
+    "review_invocation_id",
+    "reviewer_actor",
+    "rubric_digest",
+    "dimension_inputs",
+    "expected_session_digest",
+    "record_digest"
+  ],
+  "properties": {
+    "protocol_version": { "const": "1.1.0", "type": "string" },
+    "record_kind": { "const": "manual_review_input", "type": "string" },
+    "manual_review_input_id": {
+      "minLength": 3,
+      "maxLength": 160,
+      "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+      "type": "string"
+    },
+    "session_id": {
+      "minLength": 3,
+      "maxLength": 160,
+      "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+      "type": "string"
+    },
+    "review_invocation_id": {
+      "minLength": 3,
+      "maxLength": 160,
+      "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+      "type": "string"
+    },
+    "reviewer_actor": { "minLength": 1, "maxLength": 200, "type": "string" },
+    "rubric_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
+    "dimension_inputs": {
+      "minItems": 1,
+      "type": "array",
+      "items": {
+        "additionalProperties": false,
+        "type": "object",
+        "required": ["dimension_id", "status", "notes"],
+        "properties": {
+          "dimension_id": { "minLength": 1, "maxLength": 120, "type": "string" },
+          "status": {
+            "anyOf": [
+              { "const": "satisfied", "type": "string" },
+              { "const": "deficient", "type": "string" }
+            ]
+          },
+          "notes": { "maxLength": 4000, "type": "string" },
+          "severity": {
+            "anyOf": [
+              { "const": "info", "type": "string" },
+              { "const": "warning", "type": "string" },
+              { "const": "critical", "type": "string" }
+            ]
+          }
+        }
+      }
+    },
+    "expected_session_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
+    "record_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" }
+  }
+}

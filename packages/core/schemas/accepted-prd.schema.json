@@ -1,0 +1,71 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.universal-harness.dev/1.1/accepted-prd.schema.json",
+  "additionalProperties": false,
+  "type": "object",
+  "required": [
+    "protocol_version",
+    "record_kind",
+    "prd_id",
+    "revision",
+    "session_id",
+    "workflow_operation_id",
+    "proposal_id",
+    "proposal_content_digest",
+    "proposal_context_bundle_digest",
+    "review_context_bundle_digest",
+    "validation_report_digest",
+    "review_report_digest",
+    "risk_assessment_digest",
+    "project_profile_digest",
+    "profile_decision_digest",
+    "capture_policy_digest",
+    "policy_digest",
+    "approval_digest",
+    "requirement_baseline_digest",
+    "record_digest"
+  ],
+  "properties": {
+    "protocol_version": { "const": "1.1.0", "type": "string" },
+    "record_kind": { "const": "accepted_prd", "type": "string" },
+    "prd_id": {
+      "minLength": 3,
+      "maxLength": 160,
+      "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+      "type": "string"
+    },
+    "revision": { "minimum": 1, "type": "integer" },
+    "session_id": {
+      "minLength": 3,
+      "maxLength": 160,
+      "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+      "type": "string"
+    },
+    "workflow_operation_id": {
+      "minLength": 3,
+      "maxLength": 160,
+      "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+      "type": "string"
+    },
+    "proposal_id": {
+      "minLength": 3,
+      "maxLength": 160,
+      "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+      "type": "string"
+    },
+    "proposal_content_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
+    "proposal_context_bundle_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
+    "review_context_bundle_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
+    "validation_report_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
+    "review_report_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
+    "risk_assessment_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
+    "project_profile_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
+    "profile_decision_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
+    "capture_policy_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
+    "policy_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
+    "approval_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
+    "requirement_baseline_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
+    "supersedes_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
+    "record_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" }
+  }
+}

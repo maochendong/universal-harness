@@ -172,6 +172,23 @@ export function appendProfileRecommendationRecord(
   );
 }
 
+export function readProfileRecommendationRecords(
+  projectRoot: string,
+): ProfileRecommendationRecord[] {
+  const harnessRoot = harnessRootFor(projectRoot);
+  const directory = resolveHarnessPath(harnessRoot, "artifacts/profile-recommendations");
+  if (!existsSync(directory)) return [];
+  return readdirSync(directory, { withFileTypes: true })
+    .filter((entry) => entry.isFile() && entry.name.endsWith(".json"))
+    .map((entry) => entry.name)
+    .sort()
+    .map((name) =>
+      readRecord<ProfileRecommendationRecord>(
+        resolveHarnessPath(harnessRoot, `artifacts/profile-recommendations/${name}`),
+      ),
+    );
+}
+
 export function appendProfileDecisionRecord(
   projectRoot: string,
   record: ProfileDecisionRecord,

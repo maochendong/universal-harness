@@ -1,3 +1,4 @@
+export * from "./acceptance/index.js";
 export * from "./capability/index.js";
 export * from "./capture/index.js";
 export * from "./context/index.js";
@@ -7,6 +8,8 @@ export * from "./profile/index.js";
 export * from "./project/index.js";
 export * from "./proposal/index.js";
 export * from "./protocol.js";
+export * from "./review/index.js";
+export * from "./risk/index.js";
 export * from "./schema/index.js";
 export * from "./synthesis/index.js";
 export * from "./version.js";

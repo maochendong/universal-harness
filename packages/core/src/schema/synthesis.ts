@@ -140,6 +140,38 @@ export const ProjectDiscoveryInputSchema = strictObject({
 export type ProjectDiscoveryInput = Static<typeof ProjectDiscoveryInputSchema>;
 
 /**
+ * The committed approval object a Capture `approval_brief` summarizes
+ * (intent-to-prd design 7.5, model advisory design 10). The object is fixed
+ * before the brief runs; the brief never enters its semantic digest.
+ */
+export const ApprovalBriefObjectSchema = strictObject({
+  proposal_id: IdentifierSchema,
+  proposal_content_digest: DigestSchema,
+  validation_report_digest: DigestSchema,
+  review_report_digest: DigestSchema,
+  risk_assessment_digest: DigestSchema,
+  approval_request_id: IdentifierSchema,
+});
+export type ApprovalBriefObject = Static<typeof ApprovalBriefObjectSchema>;
+
+/**
+ * Versioned approval_brief input (model advisory 10): the provider receives
+ * the compiled approval bundle as data plus the pinned approval object
+ * digests. It can summarize and cite, but the strict output schema carries no
+ * verdict field, so it can never recommend or apply an approval.
+ */
+export const ApprovalBriefInputSchema = strictObject({
+  purpose: Type.Literal("approval_brief"),
+  schema_version: Type.Literal(GROUNDED_SYNTHESIS_SCHEMA_VERSIONS.approval_brief),
+  binding_digest: DigestSchema,
+  conversation_id: IdentifierSchema,
+  run_id: IdentifierSchema,
+  bundle: ProjectContextBundleRecordSchema,
+  approval_object: ApprovalBriefObjectSchema,
+});
+export type ApprovalBriefInput = Static<typeof ApprovalBriefInputSchema>;
+
+/**
  * The domain result record (model advisory 5.3). Run provenance — tokens,
  * duration, raw artifacts — belongs to the Task 8 invocation record and never
  * enters this semantic digest.

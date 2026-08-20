@@ -58,6 +58,27 @@ export interface ApplyApprovalDecisionCommand {
   readonly decision_id: string;
 }
 
+/**
+ * The human rubric input for a manual review (design 5.1/6.6). It binds the
+ * review invocation that requested input, the reviewer actor, the rubric
+ * digest and the expected session digest; it can never flow back into the
+ * proposal as a clarification answer.
+ */
+export interface SubmitManualReviewInputCommand {
+  readonly command: "submit_manual_review_input";
+  readonly session_id: string;
+  readonly expected_session_digest: string;
+  readonly review_invocation_id: string;
+  readonly reviewer_actor: string;
+  readonly rubric_digest: string;
+  readonly dimension_inputs: readonly {
+    readonly dimension_id: string;
+    readonly status: "satisfied" | "deficient";
+    readonly notes: string;
+    readonly severity?: "info" | "warning" | "critical";
+  }[];
+}
+
 export interface ResumeCaptureCommand {
   readonly command: "resume_capture";
   readonly session_id: string;
@@ -71,6 +92,7 @@ export interface CancelCaptureCommand {
 export type CaptureCommand =
   | StartCaptureCommand
   | SubmitClarificationAnswersCommand
+  | SubmitManualReviewInputCommand
   | RequestPrdRevisionCommand
   | ApplyApprovalDecisionCommand
   | ResumeCaptureCommand
@@ -84,6 +106,8 @@ export interface CaptureApprovalDecisionView {
   readonly object_digest: string;
   readonly actor: string;
   readonly reason?: string;
+  /** Digest of the committed decision record, bound into the accepted PRD. */
+  readonly decision_digest?: string;
 }
 
 /**
@@ -99,6 +123,16 @@ export interface CaptureStageRequest {
   readonly invocation?: CaptureInvocationRecord;
   readonly questions?: readonly ClarificationQuestionRecord[];
   readonly answers?: readonly ClarificationAnswerRecord[];
+  /**
+   * The approval decision being consumed; present only for the `accept`
+   * stage. The Coordinator has already re-verified its binding.
+   */
+  readonly approval?: {
+    readonly request_id: string;
+    readonly decision_id: string;
+    readonly actor: string;
+    readonly decision_digest?: string;
+  };
 }
 
 export interface CaptureStageFailure {
@@ -123,9 +157,24 @@ export type CaptureStageResult =
       readonly questions?: readonly ClarificationQuestionDraft[];
     }
   | { readonly kind: "review_input_required" }
-  | { readonly kind: "risk_stable"; readonly risk_assessment_digest: string }
+  | {
+      readonly kind: "risk_stable";
+      readonly risk_assessment_digest: string;
+      /**
+       * Approval route derived by the risk stage (design 15); absent means
+       * the default human route. `policy_auto` requires `policy_actor`.
+       */
+      readonly approval_route?: "policy_auto" | "human";
+      readonly policy_actor?: string;
+    }
   | { readonly kind: "risk_upgrade_required" }
   | { readonly kind: "risk_denied" }
+  | { readonly kind: "approval_brief_ready"; readonly brief_digest: string }
+  | {
+      readonly kind: "acceptance_committed";
+      readonly accepted_prd_digest: string;
+      readonly requirement_baseline_digest: string;
+    }
   | { readonly kind: "stage_failed"; readonly failure: CaptureStageFailure };
 
 export type CaptureStageHandler = (
@@ -138,6 +187,17 @@ export interface CaptureStageHandlers {
   readonly validate?: CaptureStageHandler;
   readonly review?: CaptureStageHandler;
   readonly assessRisk?: CaptureStageHandler;
+  /**
+   * The Capture `approval_brief` stage (T7): runs after a human-routed risk
+   * assessment, before the approval is presented. Absent means the brief is
+   * not enabled for this capture (e.g. Lite without the slot).
+   */
+  readonly approvalBrief?: CaptureStageHandler;
+  /**
+   * The atomic accepted transaction (T7): absent means kernel-only operation
+   * where `accepted` is a bare state transition with no domain artifacts.
+   */
+  readonly accept?: CaptureStageHandler;
 }
 
 export type CaptureFailureKind =

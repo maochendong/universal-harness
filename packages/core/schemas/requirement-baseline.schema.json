@@ -1,0 +1,102 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.universal-harness.dev/1.1/requirement-baseline.schema.json",
+  "additionalProperties": false,
+  "type": "object",
+  "required": [
+    "protocol_version",
+    "record_kind",
+    "baseline_id",
+    "session_id",
+    "prd_id",
+    "prd_revision",
+    "proposal_content_digest",
+    "requirement_ids",
+    "constraint_ids",
+    "criterion_test_seeds",
+    "baseline_document_digest",
+    "record_digest"
+  ],
+  "properties": {
+    "protocol_version": { "const": "1.1.0", "type": "string" },
+    "record_kind": { "const": "requirement_baseline", "type": "string" },
+    "baseline_id": {
+      "minLength": 3,
+      "maxLength": 160,
+      "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+      "type": "string"
+    },
+    "session_id": {
+      "minLength": 3,
+      "maxLength": 160,
+      "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+      "type": "string"
+    },
+    "prd_id": {
+      "minLength": 3,
+      "maxLength": 160,
+      "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+      "type": "string"
+    },
+    "prd_revision": { "minimum": 1, "type": "integer" },
+    "proposal_content_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
+    "requirement_ids": {
+      "uniqueItems": true,
+      "type": "array",
+      "items": {
+        "minLength": 3,
+        "maxLength": 160,
+        "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+        "type": "string"
+      }
+    },
+    "constraint_ids": {
+      "uniqueItems": true,
+      "type": "array",
+      "items": {
+        "minLength": 3,
+        "maxLength": 160,
+        "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+        "type": "string"
+      }
+    },
+    "criterion_test_seeds": {
+      "type": "array",
+      "items": {
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "criterion_id",
+          "requirement_id",
+          "criterion_semantic_digest",
+          "test_id",
+          "test_revision"
+        ],
+        "properties": {
+          "criterion_id": {
+            "minLength": 3,
+            "maxLength": 160,
+            "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+            "type": "string"
+          },
+          "requirement_id": {
+            "minLength": 3,
+            "maxLength": 160,
+            "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+            "type": "string"
+          },
+          "criterion_semantic_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
+          "test_id": {
+            "minLength": 3,
+            "maxLength": 160,
+            "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+            "type": "string"
+          },
+          "test_revision": { "minimum": 1, "type": "integer" }
+        }
+      }
+    },
+    "baseline_document_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
+    "record_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" }
+  }
+}

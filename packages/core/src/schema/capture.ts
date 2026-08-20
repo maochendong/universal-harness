@@ -40,6 +40,7 @@ export const CAPTURE_BLOCK_REASONS = [
   "capture_budget_exhausted",
   "review_blocked",
   "risk_policy_denied",
+  "approval_brief_provider_required",
 ] as const;
 export type CaptureBlockReason = (typeof CAPTURE_BLOCK_REASONS)[number];
 export const CaptureBlockReasonSchema = enumerated(CAPTURE_BLOCK_REASONS);

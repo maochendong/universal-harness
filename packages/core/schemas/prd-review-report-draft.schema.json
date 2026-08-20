@@ -1,0 +1,105 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.universal-harness.dev/1.1/prd-review-report-draft.schema.json",
+  "additionalProperties": false,
+  "type": "object",
+  "required": ["verdict", "dimensions", "findings", "suggested_questions"],
+  "properties": {
+    "verdict": {
+      "anyOf": [
+        { "const": "accept", "type": "string" },
+        { "const": "revise", "type": "string" },
+        { "const": "clarify", "type": "string" },
+        { "const": "blocked", "type": "string" }
+      ]
+    },
+    "dimensions": {
+      "type": "array",
+      "items": {
+        "additionalProperties": false,
+        "type": "object",
+        "required": ["dimension_id", "status", "notes"],
+        "properties": {
+          "dimension_id": { "minLength": 1, "maxLength": 120, "type": "string" },
+          "status": {
+            "anyOf": [
+              { "const": "satisfied", "type": "string" },
+              { "const": "deficient", "type": "string" }
+            ]
+          },
+          "notes": { "maxLength": 4000, "type": "string" }
+        }
+      }
+    },
+    "findings": {
+      "type": "array",
+      "items": {
+        "additionalProperties": false,
+        "type": "object",
+        "required": ["finding_id", "severity", "target_kind", "message"],
+        "properties": {
+          "finding_id": { "minLength": 1, "maxLength": 160, "type": "string" },
+          "severity": {
+            "anyOf": [
+              { "const": "info", "type": "string" },
+              { "const": "warning", "type": "string" },
+              { "const": "critical", "type": "string" }
+            ]
+          },
+          "target_kind": {
+            "anyOf": [
+              { "const": "intent", "type": "string" },
+              { "const": "prd_section", "type": "string" },
+              { "const": "requirement", "type": "string" },
+              { "const": "constraint", "type": "string" },
+              { "const": "acceptance_criterion", "type": "string" },
+              { "const": "risk", "type": "string" },
+              { "const": "glossary", "type": "string" }
+            ]
+          },
+          "target_id": { "minLength": 1, "maxLength": 160, "type": "string" },
+          "message": { "minLength": 1, "maxLength": 4000, "type": "string" },
+          "recommended_revision": { "minLength": 1, "maxLength": 4000, "type": "string" }
+        }
+      }
+    },
+    "suggested_questions": {
+      "type": "array",
+      "items": {
+        "additionalProperties": false,
+        "type": "object",
+        "required": ["target_kind", "missing_dimension", "question", "required"],
+        "properties": {
+          "target_kind": {
+            "anyOf": [
+              { "const": "intent", "type": "string" },
+              { "const": "prd_section", "type": "string" },
+              { "const": "requirement", "type": "string" },
+              { "const": "constraint", "type": "string" },
+              { "const": "acceptance_criterion", "type": "string" },
+              { "const": "risk", "type": "string" },
+              { "const": "glossary", "type": "string" }
+            ]
+          },
+          "target_id": { "minLength": 1, "type": "string" },
+          "missing_dimension": { "minLength": 1, "type": "string" },
+          "question": { "minLength": 1, "type": "string" },
+          "options": {
+            "minItems": 1,
+            "type": "array",
+            "items": {
+              "additionalProperties": false,
+              "type": "object",
+              "required": ["option_id", "label"],
+              "properties": {
+                "option_id": { "minLength": 1, "maxLength": 120, "type": "string" },
+                "label": { "minLength": 1, "type": "string" }
+              }
+            }
+          },
+          "required": { "type": "boolean" }
+        }
+      }
+    }
+  }
+}

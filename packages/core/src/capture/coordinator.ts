@@ -1,5 +1,8 @@
 import { domainRecordId } from "../identity/record-id.js";
+import { contentDigest } from "../identity/digest.js";
 import { readCaptureModelProviderBindings } from "../profile/store.js";
+import { createManualReviewInputRecord, ReviewRecordError } from "../review/records.js";
+import { appendManualReviewInputRecord, readManualReviewInputs } from "../review/store.js";
 import { PROTOCOL_1_1_VERSION } from "../protocol.js";
 import type {
   CaptureBlockReason,
@@ -24,6 +27,7 @@ import type {
   ResumeCaptureCommand,
   StartCaptureCommand,
   SubmitClarificationAnswersCommand,
+  SubmitManualReviewInputCommand,
 } from "./commands.js";
 import {
   CaptureRecordError,
@@ -109,7 +113,13 @@ const DIGEST_REGEX = /^[a-f0-9]{64}$/u;
 const MAX_DRIVE_STEPS = 64;
 
 type HandlerStage =
-  "context_compiling" | "proposing" | "validating" | "reviewing" | "risk_assessing";
+  | "context_compiling"
+  | "proposing"
+  | "validating"
+  | "reviewing"
+  | "risk_assessing"
+  | "approval_brief"
+  | "accept";
 
 const ALLOWED_STAGE_RESULTS: Readonly<Record<HandlerStage, readonly CaptureStageResult["kind"][]>> =
   {
@@ -123,6 +133,8 @@ const ALLOWED_STAGE_RESULTS: Readonly<Record<HandlerStage, readonly CaptureStage
     ],
     reviewing: ["review_completed", "review_input_required", "stage_failed"],
     risk_assessing: ["risk_stable", "risk_upgrade_required", "risk_denied", "stage_failed"],
+    approval_brief: ["approval_brief_ready", "stage_failed"],
+    accept: ["acceptance_committed", "stage_failed"],
   };
 
 function failed(
@@ -131,6 +143,27 @@ function failed(
   session?: CaptureSessionRecord,
 ): CaptureOutcome {
   return { status: "failed", kind, message, ...(session === undefined ? {} : { session }) };
+}
+
+/**
+ * The deterministic approval request identity for the session revision that
+ * will present the request. Exported so the approval_brief stage can bind the
+ * exact request the brief will be presented with.
+ */
+export function deriveCaptureApprovalRequestId(
+  session: CaptureSessionRecord,
+  nextRevision: number,
+): string {
+  return domainRecordId({
+    domain_tag: "capture_approval_request",
+    id_prefix: "approval-request",
+    protocol_version: PROTOCOL_1_1_VERSION,
+    canonical_input: {
+      session_id: session.session_id,
+      session_revision: nextRevision,
+      object_digest: session.current_proposal_digest ?? null,
+    },
+  });
 }
 
 export function createPrdCaptureCoordinator(deps: CaptureCoordinatorDeps): PrdCaptureCoordinator {
@@ -154,6 +187,12 @@ export function createPrdCaptureCoordinator(deps: CaptureCoordinatorDeps): PrdCa
       .filter((binding) => binding.profile_decision_digest === session.profile_decision_digest)
       .map((binding) => binding.record_digest)
       .sort();
+  }
+
+  /** Every previously consumed binding digest is still present in `current`. */
+  function bindingsCover(current: readonly string[], required: readonly string[]): boolean {
+    const set = new Set(current);
+    return required.every((digest) => set.has(digest));
   }
 
   function budgetUseFor(sessionId: string, round: number): CaptureBudgetUse {
@@ -236,7 +275,7 @@ export function createPrdCaptureCoordinator(deps: CaptureCoordinatorDeps): PrdCa
     if (existing !== undefined) {
       if (
         existing.session_digest !== session.record_digest ||
-        existing.binding_digests.join(",") !== bindings.join(",")
+        !bindingsCover(bindings, existing.binding_digests)
       ) {
         return failed(
           "binding_drift",
@@ -246,7 +285,11 @@ export function createPrdCaptureCoordinator(deps: CaptureCoordinatorDeps): PrdCa
       }
       return existing;
     }
-    if (prior.length > 0 && prior[0]!.binding_digests.join(",") !== bindings.join(",")) {
+    // Drift means a binding an earlier invocation consumed disappeared or
+    // changed; adding a new binding for a purpose that has not run yet is the
+    // legitimate "configure the provider, then resume" recovery path.
+    const priorDigests = [...new Set(prior.flatMap((record) => record.binding_digests))];
+    if (!bindingsCover(bindings, priorDigests)) {
       return failed(
         "binding_drift",
         "Capture-scope bindings changed mid-session; dependent stages must not proceed",
@@ -267,8 +310,9 @@ export function createPrdCaptureCoordinator(deps: CaptureCoordinatorDeps): PrdCa
   function checkBindingDrift(session: CaptureSessionRecord): CaptureOutcome | undefined {
     const prior = readCaptureInvocations(root, session.session_id);
     if (prior.length === 0) return undefined;
-    const current = bindingDigestsFor(session).join(",");
-    if (prior[0]!.binding_digests.join(",") !== current) {
+    const current = bindingDigestsFor(session);
+    const priorDigests = [...new Set(prior.flatMap((record) => record.binding_digests))];
+    if (!bindingsCover(current, priorDigests)) {
       return failed(
         "binding_drift",
         "Capture-scope bindings drifted since the proposal round; approval is invalidated",
@@ -312,12 +356,28 @@ export function createPrdCaptureCoordinator(deps: CaptureCoordinatorDeps): PrdCa
       ...(result.kind === "risk_stable"
         ? { risk_assessment_digest: result.risk_assessment_digest }
         : {}),
+      ...(result.kind === "approval_brief_ready" ? { brief_digest: result.brief_digest } : {}),
+      ...(result.kind === "acceptance_committed"
+        ? {
+            accepted_prd_digest: result.accepted_prd_digest,
+            requirement_baseline_digest: result.requirement_baseline_digest,
+          }
+        : {}),
     };
     for (const [field, value] of Object.entries(digestFields)) {
       if (typeof value !== "string" || !DIGEST_REGEX.test(value)) {
         return failed(
           "invalid_stage_result",
           `stage ${stage} returned a malformed ${field}`,
+          session,
+        );
+      }
+    }
+    if (result.kind === "risk_stable" && result.approval_route === "policy_auto") {
+      if (typeof result.policy_actor !== "string" || result.policy_actor.trim().length === 0) {
+        return failed(
+          "invalid_stage_result",
+          "policy auto approval requires a non-empty policy actor",
           session,
         );
       }
@@ -405,16 +465,7 @@ export function createPrdCaptureCoordinator(deps: CaptureCoordinatorDeps): PrdCa
   }
 
   function deriveApprovalRequestId(session: CaptureSessionRecord, nextRevision: number): string {
-    return domainRecordId({
-      domain_tag: "capture_approval_request",
-      id_prefix: "approval-request",
-      protocol_version: PROTOCOL_1_1_VERSION,
-      canonical_input: {
-        session_id: session.session_id,
-        session_revision: nextRevision,
-        object_digest: session.current_proposal_digest ?? null,
-      },
-    });
+    return deriveCaptureApprovalRequestId(session, nextRevision);
   }
 
   /**
@@ -458,6 +509,7 @@ export function createPrdCaptureCoordinator(deps: CaptureCoordinatorDeps): PrdCa
     stage: HandlerStage,
     session: CaptureSessionRecord,
     invocation?: CaptureInvocationRecord,
+    approval?: CaptureStageRequest["approval"],
   ): Promise<CaptureStageResult | CaptureOutcome> {
     const handler =
       stage === "context_compiling"
@@ -468,7 +520,11 @@ export function createPrdCaptureCoordinator(deps: CaptureCoordinatorDeps): PrdCa
             ? handlers.validate
             : stage === "reviewing"
               ? handlers.review
-              : handlers.assessRisk;
+              : stage === "risk_assessing"
+                ? handlers.assessRisk
+                : stage === "approval_brief"
+                  ? handlers.approvalBrief
+                  : handlers.accept;
     if (handler === undefined) {
       return failed(
         "stage_unavailable",
@@ -476,9 +532,30 @@ export function createPrdCaptureCoordinator(deps: CaptureCoordinatorDeps): PrdCa
         session,
       );
     }
-    const result = await handler(stageRequest(session, invocation));
+    const request = stageRequest(session, invocation);
+    const result = await handler(approval === undefined ? request : { ...request, approval });
     const invalid = validateResult(stage, result, session);
     return invalid ?? result;
+  }
+
+  /**
+   * Run the atomic accepted transaction (T7) for an approved decision. The
+   * returned outcome is a failure to surface to the caller; on success the
+   * handler committed the accepted PRD, baseline and graph records.
+   */
+  async function runAcceptance(
+    session: CaptureSessionRecord,
+    approval: NonNullable<CaptureStageRequest["approval"]>,
+  ): Promise<CaptureOutcome | undefined> {
+    const result = await runHandler("accept", session, undefined, approval);
+    if ("status" in result) return result;
+    if (result.kind === "stage_failed") {
+      return failed("stage_failed", result.failure.summary, session);
+    }
+    if (result.kind !== "acceptance_committed") {
+      return failed("invalid_stage_result", "unexpected accept stage result", session);
+    }
+    return undefined;
   }
 
   /** The main path driver (design 7.2); stops at the first waiting point. */
@@ -638,6 +715,93 @@ export function createPrdCaptureCoordinator(deps: CaptureCoordinatorDeps): PrdCa
               "cannot require approval without a current proposal digest",
               session,
             );
+          }
+          if (result.approval_route === "policy_auto") {
+            // Policy auto approval (design 15): the Coordinator generates the
+            // decision inside the accepted transaction with the versioned
+            // Policy identity as actor — never an external shortcut. The
+            // request revision is committed first so the accept stage reads
+            // the same bound digests a human approval would.
+            if (handlers.accept === undefined) {
+              return failed(
+                "stage_unavailable",
+                "policy auto approval requires the accept stage to commit the accepted PRD",
+                session,
+              );
+            }
+            const policyActor = result.policy_actor as string;
+            const autoRequestId = deriveApprovalRequestId(session, session.revision + 1);
+            const autoDecisionId = domainRecordId({
+              domain_tag: "capture_auto_approval_decision",
+              id_prefix: "capture-auto-approval",
+              protocol_version: PROTOCOL_1_1_VERSION,
+              canonical_input: {
+                session_id: session.session_id,
+                session_revision: session.revision + 1,
+                object_digest: session.current_proposal_digest,
+                risk_assessment_digest: result.risk_assessment_digest,
+              },
+            });
+            const autoDecisionDigest = contentDigest({
+              decision_id: autoDecisionId,
+              request_id: autoRequestId,
+              actor: policyActor,
+              decision: "approve",
+              object_digest: session.current_proposal_digest,
+            });
+            const requested = transition(session, {
+              state: "approval_required",
+              current_risk_assessment_digest: result.risk_assessment_digest,
+              current_approval_request_id: autoRequestId,
+            });
+            const acceptFailure = await runAcceptance(requested, {
+              request_id: autoRequestId,
+              decision_id: autoDecisionId,
+              actor: policyActor,
+              decision_digest: autoDecisionDigest,
+            });
+            if (acceptFailure !== undefined) return acceptFailure;
+            transition(requested, {
+              state: "accepted",
+              applied_approval_decision_id: autoDecisionId,
+            });
+            continue;
+          }
+          if (handlers.approvalBrief !== undefined) {
+            // Commit the approval_required revision first so the brief stage
+            // reads the same bound digests (risk assessment, request id) the
+            // human approver will see; a brief failure blocks from there.
+            const requested = transition(session, {
+              state: "approval_required",
+              current_risk_assessment_digest: result.risk_assessment_digest,
+              current_approval_request_id: deriveApprovalRequestId(session, session.revision + 1),
+            });
+            const briefInvocation = ensureInvocation(requested, "approval_brief");
+            if (!("invocation_id" in briefInvocation)) return briefInvocation;
+            const briefResult = await runHandler("approval_brief", requested, briefInvocation);
+            if ("status" in briefResult) return briefResult;
+            if (briefResult.kind === "stage_failed") {
+              if (
+                briefResult.failure.code === "provider_required" ||
+                briefResult.failure.code === "provider_unavailable"
+              ) {
+                return block(
+                  requested,
+                  "approval_brief_provider_required",
+                  "risk_assessing",
+                  briefResult.failure.summary,
+                );
+              }
+              return failed("stage_failed", briefResult.failure.summary, requested);
+            }
+            if (briefResult.kind !== "approval_brief_ready") {
+              return failed(
+                "invalid_stage_result",
+                "unexpected approval brief stage result",
+                requested,
+              );
+            }
+            continue;
           }
           const requestId = deriveApprovalRequestId(session, session.revision + 1);
           transition(session, {
@@ -863,6 +1027,76 @@ export function createPrdCaptureCoordinator(deps: CaptureCoordinatorDeps): PrdCa
     return drive(command.session_id);
   }
 
+  async function submitManualReviewInput(
+    command: SubmitManualReviewInputCommand,
+  ): Promise<CaptureOutcome> {
+    const session = latest(command.session_id);
+    if (session === undefined) {
+      return failed("session_not_found", `unknown capture session: ${command.session_id}`);
+    }
+    if (isTerminalCaptureState(session.state)) {
+      return failed(
+        "invalid_transition",
+        `cannot submit a manual review input in state ${session.state}`,
+        session,
+      );
+    }
+    if (command.expected_session_digest !== session.record_digest) {
+      return {
+        status: "conflict",
+        session,
+        expected_session_digest: command.expected_session_digest,
+        actual_session_digest: session.record_digest,
+      };
+    }
+    let record;
+    try {
+      record = createManualReviewInputRecord({
+        session,
+        review_invocation_id: command.review_invocation_id,
+        reviewer_actor: command.reviewer_actor,
+        rubric_digest: command.rubric_digest,
+        dimension_inputs: [...command.dimension_inputs],
+        expected_session_digest: command.expected_session_digest,
+      });
+    } catch (error) {
+      if (error instanceof ReviewRecordError) {
+        return failed("invalid_command", error.message, session);
+      }
+      throw error;
+    }
+    const alreadyCommitted = readManualReviewInputs(root, command.session_id).some(
+      (candidate) => candidate.manual_review_input_id === record.manual_review_input_id,
+    );
+    if (alreadyCommitted) {
+      return { status: "already_applied", session };
+    }
+    if (session.state !== "review_input_required") {
+      return failed(
+        "invalid_transition",
+        `cannot submit a manual review input in state ${session.state}`,
+        session,
+      );
+    }
+    const reviewInvocations = readCaptureInvocations(root, command.session_id).filter(
+      (candidate) => candidate.purpose === "review",
+    );
+    if (
+      !reviewInvocations.some(
+        (candidate) => candidate.invocation_id === command.review_invocation_id,
+      )
+    ) {
+      return failed(
+        "invalid_command",
+        `review invocation ${command.review_invocation_id} is not committed for this session`,
+        session,
+      );
+    }
+    appendManualReviewInputRecord(root, record);
+    transition(session, { state: "reviewing" });
+    return drive(command.session_id);
+  }
+
   async function applyApprovalDecision(
     command: ApplyApprovalDecisionCommand,
   ): Promise<CaptureOutcome> {
@@ -936,9 +1170,22 @@ export function createPrdCaptureCoordinator(deps: CaptureCoordinatorDeps): PrdCa
     }
     deps.failpoint?.("decision.consumed");
     if (decision.decision === "approve") {
-      // T7 extends this transition with the atomic accepted transaction
-      // (AcceptedPrdRecord, RequirementBaseline, graph records) inside the
-      // same commit; the kernel owns only the state/decision consumption.
+      // T7 atomic accepted transaction: when the accept stage is wired it
+      // commits the AcceptedPrdRecord, the RequirementBaseline, the graph
+      // records and the bindings in one ledger commit before the session may
+      // enter `accepted`. Kernel-only configurations (no accept handler) keep
+      // the bare state transition.
+      if (handlers.accept !== undefined) {
+        const acceptFailure = await runAcceptance(session, {
+          request_id: command.request_id,
+          decision_id: command.decision_id,
+          actor: decision.actor,
+          ...(decision.decision_digest === undefined
+            ? {}
+            : { decision_digest: decision.decision_digest }),
+        });
+        if (acceptFailure !== undefined) return acceptFailure;
+      }
       transition(session, {
         state: "accepted",
         applied_approval_decision_id: command.decision_id,
@@ -977,9 +1224,11 @@ export function createPrdCaptureCoordinator(deps: CaptureCoordinatorDeps): PrdCa
       const cleared =
         blocker.reason === "review_provider_required" || blocker.reason === "review_blocked"
           ? handlers.review !== undefined
-          : blocker.reason === "capture_budget_exhausted"
-            ? session.round + 1 <= maxRounds
-            : false; // risk_policy_denied: only a policy change can clear it
+          : blocker.reason === "approval_brief_provider_required"
+            ? handlers.approvalBrief !== undefined
+            : blocker.reason === "capture_budget_exhausted"
+              ? session.round + 1 <= maxRounds
+              : false; // risk_policy_denied: only a policy change can clear it
       if (!cleared) {
         return { status: "blocked", session, blocker };
       }
@@ -1030,6 +1279,8 @@ export function createPrdCaptureCoordinator(deps: CaptureCoordinatorDeps): PrdCa
           return start(command);
         case "submit_clarification_answers":
           return submitAnswers(command);
+        case "submit_manual_review_input":
+          return submitManualReviewInput(command);
         case "request_prd_revision":
           return requestRevision(command);
         case "apply_approval_decision":

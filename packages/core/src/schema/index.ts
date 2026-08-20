@@ -1,4 +1,5 @@
 export { PERSISTED_SOURCES } from "./common.js";
+export * from "./acceptance.js";
 export * from "./capability.js";
 export * from "./capture.js";
 export * from "./context.js";
@@ -14,6 +15,8 @@ export * from "./plugin.js";
 export * from "./profile.js";
 export * from "./proposal.js";
 export * from "./registry.js";
+export * from "./review.js";
+export * from "./risk.js";
 export * from "./run-stream.js";
 export * from "./synthesis.js";
 export * from "./runtime.js";

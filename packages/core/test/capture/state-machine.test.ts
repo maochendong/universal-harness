@@ -41,7 +41,7 @@ const EXPECTED_TRANSITIONS: Readonly<Record<CaptureState, readonly CaptureState[
   risk_assessing: ["blocked", "profile_decision_required", "approval_required", "cancelled"],
   revision_required: ["context_compiling", "cancelled"],
   profile_decision_required: ["context_compiling", "cancelled"],
-  approval_required: ["accepted", "revision_required", "approval_deferred", "cancelled"],
+  approval_required: ["accepted", "revision_required", "approval_deferred", "blocked", "cancelled"],
   approval_deferred: ["approval_required", "cancelled"],
   accepted: [],
   blocked: [
@@ -82,9 +82,10 @@ describe("capture state vocabulary", () => {
     );
   });
 
-  it("defines exactly the four typed block reasons", () => {
+  it("defines exactly the typed block reasons", () => {
     expect([...CAPTURE_BLOCK_REASONS].sort()).toEqual(
       [
+        "approval_brief_provider_required",
         "capture_budget_exhausted",
         "review_blocked",
         "review_provider_required",

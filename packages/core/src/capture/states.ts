@@ -80,7 +80,7 @@ export const CAPTURE_LEGAL_TRANSITIONS: Readonly<Record<CaptureState, readonly C
   risk_assessing: ["blocked", "profile_decision_required", "approval_required", "cancelled"],
   revision_required: ["context_compiling", "cancelled"],
   profile_decision_required: ["context_compiling", "cancelled"],
-  approval_required: ["accepted", "revision_required", "approval_deferred", "cancelled"],
+  approval_required: ["accepted", "revision_required", "approval_deferred", "blocked", "cancelled"],
   approval_deferred: ["approval_required", "cancelled"],
   accepted: [],
   blocked: [...BLOCKED_RESUME_TARGETS, "cancelled"],
