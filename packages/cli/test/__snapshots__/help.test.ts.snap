@@ -318,7 +318,7 @@ exports[`harness CLI inspection commands > rejects unknown graph subcommands and
 `;
 
 exports[`harness CLI inspection commands > rejects unknown graph subcommands and node types 2`] = `
-"error [usage_error]: unknown node type: Nonsense; expected one of Project, Repository, Iteration, Intent, Requirement, Constraint, Decision, Component, ExecutionPlan, Task, CodeArtifact, Policy, ToolDefinition, Test, EvaluationCase, Gate, ContextBundle, Run, Checkpoint, Evidence, ApprovalRequest, Approval, Finding, RootCauseAnalysis, ImprovementCandidate, ImpactSet
+"error [usage_error]: unknown node type: Nonsense; expected one of Project, Repository, Iteration, Intent, Requirement, Constraint, Decision, Component, ExecutionPlan, Task, CodeArtifact, Policy, ToolDefinition, Test, EvaluationCase, Gate, ContextBundle, Run, Checkpoint, Evidence, ApprovalRequest, Approval, Finding, RootCauseAnalysis, ImprovementCandidate, ImpactSet, DesignSet, DesignArtifact
 "
 `;
 

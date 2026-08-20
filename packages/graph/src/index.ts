@@ -1,3 +1,4 @@
+export * from "./design/validator.js";
 export * from "./impact/advisory.js";
 export * from "./impact/advisory-port.js";
 export * from "./impact/advisory-record.js";

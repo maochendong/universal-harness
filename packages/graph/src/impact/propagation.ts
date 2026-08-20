@@ -33,6 +33,9 @@ export const PROPAGATION_RULES: readonly PropagationRule[] = [
   { type: "VERIFIES", direction: "both", defaultRisk: "medium", allowsInference: true },
   { type: "ADDRESSES", direction: "inverse", defaultRisk: "medium", allowsInference: true },
   { type: "SHAPES", direction: "forward", defaultRisk: "medium", allowsInference: true },
+  // SPECIFIES binds a contract to its subject in both directions; inferred
+  // edges never propagate (designset lifecycle design 8.1).
+  { type: "SPECIFIES", direction: "both", defaultRisk: "high", allowsInference: false },
   { type: "REALIZES", direction: "inverse", defaultRisk: "high", allowsInference: true },
   { type: "IMPLEMENTS", direction: "inverse", defaultRisk: "medium", allowsInference: true },
   { type: "DECOMPOSES_TO", direction: "forward", defaultRisk: "medium", allowsInference: false },

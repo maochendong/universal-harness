@@ -1,0 +1,250 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.universal-harness.dev/1.1/design-artifact-content.schema.json",
+  "additionalProperties": false,
+  "allOf": [
+    {
+      "if": {
+        "properties": { "artifact_kind": { "const": "api_contract" } },
+        "required": ["artifact_kind"]
+      },
+      "then": {
+        "properties": {
+          "body": {
+            "additionalProperties": false,
+            "type": "object",
+            "required": ["protocol", "operations", "inputs", "outputs", "errors", "compatibility"],
+            "properties": {
+              "protocol": { "minLength": 1, "type": "string" },
+              "operations": {
+                "minItems": 1,
+                "type": "array",
+                "items": { "minLength": 1, "type": "string" }
+              },
+              "inputs": { "type": "array", "items": { "minLength": 1, "type": "string" } },
+              "outputs": { "type": "array", "items": { "minLength": 1, "type": "string" } },
+              "errors": { "type": "array", "items": { "minLength": 1, "type": "string" } },
+              "compatibility": { "minLength": 1, "type": "string" }
+            }
+          }
+        },
+        "required": ["body"]
+      }
+    },
+    {
+      "if": {
+        "properties": { "artifact_kind": { "const": "data_contract" } },
+        "required": ["artifact_kind"]
+      },
+      "then": {
+        "properties": {
+          "body": {
+            "additionalProperties": false,
+            "type": "object",
+            "required": ["entities", "constraints", "invariants", "migrations", "compatibility"],
+            "properties": {
+              "entities": {
+                "minItems": 1,
+                "type": "array",
+                "items": { "minLength": 1, "type": "string" }
+              },
+              "constraints": { "type": "array", "items": { "minLength": 1, "type": "string" } },
+              "invariants": { "type": "array", "items": { "minLength": 1, "type": "string" } },
+              "migrations": { "type": "array", "items": { "minLength": 1, "type": "string" } },
+              "compatibility": { "minLength": 1, "type": "string" }
+            }
+          }
+        },
+        "required": ["body"]
+      }
+    },
+    {
+      "if": {
+        "properties": { "artifact_kind": { "const": "test_strategy" } },
+        "required": ["artifact_kind"]
+      },
+      "then": {
+        "properties": {
+          "body": {
+            "additionalProperties": false,
+            "type": "object",
+            "required": ["scenarios", "test_levels", "required_gates", "required_evidence", "tdd"],
+            "properties": {
+              "scenarios": {
+                "minItems": 1,
+                "type": "array",
+                "items": { "minLength": 1, "type": "string" }
+              },
+              "test_levels": {
+                "minItems": 1,
+                "type": "array",
+                "items": { "minLength": 1, "type": "string" }
+              },
+              "required_gates": { "type": "array", "items": { "minLength": 1, "type": "string" } },
+              "required_evidence": {
+                "type": "array",
+                "items": { "minLength": 1, "type": "string" }
+              },
+              "tdd": {
+                "type": "array",
+                "items": {
+                  "additionalProperties": false,
+                  "type": "object",
+                  "required": ["requirement_id", "applicability"],
+                  "properties": {
+                    "requirement_id": {
+                      "minLength": 3,
+                      "maxLength": 160,
+                      "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+                      "type": "string"
+                    },
+                    "applicability": {
+                      "anyOf": [
+                        {
+                          "additionalProperties": false,
+                          "type": "object",
+                          "required": [
+                            "status",
+                            "baseline_guard_gates",
+                            "target_gate",
+                            "test_selectors",
+                            "failure_oracle",
+                            "path_policy",
+                            "framework_profile_digest",
+                            "refactor_policy"
+                          ],
+                          "properties": {
+                            "status": { "const": "required", "type": "string" },
+                            "baseline_guard_gates": {
+                              "type": "array",
+                              "items": {
+                                "minLength": 3,
+                                "maxLength": 160,
+                                "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+                                "type": "string"
+                              }
+                            },
+                            "target_gate": {
+                              "minLength": 3,
+                              "maxLength": 160,
+                              "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+                              "type": "string"
+                            },
+                            "test_selectors": {
+                              "minItems": 1,
+                              "type": "array",
+                              "items": { "minLength": 1, "type": "string" }
+                            },
+                            "failure_oracle": { "minLength": 1, "type": "string" },
+                            "path_policy": {
+                              "additionalProperties": false,
+                              "type": "object",
+                              "required": ["test", "test_config", "production", "immutable"],
+                              "properties": {
+                                "test": {
+                                  "type": "array",
+                                  "items": { "minLength": 1, "type": "string" }
+                                },
+                                "test_config": {
+                                  "type": "array",
+                                  "items": { "minLength": 1, "type": "string" }
+                                },
+                                "production": {
+                                  "type": "array",
+                                  "items": { "minLength": 1, "type": "string" }
+                                },
+                                "immutable": {
+                                  "type": "array",
+                                  "items": { "minLength": 1, "type": "string" }
+                                }
+                              }
+                            },
+                            "framework_profile_digest": {
+                              "pattern": "^[a-f0-9]{64}$",
+                              "type": "string"
+                            },
+                            "refactor_policy": { "minLength": 1, "type": "string" }
+                          }
+                        },
+                        {
+                          "additionalProperties": false,
+                          "type": "object",
+                          "required": ["status", "category", "reason"],
+                          "properties": {
+                            "status": { "const": "not_applicable", "type": "string" },
+                            "category": { "minLength": 1, "type": "string" },
+                            "reason": { "minLength": 1, "type": "string" }
+                          }
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "required": ["body"]
+      }
+    },
+    {
+      "if": {
+        "properties": { "artifact_kind": { "const": "ui_design" } },
+        "required": ["artifact_kind"]
+      },
+      "then": {
+        "properties": {
+          "body": {
+            "additionalProperties": false,
+            "type": "object",
+            "required": ["user_flows", "key_states", "error_states", "accessibility"],
+            "properties": {
+              "user_flows": {
+                "minItems": 1,
+                "type": "array",
+                "items": { "minLength": 1, "type": "string" }
+              },
+              "key_states": { "type": "array", "items": { "minLength": 1, "type": "string" } },
+              "error_states": { "type": "array", "items": { "minLength": 1, "type": "string" } },
+              "accessibility": { "type": "array", "items": { "minLength": 1, "type": "string" } }
+            }
+          }
+        },
+        "required": ["body"]
+      }
+    }
+  ],
+  "type": "object",
+  "required": [
+    "artifact_kind",
+    "title",
+    "summary",
+    "assumptions",
+    "acceptance_implications",
+    "body_format",
+    "body"
+  ],
+  "properties": {
+    "artifact_kind": {
+      "anyOf": [
+        { "const": "api_contract", "type": "string" },
+        { "const": "data_contract", "type": "string" },
+        { "const": "test_strategy", "type": "string" },
+        { "const": "ui_design", "type": "string" }
+      ]
+    },
+    "title": { "minLength": 1, "type": "string" },
+    "summary": { "minLength": 1, "type": "string" },
+    "assumptions": { "type": "array", "items": { "minLength": 1, "type": "string" } },
+    "acceptance_implications": { "type": "array", "items": { "minLength": 1, "type": "string" } },
+    "body_format": {
+      "anyOf": [
+        { "const": "structured", "type": "string" },
+        { "const": "markdown", "type": "string" },
+        { "const": "openapi", "type": "string" },
+        { "const": "json_schema", "type": "string" }
+      ]
+    },
+    "body": {}
+  }
+}

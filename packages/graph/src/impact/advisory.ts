@@ -18,7 +18,7 @@ import type { ImpactEntry } from "./impact-set.js";
 
 /** The versioned relation rule registry advisory inputs are bound to. */
 export const RELATION_RULE_REGISTRY = {
-  version: "relation-rules.v1",
+  version: "relation-rules.v2",
   rules: RELATION_COMPATIBILITY,
   digest: contentDigest(RELATION_COMPATIBILITY),
 } as const;

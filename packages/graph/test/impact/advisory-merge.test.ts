@@ -172,7 +172,7 @@ describe("impact advisory additive merge validator", () => {
   });
 
   it("pins the rule registry digest to the shipped compatibility table", () => {
-    expect(RELATION_RULE_REGISTRY.version).toBe("relation-rules.v1");
+    expect(RELATION_RULE_REGISTRY.version).toBe("relation-rules.v2");
     expect(RELATION_RULE_REGISTRY.digest).toMatch(/^[a-f0-9]{64}$/u);
     expect(RELATION_RULE_REGISTRY.digest).toBe(contentDigest(RELATION_RULE_REGISTRY.rules));
   });

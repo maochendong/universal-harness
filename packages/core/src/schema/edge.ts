@@ -32,6 +32,7 @@ export const RELATION_TYPES = [
   "REFUTES",
   "VIOLATES",
   "CONTAINS",
+  "SPECIFIES",
   "DEPENDS_ON",
   "USES_CONTEXT",
   "CAPTURES",

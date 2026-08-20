@@ -69,7 +69,9 @@
         { "const": "Finding", "type": "string" },
         { "const": "RootCauseAnalysis", "type": "string" },
         { "const": "ImprovementCandidate", "type": "string" },
-        { "const": "ImpactSet", "type": "string" }
+        { "const": "ImpactSet", "type": "string" },
+        { "const": "DesignSet", "type": "string" },
+        { "const": "DesignArtifact", "type": "string" }
       ]
     },
     "revision": { "minimum": 1, "type": "integer" },

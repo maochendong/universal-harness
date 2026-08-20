@@ -64,6 +64,8 @@ export const VERSIONABLE_NODE_TYPES = [
   "Test",
   "EvaluationCase",
   "Gate",
+  "DesignSet",
+  "DesignArtifact",
 ] as const satisfies readonly NodeType[];
 
 /**
@@ -73,6 +75,8 @@ export const VERSIONABLE_NODE_TYPES = [
  */
 export const RELATION_COMPATIBILITY: readonly RelationRule[] = [
   { type: "DERIVES_FROM", sources: VERSIONABLE_NODE_TYPES, targets: VERSIONABLE_NODE_TYPES },
+  // A DesignSet derives from the frozen ImpactSet it was designed against.
+  { type: "DERIVES_FROM", sources: ["DesignSet"], targets: ["ImpactSet"] },
   // Bootstrap binds each iteration to the repository baseline it derives from.
   { type: "DERIVES_FROM", sources: ["Iteration"], targets: ["Repository"] },
   { type: "SUPERSEDES", sources: VERSIONABLE_NODE_TYPES, targets: VERSIONABLE_NODE_TYPES },
@@ -80,11 +84,16 @@ export const RELATION_COMPATIBILITY: readonly RelationRule[] = [
   { type: "RESUMES", sources: ["Run"], targets: ["Run"] },
   { type: "DECOMPOSES_TO", sources: ["Intent"], targets: ["Requirement"] },
   { type: "ADDRESSES", sources: ["Decision"], targets: ["Requirement"] },
+  {
+    type: "SPECIFIES",
+    sources: ["DesignArtifact"],
+    targets: ["Requirement", "Decision", "Component", "Test"],
+  },
   { type: "CONSTRAINED_BY", sources: VERSIONABLE_NODE_TYPES, targets: ["Constraint"] },
   { type: "GOVERNED_BY", sources: VERSIONABLE_NODE_TYPES, targets: ["Policy"] },
   { type: "SHAPES", sources: ["Decision"], targets: ["Component"] },
   { type: "REALIZES", sources: ["CodeArtifact"], targets: ["Component"] },
-  { type: "IMPLEMENTS", sources: ["Task"], targets: ["Requirement", "Decision"] },
+  { type: "IMPLEMENTS", sources: ["Task"], targets: ["Requirement", "Decision", "DesignArtifact"] },
   { type: "VERIFIES", sources: ["Test"], targets: ["Requirement", "Constraint"] },
   { type: "EVALUATES", sources: ["EvaluationCase"], targets: ["Task", "Run"] },
   { type: "EXECUTES", sources: ["Run"], targets: ["Task", "Gate", "EvaluationCase"] },
@@ -96,6 +105,11 @@ export const RELATION_COMPATIBILITY: readonly RelationRule[] = [
   { type: "VIOLATES", sources: ["Finding"], targets: ["Requirement", "Constraint", "Policy"] },
   { type: "CONTAINS", sources: ["Project", "Repository", "Iteration"], targets: NODE_TYPES },
   { type: "CONTAINS", sources: ["ExecutionPlan"], targets: ["Task"] },
+  {
+    type: "CONTAINS",
+    sources: ["DesignSet"],
+    targets: ["Decision", "Component", "DesignArtifact"],
+  },
   { type: "DEPENDS_ON", sources: ["Task"], targets: ["Task"] },
   { type: "USES_CONTEXT", sources: ["Run"], targets: ["ContextBundle"] },
   { type: "CAPTURES", sources: ["Checkpoint"], targets: ["Run", "Iteration"] },

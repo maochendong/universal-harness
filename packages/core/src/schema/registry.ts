@@ -32,6 +32,11 @@ import {
   ProjectProfileRecordSchema,
 } from "./profile.js";
 import { ImpactAdvisoryOutputSchema, ImpactAdvisoryRecordSchema } from "./impact-advisory.js";
+import {
+  DesignArtifactContentSchema,
+  DesignSetContentSchema,
+  DesignSetProposalRecordSchema,
+} from "./design-set.js";
 import { ModelInvocationRecordSchema, ModelPortFailureSchema } from "./model-invocation.js";
 import { PromptContractSchema, PromptPreparationFailureSchema } from "./prompt.js";
 import {
@@ -197,6 +202,9 @@ export const PROTOCOL_1_1_SCHEMA_REGISTRY = createDomainSchemaRegistry({
     { key: "model-port-failure", schema: ModelPortFailureSchema },
     { key: "impact-advisory", schema: ImpactAdvisoryRecordSchema },
     { key: "impact-advisory-output", schema: ImpactAdvisoryOutputSchema },
+    { key: "design-set-proposal", schema: DesignSetProposalRecordSchema },
+    { key: "design-set-content", schema: DesignSetContentSchema },
+    { key: "design-artifact-content", schema: DesignArtifactContentSchema },
     { key: "capability-plan", schema: CapabilityPlanRecordSchema },
     { key: "capture-session", schema: CaptureSessionRecordSchema },
     { key: "clarification-question", schema: ClarificationQuestionRecordSchema },

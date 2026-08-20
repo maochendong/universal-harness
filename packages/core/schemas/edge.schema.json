@@ -51,6 +51,7 @@
         { "const": "REFUTES", "type": "string" },
         { "const": "VIOLATES", "type": "string" },
         { "const": "CONTAINS", "type": "string" },
+        { "const": "SPECIFIES", "type": "string" },
         { "const": "DEPENDS_ON", "type": "string" },
         { "const": "USES_CONTEXT", "type": "string" },
         { "const": "CAPTURES", "type": "string" },

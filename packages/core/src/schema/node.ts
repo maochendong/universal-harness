@@ -39,6 +39,8 @@ export const NODE_TYPES = [
   "RootCauseAnalysis",
   "ImprovementCandidate",
   "ImpactSet",
+  "DesignSet",
+  "DesignArtifact",
 ] as const;
 
 export const NODE_STATUSES = ["proposed", "accepted", "superseded", "tombstoned"] as const;

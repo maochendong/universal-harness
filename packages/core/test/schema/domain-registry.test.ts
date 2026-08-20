@@ -114,7 +114,7 @@ describe("domain schema export boundary", () => {
 });
 
 describe("protocol 1.1 schema plumbing", () => {
-  it("registers the Task 2-7 and PG-0 prompt governance schemas under the 1.1 domain registry", () => {
+  it("registers the Task 2-7, PG-0 prompt governance and T11 DesignSet schemas under the 1.1 domain registry", () => {
     expect(PROTOCOL_1_1_SCHEMA_REGISTRY.protocolVersion).toBe("1.1.0");
     expect(PROTOCOL_1_1_SCHEMA_REGISTRY.keys).toEqual([
       "profile-definition",
@@ -128,6 +128,9 @@ describe("protocol 1.1 schema plumbing", () => {
       "model-port-failure",
       "impact-advisory",
       "impact-advisory-output",
+      "design-set-proposal",
+      "design-set-content",
+      "design-artifact-content",
       "capability-plan",
       "capture-session",
       "clarification-question",
