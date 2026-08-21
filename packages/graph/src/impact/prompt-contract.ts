@@ -26,7 +26,7 @@ export const IMPACT_ADVISORY_PROMPT_CONTRACT: PromptContract = definePromptContr
   },
   domain_rubric: {
     segment_id: "domain-rubric",
-    text: "Propose an addition only when the deterministic entries miss a genuinely impacted node; classify additions at inspect or informational, never must-change. Propose an edge candidate only when the relation registry allows the relation between the two node types. Attach a risk signal only to raise or confirm risk, never to lower it. Report missing facts instead of guessing, and ask a clarification question when the cited sources leave a material decision ambiguous.",
+    text: "Propose an addition only when the deterministic entries miss a genuinely impacted node; classify additions at inspect or informational, never must-change. Propose an edge candidate only when the relation registry allows the relation between the two node types. Attach a risk signal only to raise or confirm risk, never to lower it. Report missing facts instead of guessing, and ask a clarification question when the cited sources leave a material decision ambiguous. Every element you emit must carry exactly the properties the output schema declares — never add, rename or invent a property; when a required property cannot be filled truthfully, drop the element. Cite nodes by the exact id and digest given in the input.",
   },
   profile_overlays: {
     lite: {

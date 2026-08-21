@@ -42,7 +42,7 @@ export const PRD_PROPOSAL_PROMPT_CONTRACT: PromptContract = definePromptContract
   },
   domain_rubric: {
     segment_id: "domain-rubric",
-    text: "Every requirement is atomic, observable and testable; every must-change requirement carries an acceptance criterion with a test-first example. When the inputs leave a material decision ambiguous, return clarification questions instead of guessing. Never invent scope that is not grounded in the provided inputs.",
+    text: "Every requirement is atomic, observable and testable; every must-change requirement carries an acceptance criterion with a test-first example. The draft must link requirements and criteria by exact key: every requirement's acceptance_criterion_ids reference the draft_key of criteria you declare, every criterion's requirement_id references the draft_key of its requirement, and no requirement may end up with zero criteria. When the inputs leave a material decision ambiguous, return clarification questions instead of guessing. Never invent scope that is not grounded in the provided inputs.",
   },
   profile_overlays: {
     lite: {
