@@ -152,6 +152,58 @@ describe("model-backed design proposal adapter", () => {
   });
 });
 
+describe("design adapter input fidelity (T21)", () => {
+  it("itemizes bound node contents into the prompt when node_content is supplied", async () => {
+    const root = makeTempDir("harness-design-nodes-");
+    const captured: { user?: string } = {};
+    const provider: ManagedModelProviderPort = {
+      invoke: vi.fn(async (request) => {
+        captured.user = request.messages.find((message) => message.role === "user")?.content;
+        return {
+          ok: true as const,
+          content: JSON.stringify({
+            purpose: "design_proposal",
+            schema_version: "design_proposal.v1",
+            proposal: proposalContent(),
+            questions: [],
+          }),
+        };
+      }),
+    };
+    const port = createModelBackedDesignProposalPort({
+      ...proposalDeps(root, provider),
+      node_content: (nodeId) => `canonical-content-of-${nodeId}`,
+    });
+    const result = await port.propose(proposalInput());
+    expect(result.status).toBe("proposed");
+    expect(captured.user).toContain(`source-id="node:${REQUIREMENT_ID}"`);
+    expect(captured.user).toContain(`canonical-content-of-${REQUIREMENT_ID}`);
+  });
+
+  it("keeps the compilation digest-only when no node_content resolver is supplied", async () => {
+    const root = makeTempDir("harness-design-nonodes-");
+    const captured: { user?: string } = {};
+    const provider: ManagedModelProviderPort = {
+      invoke: vi.fn(async (request) => {
+        captured.user = request.messages.find((message) => message.role === "user")?.content;
+        return {
+          ok: true as const,
+          content: JSON.stringify({
+            purpose: "design_proposal",
+            schema_version: "design_proposal.v1",
+            proposal: proposalContent(),
+            questions: [],
+          }),
+        };
+      }),
+    };
+    const port = createModelBackedDesignProposalPort(proposalDeps(root, provider));
+    const result = await port.propose(proposalInput());
+    expect(result.status).toBe("proposed");
+    expect(captured.user).not.toContain(`source-id="node:${REQUIREMENT_ID}"`);
+  });
+});
+
 describe("model-backed design review adapter", () => {
   it("compiles, invokes, validates and consumes a clean review", async () => {
     const root = makeTempDir("harness-design-review-");

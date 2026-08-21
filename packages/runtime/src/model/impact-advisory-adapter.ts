@@ -24,13 +24,14 @@ import { compilePrompt } from "./prompt-compiler.js";
 
 /**
  * The model-backed ImpactAdvisoryPort (model advisory design 6, prompt
- * governance addendum PG-3). The whole advisory input — deterministic entries,
- * impact set digest, graph neighborhood, requirement digests and the relation
- * rule registry version/digest — enters the compiled prompt as one untrusted
- * bundle item, so every binding fact lands in the compiled digest. The raw
- * model output is schema-validated by the managed runner and then
- * merge-validated against the deterministic set; anything unmergable fails
- * closed as `invalid_output` and is never consumed.
+ * governance addendum PG-3). The advisory input enters the compiled prompt as
+ * untrusted data with the whole graph itemized: the summary item carries
+ * node id/type/digest references only, and every node is its own item so a
+ * real project's graph stays under the per-item size budget (the single
+ * whole-graph item exceeded it on the T21 dogfood). Every binding fact lands
+ * in the compiled digest. The raw model output is schema-validated by the
+ * managed runner and then merge-validated against the deterministic set;
+ * anything unmergable fails closed as `invalid_output` and is never consumed.
  */
 export interface ImpactAdvisoryAdapterDeps extends ManagedInvocationAdapterDeps {
   readonly registry: PromptContractRegistry;
@@ -61,8 +62,20 @@ export function createModelBackedImpactAdvisoryPort(
             {
               source_id: "impact-advisory-input",
               source_kind: "impact_advisory_input",
-              text: canonicalizeJson(input),
+              text: canonicalizeJson({
+                ...input,
+                nodes: input.nodes.map((node) => ({
+                  id: node.id,
+                  type: node.type,
+                  digest: node.digest,
+                })),
+              }),
             },
+            ...input.nodes.map((node) => ({
+              source_id: `node:${node.id}`,
+              source_kind: "graph_node",
+              text: canonicalizeJson(node),
+            })),
           ],
         },
       });

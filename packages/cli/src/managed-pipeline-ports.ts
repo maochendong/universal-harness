@@ -70,6 +70,25 @@ function failClosed(message: string): never {
 }
 
 /**
+ * Resolves one bound graph node to its canonical content for the design
+ * ports. A node the contributor bound but the graph no longer carries is
+ * binding drift and fails closed — the model must never design against an
+ * invented node.
+ */
+function pipelineNodeContent(projectRoot: string, nodeId: string): string {
+  const graph = materializeProjectGraph(projectRoot);
+  try {
+    const node = graph.nodes.find((candidate) => candidate.id === nodeId);
+    if (node === undefined) {
+      failClosed(`design input node ${nodeId} does not resolve to a project graph node`);
+    }
+    return canonicalizeJson(node);
+  } finally {
+    graph.close();
+  }
+}
+
+/**
  * Resolves one bundled source back to its content. Enrichment and narrative
  * bundles cite graph nodes and committed snapshots rather than loose files:
  * node locators (and bare file locators, which are node locators first)
@@ -125,6 +144,11 @@ export function createManagedPipelinePorts(deps: ManagedPipelinePortsDeps): Mana
       pipelineBundleContent(deps.projectRoot, source),
   } as const;
 
+  const designDeps = {
+    ...shared,
+    node_content: (nodeId: string) => pipelineNodeContent(deps.projectRoot, nodeId),
+  } as const;
+
   /** The resolved provider's declared budget, when the assembly supplied one. */
   const budgetOf = (resolved: ResolvedManagedProvider): { budget?: ManagedInvocationBudget } =>
     resolved.budget === undefined ? {} : { budget: resolved.budget };
@@ -138,7 +162,7 @@ export function createManagedPipelinePorts(deps: ManagedPipelinePortsDeps): Mana
               ? {}
               : {
                   proposal: createModelBackedDesignProposalPort({
-                    ...shared,
+                    ...designDeps,
                     provider_config: designProposal.provider_config,
                     provider: designProposal.provider,
                     ...budgetOf(designProposal),
@@ -148,7 +172,7 @@ export function createManagedPipelinePorts(deps: ManagedPipelinePortsDeps): Mana
               ? {}
               : {
                   review: createModelBackedDesignReviewPort({
-                    ...shared,
+                    ...designDeps,
                     provider_config: designReview.provider_config,
                     provider: designReview.provider,
                     ...budgetOf(designReview),

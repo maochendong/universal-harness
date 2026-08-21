@@ -28,6 +28,7 @@ import {
   type ModelBackedProviderConfig,
 } from "./capture-adapters.js";
 import { compilePrompt } from "./prompt-compiler.js";
+import type { PromptInputItem } from "./source-boundary.js";
 
 /**
  * The model-backed design ports (model advisory design 6/7, prompt
@@ -37,6 +38,13 @@ import { compilePrompt } from "./prompt-compiler.js";
  * maps raw payloads onto proposed/clarification/failed, the review result
  * validator re-checks verdicts, citations and coverage. A rejected output
  * stays validated-but-unconsumed and fails closed as `invalid_output`.
+ *
+ * Input fidelity (T21 real-provider dogfood): the typed input carries only
+ * ids and digests, which a deterministic port can script against but a model
+ * cannot design from — the first real run correctly returned clarification
+ * questions asking for the requirement content. When the host supplies
+ * `node_content`, the bound requirement/test nodes join the prompt as
+ * per-node untrusted items; without it the compilation stays digest-only.
  */
 export interface DesignProposalAdapterDeps extends ManagedInvocationAdapterDeps {
   readonly registry: PromptContractRegistry;
@@ -44,6 +52,8 @@ export interface DesignProposalAdapterDeps extends ManagedInvocationAdapterDeps 
   readonly provider_config: ModelBackedProviderConfig;
   /** Defaults to the shipped contract alias `design_proposal.v1`. */
   readonly prompt_version?: string;
+  /** Resolves a bound graph node to its canonical content; throws on drift. */
+  readonly node_content?: (nodeId: string) => string;
 }
 
 export interface DesignReviewAdapterDeps extends ManagedInvocationAdapterDeps {
@@ -52,6 +62,22 @@ export interface DesignReviewAdapterDeps extends ManagedInvocationAdapterDeps {
   readonly provider_config: ModelBackedProviderConfig;
   /** Defaults to the shipped contract alias `design_review.v1`. */
   readonly prompt_version?: string;
+  /** Resolves a bound graph node to its canonical content; throws on drift. */
+  readonly node_content?: (nodeId: string) => string;
+}
+
+/** One untrusted item per bound node; ids are deduplicated for stable digests. */
+function nodeItems(
+  nodeIds: readonly string[],
+  deps: { readonly node_content?: (nodeId: string) => string },
+): PromptInputItem[] {
+  if (deps.node_content === undefined) return [];
+  const resolve = deps.node_content;
+  return [...new Set(nodeIds)].sort().map((nodeId) => ({
+    source_id: `node:${nodeId}`,
+    source_kind: "graph_node",
+    text: resolve(nodeId),
+  }));
 }
 
 function invalidOutput(summary: string): ModelPortFailure {
@@ -81,6 +107,13 @@ export function createModelBackedDesignProposalPort(
               source_kind: "design_proposal_input",
               text: canonicalizeJson(input),
             },
+            ...nodeItems(
+              [
+                ...input.must_change_requirement_ids,
+                ...input.criterion_test_pairs.map((pair) => pair.test_node_id),
+              ],
+              deps,
+            ),
           ],
         },
       });
@@ -131,6 +164,7 @@ export function createModelBackedDesignReviewPort(deps: DesignReviewAdapterDeps)
               source_kind: "design_review_input",
               text: canonicalizeJson(input),
             },
+            ...nodeItems(input.must_change_requirement_ids, deps),
           ],
         },
       });

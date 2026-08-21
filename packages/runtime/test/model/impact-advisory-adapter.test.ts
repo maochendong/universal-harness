@@ -191,4 +191,28 @@ describe("model-backed impact advisory adapter", () => {
     if (result.status !== "failed") return;
     expect(result.failure.summary).toContain("stale_impact_set");
   });
+
+  it("itemizes the graph into per-node untrusted items (T21 size budget)", async () => {
+    const root = makeTempDir("harness-impact-adapter-");
+    const captured: { user?: string } = {};
+    const provider: ManagedModelProviderPort = {
+      invoke: vi.fn(async (request) => {
+        captured.user = request.messages.find((message) => message.role === "user")?.content;
+        return { ok: true as const, content: JSON.stringify(advisoryOutput()) };
+      }),
+    };
+    const port = createModelBackedImpactAdvisoryPort(deps(root, provider));
+    const result = await port.advise(advisoryInput());
+    expect(result.status).toBe("proposed");
+    // Every node is its own item carrying the full canonical record…
+    expect(captured.user).toContain('source-id="node:requirement_01"');
+    expect(captured.user).toContain('source-id="node:code-artifact_02"');
+    expect(captured.user).toContain('"record_kind":"node"');
+    // …while the summary item (sorted last) references nodes by id/type/digest only.
+    const summaryItem = captured.user!.slice(
+      captured.user!.indexOf('<untrusted-item source-id="impact-advisory-input"'),
+    );
+    expect(summaryItem).toContain('"id":"requirement_01"');
+    expect(summaryItem).not.toContain('"record_kind":"node"');
+  });
 });
