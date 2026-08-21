@@ -7,7 +7,7 @@ import {
   type LockTuning,
   type NodeRecord,
 } from "@universal-harness-internal/core";
-import { type IterationKind } from "@universal-harness-internal/graph";
+import { type ImpactAdvisoryPort, type IterationKind } from "@universal-harness-internal/graph";
 import {
   type AgentRunResult,
   type AgentTrajectoryVisibility,
@@ -198,6 +198,12 @@ export interface OrchestratorDependencies {
     readonly proposal?: DesignProposalPort;
     readonly review?: DesignReviewPort;
   };
+  /**
+   * T20 slice 2: optional impact advisory port (model advisory design 6,
+   * PG-3) folded into the impact phase between propagation and approval.
+   * Absent means the deterministic propagate → approve path runs unchanged.
+   */
+  readonly impactAdvisory?: ImpactAdvisoryPort;
   readonly tasksProjection?: TasksProjectionPort;
   readonly planTasks?: PlanTasksPort;
   readonly taskEnvelopeScope?: TaskEnvelopeScopePort;

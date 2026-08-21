@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import { createGitVcsAdapter } from "@universal-harness-internal/adapter-vcs-git";
 import { contentDigest, type NodeRecord } from "@universal-harness-internal/core";
 import {
   RELATION_RULE_REGISTRY,
@@ -9,7 +10,24 @@ import {
   type ImpactAdvisoryInput,
 } from "@universal-harness-internal/graph";
 
+import {
+  createGenericInterpreter,
+  createNewProject,
+  resolveApproval,
+  resumeIteration,
+  runIteration,
+  type OrchestratorDependencies,
+} from "../../src/index.js";
 import { adviseImpactSet } from "../../src/orchestration/contributors/impact-contributor.js";
+import {
+  FIXED_NOW,
+  cleanupDirectories,
+  headOf,
+  makeTempDir,
+  sequentialIds,
+} from "../bootstrap/helpers.js";
+
+const PIPELINE_INTENT = "Ship a CSV export for the monthly report.";
 
 /**
  * PG-3 contributor wiring: the optional advisory runs between propagation and
@@ -167,5 +185,69 @@ describe("impact contributor advisory wiring", () => {
     expect(readImpactSetContent(result).content_digest).toBe(
       readImpactSetContent(set).content_digest,
     );
+  });
+});
+
+/**
+ * T20 slice 2: OrchestratorDependencies.impactAdvisory must reach the impact
+ * phase through the profile module assembly — the facade forwards it at both
+ * the run and the resume composition points.
+ */
+describe("orchestrator impact advisory forwarding", { timeout: 90000 }, () => {
+  it("invokes the injected advisory during the impact phase of a real pipeline", async () => {
+    const newId = sequentialIds();
+    const created = await createNewProject(
+      {
+        parentDirectory: makeTempDir("harness-impact-pipe-"),
+        name: "advisory-loop",
+        intent: PIPELINE_INTENT,
+      },
+      { vcs: createGitVcsAdapter(), now: () => FIXED_NOW, newId },
+    );
+    if (!created.ok) throw new Error(created.error.message);
+    const projectRoot = created.value.projectRoot;
+    let seen: ImpactAdvisoryInput | undefined;
+    const deps: OrchestratorDependencies = {
+      projectRoot,
+      readBaseline: () => headOf(projectRoot),
+      now: () => FIXED_NOW,
+      newId,
+      vcs: createGitVcsAdapter(),
+      interpret: createGenericInterpreter(),
+      impactAdvisory: createInMemoryImpactAdvisoryPort((input) => {
+        seen = input;
+        return {
+          additions: [],
+          edge_candidates: [],
+          risk_signals: [],
+          missing_facts: [],
+          questions: [],
+        };
+      }),
+    };
+    try {
+      const first = await runIteration(deps, {
+        intent: PIPELINE_INTENT,
+        intentShape: "pack-converted",
+      });
+      if (first.status !== "approval_required") {
+        throw new Error(`expected baseline approval, got ${first.status}`);
+      }
+      // The capture baseline approval pauses before the impact phase runs.
+      expect(seen).toBeUndefined();
+      await resolveApproval(deps, {
+        requestId: first.required.request_id,
+        decision: "approve",
+        actor: "human:reviewer",
+      });
+      const second = await resumeIteration(deps, first.required.workflow_operation_id, undefined);
+      // The advisory ran between propagation and the ImpactSet freeze approval.
+      expect(second.status).toBe("approval_required");
+      expect(seen).toBeDefined();
+      expect(seen!.workflow_operation_id).toBe(first.required.workflow_operation_id);
+      expect(seen!.deterministic_entries.length).toBeGreaterThan(0);
+    } finally {
+      cleanupDirectories();
+    }
   });
 });

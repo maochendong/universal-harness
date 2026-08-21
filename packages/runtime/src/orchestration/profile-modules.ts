@@ -13,7 +13,10 @@ import {
   type DesignContributionOptions,
 } from "./contributors/design-contributor.js";
 import { createEvaluationContribution } from "./contributors/evaluation-contributor.js";
-import { createImpactContribution } from "./contributors/impact-contributor.js";
+import {
+  createImpactContribution,
+  type ImpactContributionOptions,
+} from "./contributors/impact-contributor.js";
 import type { ModuleContributions } from "./kernel-coordinator.js";
 import {
   MODULE_STATUS_MAPPINGS,
@@ -78,7 +81,10 @@ export function resolveProfileModules(
 export function moduleContributionsForProfile(
   projectRoot: string,
   projectId: string,
-  options?: { readonly design?: DesignContributionOptions },
+  options?: {
+    readonly design?: DesignContributionOptions;
+    readonly impact?: ImpactContributionOptions;
+  },
 ): ModuleContributions {
   const resolutions = resolveProfileModules(readLatestProjectProfile(projectRoot, projectId));
   const active = new Set(
@@ -87,7 +93,7 @@ export function moduleContributionsForProfile(
       .map((resolution) => resolution.capability_id),
   );
   return {
-    ...(active.has("impact_analysis") ? { impact: createImpactContribution() } : {}),
+    ...(active.has("impact_analysis") ? { impact: createImpactContribution(options?.impact) } : {}),
     ...(active.has("design_governance")
       ? { design: createDesignContribution(options?.design) }
       : {}),

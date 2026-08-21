@@ -85,6 +85,7 @@ import type {
 import { createConfiguredAgentExecutor } from "./project-agent.js";
 import { createConfiguredGateSuite } from "./project-gates.js";
 import { createManagedIntentInterpreter } from "./managed-interpret.js";
+import { createManagedPipelinePorts } from "./managed-pipeline-ports.js";
 import {
   ProjectRuntimeConfigError,
   readProjectRuntimeConfig,
@@ -374,6 +375,7 @@ export function createOrchestratedRuntimeService(
         (runtimeConfig.model_providers === undefined
           ? createGenericInterpreter()
           : managedCaptureInterpreter(projectRoot, runtimeConfig)),
+      ...managedPipelinePortsFor(projectRoot, runtimeConfig),
       ...(injectedExecutor === undefined
         ? configuredAgent === undefined
           ? {}
@@ -558,6 +560,34 @@ export function createOrchestratedRuntimeService(
             });
       return managed === undefined ? generic(intent) : managed(intent);
     };
+  };
+
+  /**
+   * T20 slice 2 design/impact/context routing: when the committed runtime
+   * config declares providers covering the pipeline slots, the orchestrator
+   * dependencies carry the model-backed ports (design proposal/review, impact
+   * advisory, context enrichment, iteration narrative); anything else keeps
+   * the exact current deterministic/blocked behavior. Projects without a
+   * profile record are pre-1.1 legacy and get no model-backed ports at all.
+   */
+  const managedPipelinePortsFor = (
+    projectRoot: string,
+    runtimeConfig: ProjectRuntimeConfig,
+  ): ReturnType<typeof createManagedPipelinePorts> => {
+    if (runtimeConfig.model_providers === undefined) return {};
+    let profile: ProjectProfileRecord | undefined;
+    try {
+      profile = readLatestProjectProfile(projectRoot, projectIdFor(projectRoot));
+    } catch (error) {
+      if (error instanceof ProjectLayoutError) return {};
+      throw error;
+    }
+    if (profile === undefined) return {};
+    return createManagedPipelinePorts({
+      projectRoot,
+      runtimeConfig,
+      profile_id: profile.profile_id,
+    });
   };
 
   /** Persist the initial profile baseline and its decision (append-only). */

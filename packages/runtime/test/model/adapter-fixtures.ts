@@ -9,6 +9,8 @@ import {
   resolveModelBackedReviewProfile,
   runPrdHardGates,
   APPROVAL_BRIEF_PROMPT_REGISTRATION,
+  CONTEXT_ENRICHMENT_PROMPT_REGISTRATION,
+  ITERATION_NARRATIVE_PROMPT_REGISTRATION,
   PRD_PROPOSAL_PROMPT_REGISTRATION,
   PRD_REVIEW_PROMPT_REGISTRATION,
   PROJECT_DISCOVERY_PROMPT_REGISTRATION,
@@ -25,8 +27,8 @@ import {
 
 /**
  * PG-2 capture-adapter fixtures: real records built through the core
- * factories, a two-source content-addressed bundle and the four registered
- * Capture prompt contracts.
+ * factories, a two-source content-addressed bundle and the registered
+ * Capture/pipeline grounded prompt contracts.
  */
 export const ADAPTER_DIGESTS = {
   adapter_profile: "e".repeat(64),
@@ -75,7 +77,7 @@ export function adapterSources(): readonly ProjectContextSource[] {
 
 export function adapterBundle(
   session: CaptureSessionRecord,
-  purpose: "proposal" | "review" | "approval_brief",
+  purpose: "proposal" | "review" | "approval_brief" | "context_enrichment",
 ): ProjectContextBundleRecord {
   return createProjectContextBundleRecord({
     session_id: session.session_id,
@@ -106,6 +108,8 @@ export function adapterRegistry(): PromptContractRegistry {
     PRD_REVIEW_PROMPT_REGISTRATION,
     PROJECT_DISCOVERY_PROMPT_REGISTRATION,
     APPROVAL_BRIEF_PROMPT_REGISTRATION,
+    CONTEXT_ENRICHMENT_PROMPT_REGISTRATION,
+    ITERATION_NARRATIVE_PROMPT_REGISTRATION,
   ]);
 }
 

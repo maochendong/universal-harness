@@ -274,7 +274,7 @@ describe("model-backed grounded synthesis adapter", () => {
     }
   });
 
-  it("completes an approval brief and rejects unwired purposes fail-closed", async () => {
+  it("completes an approval brief through the managed path", async () => {
     const root = makeTempDir("harness-adapter-");
     const session = adapterSession();
     const bundle = adapterBundle(session, "approval_brief");
@@ -307,16 +307,59 @@ describe("model-backed grounded synthesis adapter", () => {
     };
     const brief = await port.synthesize(briefInput);
     expect(brief.status).toBe("completed");
+  });
 
-    const stub = await port.synthesize({
+  it("completes a context enrichment through the same managed path", async () => {
+    const root = makeTempDir("harness-adapter-");
+    const bundle = adapterBundle(adapterSession(), "context_enrichment");
+    const provider = providerReturning(
+      JSON.stringify({
+        purpose: "context_enrichment",
+        schema_version: "context-enrichment.v1",
+        bundle_digest: bundle.record_digest,
+        terms: [],
+        segment_summaries: [],
+        relevance_explanations: [],
+      }),
+    );
+    const port = createModelBackedGroundedSynthesisPort(deps(root, provider));
+    const result = await port.synthesize({
       purpose: "context_enrichment",
       schema_version: "context-enrichment.v1",
       binding_digest: "9".repeat(64),
-      conversation_id: "grounded-conversation_01K1STUB",
-      run_id: "grounded-run_01K1STUB",
-      bundle_digest: bundle.record_digest,
+      conversation_id: "grounded-conversation_01K1ENRIC",
+      run_id: "grounded-run_01K1ENRIC",
+      bundle,
     });
-    expect(stub.status).toBe("failed");
-    if (stub.status === "failed") expect(stub.failure.code).toBe("unknown_purpose");
+    expect(result.status).toBe("completed");
+    if (result.status === "completed") expect(result.output.purpose).toBe("context_enrichment");
+  });
+
+  it("completes an iteration narrative through the same managed path", async () => {
+    const root = makeTempDir("harness-adapter-");
+    // Bundle purposes stop at context_enrichment; the narrative's snapshot
+    // bundle view is purpose-tagged context_enrichment too (narrative.ts).
+    const bundle = adapterBundle(adapterSession(), "context_enrichment");
+    const provider = providerReturning(
+      JSON.stringify({
+        purpose: "iteration_narrative",
+        schema_version: "iteration-narrative.v1",
+        bundle_digest: bundle.record_digest,
+        outcomes: [],
+        residual_risks: [],
+        follow_ups: [],
+      }),
+    );
+    const port = createModelBackedGroundedSynthesisPort(deps(root, provider));
+    const result = await port.synthesize({
+      purpose: "iteration_narrative",
+      schema_version: "iteration-narrative.v1",
+      binding_digest: "9".repeat(64),
+      conversation_id: "grounded-conversation_01K1NARRA",
+      run_id: "grounded-run_01K1NARRA",
+      bundle,
+    });
+    expect(result.status).toBe("completed");
+    if (result.status === "completed") expect(result.output.purpose).toBe("iteration_narrative");
   });
 });

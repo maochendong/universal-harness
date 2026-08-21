@@ -395,7 +395,19 @@ export function createModelBackedPrdReviewPort(deps: ModelBackedAdapterDeps): Pr
   };
 }
 
-const SYNTHESIS_PURPOSE_BY_INPUT = new Set(["project_discovery", "approval_brief"]);
+/**
+ * Every shipped grounded purpose has model-backed wiring (T20 slice 2): the
+ * Capture-scope purposes (project_discovery/approval_brief) and the pipeline
+ * purposes (context_enrichment/iteration_narrative) share the same compile →
+ * invoke → citation-validate path; anything outside the fixed union still
+ * fails closed.
+ */
+const SYNTHESIS_PURPOSE_BY_INPUT = new Set([
+  "project_discovery",
+  "approval_brief",
+  "context_enrichment",
+  "iteration_narrative",
+]);
 
 export function createModelBackedGroundedSynthesisPort(
   deps: ModelBackedAdapterDeps,

@@ -926,6 +926,7 @@ export {
   createGenericInterpreter,
   driveOpenOperation,
   findOpenWorkflowOperation,
+  materializeProjectGraph,
   previewImpactSet,
   provenQualityTaskIds,
   readLatestExecutionPlan,

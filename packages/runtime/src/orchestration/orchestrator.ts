@@ -98,6 +98,7 @@ export {
   createDefaultGateSuite,
   createDirectExecutor,
   createGenericInterpreter,
+  materializeProjectGraph,
 } from "./kernel-coordinator.js";
 export { createDefaultEvaluationPort } from "./contributors/evaluation-contributor.js";
 export { provenQualityTaskIds } from "./contributors/audit-contributor.js";
@@ -144,6 +145,7 @@ export async function runIteration(
     input,
     moduleContributionsForProfile(deps.projectRoot, projectId, {
       ...(deps.design === undefined ? {} : { design: deps.design }),
+      ...(deps.impactAdvisory === undefined ? {} : { impact: { advisory: deps.impactAdvisory } }),
     }),
   );
   if ("outcome" in context) return context.outcome;
@@ -232,6 +234,7 @@ export async function resumeIteration(
       `project_${readManagedManifest(deps.projectRoot).name}`,
       {
         ...(deps.design === undefined ? {} : { design: deps.design }),
+        ...(deps.impactAdvisory === undefined ? {} : { impact: { advisory: deps.impactAdvisory } }),
       },
     ),
   );
