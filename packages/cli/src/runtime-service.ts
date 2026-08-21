@@ -53,7 +53,9 @@ import {
   readManagedManifest,
   resolveIterationProfile,
   resolveProfileSelection,
+  ulid,
   ProfileSelectionError,
+  ProjectLayoutError,
   DEFAULT_PROFILE_POLICY_DIGEST,
   type EdgeRecord,
   type NodeRecord,
@@ -82,7 +84,12 @@ import type {
 } from "./router.js";
 import { createConfiguredAgentExecutor } from "./project-agent.js";
 import { createConfiguredGateSuite } from "./project-gates.js";
-import { ProjectRuntimeConfigError, readProjectRuntimeConfig } from "./project-runtime-config.js";
+import { createManagedIntentInterpreter } from "./managed-interpret.js";
+import {
+  ProjectRuntimeConfigError,
+  readProjectRuntimeConfig,
+  type ProjectRuntimeConfig,
+} from "./project-runtime-config.js";
 
 /**
  * Default runtime wiring for the CLI (design 11.1/11.2, plan Task 23): every
@@ -362,7 +369,11 @@ export function createOrchestratedRuntimeService(
       projectRoot,
       readBaseline: () => gitHead(projectRoot),
       vcs,
-      interpret: options.interpret ?? createGenericInterpreter(),
+      interpret:
+        options.interpret ??
+        (runtimeConfig.model_providers === undefined
+          ? createGenericInterpreter()
+          : managedCaptureInterpreter(projectRoot, runtimeConfig)),
       ...(injectedExecutor === undefined
         ? configuredAgent === undefined
           ? {}
@@ -489,6 +500,65 @@ export function createOrchestratedRuntimeService(
 
   const projectIdFor = (projectRoot: string): string =>
     `project_${readManagedManifest(projectRoot).name}`;
+
+  /** HEAD-bound baseline digest; an unborn or unreadable HEAD degrades to a stable constant. */
+  const baselineDigestFor = (projectRoot: string): string => {
+    try {
+      return contentDigest({ repository_head: gitHead(projectRoot) });
+    } catch {
+      return contentDigest({ repository_head: "unborn" });
+    }
+  };
+
+  /**
+   * T20 slice 1 capture routing: when the committed runtime config declares a
+   * provider covering the prd_proposal slot, intent is interpreted through the
+   * managed model layer; anything else keeps the generic interpreter, so
+   * unconfigured projects behave exactly as before. The managed interpreter is
+   * constructed at capture time — after profile selection persisted the
+   * project profile record — so the session binds real profile digests.
+   */
+  const managedCaptureInterpreter = (
+    projectRoot: string,
+    runtimeConfig: ProjectRuntimeConfig,
+  ): IntentInterpreter => {
+    const generic = createGenericInterpreter();
+    return (intent: string) => {
+      let profile: ProjectProfileRecord | undefined;
+      try {
+        profile = readLatestProjectProfile(projectRoot, projectIdFor(projectRoot));
+      } catch (error) {
+        if (error instanceof ProjectLayoutError) return generic(intent);
+        throw error;
+      }
+      const managed =
+        profile === undefined
+          ? undefined
+          : createManagedIntentInterpreter({
+              projectRoot,
+              runtimeConfig,
+              profile_id: profile.profile_id,
+              session_context: {
+                project_profile_digest: profile.record_digest,
+                // Core has no profile-decision reader yet; derived
+                // deterministically from the stable decision inputs.
+                profile_decision_digest: contentDigest({
+                  decision_kind: "project_profile_change",
+                  project_id: profile.project_id,
+                  decided_profile_id: profile.profile_id,
+                  policy_digest: profile.policy_digest,
+                  profile_record_digest: profile.record_digest,
+                }),
+                capture_policy_digest: profile.policy_digest,
+                // No requirement baseline exists before capture; the digest
+                // binds the git baseline (HEAD) the intent is read against.
+                project_baseline_digest: baselineDigestFor(projectRoot),
+              },
+              newId: options.newId ?? ((kind: string) => `${kind}_${ulid()}`),
+            });
+      return managed === undefined ? generic(intent) : managed(intent);
+    };
+  };
 
   /** Persist the initial profile baseline and its decision (append-only). */
   const persistInitialProfile = (
