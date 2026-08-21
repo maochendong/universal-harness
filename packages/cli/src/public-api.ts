@@ -12,6 +12,7 @@ export * from "./errors.js";
 export * from "./io.js";
 export * from "./project-runtime-config.js";
 export * from "./project-gates.js";
+export * from "./model-providers.js";
 export * from "./project-agent.js";
 export { LiveProgressReporter, type LiveProgressReporterOptions } from "./live-progress.js";
 export {

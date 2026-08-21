@@ -84,11 +84,60 @@ Judge 默认关闭。启用时在 `.harness/runtime.json` 的 v2 配置中显式
 
 运行 CLI 的进程必须提供 allowlist 中的环境变量。API key 不得写入配置、Git、命令参数或 URL。生产 endpoint 仅允许 HTTPS，禁止 URL credential/query/fragment，并在发送凭据前拒绝 loopback、link-local、private address 和 DNS 私网解析。
 
+Judge 传输层是 OpenAI 兼容协议（Bearer 凭据 + `response_format: json_schema strict`），因此可以与 agent-dsh 复用同一份 DeepSeek 凭据——`api_key_env` 直接写 `DEEPSEEK_API_KEY`，key 本身仍然只存在于环境变量中：
+
+```json
+{
+  "gate_id": "gate_semantic-review",
+  "name": "Semantic review",
+  "subject_id": "test_semantic-review",
+  "requested_mandatory": false,
+  "endpoint": "https://api.deepseek.com/chat/completions",
+  "model": "deepseek-v4-pro",
+  "prompt_version": "v1",
+  "api_key_env": "DEEPSEEK_API_KEY",
+  "env_allowlist": ["DEEPSEEK_API_KEY"],
+  "timeout_ms": 60000,
+  "seed": 42
+}
+```
+
+两个注意点：Judge 请求带 `response_format: { type: "json_schema", strict: true }`，目标端点必须支持 strict JSON Schema 输出（官方 DeepSeek 端点目前只保证 `json_object`，不支持时 Gate 会以 `invalid_provider_response` fail closed；网关代理请确认其是否透传该能力）；`model` 填目标端点真实接受的模型 ID，配置前可用 `curl` 直接对端点发一次最小请求验证。
+
 `requested_mandatory: true` 本身不会使 Judge 阻断。effective mandatory 还要求当前 accepted Policy 含 `gates.<gate-id>.llm_judge_blocking = true`，并且该 Policy revision 有 digest 匹配的有效 Approval；否则 Gate 以 advisory 执行并在 Evidence 中记录诊断。
 
 Judge 的 pass/warn/fail、prompt/bundle/model/request/response digest、标准化响应、error kind 和 retry count 写入 `harness.llm-judge` Evidence extension。timeout、非法 JSON/schema、越界 path/line 或 Provider 故障全部 fail closed；advisory 失败生成 warning Finding，mandatory 失败生成 blocker。
 
-## 5. 启动和关闭 Dashboard
+## 5. 配置 Managed 模型 Provider
+
+Managed 模型调用层（capture、design、impact 等 DAG 节点的模型槽位）通过 v2 配置里的 `model_providers` 数组接入真实 LLM API。每个条目是一个 OpenAI 兼容端点，可以按槽位分发，也可以声明一个 default 兜底：
+
+```json
+{
+  "runtime_config_version": 2,
+  "gates": [],
+  "model_providers": [
+    {
+      "provider_id": "deepseek",
+      "endpoint": "https://api.deepseek.com/chat/completions",
+      "model": "deepseek-v4-pro",
+      "api_key_env": "DEEPSEEK_API_KEY",
+      "env_allowlist": ["DEEPSEEK_API_KEY"],
+      "timeout_ms": 60000,
+      "slots": ["grounded_synthesis", "design_review"],
+      "default": false
+    }
+  ]
+}
+```
+
+- `slots` 填模型槽位或端口标识（如 `grounded_synthesis`、`design_review`、`impact_advisory`、`plan_proposal`、`feedback_analysis`）；同一槽位只能被一个 provider 声明。`"default": true` 的条目（至多一个）覆盖所有未列出的槽位；两者都没有的槽位解析为空，Runner 以 `provider_required` fail closed。
+- 凭据与 Judge 同规则：`api_key_env` 必须出现在 `env_allowlist` 中，key 只存在于运行进程的环境变量里，agent-dsh 的 `DEEPSEEK_API_KEY` 可直接复用。
+- 端点校验与 Judge 一致：仅 HTTPS、禁止 URL credential/query/fragment、发送凭据前拒绝 loopback/private address 与 DNS 私网解析；429/5xx 有界重试，timeout、超长响应、非 JSON 响应分别映射为 `timeout` / `budget_exhausted` / `invalid_output`。
+- 与 Judge 不同，managed 调用不发 `response_format`：输出契约由编译后的 prompt 承担，Runner 端按钉住的 output schema digest 验证，因此官方 DeepSeek 端点即可使用。
+- `provider_identity` 由 CLI 派生为 `provider_<provider_id>`，`config_digest` 覆盖端点 origin、模型、超时与槽位——不含任何凭据材料。
+
+## 6. 启动和关闭 Dashboard
 
 ```bash
 harness serve
@@ -102,7 +151,7 @@ Dashboard 提供 Overview、Graph、Impact、Iteration、Evidence、Findings、L
 
 使用 `Ctrl-C` 或 `SIGTERM` 关闭服务。服务会停止接受新写请求、终止 SSE、等待当前 HTTP/Ledger 操作结束，再关闭数据库与监听 socket。
 
-## 6. EventStream 与恢复
+## 7. EventStream 与恢复
 
 - 权威历史位于 Git Ledger；`.harness/cache/event-stream/` 只保存可丢失的 live observation。
 - `harness watch --follow` 与 Dashboard `/events` 合并 live 和 Ledger。相同 observation key 的 Ledger 事件替代 live 事件。
@@ -111,7 +160,7 @@ Dashboard 提供 Overview、Graph、Impact、Iteration、Evidence、Findings、L
 - dsh stdout/stderr 增量输出只以脱敏、节流、限长的 `RunOutputSummary` 进入 live spool；原始 transcript 留在 `.harness/raw-traces/`。输出摘要可丢失且不构成完成证据，token/step 不可观测时必须显示 unavailable。
 - 可在停止相关进程后把 live spool 移到项目外备份；删除它不会改变 `resume`、`status`、`snapshot` 或 `audit`。
 
-## 7. 缓存与故障矩阵
+## 8. 缓存与故障矩阵
 
 | 症状 | 行为 | 操作 |
 |---|---|---|
@@ -123,7 +172,7 @@ Dashboard 提供 Overview、Graph、Impact、Iteration、Evidence、Findings、L
 | semantic index 损坏 | 重建；失败则退回结构影响分析 | 备份并移走 cache 后重跑 |
 | Approval/Finding group digest 漂移 | HTTP 409 或 CLI typed conflict，零旧动作执行 | 刷新后以新 digest 人工决定 |
 
-## 8. 发布门禁
+## 9. 发布门禁
 
 M2 发布必须完整执行：
 

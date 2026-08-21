@@ -70,11 +70,26 @@ export interface ProjectJudgeGateConfig {
   readonly allow_loopback_http?: boolean;
 }
 
+export interface ProjectModelProviderConfig {
+  readonly provider_id: string;
+  readonly endpoint: string;
+  readonly model: string;
+  readonly api_key_env: string;
+  readonly env_allowlist: readonly string[];
+  readonly timeout_ms: number;
+  /** Model slots / port ids this provider serves; empty means default-only. */
+  readonly slots: readonly string[];
+  readonly is_default: boolean;
+  /** Test-only escape hatch; production endpoints remain HTTPS-only. */
+  readonly allow_loopback_http?: boolean;
+}
+
 export interface ProjectRuntimeConfig {
   readonly runtime_config_version: 1 | 2;
   readonly agent?: ProjectAgentConfig;
   readonly gates: readonly ProjectGateCommandConfig[];
   readonly judge_gates?: readonly ProjectJudgeGateConfig[];
+  readonly model_providers?: readonly ProjectModelProviderConfig[];
 }
 
 function fail(message: string): never {
@@ -248,6 +263,67 @@ function parseJudgeGate(value: unknown, index: number): ProjectJudgeGateConfig {
   };
 }
 
+function parseModelProvider(value: unknown, index: number): ProjectModelProviderConfig {
+  const context = `model_providers[${String(index)}]`;
+  const record = object(value, context);
+  exactKeys(
+    record,
+    [
+      "provider_id",
+      "endpoint",
+      "model",
+      "api_key_env",
+      "env_allowlist",
+      "timeout_ms",
+      "slots",
+      "default",
+      "allow_loopback_http",
+    ],
+    context,
+  );
+  const providerId = string(record.provider_id, `${context}.provider_id`);
+  if (!IDENTIFIER.test(providerId)) fail(`${context}.provider_id must be an identifier`);
+  const timeout = record.timeout_ms;
+  if (!Number.isInteger(timeout) || (timeout as number) < 1 || (timeout as number) > 300000) {
+    fail(`${context}.timeout_ms must be an integer between 1 and 300000`);
+  }
+  const apiKeyEnv = string(record.api_key_env, `${context}.api_key_env`);
+  if (!ENV_NAME.test(apiKeyEnv)) fail(`${context}.api_key_env is invalid`);
+  const allowLoopbackHttp = record.allow_loopback_http;
+  if (allowLoopbackHttp !== undefined && typeof allowLoopbackHttp !== "boolean") {
+    fail(`${context}.allow_loopback_http must be a boolean`);
+  }
+  const endpoint = string(record.endpoint, `${context}.endpoint`);
+  try {
+    validateJudgeEndpoint(endpoint, {
+      ...(allowLoopbackHttp === undefined ? {} : { allowLoopbackHttp }),
+    });
+  } catch (error) {
+    const detail = error instanceof JudgeTransportError ? error.message : String(error);
+    fail(`${context}.endpoint is invalid: ${detail}`);
+  }
+  const allowlist = envList(record.env_allowlist, [], `${context}.env_allowlist`);
+  if (!allowlist.includes(apiKeyEnv)) fail(`${context}.env_allowlist must contain api_key_env`);
+  const slots = stringList(record.slots ?? [], `${context}.slots`);
+  for (const [slotIndex, slot] of slots.entries()) {
+    if (!IDENTIFIER.test(slot))
+      fail(`${context}.slots[${String(slotIndex)}] must be an identifier`);
+  }
+  const isDefault = record.default ?? false;
+  if (typeof isDefault !== "boolean") fail(`${context}.default must be a boolean`);
+  return {
+    provider_id: providerId,
+    endpoint,
+    model: string(record.model, `${context}.model`),
+    api_key_env: apiKeyEnv,
+    env_allowlist: allowlist,
+    timeout_ms: timeout as number,
+    slots: [...new Set(slots)].sort(),
+    is_default: isDefault,
+    ...(allowLoopbackHttp === undefined ? {} : { allow_loopback_http: allowLoopbackHttp }),
+  };
+}
+
 /** Read and strictly normalize the optional committed project runtime configuration. */
 export function readProjectRuntimeConfig(projectRoot: string): ProjectRuntimeConfig {
   const absolute = join(projectRoot, PROJECT_RUNTIME_CONFIG_PATH);
@@ -281,10 +357,30 @@ export function readProjectRuntimeConfig(projectRoot: string): ProjectRuntimeCon
     if (ids.has(gate.gate_id)) fail(`gate ${gate.gate_id} is declared twice`);
     ids.add(gate.gate_id);
   }
+  if (version === 1 && record.model_providers !== undefined) {
+    fail("model_providers requires runtime_config_version 2");
+  }
+  const providersRaw = version === 2 ? record.model_providers : undefined;
+  let modelProviders: ProjectModelProviderConfig[] | undefined;
+  if (providersRaw !== undefined) {
+    if (!Array.isArray(providersRaw)) fail("model_providers must be an array");
+    modelProviders = providersRaw.map(parseModelProvider);
+    const providerIds = new Set<string>();
+    let defaults = 0;
+    for (const provider of modelProviders) {
+      if (providerIds.has(provider.provider_id)) {
+        fail(`model provider ${provider.provider_id} is declared twice`);
+      }
+      providerIds.add(provider.provider_id);
+      if (provider.is_default) defaults += 1;
+    }
+    if (defaults > 1) fail("model_providers allows at most one default provider");
+  }
   return {
     runtime_config_version: version,
     ...(record.agent === undefined ? {} : { agent: parseAgent(record.agent) }),
     gates,
     ...(version === 1 ? {} : { judge_gates: judgeGates }),
+    ...(modelProviders === undefined ? {} : { model_providers: modelProviders }),
   };
 }
