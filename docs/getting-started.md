@@ -151,4 +151,5 @@ harness adopt /path/to/project --intent "Introduce the requested change"
 - [接管已有项目](adopting-a-project.md)：`adopt` 的 staging、预览与批准细节。
 - [运维与恢复](operations-and-recovery.md)：全部批准点、暂停/恢复行为与故障恢复手册。
 - [插件契约](plugin-contracts.md)：Adapter、Tool Provider 与 Pack 的契约。
+- [Managed 模型调用层架构](model-invocation-architecture.md)：LLM 调用的受管路径、多 Provider 接入与失败语义。
 - [M1 验收报告](m1-acceptance-report.md)：28 条验收标准与证据的映射。
