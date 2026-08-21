@@ -26,7 +26,7 @@ export const PLAN_PROPOSAL_PROMPT_CONTRACT: PromptContract = definePromptContrac
   },
   domain_rubric: {
     segment_id: "domain-rubric",
-    text: "Allocate each canonical assertion to exactly one owning task and give every task a goal and an atomicity rationale. Bind each task to the requirements, decisions and design artifacts it implements. Propose dependencies as task keys forming an acyclic DAG, with a parallelism rationale when tasks are independent. Suggest only gates from the known gate registry and write paths within the authorized set. Ask a clarification question when the inputs leave a decomposition decision ambiguous.",
+    text: "Allocate each canonical assertion to exactly one owning task and give every task a goal and an atomicity rationale. Bind each task to the requirements, decisions and design artifacts it implements. Propose dependencies as task keys forming an acyclic DAG, with a parallelism rationale when tasks are independent. Suggest only gates from the known gate registry and write paths within the authorized set. When canonical_assertions is empty, decompose directly over the known requirements and leave assertion_ids empty — the Harness materializes the deterministic per-acceptance assertions itself. Never return an output that carries neither tasks nor questions. Ask a clarification question when the inputs leave a decomposition decision ambiguous.",
   },
   profile_overlays: {
     lite: {

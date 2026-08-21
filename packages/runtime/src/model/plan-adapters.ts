@@ -42,6 +42,8 @@ export interface PlanProposalAdapterDeps extends ManagedInvocationAdapterDeps {
   readonly provider_config: ModelBackedProviderConfig;
   /** Defaults to the shipped contract alias `plan_proposal.v1`. */
   readonly prompt_version?: string;
+  /** Resolves a bound graph node to its canonical content; throws on drift. */
+  readonly node_content?: (nodeId: string) => string;
 }
 
 function invalidOutput(summary: string): ModelPortFailure {
@@ -57,6 +59,18 @@ export function createModelBackedPlanProposalPort(deps: PlanProposalAdapterDeps)
         port_id: PLAN_PROPOSAL_PROMPT_PORT_ID,
         prompt_version: promptVersion,
       });
+      // Input fidelity (T23): the typed input carries only ids and digests.
+      // When the host supplies node_content, the known requirement nodes join
+      // the prompt as per-node untrusted items so the model can decompose
+      // from real content — with ids alone it correctly returned nothing.
+      const requirementItems =
+        deps.node_content === undefined
+          ? []
+          : [...new Set(input.known_requirement_ids)].sort().map((nodeId) => ({
+              source_id: `node:${nodeId}`,
+              source_kind: "graph_node",
+              text: (deps.node_content as (nodeId: string) => string)(nodeId),
+            }));
       const compiled = compilePrompt({
         registry: deps.registry,
         selector: { port_id: PLAN_PROPOSAL_PROMPT_PORT_ID, prompt_version: promptVersion },
@@ -69,6 +83,7 @@ export function createModelBackedPlanProposalPort(deps: PlanProposalAdapterDeps)
               source_kind: "plan_proposal_input",
               text: canonicalizeJson(input),
             },
+            ...requirementItems,
           ],
         },
       });

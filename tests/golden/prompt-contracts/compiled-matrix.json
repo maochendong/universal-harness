@@ -3,121 +3,121 @@
     "contract_id": "harness:prompt:approval-brief",
     "prompt_version": "approval-brief.v1",
     "profile": "governed",
-    "contract_digest": "583cb11834bae8f57e496a8a8addebeaf2e165917a0c957238e6bcef08816d7d",
+    "contract_digest": "dd6b7772268c5824295231125803249dfd106b5a3dc671d1fb95750ff691bde0",
     "profile_overlay_digest": "e394647f45f8e41f99e8c696faaeceeff430d8aa75af988f93efdfbc9ac19b13",
     "output_schema_digest": "9a943013b4c6910caee6ff2ac7db7cf8f0907f89a791555b16d15a0ab115bee8",
     "input_bundle_digest": "c8f885b2301f9abf9548454517a2d0beed6c16568728511c2400aeb182801c40",
-    "compiled_prompt_digest": "1767fe2fdf2f6b3d6bb1cf34993b0982e7c4dbf0bb93758ba25639399ef03af2"
+    "compiled_prompt_digest": "ba3629ad15492bf38ceed0f963ab3150e924285cbaec099013c8195c5a955ad9"
   },
   {
     "contract_id": "harness:prompt:approval-brief",
     "prompt_version": "approval-brief.v1",
     "profile": "lite",
-    "contract_digest": "583cb11834bae8f57e496a8a8addebeaf2e165917a0c957238e6bcef08816d7d",
+    "contract_digest": "dd6b7772268c5824295231125803249dfd106b5a3dc671d1fb95750ff691bde0",
     "profile_overlay_digest": "b1e3aff7538e7a4181f7455c22955abde0010cd665efd7debd7e774d698d51c5",
     "output_schema_digest": "9a943013b4c6910caee6ff2ac7db7cf8f0907f89a791555b16d15a0ab115bee8",
     "input_bundle_digest": "c8f885b2301f9abf9548454517a2d0beed6c16568728511c2400aeb182801c40",
-    "compiled_prompt_digest": "c65545784899b766a4801b86aea1229a6c40e3834bf486390fe645a6052dcc43"
+    "compiled_prompt_digest": "428b2d4812036d98b7f0639740ef7559551e27ee10ff2a94472498da08313636"
   },
   {
     "contract_id": "harness:prompt:approval-brief",
     "prompt_version": "approval-brief.v1",
     "profile": "standard",
-    "contract_digest": "583cb11834bae8f57e496a8a8addebeaf2e165917a0c957238e6bcef08816d7d",
+    "contract_digest": "dd6b7772268c5824295231125803249dfd106b5a3dc671d1fb95750ff691bde0",
     "profile_overlay_digest": "0167dbc3d9500a02fa5235f788c4584b472bbe1ad4087a90579f85e7832545a8",
     "output_schema_digest": "9a943013b4c6910caee6ff2ac7db7cf8f0907f89a791555b16d15a0ab115bee8",
     "input_bundle_digest": "c8f885b2301f9abf9548454517a2d0beed6c16568728511c2400aeb182801c40",
-    "compiled_prompt_digest": "83e57ef84427ad06de978db559b99cbc74d00e4adcff75ba0eac97b7a2bfc9ff"
+    "compiled_prompt_digest": "32d62150fc0f2ecadbdc19676313f8a7efb98a5a27edbcaf5157d288beab99ce"
   },
   {
     "contract_id": "harness:prompt:context-enrichment",
     "prompt_version": "context-enrichment.v1",
     "profile": "governed",
-    "contract_digest": "1f95bbe50d65edef8e2fce8ff75d32960bcc26600cce9dcaca7bb73a74a9760d",
+    "contract_digest": "7a578c16270a2f423593c726654c59f1be19709c751c63f3fa038fc20154d114",
     "profile_overlay_digest": "06a90140aeae243fd9a611d64708eaa892cda3073932f7dba786876028e402b0",
     "output_schema_digest": "e6289a80281d5bef23f98a5d9ea65400b0c0bf3c3a4981cfac6830a8cacbf2e8",
     "input_bundle_digest": "c8f885b2301f9abf9548454517a2d0beed6c16568728511c2400aeb182801c40",
-    "compiled_prompt_digest": "2c0b6e56e9fb6afb0b569e8d59471c580f18c5759156c38600a91e5e86257140"
+    "compiled_prompt_digest": "fb565e07b5c4277c74b9906db0468fe943604303195cd6ecb6c7c7adf1d02c68"
   },
   {
     "contract_id": "harness:prompt:context-enrichment",
     "prompt_version": "context-enrichment.v1",
     "profile": "lite",
-    "contract_digest": "1f95bbe50d65edef8e2fce8ff75d32960bcc26600cce9dcaca7bb73a74a9760d",
+    "contract_digest": "7a578c16270a2f423593c726654c59f1be19709c751c63f3fa038fc20154d114",
     "profile_overlay_digest": "e8eb8552c2b599a8576099204042d00978350b61b68e838890e69da67cc25755",
     "output_schema_digest": "e6289a80281d5bef23f98a5d9ea65400b0c0bf3c3a4981cfac6830a8cacbf2e8",
     "input_bundle_digest": "c8f885b2301f9abf9548454517a2d0beed6c16568728511c2400aeb182801c40",
-    "compiled_prompt_digest": "420de97e5e303cee1e2ca84dd5cf9348b152547cb6791b8db0c5761f5e2c4738"
+    "compiled_prompt_digest": "510a3ff6284049a54758de56da512f121cd310fd8c771082f274d90efc6642e8"
   },
   {
     "contract_id": "harness:prompt:context-enrichment",
     "prompt_version": "context-enrichment.v1",
     "profile": "standard",
-    "contract_digest": "1f95bbe50d65edef8e2fce8ff75d32960bcc26600cce9dcaca7bb73a74a9760d",
+    "contract_digest": "7a578c16270a2f423593c726654c59f1be19709c751c63f3fa038fc20154d114",
     "profile_overlay_digest": "8b1206ed9155fb9f390c55d01bd3e859689bd4f0527f1503a825f58c046c36a8",
     "output_schema_digest": "e6289a80281d5bef23f98a5d9ea65400b0c0bf3c3a4981cfac6830a8cacbf2e8",
     "input_bundle_digest": "c8f885b2301f9abf9548454517a2d0beed6c16568728511c2400aeb182801c40",
-    "compiled_prompt_digest": "981bba75066ec20fbfd5920355d75e66ecfe9ff442fc90327bb7316b9004e776"
+    "compiled_prompt_digest": "c7065563ef25dcdfc948d4d92fcf732b0a59bf010af864265ec63fb779a2596a"
   },
   {
     "contract_id": "harness:prompt:design-proposal",
     "prompt_version": "design_proposal.v1",
     "profile": "governed",
-    "contract_digest": "fd6b976c468d028f0556349de196a15c087f460b98f451e8a6099867e7793eb6",
+    "contract_digest": "9676d74b6c4126ac504cbffff9e299b4180255142d7364520ee0b82567c182f1",
     "profile_overlay_digest": "8b61de2a24adee816b3151fa1b5239f4673d95690cea1aa4f952f0dee3464fa7",
     "output_schema_digest": "f7527bba43bb8032fac4040176e472ac6bec1089c209fa8b25c3f7c1233d7c1f",
     "input_bundle_digest": "c8f885b2301f9abf9548454517a2d0beed6c16568728511c2400aeb182801c40",
-    "compiled_prompt_digest": "5b770b267fba3ac7b3147a8db925bc7d336df400c59f096ffb6a5f328b21b764"
+    "compiled_prompt_digest": "57821c61e62a2468608705acae91f9598c6c663958f9bd11dbc7dd4ac3d6727f"
   },
   {
     "contract_id": "harness:prompt:design-proposal",
     "prompt_version": "design_proposal.v1",
     "profile": "lite",
-    "contract_digest": "fd6b976c468d028f0556349de196a15c087f460b98f451e8a6099867e7793eb6",
+    "contract_digest": "9676d74b6c4126ac504cbffff9e299b4180255142d7364520ee0b82567c182f1",
     "profile_overlay_digest": "794aab7565aa29b632c704177bdf8bd42630a1a9e505c05958427a2bc00c9ebc",
     "output_schema_digest": "f7527bba43bb8032fac4040176e472ac6bec1089c209fa8b25c3f7c1233d7c1f",
     "input_bundle_digest": "c8f885b2301f9abf9548454517a2d0beed6c16568728511c2400aeb182801c40",
-    "compiled_prompt_digest": "3fa7c0b4287a0be64192f32e979f8fdc501a7d0abc02190e354f086b2a8cfbd3"
+    "compiled_prompt_digest": "19eb74dfa6680fec8c481ab534dad176cc2ad8b695018ca4cf8188c85cd6c8a9"
   },
   {
     "contract_id": "harness:prompt:design-proposal",
     "prompt_version": "design_proposal.v1",
     "profile": "standard",
-    "contract_digest": "fd6b976c468d028f0556349de196a15c087f460b98f451e8a6099867e7793eb6",
+    "contract_digest": "9676d74b6c4126ac504cbffff9e299b4180255142d7364520ee0b82567c182f1",
     "profile_overlay_digest": "26d5f97517175803cf2098b4538d5f7697b84adc5f463b81fe10b5bd58583685",
     "output_schema_digest": "f7527bba43bb8032fac4040176e472ac6bec1089c209fa8b25c3f7c1233d7c1f",
     "input_bundle_digest": "c8f885b2301f9abf9548454517a2d0beed6c16568728511c2400aeb182801c40",
-    "compiled_prompt_digest": "80d03d6654e094d272dea5b9cca4894ae39cf05939de356ec0060352a44ab60e"
+    "compiled_prompt_digest": "18218bce387d3ab5ea79c8fa2123590ddbd19f79679a6384f443799a0fe31f31"
   },
   {
     "contract_id": "harness:prompt:design-review",
     "prompt_version": "design_review.v1",
     "profile": "governed",
-    "contract_digest": "611c8ed664d2a1d63996c115328d07bec4bc7228d7b0fd8d3a08f4adf2c54a8f",
+    "contract_digest": "ab3a583e7a4770e098840381db79ab4146902c1e5e1af779b9a97a22c402f8fb",
     "profile_overlay_digest": "7fa9a1ffc57fe35bfc7087c0a2f70d8af2d7110b4423aa337225e040dff750b9",
     "output_schema_digest": "91aa02e5428bf2d8a3bfc50e0142ee72953535dba66b779bfa23524ea5cb6d04",
     "input_bundle_digest": "c8f885b2301f9abf9548454517a2d0beed6c16568728511c2400aeb182801c40",
-    "compiled_prompt_digest": "1a052de969d4b96910a647d8bbed9e5ffb51bac07d0645a7a5f57137b21dd052"
+    "compiled_prompt_digest": "0c2fd2f9a793f51a7891157095ab8bc3a938f59d09cc1bcc14dddf8d58e48e0a"
   },
   {
     "contract_id": "harness:prompt:design-review",
     "prompt_version": "design_review.v1",
     "profile": "lite",
-    "contract_digest": "611c8ed664d2a1d63996c115328d07bec4bc7228d7b0fd8d3a08f4adf2c54a8f",
+    "contract_digest": "ab3a583e7a4770e098840381db79ab4146902c1e5e1af779b9a97a22c402f8fb",
     "profile_overlay_digest": "ac3b33d6858401f6a043fff36131e13ae7e7f0904687ce76f2bc0548910e5dde",
     "output_schema_digest": "91aa02e5428bf2d8a3bfc50e0142ee72953535dba66b779bfa23524ea5cb6d04",
     "input_bundle_digest": "c8f885b2301f9abf9548454517a2d0beed6c16568728511c2400aeb182801c40",
-    "compiled_prompt_digest": "80134aa9206c241ebcd178f63bc6fdbaa5f53685d1d51354a6cb77ae8bfd0948"
+    "compiled_prompt_digest": "9a9d483be93adc68a7e7576a0cb92081aed99e1a700f1328c782f8968961d799"
   },
   {
     "contract_id": "harness:prompt:design-review",
     "prompt_version": "design_review.v1",
     "profile": "standard",
-    "contract_digest": "611c8ed664d2a1d63996c115328d07bec4bc7228d7b0fd8d3a08f4adf2c54a8f",
+    "contract_digest": "ab3a583e7a4770e098840381db79ab4146902c1e5e1af779b9a97a22c402f8fb",
     "profile_overlay_digest": "1040c5be117b1e8b7b88b2ea1fc4f0bc0bdf59285b7f30290e50a14c835fe9c1",
     "output_schema_digest": "91aa02e5428bf2d8a3bfc50e0142ee72953535dba66b779bfa23524ea5cb6d04",
     "input_bundle_digest": "c8f885b2301f9abf9548454517a2d0beed6c16568728511c2400aeb182801c40",
-    "compiled_prompt_digest": "8f51333532c4e2677625d093ca55b6bdee9c2076edc5442a0130e866a48b2ccc"
+    "compiled_prompt_digest": "07eb600ee96b4b5cd43d7a4e7ed844c9a587ad97d407fb89773fc36742a65ef5"
   },
   {
     "contract_id": "harness:prompt:feedback-analysis",
@@ -183,61 +183,61 @@
     "contract_id": "harness:prompt:iteration-narrative",
     "prompt_version": "iteration-narrative.v1",
     "profile": "governed",
-    "contract_digest": "b386ba71ac01b9439491d5311a5d968d01f1f401a6c7e685e2aae92ed4c4c18c",
+    "contract_digest": "f0e3966139d0a796296d5a32591c0512f8f3bc87dcc2756e06ddafc91705314f",
     "profile_overlay_digest": "3a965c4001809e89d13846af028febe9b91d1aaef16e94bc7f2d3e57686c773a",
     "output_schema_digest": "995939281cceed624b18d4add69f01e7eec044dc56eb8c6fc7436adafa51b238",
     "input_bundle_digest": "c8f885b2301f9abf9548454517a2d0beed6c16568728511c2400aeb182801c40",
-    "compiled_prompt_digest": "da2e20c9eace105349392c4fd88fd33c147dcb6730a0128449bd7f52d484a696"
+    "compiled_prompt_digest": "902ce19c05312ce1e07c88c647343881778ef2a6cae9d96448af810d8739153e"
   },
   {
     "contract_id": "harness:prompt:iteration-narrative",
     "prompt_version": "iteration-narrative.v1",
     "profile": "lite",
-    "contract_digest": "b386ba71ac01b9439491d5311a5d968d01f1f401a6c7e685e2aae92ed4c4c18c",
+    "contract_digest": "f0e3966139d0a796296d5a32591c0512f8f3bc87dcc2756e06ddafc91705314f",
     "profile_overlay_digest": "fb7c3f6851445b2be8f62b3b0350e5ca7530322d5939268ad2e788ce502afac6",
     "output_schema_digest": "995939281cceed624b18d4add69f01e7eec044dc56eb8c6fc7436adafa51b238",
     "input_bundle_digest": "c8f885b2301f9abf9548454517a2d0beed6c16568728511c2400aeb182801c40",
-    "compiled_prompt_digest": "c1b05079b2aaa69f840c6232eb8bf5d1787c104e1a814a6afa88ff246fae28e6"
+    "compiled_prompt_digest": "9b5529d51a5ed3d8d5d2931430611e94a6a4dcab10da4f05de2d99d5a04bc42f"
   },
   {
     "contract_id": "harness:prompt:iteration-narrative",
     "prompt_version": "iteration-narrative.v1",
     "profile": "standard",
-    "contract_digest": "b386ba71ac01b9439491d5311a5d968d01f1f401a6c7e685e2aae92ed4c4c18c",
+    "contract_digest": "f0e3966139d0a796296d5a32591c0512f8f3bc87dcc2756e06ddafc91705314f",
     "profile_overlay_digest": "b7c6bdd4baffbc1650b3229c122ffdc28899f768d6f60e744416cf3f5e1c0822",
     "output_schema_digest": "995939281cceed624b18d4add69f01e7eec044dc56eb8c6fc7436adafa51b238",
     "input_bundle_digest": "c8f885b2301f9abf9548454517a2d0beed6c16568728511c2400aeb182801c40",
-    "compiled_prompt_digest": "43fbd2e251cff0783b9113a232c3fb54e7cdbac7c9093f7bada6d2a85caebc00"
+    "compiled_prompt_digest": "472f9e18aeab0ef852daa08c5dfba8df1a6302d58c7380b18bcd3b4b42e5b9f1"
   },
   {
     "contract_id": "harness:prompt:plan-proposal",
     "prompt_version": "plan_proposal.v1",
     "profile": "governed",
-    "contract_digest": "d5569a909ccfce88d7a94a44c7f59f4bb3beeb750b6bcd5aa2d6625f008d4974",
+    "contract_digest": "42aba81bc64008595a1003db1dc28157d454bdc8704124cda30d5cedfe73bac6",
     "profile_overlay_digest": "c6904b70b23ddcdcd734720f12a8b59a3cbcd08e13130e206dc5d13b088b846e",
     "output_schema_digest": "f33482cef175072428a8748e7701b2a9dac168b8823c65d938cfe6901085f6f5",
     "input_bundle_digest": "c8f885b2301f9abf9548454517a2d0beed6c16568728511c2400aeb182801c40",
-    "compiled_prompt_digest": "8e64ef71ded6b4ff3288930c75a6cb6bbd1cfdc1a000b9321405ff79bb91993f"
+    "compiled_prompt_digest": "5ef42974b82df1ffe62d66b4710bff1ea00f902882960a5c3c5558170cf744d9"
   },
   {
     "contract_id": "harness:prompt:plan-proposal",
     "prompt_version": "plan_proposal.v1",
     "profile": "lite",
-    "contract_digest": "d5569a909ccfce88d7a94a44c7f59f4bb3beeb750b6bcd5aa2d6625f008d4974",
+    "contract_digest": "42aba81bc64008595a1003db1dc28157d454bdc8704124cda30d5cedfe73bac6",
     "profile_overlay_digest": "801e3eec23b3ee6463233e1711faf5542788eaf51736b43ce2b7c43ab1825662",
     "output_schema_digest": "f33482cef175072428a8748e7701b2a9dac168b8823c65d938cfe6901085f6f5",
     "input_bundle_digest": "c8f885b2301f9abf9548454517a2d0beed6c16568728511c2400aeb182801c40",
-    "compiled_prompt_digest": "d0db4acda8a4a12384f25d72e49610bbc591a31f54058055838bba155da1dfb5"
+    "compiled_prompt_digest": "8ef32a731ae5a2fd19bfd98daa2dffd5d6e237e5e1846d1bd4bff19dd4e4e551"
   },
   {
     "contract_id": "harness:prompt:plan-proposal",
     "prompt_version": "plan_proposal.v1",
     "profile": "standard",
-    "contract_digest": "d5569a909ccfce88d7a94a44c7f59f4bb3beeb750b6bcd5aa2d6625f008d4974",
+    "contract_digest": "42aba81bc64008595a1003db1dc28157d454bdc8704124cda30d5cedfe73bac6",
     "profile_overlay_digest": "b421453d7d4d9a0c812b34d2650c34a224dcb0bace069e64edba796d94ee66d7",
     "output_schema_digest": "f33482cef175072428a8748e7701b2a9dac168b8823c65d938cfe6901085f6f5",
     "input_bundle_digest": "c8f885b2301f9abf9548454517a2d0beed6c16568728511c2400aeb182801c40",
-    "compiled_prompt_digest": "7b0f242daa87c2c2150a3eee3a8fc264fed1018284782af30c1b0ef8363ca6ed"
+    "compiled_prompt_digest": "b67a89036a05f2060f7efda38202890a55abbd862e5174e0bad0316daf77fa37"
   },
   {
     "contract_id": "harness:prompt:prd-proposal",
@@ -303,30 +303,30 @@
     "contract_id": "harness:prompt:project-discovery",
     "prompt_version": "project-discovery.v1",
     "profile": "governed",
-    "contract_digest": "1e4c9d05bca959dcb18bdea3320ebf844c02bb0fcbbe85ce21ec321ad8e4f502",
+    "contract_digest": "d279009722a2f2e726ccb24ce27044a365a8bc9d580d5331ca211c21329cbd88",
     "profile_overlay_digest": "3dd12549e015b8202d89d300db41ff60602f992808c1ac281d21d6255b177f37",
     "output_schema_digest": "7ddfe218052e115db083ec44115c2574f130635ff2d6e6e4defe16cf029f6fe0",
     "input_bundle_digest": "c8f885b2301f9abf9548454517a2d0beed6c16568728511c2400aeb182801c40",
-    "compiled_prompt_digest": "9c0eef7e215c7d3390f9be869557a870d25351da9e34eb63965ea260b99e117a"
+    "compiled_prompt_digest": "b2c0d4bd60a8a45cbdb4a079a4751e7fd5b9beddac7c9d592d4b34f547f738c6"
   },
   {
     "contract_id": "harness:prompt:project-discovery",
     "prompt_version": "project-discovery.v1",
     "profile": "lite",
-    "contract_digest": "1e4c9d05bca959dcb18bdea3320ebf844c02bb0fcbbe85ce21ec321ad8e4f502",
+    "contract_digest": "d279009722a2f2e726ccb24ce27044a365a8bc9d580d5331ca211c21329cbd88",
     "profile_overlay_digest": "69bf5abafb44bc94bbe0d6915fbd09c4478c1d65b82fc5ff70c6992b71fc0577",
     "output_schema_digest": "7ddfe218052e115db083ec44115c2574f130635ff2d6e6e4defe16cf029f6fe0",
     "input_bundle_digest": "c8f885b2301f9abf9548454517a2d0beed6c16568728511c2400aeb182801c40",
-    "compiled_prompt_digest": "43bb63d360c1f926e19b580dab568bbe06e5da17a6d3f3ace7b3fe7bf7ba1175"
+    "compiled_prompt_digest": "f3178ba90de35fc20455f715d73887cd1ecc9f8abf4581832f634cea5eccf89f"
   },
   {
     "contract_id": "harness:prompt:project-discovery",
     "prompt_version": "project-discovery.v1",
     "profile": "standard",
-    "contract_digest": "1e4c9d05bca959dcb18bdea3320ebf844c02bb0fcbbe85ce21ec321ad8e4f502",
+    "contract_digest": "d279009722a2f2e726ccb24ce27044a365a8bc9d580d5331ca211c21329cbd88",
     "profile_overlay_digest": "694f0f9231507981610e629c2f9e5f7b981af23ba467fbfe696f4cc5ea1b85aa",
     "output_schema_digest": "7ddfe218052e115db083ec44115c2574f130635ff2d6e6e4defe16cf029f6fe0",
     "input_bundle_digest": "c8f885b2301f9abf9548454517a2d0beed6c16568728511c2400aeb182801c40",
-    "compiled_prompt_digest": "bfdcc7da3e5262a66ac5e3174f652dce0b891df70a16d049dedb8563f6ccf9bd"
+    "compiled_prompt_digest": "d8e3b4ce303df41228abfd0d4bae3526dd4a72455f808a70ce98cda45d7e7560"
   }
 ]

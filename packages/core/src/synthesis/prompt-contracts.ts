@@ -27,7 +27,7 @@ export const PROJECT_DISCOVERY_PROMPT_CONTRACT: PromptContract = definePromptCon
   },
   domain_rubric: {
     segment_id: "domain-rubric",
-    text: "Every fact, capability candidate and gate candidate must cite the bundle source it stands on, carry an honest confidence level and separate observed fact from inference. Never assert a fact the bundle does not support, and name unknowns explicitly instead of guessing.",
+    text: "Every fact, capability candidate and gate candidate must cite the bundle source it stands on by locator and digest: copy each locator and source_digest verbatim, character for character, from the bundle_sources manifest in the synthesis input — never compute, shorten or recall a digest, because a locator or digest that differs in any character invalidates the claim. Copy bundle_digest verbatim from the bundle field of the synthesis input. Carry an honest confidence level and separate observed fact from inference. Never assert a fact the bundle does not support, and name unknowns explicitly instead of guessing.",
   },
   profile_overlays: {
     lite: {
@@ -69,7 +69,7 @@ export const APPROVAL_BRIEF_PROMPT_CONTRACT: PromptContract = definePromptContra
   },
   domain_rubric: {
     segment_id: "domain-rubric",
-    text: "Present changes, risks, tradeoffs and open questions in balance, each grounded in a citation into the approval bundle. Never omit a deterministic field of the approval object, never editorialize towards approval or rejection, and never assert anything the bundle does not support.",
+    text: "Present changes, risks, tradeoffs and open questions in balance, each grounded in a citation into the approval bundle by locator and digest: copy each locator and source_digest verbatim, character for character, from the bundle_sources manifest in the synthesis input — never compute, shorten or recall a digest, because a locator or digest that differs in any character invalidates the claim. Copy bundle_digest verbatim from the bundle field of the synthesis input. Never omit a deterministic field of the approval object, never editorialize towards approval or rejection, and never assert anything the bundle does not support.",
   },
   profile_overlays: {
     lite: {
@@ -117,7 +117,7 @@ export const CONTEXT_ENRICHMENT_PROMPT_CONTRACT: PromptContract = definePromptCo
   },
   domain_rubric: {
     segment_id: "domain-rubric",
-    text: "Define only terms the bundle actually uses, summarize only the segments present and explain relevance only for locators in the bundle. Every claim cites at least one bundle source by locator and digest. Never assert a fact the bundle does not support; when the bundle is silent, say nothing.",
+    text: "Define only terms the bundle actually uses, summarize only the segments present and explain relevance only for locators in the bundle. Every claim cites at least one bundle source by locator and digest: copy each locator and source_digest verbatim, character for character, from the bundle_sources manifest in the synthesis input — never compute, shorten or recall a digest, because a locator or digest that differs in any character invalidates the claim. Copy bundle_digest verbatim from the bundle field of the synthesis input. Never assert a fact the bundle does not support; when the bundle is silent, say nothing.",
   },
   profile_overlays: {
     lite: {
@@ -166,7 +166,7 @@ export const ITERATION_NARRATIVE_PROMPT_CONTRACT: PromptContract = definePromptC
   },
   domain_rubric: {
     segment_id: "domain-rubric",
-    text: "Report outcomes exactly as the committed facts state them, name residual risks without softening them, and propose follow-ups that trace to cited facts. Every claim cites at least one bundle source by locator and digest; when the facts are silent, say nothing.",
+    text: "Report outcomes exactly as the committed facts state them, name residual risks without softening them, and propose follow-ups that trace to cited facts. Every claim cites at least one bundle source by locator and digest: copy each locator and source_digest verbatim, character for character, from the bundle_sources manifest in the synthesis input — never compute, shorten or recall a digest, because a locator or digest that differs in any character invalidates the claim. Copy bundle_digest verbatim from the bundle field of the synthesis input. When the facts are silent, say nothing.",
   },
   profile_overlays: {
     lite: {

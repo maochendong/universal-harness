@@ -199,7 +199,7 @@ export function createManagedPipelinePorts(deps: ManagedPipelinePortsDeps): Mana
       ? {}
       : {
           planProposal: createModelBackedPlanProposalPort({
-            ...shared,
+            ...designDeps,
             provider_config: planProposal.provider_config,
             provider: planProposal.provider,
             ...budgetOf(planProposal),

@@ -362,4 +362,53 @@ describe("model-backed grounded synthesis adapter", () => {
     expect(result.status).toBe("completed");
     if (result.status === "completed") expect(result.output.purpose).toBe("iteration_narrative");
   });
+
+  it("keeps enrichment and narrative invocations of one operation distinct (T23)", async () => {
+    const root = makeTempDir("harness-adapter-");
+    const bundle = adapterBundle(adapterSession(), "context_enrichment");
+    // The pipeline mints conversation ids as `<purpose>-conversation_<operation>`;
+    // both grounded purposes of one operation share the operation suffix.
+    const queue = [
+      JSON.stringify({
+        purpose: "context_enrichment",
+        schema_version: "context-enrichment.v1",
+        bundle_digest: bundle.record_digest,
+        terms: [],
+        segment_summaries: [],
+        relevance_explanations: [],
+      }),
+      JSON.stringify({
+        purpose: "iteration_narrative",
+        schema_version: "iteration-narrative.v1",
+        bundle_digest: bundle.record_digest,
+        outcomes: [],
+        residual_risks: [],
+        follow_ups: [],
+      }),
+    ];
+    const provider: ManagedModelProviderPort = {
+      invoke: vi.fn(async () => ({ ok: true as const, content: queue.shift() ?? "{}" })),
+    };
+    const port = createModelBackedGroundedSynthesisPort(deps(root, provider));
+    const enrichment = await port.synthesize({
+      purpose: "context_enrichment",
+      schema_version: "context-enrichment.v1",
+      binding_digest: "9".repeat(64),
+      conversation_id: "context-enrichment-conversation_01M0JSHARE",
+      run_id: "context-enrichment-run_01M0JSHARE",
+      bundle,
+    });
+    const narrative = await port.synthesize({
+      purpose: "iteration_narrative",
+      schema_version: "iteration-narrative.v1",
+      binding_digest: "9".repeat(64),
+      conversation_id: "iteration-narrative-conversation_01M0JSHARE",
+      run_id: "iteration-narrative-run_01M0JSHARE",
+      bundle,
+    });
+    expect(enrichment.status).toBe("completed");
+    expect(narrative.status).toBe("completed");
+    const ids = new Set(readModelInvocationRecords(root).map((record) => record.invocation_id));
+    expect(ids.size).toBe(2);
+  });
 });

@@ -439,7 +439,17 @@ export function createModelBackedGroundedSynthesisPort(
         {
           source_id: "synthesis-input",
           source_kind: "synthesis_input",
-          text: canonicalizeJson({ ...wired, bundle: wired.bundle.record_digest }),
+          text: canonicalizeJson({
+            ...wired,
+            bundle: wired.bundle.record_digest,
+            // Citation fidelity (T23): the model must copy locator/digest
+            // pairs verbatim, so the manifest has to name them explicitly —
+            // the per-source content items alone never surface the digest.
+            bundle_sources: wired.bundle.sources.map((source) => ({
+              locator: source.locator,
+              source_digest: source.source_digest,
+            })),
+          }),
         },
       ];
       const compiled = compileOrThrow(
@@ -455,7 +465,11 @@ export function createModelBackedGroundedSynthesisPort(
         port_id: "grounded_synthesis",
         purpose: wired.purpose,
         output_schema_id: contract.output_schema_id,
-        invocation_id: `invocation_${wired.conversation_id.replace(/^[a-z][a-z0-9-]*_/u, "")}`,
+        // The purpose must stay inside the invocation id: the pipeline mints
+        // conversation ids as `<purpose-words>-conversation_<operation>` and
+        // the prefix strip would collapse enrichment and narrative of one
+        // operation onto the same id — an identity_conflict (T23 dogfood).
+        invocation_id: `invocation_${wired.purpose}_${wired.conversation_id.replace(/^[a-z][a-z0-9-]*_/u, "")}`,
         conversation_id: wired.conversation_id,
         run_id: wired.run_id,
         contract,

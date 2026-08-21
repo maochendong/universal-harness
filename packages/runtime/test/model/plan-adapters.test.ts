@@ -127,6 +127,25 @@ describe("model-backed plan proposal adapter", () => {
     expect(states).toEqual(["planned", "started", "completed", "validated"]);
   });
 
+  it("itemizes known requirement contents when node_content is supplied", async () => {
+    const root = makeTempDir("harness-plan-proposal-nodes-");
+    const captured: { user?: string } = {};
+    const provider: ManagedModelProviderPort = {
+      invoke: vi.fn(async (request) => {
+        captured.user = request.messages.find((message) => message.role === "user")?.content;
+        return { ok: true as const, content: JSON.stringify(cleanOutput()) };
+      }),
+    };
+    const port = createModelBackedPlanProposalPort({
+      ...proposalDeps(root, provider),
+      node_content: (nodeId) => `canonical-content-of-${nodeId}`,
+    });
+    const result = await port.propose(proposalInput());
+    expect(result.status).toBe("proposed");
+    expect(captured.user).toContain('source-id="node:requirement_01K1REQ"');
+    expect(captured.user).toContain("canonical-content-of-requirement_01K1REQ");
+  });
+
   it("passes a clarification request through without consuming the invocation", async () => {
     const root = makeTempDir("harness-plan-proposal-clarify-");
     const port = createModelBackedPlanProposalPort(

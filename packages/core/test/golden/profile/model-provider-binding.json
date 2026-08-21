@@ -6,7 +6,7 @@
       "config_digest": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
       "failure_mode": "block",
       "output_schema_digest": "9a943013b4c6910caee6ff2ac7db7cf8f0907f89a791555b16d15a0ab115bee8",
-      "prompt_contract_digest": "583cb11834bae8f57e496a8a8addebeaf2e165917a0c957238e6bcef08816d7d",
+      "prompt_contract_digest": "dd6b7772268c5824295231125803249dfd106b5a3dc671d1fb95750ff691bde0",
       "prompt_contract_id": "harness:prompt:approval-brief",
       "prompt_contract_version": "1.0.0",
       "prompt_version": "approval-brief.v1",
@@ -21,7 +21,7 @@
       "config_digest": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
       "failure_mode": "block",
       "output_schema_digest": "7ddfe218052e115db083ec44115c2574f130635ff2d6e6e4defe16cf029f6fe0",
-      "prompt_contract_digest": "1e4c9d05bca959dcb18bdea3320ebf844c02bb0fcbbe85ce21ec321ad8e4f502",
+      "prompt_contract_digest": "d279009722a2f2e726ccb24ce27044a365a8bc9d580d5331ca211c21329cbd88",
       "prompt_contract_id": "harness:prompt:project-discovery",
       "prompt_contract_version": "1.0.0",
       "prompt_version": "project-discovery.v1",
@@ -39,7 +39,7 @@
   "profile_decision_id": "profile-decision_01K1ABCDEFGHIJKLMNO",
   "project_id": "project_demo-app",
   "protocol_version": "1.1.0",
-  "record_digest": "4f259fe87dae120485464d7324bbcddb18df66b2d058b0642cd489c3eb1ed9ed",
+  "record_digest": "b96f4ab130bc9f11757de4d4463bd0f386a0b03c88f3d5b7af626daaa1ecc32e",
   "record_kind": "model_provider_binding",
   "scope": "capture"
 }
