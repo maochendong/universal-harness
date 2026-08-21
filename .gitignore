@@ -7,3 +7,5 @@ coverage/
 .pack/
 .reports/
 .superpowers/
+.env
+.env.*

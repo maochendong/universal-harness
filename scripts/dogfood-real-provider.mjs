@@ -15,14 +15,30 @@
  * aborted before the next iteration.
  *
  * Usage: DEEPSEEK_API_KEY=... node scripts/dogfood-real-provider.mjs [out.json]
+ * Falls back to the repo-root `.env` file (gitignored) when the variable is
+ * not already present in the ambient environment.
  * Exits 2 without calling anything when the key is absent.
  */
-import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
 import { createOrchestratedRuntimeService } from "../packages/cli/dist/index.js";
 import { readModelInvocationRecords } from "../packages/runtime/dist/index.js";
+
+const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+
+function loadDotEnvFile(path) {
+  if (!existsSync(path)) return;
+  for (const line of readFileSync(path, "utf8").split(/\r?\n/u)) {
+    const match = /^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*?)\s*$/u.exec(line);
+    if (match === null || process.env[match[1]] !== undefined) continue;
+    process.env[match[1]] = match[2].replace(/^"(.*)"$/u, "$1").replace(/^'(.*)'$/u, "$1");
+  }
+}
+
+loadDotEnvFile(join(repositoryRoot, ".env"));
 
 if (process.env.DEEPSEEK_API_KEY === undefined || process.env.DEEPSEEK_API_KEY === "") {
   console.error("DEEPSEEK_API_KEY not set; real provider dogfood skipped.");

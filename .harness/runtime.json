@@ -1,0 +1,31 @@
+{
+  "runtime_config_version": 2,
+  "gates": [],
+  "judge_gates": [
+    {
+      "gate_id": "gate_llm_review",
+      "name": "DeepSeek LLM review judge",
+      "subject_id": "change_under_review",
+      "requested_mandatory": false,
+      "endpoint": "https://api.deepseek.com/chat/completions",
+      "model": "deepseek-v4-pro",
+      "prompt_version": "deepseek-judge-v1",
+      "api_key_env": "DEEPSEEK_API_KEY",
+      "env_allowlist": ["DEEPSEEK_API_KEY"],
+      "timeout_ms": 300000,
+      "seed": 17
+    }
+  ],
+  "model_providers": [
+    {
+      "provider_id": "deepseek",
+      "endpoint": "https://api.deepseek.com/chat/completions",
+      "model": "deepseek-v4-pro",
+      "api_key_env": "DEEPSEEK_API_KEY",
+      "env_allowlist": ["DEEPSEEK_API_KEY"],
+      "timeout_ms": 300000,
+      "slots": ["design_proposal", "design_review", "impact_advisory"],
+      "default": false
+    }
+  ]
+}
