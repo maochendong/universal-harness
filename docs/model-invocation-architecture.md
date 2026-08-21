@@ -1,6 +1,6 @@
 # Managed 模型调用层架构
 
-**状态**：现行（provider 实现、CLI 装配与生产路径改接均已落地；真实 Provider dogfood 在制）
+**状态**：现行（provider 实现、CLI 装配、生产路径改接与真实 dogfood 均已落地）
 **日期**：2026-08-21
 **范围**：PG-2 起的 managed capture 模型调用层；不改 Core schema，不改既有相位编排
 
@@ -126,7 +126,7 @@ Runner 端验证、槽位制解析）。安全姿态（端点校验、allowlist 
 | capture 改接（prd_proposal → managed 解释器） | 已完成（e7475ad） | `managed-interpret.ts`；8 例单测 |
 | design/impact/enrichment/narrative 改接 | 已完成（2ee8f84） | `managed-pipeline-ports.ts`；3 例 runtime + 7 例 CLI 测试 |
 | prd_review / project_discovery / approval_brief 生产接线 | 未开始 | 唯一消费点是 protocol-1.1 capture coordinator，legacy 主流水线不经过；随 coordinator 迁移落地 |
-| 真实 Provider dogfood（带凭证端到端） | 在制 | 凭证与端点已确认（`deepseek-v4-pro` 在 `/models` 列表中）；三档执行中 |
+| 真实 Provider dogfood（带凭证端到端） | 已完成（ef2d9e4 + 证据文档） | `docs/evidence/t20-real-provider-dogfood.md`；三档跑通 deepseek-v4-pro，产出 3 项修复与 T21 候选事项 |
 
 改接落地后本表已更新；prd_review 等三个 Capture-scope 槽位的生产接线以
 capture coordinator 迁移为前提，仍为后续路线事项。
