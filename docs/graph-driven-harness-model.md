@@ -277,7 +277,7 @@ DesignSet 同时扩展既有关系端点：`DesignSet DERIVES_FROM ImpactSet` �
 
 Harness 使用两条不同生命周期的事件流。43+ 类 Lifecycle Event 是写入 Git-native Ledger 的权威治理事实；11 类 Observation Event 是写入 Live Spool 的实时观察。两者可以在读取侧关联展示，但不能互相替代。
 
-### 3.1 15 类通用 Lifecycle Event
+### 3.1 24 类权威 Lifecycle Event（15 类通用工作流事件 + 9 类 TDD 事件）
 
 Lifecycle Event 记录一次受治理操作已经发生的关键里程碑。每条事件绑定 `project_id`、`iteration_id`、`workflow_operation_id`、`ledger_operation_id`、单调 `sequence`、`timestamp` 和结构化 `payload`。它们随 append-only Ledger 提交，可重放、可验证，并参与恢复、审计、投影和完成状态判断。
 
@@ -300,6 +300,15 @@ Lifecycle Event 记录一次受治理操作已经发生的关键里程碑。每�
 | `FindingClosed` | 发现已关闭 | Finding 生命周期 | 记录问题已解决或不再活动，同时保留历史。 |
 | `FindingSuperseded` | 发现已取代 | Finding 生命周期 | 记录 Finding 被更新事实取代，不删除旧记录。 |
 | `OperationCompleted` | 操作已完成 | 操作边界 | 在所有必要事实提交后关闭一次工作流。 |
+| `TddCycleStarted` | TDD 周期已开始 | 可证明 TDD | 绑定 TaskTddContract、Assertion、DesignSet、Plan、baseline 与 attempt。 |
+| `TddBaselineAccepted` | TDD 基线已接受 | 可证明 TDD | 证明实现前基线健康，排除已有失败伪装成 Red。 |
+| `TddTestPatchFrozen` | TDD 测试补丁已冻结 | 可证明 TDD | 冻结 canonical test patch；后续漂移使 Cycle 失效。 |
+| `TddRedAccepted` | TDD Red 已接受 | 可证明 TDD | 证明同一测试按 Failure Oracle 得到预期失败。 |
+| `TddImplementationUnlocked` | TDD 实现已解锁 | 可证明 TDD | Red 被接受后才签发 production write Grant。 |
+| `TddGreenAccepted` | TDD Green 已接受 | 可证明 TDD | 证明同一 patch、Gate、framework 和 environment 已通过。 |
+| `TddRefactorAccepted` | TDD 重构已接受 | 可证明 TDD | 记录不改变外部行为且完整门禁仍通过的重构。 |
+| `TddCycleCompleted` | TDD 周期已完成 | 可证明 TDD | 形成当前有效的 Baseline/Red/Green 配对记录。 |
+| `TddCycleInvalidated` | TDD 周期已失效 | 可证明 TDD | 任一 Contract、patch、Gate、environment 或上游 digest 漂移后使旧证明失效。 |
 
 <!-- graph-model:lifecycle-events:end -->
 

@@ -6,11 +6,7 @@ import { promisify } from "node:util";
 
 import { contentDigest } from "@universal-harness-internal/core";
 
-import type {
-  IsolatedWorkspacePort,
-  PatchFile,
-  WorkspaceHandle,
-} from "./workspace.js";
+import type { IsolatedWorkspacePort, PatchFile, WorkspaceHandle } from "./workspace.js";
 
 /**
  * Git worktree adapter for the isolated workspace port (provable TDD design

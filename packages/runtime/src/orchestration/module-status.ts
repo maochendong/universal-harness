@@ -1,7 +1,9 @@
-import type {
-  CapabilityId,
-  DomainStatusMapping,
-  NodeRecord,
+import {
+  TDD_VERDICT_TO_GENERIC,
+  type CapabilityId,
+  type DomainStatusMapping,
+  type GenericCapabilityStatus,
+  type NodeRecord,
 } from "@universal-harness-internal/core";
 
 import { readFindingGovernance } from "../finding/governance.js";
@@ -40,6 +42,12 @@ export const MODULE_STATUS_MAPPINGS: readonly DomainStatusMapping[] = [
       audit_blockers_open: "invalid_or_incomplete",
       audit_not_started: "controlled_not_applicable",
     },
+  },
+  // strict_tdd registers the six TDD verdict states with the mandated
+  // generic-five projection of provable TDD design 14.3 (T16).
+  {
+    capability_id: "strict_tdd",
+    mappings: { ...TDD_VERDICT_TO_GENERIC } as Record<string, GenericCapabilityStatus>,
   },
 ];
 

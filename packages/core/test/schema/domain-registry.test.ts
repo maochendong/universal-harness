@@ -137,6 +137,7 @@ describe("protocol 1.1 schema plumbing", () => {
       "task-tdd-contract",
       "plan-proposal",
       "plan-proposal-output",
+      "tdd-cycle",
       "capability-plan",
       "capture-session",
       "clarification-question",

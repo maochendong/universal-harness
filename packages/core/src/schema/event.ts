@@ -25,6 +25,15 @@ export const EVENT_TYPES = [
   "FindingClosed",
   "FindingSuperseded",
   "OperationCompleted",
+  "TddCycleStarted",
+  "TddBaselineAccepted",
+  "TddTestPatchFrozen",
+  "TddRedAccepted",
+  "TddImplementationUnlocked",
+  "TddGreenAccepted",
+  "TddRefactorAccepted",
+  "TddCycleCompleted",
+  "TddCycleInvalidated",
 ] as const;
 
 export const EventSchema = strictObject({

@@ -44,6 +44,7 @@ import {
   PlanProposalOutputSchema,
   PlanProposalRecordSchema,
 } from "./plan.js";
+import { TddCycleRecordSchema } from "./tdd.js";
 import { ModelInvocationRecordSchema, ModelPortFailureSchema } from "./model-invocation.js";
 import { PromptContractSchema, PromptPreparationFailureSchema } from "./prompt.js";
 import {
@@ -218,6 +219,7 @@ export const PROTOCOL_1_1_SCHEMA_REGISTRY = createDomainSchemaRegistry({
     { key: "task-tdd-contract", schema: TaskTddContractSchema },
     { key: "plan-proposal", schema: PlanProposalRecordSchema },
     { key: "plan-proposal-output", schema: PlanProposalOutputSchema },
+    { key: "tdd-cycle", schema: TddCycleRecordSchema },
     { key: "capability-plan", schema: CapabilityPlanRecordSchema },
     { key: "capture-session", schema: CaptureSessionRecordSchema },
     { key: "clarification-question", schema: ClarificationQuestionRecordSchema },

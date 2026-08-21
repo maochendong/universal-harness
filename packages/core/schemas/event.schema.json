@@ -45,7 +45,16 @@
         { "const": "FindingAccepted", "type": "string" },
         { "const": "FindingClosed", "type": "string" },
         { "const": "FindingSuperseded", "type": "string" },
-        { "const": "OperationCompleted", "type": "string" }
+        { "const": "OperationCompleted", "type": "string" },
+        { "const": "TddCycleStarted", "type": "string" },
+        { "const": "TddBaselineAccepted", "type": "string" },
+        { "const": "TddTestPatchFrozen", "type": "string" },
+        { "const": "TddRedAccepted", "type": "string" },
+        { "const": "TddImplementationUnlocked", "type": "string" },
+        { "const": "TddGreenAccepted", "type": "string" },
+        { "const": "TddRefactorAccepted", "type": "string" },
+        { "const": "TddCycleCompleted", "type": "string" },
+        { "const": "TddCycleInvalidated", "type": "string" }
       ]
     },
     "project_id": {

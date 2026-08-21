@@ -391,6 +391,26 @@ export {
   type TddPhaseGrantState,
 } from "./tdd/phase-grants.js";
 export {
+  TDD_CYCLE_STATES,
+  TDD_EVIDENCE_ISSUE_CODES,
+  acceptBaselineEvidence,
+  acceptGreenEvidence,
+  acceptRedEvidence,
+  buildTddCycleRecord,
+  createTddCycle,
+  freezeTestPatch,
+  matchFailureOracle,
+  type StructuredTestResult,
+  type TddCycleState,
+  type TddCycleView,
+  type TddEvidenceIssue,
+} from "./tdd/controller.js";
+export {
+  computeTaskTddVerdict,
+  type TaskTddVerdict,
+  type TaskTddVerdictInput,
+} from "./tdd/verdict.js";
+export {
   TIER_WEIGHTS,
   allocateTierBudgets,
   estimateTokens,

@@ -1,0 +1,96 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.universal-harness.dev/1.1/tdd-cycle.schema.json",
+  "additionalProperties": false,
+  "allOf": [
+    {
+      "if": { "properties": { "status": { "const": "completed" } }, "required": ["status"] },
+      "then": {
+        "properties": {
+          "baseline_evidence_digest": true,
+          "test_patch_digest": true,
+          "target_gate_binding_digest": true,
+          "executor_environment_digest": true,
+          "red_evidence_digest": true,
+          "green_evidence_digest": true,
+          "implementation_revision": true
+        },
+        "required": [
+          "baseline_evidence_digest",
+          "test_patch_digest",
+          "target_gate_binding_digest",
+          "executor_environment_digest",
+          "red_evidence_digest",
+          "green_evidence_digest",
+          "implementation_revision"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": { "status": { "enum": ["invalidated", "blocked"] } },
+        "required": ["status"]
+      },
+      "then": { "properties": { "reason": true }, "required": ["reason"] }
+    }
+  ],
+  "type": "object",
+  "required": [
+    "protocol_version",
+    "record_kind",
+    "logical_cycle_id",
+    "attempt_ordinal",
+    "task_id",
+    "assertion_ids",
+    "contract_digest",
+    "repository_baseline",
+    "status",
+    "record_digest"
+  ],
+  "properties": {
+    "protocol_version": { "const": "1.1.0", "type": "string" },
+    "record_kind": { "const": "tdd_cycle", "type": "string" },
+    "logical_cycle_id": {
+      "minLength": 3,
+      "maxLength": 160,
+      "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+      "type": "string"
+    },
+    "attempt_ordinal": { "minimum": 1, "type": "integer" },
+    "task_id": {
+      "minLength": 3,
+      "maxLength": 160,
+      "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+      "type": "string"
+    },
+    "assertion_ids": {
+      "minItems": 1,
+      "type": "array",
+      "items": {
+        "minLength": 3,
+        "maxLength": 160,
+        "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+        "type": "string"
+      }
+    },
+    "contract_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
+    "repository_baseline": { "minLength": 1, "type": "string" },
+    "baseline_evidence_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
+    "test_patch_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
+    "target_gate_binding_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
+    "executor_environment_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
+    "red_evidence_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
+    "green_evidence_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
+    "refactor_evidence_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
+    "implementation_revision": { "minLength": 1, "type": "string" },
+    "status": {
+      "anyOf": [
+        { "const": "completed", "type": "string" },
+        { "const": "invalidated", "type": "string" },
+        { "const": "blocked", "type": "string" }
+      ]
+    },
+    "reason": { "minLength": 1, "type": "string" },
+    "record_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" }
+  }
+}
