@@ -7,6 +7,7 @@ import {
   readCommittedOperations,
   resolveHarnessPath,
   type EdgeRecord,
+  type ModelInvocationRecord,
   type NodeRecord,
 } from "@universal-harness-internal/core";
 import {
@@ -20,7 +21,9 @@ import {
 } from "@universal-harness-internal/graph";
 import {
   collectProjectStatus,
+  latestModelInvocation,
   projectFindingGroups,
+  readModelInvocationRecords,
   readPendingApprovalRequests,
   type ApprovalRequestRecord,
 } from "@universal-harness-internal/runtime";
@@ -30,6 +33,7 @@ import {
   presentEdge,
   presentApproval,
   presentFindingGroup,
+  presentModelInvocation,
   presentNode,
   presentSemanticProposal,
   presentationMap,
@@ -69,6 +73,11 @@ export interface DashboardReadApi {
     readonly cursor?: string;
     readonly limit?: number;
   }): DashboardPage<ApprovalRequestRecord>;
+  /** PG-8: model invocation observability, latest revision per invocation. */
+  modelInvocations(query: {
+    readonly cursor?: string;
+    readonly limit?: number;
+  }): DashboardPage<ModelInvocationRecord>;
 }
 
 function page<T>(
@@ -357,6 +366,33 @@ export function createDashboardReadApi(projectRoot: string): DashboardReadApi {
           ? { next_cursor: last.request_id }
           : {}),
         presentations: presentationMap(items.map((item) => presentApproval({ ...item }))),
+      };
+    },
+    modelInvocations: (query) => {
+      const limit = query.limit ?? 50;
+      const records = readModelInvocationRecords(projectRoot);
+      const latestByInvocation = new Map<string, ModelInvocationRecord>();
+      for (const record of records) {
+        latestByInvocation.set(
+          record.invocation_id,
+          latestModelInvocation(records, record.invocation_id) ?? record,
+        );
+      }
+      const latest = [...latestByInvocation.values()].sort((left, right) =>
+        left.invocation_id.localeCompare(right.invocation_id),
+      );
+      const start =
+        query.cursor === undefined
+          ? 0
+          : Math.max(0, latest.findIndex((record) => record.invocation_id === query.cursor) + 1);
+      const items = latest.slice(start, start + limit);
+      const last = items.at(-1);
+      return {
+        items,
+        ...(start + items.length < latest.length && last !== undefined
+          ? { next_cursor: last.invocation_id }
+          : {}),
+        presentations: presentationMap(items.map((item) => presentModelInvocation({ ...item }))),
       };
     },
   };

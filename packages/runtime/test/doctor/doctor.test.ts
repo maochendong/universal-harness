@@ -54,12 +54,32 @@ describe("evaluateDoctorDiagnostics", () => {
     expect(report.ok).toBe(false);
   });
 
-  it("fails when the git executable is unavailable", () => {
+  it("fails with a remedy when the git executable is unavailable", () => {
     const report = evaluateDoctorDiagnostics({ nodeVersion: "v22.13.0" });
     const check = report.diagnostics.find((diagnostic) => diagnostic.name === "git_executable");
     expect(check?.status).toBe("fail");
     expect(check?.category).toBe("git");
     expect(check?.remedy).toContain("git");
+  });
+
+  it("reports the prompt registry probe and fails on composition drift", () => {
+    const clean = evaluateDoctorDiagnostics({
+      ...HEALTHY,
+      promptRegistry: { contractCount: 11 },
+    });
+    const cleanCheck = clean.diagnostics.find(
+      (diagnostic) => diagnostic.name === "prompt_registry",
+    );
+    expect(cleanCheck?.status).toBe("pass");
+
+    const drifted = evaluateDoctorDiagnostics({
+      ...HEALTHY,
+      promptRegistry: { contractCount: 0, compositionError: "contract_content_conflict" },
+    });
+    const check = drifted.diagnostics.find((diagnostic) => diagnostic.name === "prompt_registry");
+    expect(check?.status).toBe("fail");
+    expect(check?.remedy).toBeDefined();
+    expect(drifted.ok).toBe(false);
   });
 
   it("skips project checks outside a managed project", () => {

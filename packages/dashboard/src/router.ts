@@ -471,6 +471,19 @@ export function createDashboardRouter(options: DashboardRouterOptions) {
         );
         return;
       }
+      if (url.pathname === "/api/v1/model-invocations") {
+        queryKeys(url.searchParams, new Set(["cursor", "limit"]));
+        const cursor = one(url.searchParams, "cursor");
+        const limit = integer(one(url.searchParams, "limit"), "limit", 1, 500);
+        sendJson(
+          response,
+          options.readApi.modelInvocations({
+            ...(cursor === undefined ? {} : { cursor: identifier(cursor, "cursor") }),
+            ...(limit === undefined ? {} : { limit }),
+          }),
+        );
+        return;
+      }
       if (url.pathname === "/api/v1/graph/nodes") {
         queryKeys(
           url.searchParams,

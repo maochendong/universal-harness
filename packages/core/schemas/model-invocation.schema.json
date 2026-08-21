@@ -104,6 +104,15 @@
     },
     "output_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
     "artifact_locator": { "minLength": 1, "type": "string" },
+    "usage": {
+      "additionalProperties": false,
+      "type": "object",
+      "properties": {
+        "tokens": { "minimum": 0, "type": "integer" },
+        "steps": { "minimum": 0, "type": "integer" },
+        "duration_ms": { "minimum": 0, "type": "integer" }
+      }
+    },
     "record_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" }
   }
 }

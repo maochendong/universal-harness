@@ -5,6 +5,7 @@ import {
 
 import { usageError } from "../errors.js";
 import { parseCommandArgs, type CommandResult } from "../io.js";
+import { probeShippedPromptRegistry } from "../prompt-registry.js";
 import type { CommandContext } from "../router.js";
 
 const USAGE = "harness doctor";
@@ -19,7 +20,10 @@ export function runDoctorCommand(args: readonly string[], context: CommandContex
   if (positionals.length > 0) {
     throw usageError(`harness doctor takes no arguments; usage: ${USAGE}`);
   }
-  const probes = collectDoctorProbes(context.cwd, { gitVersion: context.gitVersion });
+  const probes = collectDoctorProbes(context.cwd, {
+    gitVersion: context.gitVersion,
+    promptRegistry: probeShippedPromptRegistry,
+  });
   const report = evaluateDoctorDiagnostics(probes);
   return {
     command: "doctor",

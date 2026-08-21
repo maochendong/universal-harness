@@ -341,6 +341,12 @@ exports[`harness CLI inspection commands > runs doctor checks in and outside a p
       },
       {
         "category": "schema",
+        "detail": "11 shipped prompt contracts compose cleanly",
+        "name": "prompt_registry",
+        "status": "pass",
+      },
+      {
+        "category": "schema",
         "detail": "no managed project at or above the working directory (project checks skipped)",
         "name": "project_layout",
         "status": "pass",
@@ -349,7 +355,7 @@ exports[`harness CLI inspection commands > runs doctor checks in and outside a p
     "failed_checks": 0,
     "warning_checks": 0,
   },
-  "message": "all 3 checks passed (0 warnings)",
+  "message": "all 4 checks passed (0 warnings)",
   "status": "ok",
 }
 `;

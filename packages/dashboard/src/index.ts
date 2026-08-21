@@ -8,9 +8,11 @@ export { DashboardProblem, type ProblemDetails } from "./problem.js";
 export { createDashboardReadApi, type DashboardPage, type DashboardReadApi } from "./read-api.js";
 export {
   presentApproval,
+  presentCapabilityStatus,
   presentEdge,
   presentEvent,
   presentFindingGroup,
+  presentModelInvocation,
   presentNode,
   presentSemanticProposal,
   presentationKey,

@@ -810,3 +810,176 @@ export function presentApproval(source: PresentationSource): BusinessPresentatio
       reason === undefined,
   };
 }
+
+/** PG-8: Chinese labels for the model ports and grounded purposes. */
+const PORT_LABELS: Readonly<Record<string, string>> = {
+  prd_proposal: "需求提案",
+  prd_review: "需求评审",
+  impact_advisory: "影响分析建议",
+  design_proposal: "设计提案",
+  design_review: "设计评审",
+  plan_proposal: "计划提案",
+  feedback_analysis: "反馈分析",
+};
+
+const PURPOSE_LABELS: Readonly<Record<string, string>> = {
+  project_discovery: "项目发现",
+  context_enrichment: "上下文解读",
+  approval_brief: "审批摘要",
+  iteration_narrative: "迭代叙事",
+};
+
+const INVOCATION_STATE_LABELS: Readonly<Record<string, string>> = {
+  planned: "已计划",
+  started: "已启动",
+  completed: "已完成",
+  failed: "已失败",
+  validated: "已校验",
+  consumed: "已消费",
+  invalidated: "已失效",
+};
+
+const FAILURE_EXPLANATIONS: Readonly<
+  Record<string, { readonly value: string; readonly remedy: string }>
+> = {
+  provider_required: { value: "未配置 Provider", remedy: "配置 Provider 后重试" },
+  provider_unavailable: { value: "Provider 不可用", remedy: "稍后重试或切换 Provider" },
+  timeout: { value: "调用超时", remedy: "重试或提高预算后恢复" },
+  budget_exhausted: { value: "预算耗尽", remedy: "提高预算后恢复" },
+  invalid_output: { value: "输出未通过校验", remedy: "重新生成或调整输入后重试" },
+  independence_violation: { value: "独立性校验未通过", remedy: "检查会话与绑定隔离后重试" },
+  version_mismatch: { value: "契约版本不匹配", remedy: "对齐契约版本后重试" },
+  policy_denied: { value: "策略拒绝", remedy: "调整授权或策略后重试" },
+  uncertain: { value: "结果不确定", remedy: "人工复核后决定" },
+};
+
+const CAPABILITY_LABELS: Readonly<Record<string, string>> = {
+  impact_analysis: "影响分析",
+  design_governance: "设计治理",
+  independent_evaluation: "独立评估",
+  advanced_audit: "高级审计",
+  strict_tdd: "严格 TDD",
+};
+
+const GENERIC_STATUS_LABELS: Readonly<Record<string, string>> = {
+  proven: "已证明",
+  controlled_not_applicable: "受控不适用",
+  not_enabled_by_profile: "未启用",
+  historical_without_proof: "历史无证明",
+  invalid_or_incomplete: "无效或不完整",
+};
+
+/**
+ * PG-8 model invocation presentation (never renders raw prompts): Chinese
+ * port/purpose label, contract version, output schema, usage, state and —
+ * on failure — a Chinese explanation with a recovery action. Failure
+ * summaries stay technical detail; the badge carries the mapped
+ * explanation, not the provider's raw text.
+ */
+export function presentModelInvocation(source: PresentationSource): BusinessPresentation {
+  const entityId =
+    typeof source.invocation_id === "string" ? source.invocation_id : "unknown_invocation";
+  const digest = typeof source.record_digest === "string" ? source.record_digest : null;
+  const portId = typeof source.port_id === "string" ? source.port_id : "unknown_port";
+  const purpose = typeof source.purpose === "string" ? source.purpose : undefined;
+  const state = typeof source.state === "string" ? source.state : "unknown";
+  const typeLabel =
+    portId === "grounded_synthesis" && purpose !== undefined
+      ? (PURPOSE_LABELS[purpose] ?? `未知用途 / ${purpose}`)
+      : (PORT_LABELS[portId] ?? `未知端口 / ${portId}`);
+  const statusLabel = INVOCATION_STATE_LABELS[state] ?? `未知状态 / ${state}`;
+  const contractVersion =
+    typeof source.prompt_contract_version === "string" ? source.prompt_contract_version : "unknown";
+  const schemaId =
+    typeof source.output_schema_id === "string" ? source.output_schema_id : "unknown";
+
+  const badges: BusinessPresentationBadge[] = [
+    { label_zh: "契约版本", value: truncate(contractVersion, 48), tone: "neutral" },
+    { label_zh: "输出 Schema", value: truncate(schemaId, 48), tone: "neutral" },
+  ];
+  const usage = source.usage as
+    { readonly tokens?: number; readonly duration_ms?: number } | undefined;
+  badges.push({
+    label_zh: "用量",
+    value:
+      usage?.tokens === undefined
+        ? "不可用"
+        : `${String(usage.tokens)} tokens${usage.duration_ms === undefined ? "" : ` · ${String(Math.round(usage.duration_ms / 100) / 10)}s`}`,
+    tone: "neutral",
+  });
+  const failure = source.failure as
+    { readonly code: string; readonly retryable: boolean } | undefined;
+  if (failure !== undefined) {
+    const explanation = FAILURE_EXPLANATIONS[failure.code] ?? {
+      value: `未分类失败 / ${failure.code}`,
+      remedy: "查看审计详情",
+    };
+    badges.push({ label_zh: "失败原因", value: truncate(explanation.value, 48), tone: "critical" });
+    badges.push({ label_zh: "恢复动作", value: truncate(explanation.remedy, 48), tone: "warning" });
+  }
+
+  const knownPort =
+    portId === "grounded_synthesis"
+      ? purpose !== undefined && PURPOSE_LABELS[purpose] !== undefined
+      : PORT_LABELS[portId] !== undefined;
+  return {
+    presentation_version: "1",
+    entity_id: entityId,
+    binding_digest: digest,
+    title_zh: truncate(`${typeLabel} · ${statusLabel}`, 80),
+    description_zh: truncate(
+      `端口 ${portId}${purpose === undefined ? "" : `（${purpose}）`}，契约 ${String(source.prompt_contract_id ?? "unknown")} v${contractVersion}。`,
+      240,
+    ),
+    type_label_zh: typeLabel,
+    status_label_zh: statusLabel,
+    technical_type: portId,
+    technical_status: state,
+    badges: limitBadges(badges),
+    derived_from: ["port_id", "purpose", "state", "prompt_contract_version"],
+    fallback: !knownPort || INVOCATION_STATE_LABELS[state] === undefined,
+  };
+}
+
+/**
+ * PG-8 capability card presentation: generic and domain status are shown
+ * together; an inactive capability reads 未启用 without implying any proof.
+ */
+export function presentCapabilityStatus(source: PresentationSource): BusinessPresentation {
+  const capabilityId =
+    typeof source.capability_id === "string" ? source.capability_id : "unknown_capability";
+  const typeLabel = CAPABILITY_LABELS[capabilityId] ?? `未知能力 / ${capabilityId}`;
+  const genericStatus =
+    typeof source.generic_status === "string" ? source.generic_status : undefined;
+  const statusLabel =
+    genericStatus === undefined
+      ? "待证明"
+      : (GENERIC_STATUS_LABELS[genericStatus] ?? `未知状态 / ${genericStatus}`);
+  const badges: BusinessPresentationBadge[] = [];
+  if (typeof source.domain_status === "string") {
+    badges.push({
+      label_zh: "领域状态",
+      value: truncate(source.domain_status, 48),
+      tone: "neutral",
+    });
+  }
+  badges.push({
+    label_zh: "解析",
+    value: source.resolution === "active" ? "已激活" : "按 Profile 停用",
+    tone: source.resolution === "active" ? "positive" : "neutral",
+  });
+  return {
+    presentation_version: "1",
+    entity_id: capabilityId,
+    binding_digest: null,
+    title_zh: truncate(typeLabel, 80),
+    description_zh: truncate(`能力 ${capabilityId}：${statusLabel}。`, 240),
+    type_label_zh: typeLabel,
+    status_label_zh: statusLabel,
+    technical_type: capabilityId,
+    technical_status: genericStatus ?? "unproven",
+    badges: limitBadges(badges),
+    derived_from: ["capability_id", "generic_status", "domain_status", "resolution"],
+    fallback: CAPABILITY_LABELS[capabilityId] === undefined,
+  };
+}

@@ -52,6 +52,11 @@ export interface DoctorProbes {
   readonly gitVersion?: string;
   /** Absent when the working directory is not inside a managed project. */
   readonly project?: DoctorProjectProbes;
+  /** PG-8: shipped prompt contract registry integrity, when the host probes it. */
+  readonly promptRegistry?: {
+    readonly contractCount: number;
+    readonly compositionError?: string;
+  };
 }
 
 export interface DoctorProjectProbes {
@@ -92,6 +97,34 @@ function checkNodeRuntime(probes: DoctorProbes): DoctorDiagnostic {
         detail: `${probes.nodeVersion} is older than the required >= ${MINIMUM_NODE_MAJOR}.${MINIMUM_NODE_MINOR}.0`,
         remedy: `install Node.js ${MINIMUM_NODE_MAJOR}.${MINIMUM_NODE_MINOR}.0 or newer and re-run harness doctor`,
       };
+}
+
+function checkPromptRegistry(probes: DoctorProbes): DoctorDiagnostic {
+  const probe = probes.promptRegistry;
+  if (probe === undefined) {
+    return {
+      name: "prompt_registry",
+      category: "schema",
+      status: "pass",
+      detail: "prompt registry probe not provided (skipped)",
+    };
+  }
+  if (probe.compositionError !== undefined) {
+    return {
+      name: "prompt_registry",
+      category: "schema",
+      status: "fail",
+      detail: `shipped prompt contract registry drifted: ${probe.compositionError}`,
+      remedy:
+        "恢复各域注册的 Prompt Contract 与 Registry 摘要一致（contract_content_conflict / digest 漂移），然后重跑 harness doctor",
+    };
+  }
+  return {
+    name: "prompt_registry",
+    category: "schema",
+    status: "pass",
+    detail: `${String(probe.contractCount)} shipped prompt contracts compose cleanly`,
+  };
 }
 
 function checkGit(probes: DoctorProbes): DoctorDiagnostic {
@@ -204,6 +237,7 @@ export function evaluateDoctorDiagnostics(probes: DoctorProbes): DoctorReport {
   const diagnostics = [
     checkNodeRuntime(probes),
     checkGit(probes),
+    checkPromptRegistry(probes),
     ...(probes.project === undefined
       ? [
           {
@@ -230,12 +264,19 @@ export function collectDoctorProbes(
   probes: {
     readonly gitVersion: () => string | undefined;
     readonly nodeVersion?: string;
+    /** PG-8: shipped prompt registry integrity probe (never throws). */
+    readonly promptRegistry?: () => {
+      readonly contractCount: number;
+      readonly compositionError?: string;
+    };
   },
 ): DoctorProbes {
   const gitVersion = probes.gitVersion();
+  const promptRegistry = probes.promptRegistry?.();
   const base: DoctorProbes = {
     nodeVersion: probes.nodeVersion ?? process.version,
     ...(gitVersion === undefined ? {} : { gitVersion }),
+    ...(promptRegistry === undefined ? {} : { promptRegistry }),
   };
   const projectRoot = findProjectRoot(cwd);
   if (projectRoot === undefined) return base;

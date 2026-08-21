@@ -71,5 +71,16 @@ export const ModelInvocationRecordSchema = recordEnvelopeSchema("model_invocatio
   failure: Type.Optional(ModelPortFailureSchema),
   output_digest: Type.Optional(DigestSchema),
   artifact_locator: Type.Optional(Type.String({ minLength: 1 })),
+  /**
+   * PG-8 observability: provider-reported usage, when the provider supplies
+   * it. Absent means unavailable — never zero-filled.
+   */
+  usage: Type.Optional(
+    strictObject({
+      tokens: Type.Optional(Type.Integer({ minimum: 0 })),
+      steps: Type.Optional(Type.Integer({ minimum: 0 })),
+      duration_ms: Type.Optional(Type.Integer({ minimum: 0 })),
+    }),
+  ),
 });
 export type ModelInvocationRecord = Static<typeof ModelInvocationRecordSchema>;
