@@ -50,3 +50,21 @@ conversation/run 身份、prompt 契约 id@version 与全部 digest 绑定；原
 尝试即失败、不重试，符合 Runner 语义）；原样重试一次后 capture 正常完成并
 被消费，确认为端点响应时间抖动而非系统性问题。重试随后暴露发现 3 的
 advisory 尺寸问题。
+
+## T21 第二轮：design/impact/review 真实输入保真
+
+针对发现 2/3 的修复（`4aade1b`：advisory 整图分项、design 端口携带
+must-change 需求与 criterion/test 节点的 canonical 内容）后，重跑
+standard/governed 两档（lite 按 profile 定义不启用 design/impact 模块，零调用
+即正确行为）：
+
+| Profile | 端口表现 | 领域结果 |
+| --- | --- | --- |
+| standard | `prd_proposal` consumed；`impact_advisory` 编译/调用成功（分项后尺寸合规），输出 fail-closed（模型给 `risk_signals` 元素加了 schema 外字段）；`design_proposal` consumed | 设计草案通过 schema 与引用校验并被消费、落盘留痕；确定性设计校验 fail-closed：`applicability_gap`（模型未给每个 must-change 需求输出 TDD applicability 条目），相位 typed block，草案记录完整保留 |
+| governed | `prd_proposal` consumed | capture 草案被消费后，capture 硬门禁 fail-closed：「requirement 5 has no acceptance criteria」（governed overlay 下模型漏了一条需求的验收准则）；未进入 design |
+
+结论：design/impact 端口的模型接入层（编译、调用、schema 校验、merge/确定性
+校验、状态机闭环、fail-closed 语义）在真实 provider 下全部按设计工作；剩余
+差距是模型对严格领域规则的逐条遵守（applicability 全覆盖、每条需求必有验收
+准则、不输出 schema 外字段），属于 prompt 契约迭代范畴，每一轮改进都可用
+同一 dogfood 脚本回归验证。
