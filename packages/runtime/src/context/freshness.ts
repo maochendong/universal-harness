@@ -66,6 +66,9 @@ export function stalenessReasons(
   if (JSON.stringify(expectedApprovals) !== JSON.stringify(actualApprovals)) {
     reasons.push("approval binding set changed");
   }
+  if ((expected.design_set_digest ?? "") !== (actual.design_set_digest ?? "")) {
+    reasons.push("design set digest changed");
+  }
   return reasons;
 }
 

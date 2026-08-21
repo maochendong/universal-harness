@@ -99,6 +99,8 @@ export const ExecutionAuthorizationRecordSchema = strictObject({
   grant_spec_digests: DigestSetSchema,
   policy_digest: DigestSchema,
   adapter_profile_digest: Type.Optional(DigestSchema),
+  /** Bound only when design_governance is active for the operation (T14). */
+  design_set_digest: Type.Optional(DigestSchema),
   baseline_commit: GitCommitSchema,
   effective_risk: enumerated(["low", "medium", "high", "critical"] as const),
   approval_digest: DigestSchema,

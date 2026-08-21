@@ -65,7 +65,8 @@
           "anyOf": [
             { "const": "proposal", "type": "string" },
             { "const": "review", "type": "string" },
-            { "const": "approval_brief", "type": "string" }
+            { "const": "approval_brief", "type": "string" },
+            { "const": "context_enrichment", "type": "string" }
           ]
         },
         "project_baseline_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },

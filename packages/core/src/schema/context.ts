@@ -22,7 +22,12 @@ export const PROJECT_CONTEXT_SOURCE_KINDS = [
 export type ProjectContextSourceKind = (typeof PROJECT_CONTEXT_SOURCE_KINDS)[number];
 export const ProjectContextSourceKindSchema = enumerated(PROJECT_CONTEXT_SOURCE_KINDS);
 
-export const PROJECT_CONTEXT_PURPOSES = ["proposal", "review", "approval_brief"] as const;
+export const PROJECT_CONTEXT_PURPOSES = [
+  "proposal",
+  "review",
+  "approval_brief",
+  "context_enrichment",
+] as const;
 export type ProjectContextPurpose = (typeof PROJECT_CONTEXT_PURPOSES)[number];
 export const ProjectContextPurposeSchema = enumerated(PROJECT_CONTEXT_PURPOSES);
 

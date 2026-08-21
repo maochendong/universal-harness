@@ -1,11 +1,10 @@
 import type { GroundedSynthesisPurpose } from "../schema/profile.js";
 import type {
   ApprovalBriefInput,
+  ContextEnrichmentInput,
   GroundedSynthesisOutput,
   ProjectDiscoveryInput,
 } from "../schema/synthesis.js";
-import type { DigestSchema } from "../schema/common.js";
-import type { Static } from "@sinclair/typebox";
 
 /**
  * GroundedSynthesisPort contract (model advisory design 10). Fixed to four
@@ -37,22 +36,21 @@ export interface GroundedSynthesisFailure {
 }
 
 /**
- * Minimal inputs for the purposes whose compilers land in later tasks
- * (context_enrichment T14, iteration_narrative T17). They still pin the
- * purpose, schema version, binding and bundle so the isolation and versioning
- * rules already apply uniformly. `approval_brief` graduated to its versioned
- * input schema in T7 (`ApprovalBriefInputSchema` in schema/synthesis).
+ * Minimal input for the purpose whose compiler lands in T17
+ * (iteration_narrative). It still pins the purpose, schema version, binding
+ * and bundle so the isolation and versioning rules already apply uniformly.
+ * `approval_brief` graduated in T7 and `context_enrichment` in T14
+ * (`ContextEnrichmentInputSchema` in schema/synthesis).
  */
 export interface GroundedSynthesisStubInput<P extends GroundedSynthesisPurpose> {
   readonly purpose: P;
   readonly schema_version: string;
-  readonly binding_digest: Static<typeof DigestSchema>;
+  readonly binding_digest: string;
   readonly conversation_id: string;
   readonly run_id: string;
   readonly bundle_digest: string;
 }
 
-export type ContextEnrichmentInput = GroundedSynthesisStubInput<"context_enrichment">;
 export type IterationNarrativeInput = GroundedSynthesisStubInput<"iteration_narrative">;
 
 export type GroundedSynthesisInput =

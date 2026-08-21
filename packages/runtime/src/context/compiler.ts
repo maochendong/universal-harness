@@ -48,6 +48,8 @@ export interface BundleBindings {
   readonly impact_coverage_digest: string;
   readonly task_digest: string;
   readonly approval_digests: readonly string[];
+  /** Present only when design_governance is active (designset design 13.2). */
+  readonly design_set_digest?: string;
 }
 
 export interface ContextCandidate {
@@ -260,6 +262,9 @@ export function compileContextBundle(input: CompileContextInput): CompiledContex
       impact_coverage_digest: input.bindings.impact_coverage_digest,
       task_digest: input.bindings.task_digest,
       approval_digests: [...input.bindings.approval_digests].sort(),
+      ...(input.bindings.design_set_digest === undefined
+        ? {}
+        : { design_set_digest: input.bindings.design_set_digest }),
     },
     token_budget: input.tokenBudget,
     tier_allocations: allocations,

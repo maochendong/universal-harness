@@ -1,10 +1,15 @@
-import { existsSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
 import { createGitVcsAdapter } from "@universal-harness-internal/adapter-vcs-git";
-import { materializeLedger, pageEdges, pageNodes } from "@universal-harness-internal/graph";
+import {
+  materializeLedger,
+  pageEdges,
+  pageNodes,
+  readDesignSetExtension,
+} from "@universal-harness-internal/graph";
 
 import {
   createGenericInterpreter,
@@ -251,6 +256,23 @@ describe("design phase", { timeout: 90000 }, () => {
         expect(nodes.some((node) => node.id === DECISION_ID && node.status === "accepted")).toBe(
           true,
         );
+        // T14: every execution bundle binds the accepted DesignSet digest,
+        // and the execution authorization carries the same binding.
+        const designSetDigest = readDesignSetExtension(
+          designSet as Parameters<typeof readDesignSetExtension>[0],
+        ).content_digest;
+        // Bundles are runtime artifacts, not graph nodes.
+        const bundleDir = join(harnessRootFor(projectRoot), "artifacts", "context-bundles");
+        const bundleFiles = readdirSync(bundleDir).filter((name) => name.endsWith(".json"));
+        expect(bundleFiles.length).toBeGreaterThan(0);
+        for (const name of bundleFiles) {
+          const record = JSON.parse(readFileSync(join(bundleDir, name), "utf8")) as {
+            extensions?: { "harness.context"?: { bindings?: Record<string, unknown> } };
+          };
+          expect(record.extensions?.["harness.context"]?.bindings?.["design_set_digest"]).toBe(
+            designSetDigest,
+          );
+        }
       } finally {
         database.close();
       }

@@ -36,6 +36,12 @@ export interface ExecutionPreflightInput {
   readonly grantSpecs: readonly CapabilityGrantSpec[];
   readonly policyDigest: string;
   readonly adapterProfileDigest?: string;
+  /**
+   * The accepted DesignSet content digest when design_governance is active;
+   * every task bundle must carry the same binding. Undefined means the
+   * capability is off and bundles must NOT carry the binding.
+   */
+  readonly designSetDigest?: string;
   readonly baselineCommit: string;
   readonly requiresWrite: boolean;
   readonly opaqueDelegated: boolean;
@@ -84,6 +90,7 @@ export function prepareExecutionPreflight(
         taskDigest: task.taskDigest,
         planDigest: input.planDigest,
         impactCoverageDigest: input.impactCoverageDigest,
+        ...(input.designSetDigest === undefined ? {} : { designSetDigest: input.designSetDigest }),
       });
     } catch (error) {
       if (error instanceof TaskBundleBindingError) {
@@ -121,6 +128,7 @@ export function prepareExecutionPreflight(
     ...(input.adapterProfileDigest === undefined
       ? {}
       : { adapter_profile_digest: input.adapterProfileDigest }),
+    ...(input.designSetDigest === undefined ? {} : { design_set_digest: input.designSetDigest }),
     baseline_commit: input.baselineCommit,
     effective_risk: effectiveRisk,
   };

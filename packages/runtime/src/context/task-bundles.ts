@@ -21,6 +21,8 @@ export interface ExpectedTaskBundleBinding {
   readonly taskDigest: string;
   readonly planDigest: string;
   readonly impactCoverageDigest: string;
+  /** Required when design_governance is active; absent otherwise. */
+  readonly designSetDigest?: string;
 }
 
 export function readContextBundleManifest(record: ContextBundleRecord): ContextBundleManifest {
@@ -48,6 +50,9 @@ export function assertTaskBundleBinding(
   if (manifest.bindings.plan_digest !== expected.planDigest) drift.push("plan digest");
   if (manifest.bindings.impact_coverage_digest !== expected.impactCoverageDigest) {
     drift.push("impact coverage digest");
+  }
+  if ((manifest.bindings.design_set_digest ?? "") !== (expected.designSetDigest ?? "")) {
+    drift.push("design set digest");
   }
   if (manifest.content_digest !== record.digest) drift.push("manifest digest");
   if (drift.length > 0) {

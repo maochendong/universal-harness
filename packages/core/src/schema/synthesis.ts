@@ -172,6 +172,22 @@ export const ApprovalBriefInputSchema = strictObject({
 export type ApprovalBriefInput = Static<typeof ApprovalBriefInputSchema>;
 
 /**
+ * Versioned context_enrichment input (model advisory 10, PG-6/T14): the
+ * provider receives the deterministically selected bundle as data. The
+ * strict output schema carries no path, budget, binding or grant fields, so
+ * enrichment can never alter selection or authorization — it only explains.
+ */
+export const ContextEnrichmentInputSchema = strictObject({
+  purpose: Type.Literal("context_enrichment"),
+  schema_version: Type.Literal(GROUNDED_SYNTHESIS_SCHEMA_VERSIONS.context_enrichment),
+  binding_digest: DigestSchema,
+  conversation_id: IdentifierSchema,
+  run_id: IdentifierSchema,
+  bundle: ProjectContextBundleRecordSchema,
+});
+export type ContextEnrichmentInput = Static<typeof ContextEnrichmentInputSchema>;
+
+/**
  * The domain result record (model advisory 5.3). Run provenance — tokens,
  * duration, raw artifacts — belongs to the Task 8 invocation record and never
  * enters this semantic digest.

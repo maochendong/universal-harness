@@ -3,6 +3,7 @@ import {
   type DesignProposalPort,
   type DesignReviewPort,
   type EdgeRecord,
+  type GroundedSynthesisPort,
   type LockTuning,
   type NodeRecord,
 } from "@universal-harness-internal/core";
@@ -180,6 +181,12 @@ export interface OrchestratorDependencies {
    * channel — configuring both is a configuration error.
    */
   readonly planProposal?: PlanProposalPort;
+  /**
+   * PG-6 context enrichment (GroundedSynthesisPort, purpose
+   * context_enrichment). Absent means no enrichment runs; bundles stay
+   * exactly as deterministically compiled.
+   */
+  readonly contextEnrichment?: GroundedSynthesisPort;
   /** Design module ports; an active design_governance without ports blocks. */
   readonly design?: {
     readonly proposal?: DesignProposalPort;

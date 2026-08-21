@@ -361,6 +361,11 @@ export {
   type TaskBundleBindingErrorKind,
 } from "./context/task-bundles.js";
 export {
+  enrichContextBundle,
+  enrichmentBundleView,
+  type ContextEnrichmentOutcome,
+} from "./context/enrichment.js";
+export {
   TIER_WEIGHTS,
   allocateTierBudgets,
   estimateTokens,

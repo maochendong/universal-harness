@@ -64,6 +64,7 @@ import {
   type ContextCandidate,
 } from "../context/compiler.js";
 import { selectTaskNeighborhood } from "../context/selector.js";
+import { enrichContextBundle } from "../context/enrichment.js";
 import {
   TaskBundleBindingError,
   assertTaskBundleBinding,
@@ -1999,6 +2000,25 @@ async function phaseContext(ctx: PipelineContext): Promise<PhaseStep> {
       }
       addCandidate(plan.node.id, 2, "owning execution plan");
       addCandidate(task.id, 2, "owning task specification");
+      // design_governance active: the accepted DesignSet and its assets join
+      // the bundle as digest-bound candidates (designset design 13.2).
+      let designSetDigest: string | undefined;
+      if (ctx.modules.design !== undefined) {
+        const designSet = ctx.designSet ?? loadAcceptedDesignSet(ctx);
+        if (designSet === undefined) {
+          throw new OrchestrationError(
+            "binding_drift",
+            "context phase requires an accepted DesignSet while design_governance is active",
+          );
+        }
+        ctx.designSet = designSet;
+        const extension = readDesignSetExtension(designSet);
+        designSetDigest = extension.content_digest;
+        addCandidate(designSet.id, 2, "accepted design set");
+        for (const binding of extension.bindings.nodes) {
+          addCandidate(binding.node_id, 3, `asset of accepted design set ${designSet.id}`);
+        }
+      }
       for (const selection of selectTaskNeighborhood(task, graph.nodes, graph.edges)) {
         addCandidate(selection.nodeId, 3, selection.reason);
       }
@@ -2014,6 +2034,7 @@ async function phaseContext(ctx: PipelineContext): Promise<PhaseStep> {
             impact_coverage_digest: plan.content.impact_coverage.digest,
             task_digest: contentDigest(task),
             approval_digests: ctx.workingState.approval_digests,
+            ...(designSetDigest === undefined ? {} : { design_set_digest: designSetDigest }),
           },
           tokenBudget: deps.tokenBudget ?? DEFAULT_TOKEN_BUDGET,
           candidates: [...candidatesById.values()],
@@ -2036,6 +2057,50 @@ async function phaseContext(ctx: PipelineContext): Promise<PhaseStep> {
     })),
   );
   ctx.bundles = new Map(orderedCompiled.map((bundle) => [bundle.record.task_id, bundle.record]));
+  // PG-6: with an enrichment port configured, every committed bundle is
+  // interpreted once — cited, digest-bound and persisted beside it. The
+  // bundle itself never changes; a failed enrichment blocks the phase
+  // without touching the committed bundles.
+  if (deps.contextEnrichment !== undefined) {
+    const enrichments: { readonly path: string; readonly content: string }[] = [];
+    for (const bundle of orderedCompiled) {
+      const outcome = await enrichContextBundle({
+        port: deps.contextEnrichment,
+        bundleRecord: bundle.record,
+        conversation_id: `context-enrichment-conversation_${ctx.workflowOperationId.replace(/^[a-z][a-z0-9-]*_/u, "")}`,
+        run_id: `context-enrichment-run_${currentAttemptId(ctx)}_${bundle.record.task_id.replace(/^[a-z][a-z0-9-]*_/u, "")}`,
+      });
+      if (outcome.status === "failed") {
+        await ctx.engine.block(ctx.workflowOperationId, {
+          reason: outcome.failure.retryable ? "transient_environment_failure" : "missing_input",
+          detail: `context enrichment failed for ${bundle.record.context_bundle_id}: ${outcome.failure.summary}`,
+          proposal: {
+            phase: "context",
+            set_next_action: resumeCommandFor(ctx.workflowOperationId),
+          },
+        });
+        refreshWorkingState(ctx);
+        return {
+          continue: false,
+          outcome: {
+            status: "blocked",
+            workflowOperationId: ctx.workflowOperationId,
+            iterationId: ctx.iterationId,
+            reason: outcome.failure.retryable ? "transient_environment_failure" : "missing_input",
+            detail: `context enrichment failed for ${bundle.record.context_bundle_id}: ${outcome.failure.summary}`,
+            resumeCommand: resumeCommandFor(ctx.workflowOperationId),
+          },
+        };
+      }
+      const path = `artifacts/context-enrichments/${outcome.record.grounded_synthesis_id}.json`;
+      if (!artifactExists(deps, path)) {
+        enrichments.push({ path, content: `${canonicalizeJson(outcome.record)}\n` });
+      }
+    }
+    if (enrichments.length > 0) {
+      await commitArtifacts(deps, ctx.workflowOperationId, currentAttemptId(ctx), enrichments);
+    }
+  }
   const digestByTask = Object.fromEntries(
     orderedCompiled.map((bundle) => [bundle.record.task_id, bundle.record.digest]),
   );
@@ -2126,6 +2191,20 @@ async function authorizePlanExecution(
           !profile.side_effect_interception ||
           profile.trajectory_visibility === "external-only")));
   const authorizationId = `authorization_${plan.content.content_digest.slice(0, 16)}`;
+  // design_governance active: the accepted DesignSet digest joins the
+  // execution authorization and every bundle binding check (T14).
+  let designSetDigest: string | undefined;
+  if (ctx.modules.design !== undefined) {
+    const designSet = ctx.designSet ?? loadAcceptedDesignSet(ctx);
+    if (designSet === undefined) {
+      throw new OrchestrationError(
+        "binding_drift",
+        "execution preflight requires an accepted DesignSet while design_governance is active",
+      );
+    }
+    ctx.designSet = designSet;
+    designSetDigest = readDesignSetExtension(designSet).content_digest;
+  }
   const prepared = prepareExecutionPreflight({
     authorizationId,
     iterationId: ctx.iterationId,
@@ -2144,6 +2223,7 @@ async function authorizePlanExecution(
     grantSpecs: grants.map(({ spec }) => spec),
     policyDigest: policy.digest,
     ...(adapterProfileDigest === undefined ? {} : { adapterProfileDigest }),
+    ...(designSetDigest === undefined ? {} : { designSetDigest }),
     baselineCommit: ctx.workingState.baseline_commit,
     requiresWrite: grants.some(({ scope }) => scope.proposed_write_paths.length > 0),
     opaqueDelegated,
@@ -2252,6 +2332,9 @@ function buildEnvelope(
       taskDigest: contentDigest(task),
       planDigest: plan.content.content_digest,
       impactCoverageDigest: plan.content.impact_coverage.digest,
+      ...(ctx.modules.design === undefined || ctx.designSet === undefined
+        ? {}
+        : { designSetDigest: readDesignSetExtension(ctx.designSet).content_digest }),
     });
   } catch (error) {
     if (error instanceof TaskBundleBindingError) {

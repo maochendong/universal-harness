@@ -13,6 +13,8 @@ export interface ExecutionAuthorizationSpec {
   readonly grant_spec_digests: readonly string[];
   readonly policy_digest: string;
   readonly adapter_profile_digest?: string;
+  /** Bound only when design_governance is active for the operation (T14). */
+  readonly design_set_digest?: string;
   readonly baseline_commit: string;
   readonly effective_risk: GovernanceRisk;
   readonly spec_digest: string;
