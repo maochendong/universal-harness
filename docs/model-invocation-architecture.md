@@ -125,6 +125,8 @@ Runner 端验证、槽位制解析）。安全姿态（端点校验、allowlist 
 | `model_providers` 配置解析与 CLI 装配 | 已完成（77d0131） | `project-runtime-config.ts`、`model-providers.ts`；8 例单测 |
 | capture 改接（prd_proposal → managed 解释器） | 已完成（e7475ad） | `managed-interpret.ts`；8 例单测 |
 | design/impact/enrichment/narrative 改接 | 已完成（2ee8f84） | `managed-pipeline-ports.ts`；3 例 runtime + 7 例 CLI 测试 |
+| plan_proposal 改接 | 已完成（f62327e） | `model/plan-adapters.ts` + `managed-pipeline-ports.ts`；3 例 runtime + 1 例 CLI 测试 |
+| feedback_analysis 生产接线 | 未开始 | 全仓无消费点（orchestrator/CLI 都不调用 `FeedbackAnalysisPort`）；随 T17 反馈回路建设落地 |
 | prd_review / project_discovery / approval_brief 生产接线 | 未开始 | 唯一消费点是 protocol-1.1 capture coordinator，legacy 主流水线不经过；随 coordinator 迁移落地 |
 | 真实 Provider dogfood（带凭证端到端） | 已完成（ef2d9e4 + 证据文档） | `docs/evidence/t20-real-provider-dogfood.md`；三档跑通 deepseek-v4-pro，产出 3 项修复与 T21 候选事项 |
 
