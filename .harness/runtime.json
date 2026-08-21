@@ -24,7 +24,14 @@
       "api_key_env": "DEEPSEEK_API_KEY",
       "env_allowlist": ["DEEPSEEK_API_KEY"],
       "timeout_ms": 300000,
-      "slots": ["design_proposal", "design_review", "impact_advisory"],
+      "slots": [
+        "prd_proposal",
+        "design_proposal",
+        "design_review",
+        "impact_advisory",
+        "context_enrichment",
+        "iteration_narrative"
+      ],
       "default": false
     }
   ]
