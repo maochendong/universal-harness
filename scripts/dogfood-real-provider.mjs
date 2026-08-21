@@ -52,6 +52,7 @@ const SLOTS = [
   "design_proposal",
   "design_review",
   "impact_advisory",
+  "plan_proposal",
   "context_enrichment",
   "iteration_narrative",
 ];

@@ -21,8 +21,11 @@ import {
   createModelBackedDesignReviewPort,
   createModelBackedGroundedSynthesisPort,
   createModelBackedImpactAdvisoryPort,
+  createModelBackedPlanProposalPort,
   materializeProjectGraph,
+  PLAN_PROPOSAL_PROMPT_PORT_ID,
   type ManagedInvocationBudget,
+  type PlanProposalPort,
   type ResolvedManagedProvider,
 } from "@universal-harness-internal/runtime";
 
@@ -31,8 +34,8 @@ import { createShippedPromptContractRegistry } from "./prompt-registry.js";
 import type { ProjectRuntimeConfig } from "./project-runtime-config.js";
 
 /**
- * T20 slice 2: routes the design/impact/context pipeline seams through the
- * managed model layer. For every slot the committed runtime config covers,
+ * T20 slice 2: routes the design/impact/plan/context pipeline seams through
+ * the managed model layer. For every slot the committed runtime config covers,
  * the matching model-backed port is constructed on the managed invocation
  * layer (compiled prompt contracts, persisted invocation records, pinned
  * output schema validation); a slot with no coverage yields no port and the
@@ -58,6 +61,7 @@ export interface ManagedPipelinePorts {
     readonly review?: DesignReviewPort;
   };
   readonly impactAdvisory?: ImpactAdvisoryPort;
+  readonly planProposal?: PlanProposalPort;
   readonly contextEnrichment?: GroundedSynthesisPort;
   readonly iterationNarrative?: GroundedSynthesisPort;
 }
@@ -135,6 +139,7 @@ export function createManagedPipelinePorts(deps: ManagedPipelinePortsDeps): Mana
   const designProposal = resolver.resolve(DESIGN_PROPOSAL_PROMPT_PORT_ID);
   const designReview = resolver.resolve(DESIGN_REVIEW_PROMPT_PORT_ID);
   const impactAdvisory = resolver.resolve(IMPACT_ADVISORY_PROMPT_PORT_ID);
+  const planProposal = resolver.resolve(PLAN_PROPOSAL_PROMPT_PORT_ID);
   const contextEnrichment = resolver.resolve("context_enrichment");
   const iterationNarrative = resolver.resolve("iteration_narrative");
 
@@ -188,6 +193,16 @@ export function createManagedPipelinePorts(deps: ManagedPipelinePortsDeps): Mana
             provider_config: impactAdvisory.provider_config,
             provider: impactAdvisory.provider,
             ...budgetOf(impactAdvisory),
+          }),
+        }),
+    ...(planProposal === undefined
+      ? {}
+      : {
+          planProposal: createModelBackedPlanProposalPort({
+            ...shared,
+            provider_config: planProposal.provider_config,
+            provider: planProposal.provider,
+            ...budgetOf(planProposal),
           }),
         }),
     ...(contextEnrichment === undefined

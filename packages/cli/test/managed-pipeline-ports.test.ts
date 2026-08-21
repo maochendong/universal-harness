@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
 import {
+  compileCriterionAssertions,
   contentDigest,
   createProjectContextBundleRecord,
   harnessRootFor,
@@ -20,6 +21,7 @@ const ALL_SLOTS = [
   "design_proposal",
   "design_review",
   "impact_advisory",
+  "plan_proposal",
   "context_enrichment",
   "iteration_narrative",
 ] as const;
@@ -100,8 +102,77 @@ describe("createManagedPipelinePorts", () => {
     expect(ports.design?.proposal).toBeDefined();
     expect(ports.design?.review).toBeUndefined();
     expect(ports.impactAdvisory).toBeDefined();
+    expect(ports.planProposal).toBeUndefined();
     expect(ports.contextEnrichment).toBeUndefined();
     expect(ports.iterationNarrative).toBeUndefined();
+  });
+
+  it("runs the plan proposal through the managed layer, authenticated from the environment", async () => {
+    const root = projectWithConfig({
+      runtime_config_version: 2,
+      gates: [],
+      model_providers: [providerEntry(["plan_proposal"])],
+    });
+    const assertions = compileCriterionAssertions([
+      {
+        criterion_id: "criterion_01K1AC1",
+        criterion_semantic_digest: "b".repeat(64),
+        requirement_id: "requirement_01K1REQ",
+        test_node_id: "test_01K1T01",
+      },
+    ]);
+    const seen: { authorization?: string | null } = {};
+    const ports = portsFor(root, {
+      fetch: fetchReturning(
+        JSON.stringify({
+          purpose: "plan_proposal",
+          schema_version: "plan_proposal.v1",
+          tasks: [
+            {
+              task_key: "task-export",
+              goal: "implement the CSV export",
+              atomicity_rationale: "single independently reviewable output",
+              assertion_ids: [assertions[0]?.assertion_id ?? ""],
+              requirement_ids: ["requirement_01K1REQ"],
+              decision_ids: [],
+              design_artifact_ids: [],
+              depends_on: [],
+              suggested_gate_ids: ["gate_target"],
+              suggested_write_paths: ["src/export/**"],
+            },
+          ],
+          questions: [],
+        }),
+        seen,
+      ),
+    });
+    expect(ports.planProposal).toBeDefined();
+    const result = await ports.planProposal!.propose({
+      workflow_operation_id: "operation_01K1PLN",
+      iteration_id: "iteration_01K1PLN",
+      requirement_baseline_digest: "c".repeat(64),
+      impact_set_digest: IMPACT_SET_DIGEST,
+      policy_digest: "d".repeat(64),
+      canonical_assertions: assertions,
+      known_requirement_ids: ["requirement_01K1REQ"],
+      known_decision_ids: [],
+      known_design_artifact_ids: [],
+      known_gate_ids: ["gate_target"],
+      allowed_write_paths: ["src/**"],
+      max_tasks: 24,
+      bundle_digest: "e".repeat(64),
+      conversation_id: "plan-proposal-conversation_01K1PLN",
+      run_id: "plan-proposal-run_01K1PLN",
+    });
+    expect(seen.authorization).toBe("Bearer sk-test");
+    expect(result.status).toBe("proposed");
+    expect(readModelInvocationRecords(root).map((record) => record.state)).toEqual([
+      "planned",
+      "started",
+      "completed",
+      "validated",
+      "consumed",
+    ]);
   });
 
   it("runs the impact advisory through the managed layer, authenticated from the environment", async () => {

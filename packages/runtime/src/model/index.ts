@@ -5,6 +5,7 @@ export * from "./invocation-records.js";
 export * from "./invocation-store.js";
 export * from "./managed-runner.js";
 export * from "./openai-compat-provider.js";
+export * from "./plan-adapters.js";
 export * from "./prompt-artifact.js";
 export * from "./prompt-cache-key.js";
 export * from "./prompt-compiler.js";
