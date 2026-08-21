@@ -366,6 +366,31 @@ export {
   type ContextEnrichmentOutcome,
 } from "./context/enrichment.js";
 export {
+  TDD_PATCH_ISSUE_CODES,
+  attestWriteSet,
+  canonicalTestPatch,
+  classifyPath,
+  validateTestAuthoringPatch,
+  type CanonicalPatch,
+  type PatchFile,
+  type TddPatchIssue,
+  type TddPathScope,
+} from "./tdd/patch.js";
+export {
+  createInMemoryWorkspacePort,
+  type IsolatedWorkspacePort,
+  type TddWorkspacePurpose,
+  type WorkspaceHandle,
+} from "./tdd/workspace.js";
+export { createGitWorktreeWorkspacePort } from "./tdd/git-workspace.js";
+export {
+  TddGrantError,
+  assertTddPhaseGrantCurrent,
+  issueTddPhaseGrant,
+  tddPhaseWriteScopes,
+  type TddPhaseGrantState,
+} from "./tdd/phase-grants.js";
+export {
   TIER_WEIGHTS,
   allocateTierBudgets,
   estimateTokens,
