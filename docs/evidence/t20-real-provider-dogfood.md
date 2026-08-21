@@ -68,3 +68,20 @@ standard/governed 两档（lite 按 profile 定义不启用 design/impact 模块
 差距是模型对严格领域规则的逐条遵守（applicability 全覆盖、每条需求必有验收
 准则、不输出 schema 外字段），属于 prompt 契约迭代范畴，每一轮改进都可用
 同一 dogfood 脚本回归验证。
+
+## T22 第三轮：design 全链真实跑通
+
+按第二轮结果继续强化契约文本（`dc31931` 及后续两轮：applicability/策略绑定
+机械清单、需求↔准则 draft_key 互链、空 pairs 时空 coverage、策略工件 tdd 体
+必填、review 引用逐字复制 bundle_sources），用独立的新 key 重跑：
+
+| Profile | 端口表现（最终状态） | 领域结果 |
+| --- | --- | --- |
+| standard | `prd_proposal`、`design_proposal`、`design_review` 全部 consumed；`impact_advisory` validated（未通过 merge，确定性集合照常） | **design 全链首次真实跑通**：草案通过确定性校验，独立 review 被消费并给出实质性 `revision_required` 意见（非橡皮图章），相位按契约 typed block 等待人类修订 |
+| governed | `prd_proposal`、`design_proposal`、`impact_advisory` consumed；`design_review` validated | 草案通过确定性校验并到达独立 review；review 输出的 finding 引用了提案外目标（`unknown_affected_target`）fail-closed |
+| lite | `prd_proposal` consumed | design/impact 模块按 profile 定义不启用，零调用即正确 |
+
+三轮契约迭代的收敛轨迹：schema 自由发挥 → applicability_gap →
+test_strategy_gap → citation_outside_bundle / unknown_affected_target——每一轮
+模型多满足一类机械规则，pipeline 的 fail-closed 语义在每轮都正确兜住。
+governed 的 review 引用保真是当前最后一类已知残余，随后续 prompt 迭代回归。
