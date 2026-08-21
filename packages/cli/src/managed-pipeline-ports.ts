@@ -22,6 +22,8 @@ import {
   createModelBackedGroundedSynthesisPort,
   createModelBackedImpactAdvisoryPort,
   materializeProjectGraph,
+  type ManagedInvocationBudget,
+  type ResolvedManagedProvider,
 } from "@universal-harness-internal/runtime";
 
 import { assembleModelProviders } from "./model-providers.js";
@@ -123,6 +125,10 @@ export function createManagedPipelinePorts(deps: ManagedPipelinePortsDeps): Mana
       pipelineBundleContent(deps.projectRoot, source),
   } as const;
 
+  /** The resolved provider's declared budget, when the assembly supplied one. */
+  const budgetOf = (resolved: ResolvedManagedProvider): { budget?: ManagedInvocationBudget } =>
+    resolved.budget === undefined ? {} : { budget: resolved.budget };
+
   return {
     ...(designProposal === undefined && designReview === undefined
       ? {}
@@ -135,6 +141,7 @@ export function createManagedPipelinePorts(deps: ManagedPipelinePortsDeps): Mana
                     ...shared,
                     provider_config: designProposal.provider_config,
                     provider: designProposal.provider,
+                    ...budgetOf(designProposal),
                   }),
                 }),
             ...(designReview === undefined
@@ -144,6 +151,7 @@ export function createManagedPipelinePorts(deps: ManagedPipelinePortsDeps): Mana
                     ...shared,
                     provider_config: designReview.provider_config,
                     provider: designReview.provider,
+                    ...budgetOf(designReview),
                   }),
                 }),
           },
@@ -155,6 +163,7 @@ export function createManagedPipelinePorts(deps: ManagedPipelinePortsDeps): Mana
             ...shared,
             provider_config: impactAdvisory.provider_config,
             provider: impactAdvisory.provider,
+            ...budgetOf(impactAdvisory),
           }),
         }),
     ...(contextEnrichment === undefined
@@ -164,6 +173,7 @@ export function createManagedPipelinePorts(deps: ManagedPipelinePortsDeps): Mana
             ...groundedDeps,
             provider_config: contextEnrichment.provider_config,
             provider: contextEnrichment.provider,
+            ...budgetOf(contextEnrichment),
           }),
         }),
     ...(iterationNarrative === undefined
@@ -173,6 +183,7 @@ export function createManagedPipelinePorts(deps: ManagedPipelinePortsDeps): Mana
             ...groundedDeps,
             provider_config: iterationNarrative.provider_config,
             provider: iterationNarrative.provider,
+            ...budgetOf(iterationNarrative),
           }),
         }),
   };

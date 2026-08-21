@@ -1,14 +1,17 @@
-import { readFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 import {
   PRD_PROPOSAL_PROMPT_PORT_ID,
   PRD_PROPOSAL_PROMPT_VERSION,
   allowedSourceKindsForProfile,
+  canonicalizeJson,
   contentDigest,
   createCaptureSessionRecord,
   createLocalGitProjectContextAdapter,
+  harnessRootFor,
   resolveModelBackedProposalProfile,
+  sha256Hex,
   type ClarificationQuestionDraft,
   type PrdProposalPort,
   type PrdProposalResult,
@@ -18,8 +21,10 @@ import {
 } from "@universal-harness-internal/core";
 import {
   createModelBackedPrdProposalPort,
+  type ClarificationOffer,
   type ClarificationQuestion,
   type IntentInterpreter,
+  type InterpretedIntent,
 } from "@universal-harness-internal/runtime";
 
 import { assembleModelProviders } from "./model-providers.js";
@@ -124,7 +129,7 @@ function toClarificationOffer(questions: readonly ClarificationQuestionDraft[]):
   };
 }
 
-function mapResult(result: PrdProposalResult): ReturnType<IntentInterpreter> {
+function mapResult(result: PrdProposalResult): InterpretedIntent | ClarificationOffer | undefined {
   if (result.status === "failed") {
     failClosed(`proposal failed (${result.failure.code}): ${result.failure.summary}`);
   }
@@ -148,6 +153,52 @@ function mapResult(result: PrdProposalResult): ReturnType<IntentInterpreter> {
       verification: constraint.verification_intent,
     })),
   };
+}
+
+/**
+ * The legacy orchestrator re-derives the capture proposal on every resume and
+ * fails closed on binding drift, so an interpreter must be a pure function of
+ * the intent text. A model is only approximately that: the same prompt can
+ * yield a different draft on a later call. The memo pins the first successful
+ * interpretation per intent (persisted under the project harness root), which
+ * makes resume re-derivation exact — a memo that disagrees with the approved
+ * baseline still fails closed as binding_drift downstream. Clarification
+ * offers and empty drafts are never memoized (nothing was captured).
+ */
+function captureMemoPath(projectRoot: string, intent: string): string {
+  return join(
+    harnessRootFor(projectRoot),
+    "managed-capture",
+    `${sha256Hex(intent.normalize("NFC").trim())}.json`,
+  );
+}
+
+function readCaptureMemo(path: string): InterpretedIntent | undefined {
+  let raw: string;
+  try {
+    raw = readFileSync(path, "utf8");
+  } catch {
+    return undefined;
+  }
+  let value: unknown;
+  try {
+    value = JSON.parse(raw);
+  } catch {
+    failClosed(`capture memo ${path} is not valid JSON`);
+  }
+  if (
+    typeof value !== "object" ||
+    value === null ||
+    !Array.isArray((value as { requirements?: unknown }).requirements)
+  ) {
+    failClosed(`capture memo ${path} does not carry an interpreted requirement list`);
+  }
+  return value as InterpretedIntent;
+}
+
+function writeCaptureMemo(path: string, interpreted: InterpretedIntent): void {
+  mkdirSync(join(path, ".."), { recursive: true });
+  writeFileSync(path, `${canonicalizeJson(interpreted)}\n`, "utf8");
 }
 
 export function createManagedIntentInterpreter(
@@ -183,10 +234,14 @@ export function createManagedIntentInterpreter(
       profile_id: deps.profile_id,
       provider_config: resolved.provider_config,
       provider: resolved.provider,
+      ...(resolved.budget === undefined ? {} : { budget: resolved.budget }),
       bundle_content: (source) => bundleContent(deps.projectRoot, source),
     });
 
   return async (intent: string) => {
+    const memoPath = captureMemoPath(deps.projectRoot, intent);
+    const memoized = readCaptureMemo(memoPath);
+    if (memoized !== undefined) return memoized;
     const session = createCaptureSessionRecord({
       workflow_operation_id: deps.newId("operation"),
       iteration_id: deps.newId("iteration"),
@@ -220,6 +275,10 @@ export function createManagedIntentInterpreter(
         evidence_locator: `capture-evidence://${invocationId}`,
       },
     });
-    return mapResult(result);
+    const mapped = mapResult(result);
+    if (mapped !== undefined && !("clarification" in mapped)) {
+      writeCaptureMemo(memoPath, mapped);
+    }
+    return mapped;
   };
 }

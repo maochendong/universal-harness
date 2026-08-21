@@ -1,4 +1,5 @@
 import {
+  PROTOCOL_1_1_SCHEMA_REGISTRY,
   PromptContractError,
   contentDigest,
   type ProfileId,
@@ -125,9 +126,25 @@ function resolveContract(params: CompilePromptParams): PromptContract {
   return contract;
 }
 
+/**
+ * The output contract names the pinned schema AND reproduces the schema
+ * document verbatim: a model that only sees a schema id/digest has no way to
+ * know the required fields (real-provider dogfood, T20 slice 3: outputs
+ * free-styled field names and failed closed as invalid_output). A schema id
+ * missing from the protocol registry fails closed at preparation time.
+ */
 function outputContractBody(contract: PromptContract): string {
+  const document =
+    PROTOCOL_1_1_SCHEMA_REGISTRY.documents()[`${contract.output_schema_id}.schema.json`];
+  if (document === undefined) {
+    throw new PromptContractError(
+      "output_schema_mismatch",
+      `output schema ${contract.output_schema_id} is not in the protocol 1.1 schema registry`,
+    );
+  }
   return [
-    `Respond with a single JSON document that validates against the registered output schema "${contract.output_schema_id}" (digest ${contract.output_schema_digest}).`,
+    `Respond with a single JSON document that validates against the registered output schema "${contract.output_schema_id}" (digest ${contract.output_schema_digest}), reproduced here in full:`,
+    JSON.stringify(document),
     "Do not add, rename or omit fields; do not emit prose, markdown fences or commentary outside the JSON document.",
   ].join("\n");
 }

@@ -4,7 +4,7 @@ import { join } from "node:path";
 
 import { afterEach, describe, expect, it } from "vitest";
 
-import { contentDigest, type PrdProposalDraft } from "@universal-harness-internal/core";
+import { contentDigest, sha256Hex, type PrdProposalDraft } from "@universal-harness-internal/core";
 import type { PrdProposalPort } from "@universal-harness-internal/runtime";
 
 import {
@@ -308,5 +308,77 @@ describe("createManagedIntentInterpreter", () => {
     };
     const interpreter = createManagedIntentInterpreter(depsFor(root, { proposal_port: port }));
     await expect(interpreter!(INTENT)).rejects.toThrowError(/uncertain.*model refused/u);
+  });
+
+  it("replays a memoized interpretation for the same intent without re-invoking the provider", async () => {
+    const root = projectWithConfig({
+      runtime_config_version: 2,
+      gates: [],
+      model_providers: [PROVIDER_ENTRY],
+    });
+    let calls = 0;
+    const countingFetch: typeof fetch = (url, init) => {
+      calls += 1;
+      return fetchReturningDraft(validDraft(INTENT), {})(url, init);
+    };
+    const interpreter = createManagedIntentInterpreter(depsFor(root, { fetch: countingFetch }));
+    const first = await interpreter!(INTENT);
+    const second = await interpreter!(INTENT);
+    expect(calls).toBe(1);
+    expect(second).toEqual(first);
+  });
+
+  it("fails closed when the capture memo is unreadable", async () => {
+    const root = projectWithConfig({
+      runtime_config_version: 2,
+      gates: [],
+      model_providers: [PROVIDER_ENTRY],
+    });
+    const memoDir = join(root, ".harness", "managed-capture");
+    mkdirSync(memoDir, { recursive: true });
+    writeFileSync(
+      join(memoDir, `${sha256Hex(INTENT.normalize("NFC").trim())}.json`),
+      "not json",
+      "utf8",
+    );
+    const interpreter = createManagedIntentInterpreter(
+      depsFor(root, { fetch: fetchReturningDraft(validDraft(INTENT), {}) }),
+    );
+    await expect(interpreter!(INTENT)).rejects.toThrowError(/capture memo/u);
+  });
+
+  it("never memoizes clarification offers", async () => {
+    const root = projectWithConfig({
+      runtime_config_version: 2,
+      gates: [],
+      model_providers: [PROVIDER_ENTRY],
+    });
+    let proposals = 0;
+    const port: PrdProposalPort = {
+      name: "fake-clarifying",
+      propose: () => {
+        proposals += 1;
+        return {
+          status: "clarification_required",
+          questions: [
+            {
+              source: "proposal",
+              target_kind: "intent",
+              missing_dimension: "scope",
+              question: "Which reports should be exportable?",
+              options: [
+                { option_id: "a", label: "Monthly reports only" },
+                { option_id: "b", label: "All report kinds" },
+              ],
+              required: true,
+            },
+          ],
+        };
+      },
+    };
+    const interpreter = createManagedIntentInterpreter(depsFor(root, { proposal_port: port }));
+    await interpreter!(INTENT);
+    await interpreter!(INTENT);
+    expect(proposals).toBe(2);
   });
 });

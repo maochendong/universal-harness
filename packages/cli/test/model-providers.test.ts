@@ -134,6 +134,11 @@ describe("assembleModelProviders", () => {
     expect(resolved).toBeDefined();
     expect(resolved?.provider_config.provider_identity).toBe("provider_deepseek");
     expect(resolved?.provider_config.config_digest).toMatch(/^[0-9a-f]{64}$/u);
+    // The declared endpoint timeout becomes the managed invocation budget.
+    expect(resolved?.budget).toEqual({
+      timeout_ms: DEEPSeek_ENTRY.timeout_ms,
+      max_output_bytes: 256 * 1024,
+    });
     const outcome = await resolved!.provider.invoke({
       messages: [],
       output_schema_id: "x",

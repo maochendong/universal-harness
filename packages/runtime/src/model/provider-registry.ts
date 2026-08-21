@@ -1,4 +1,4 @@
-import type { ManagedModelProviderPort } from "./managed-runner.js";
+import type { ManagedInvocationBudget, ManagedModelProviderPort } from "./managed-runner.js";
 import type { ModelBackedProviderConfig } from "./capture-adapters.js";
 
 /**
@@ -15,11 +15,18 @@ export interface ManagedProviderRegistration {
   /** Slot or port identifiers this registration serves. */
   readonly slots: readonly string[];
   readonly is_default: boolean;
+  /**
+   * Invocation budget the host declared alongside the provider (e.g. the
+   * configured timeout); adapters fall back to their built-in default when
+   * absent.
+   */
+  readonly budget?: ManagedInvocationBudget;
 }
 
 export interface ResolvedManagedProvider {
   readonly provider: ManagedModelProviderPort;
   readonly provider_config: ModelBackedProviderConfig;
+  readonly budget?: ManagedInvocationBudget;
 }
 
 export interface ManagedProviderResolver {
@@ -44,6 +51,7 @@ export function createManagedProviderResolver(
     const resolved: ResolvedManagedProvider = {
       provider: registration.provider,
       provider_config: registration.provider_config,
+      ...(registration.budget === undefined ? {} : { budget: registration.budget }),
     };
     for (const slot of registration.slots) {
       if (bySlot.has(slot)) {

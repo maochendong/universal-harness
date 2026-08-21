@@ -2,6 +2,7 @@ import { contentDigest } from "@universal-harness-internal/core";
 import {
   createManagedProviderResolver,
   createOpenAiCompatManagedProvider,
+  DEFAULT_BUDGET,
   type ManagedProviderRegistration,
   type ManagedProviderResolver,
 } from "@universal-harness-internal/runtime";
@@ -62,6 +63,10 @@ export function assembleModelProviders(
       },
       slots: entry.slots,
       is_default: entry.is_default,
+      // The declared endpoint timeout doubles as the managed invocation
+      // budget; without it the runner's built-in 60s default would preempt
+      // slow real-model calls long before the provider gives up.
+      budget: { timeout_ms: entry.timeout_ms, max_output_bytes: DEFAULT_BUDGET.max_output_bytes },
     }),
   );
   return createManagedProviderResolver(registrations);
