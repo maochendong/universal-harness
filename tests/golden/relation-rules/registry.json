@@ -1,0 +1,510 @@
+{
+  "registry_version": "relation-rules.v2",
+  "registry_digest": "29132423f96d5581f8cb6481131de119087e6054f6305f1cb674a0f71e20fff8",
+  "compatibility_rules": [
+    {
+      "type": "DERIVES_FROM",
+      "sources": [
+        "Requirement",
+        "Constraint",
+        "Decision",
+        "Component",
+        "ExecutionPlan",
+        "Task",
+        "CodeArtifact",
+        "Policy",
+        "ToolDefinition",
+        "Test",
+        "EvaluationCase",
+        "Gate",
+        "DesignSet",
+        "DesignArtifact"
+      ],
+      "targets": [
+        "Requirement",
+        "Constraint",
+        "Decision",
+        "Component",
+        "ExecutionPlan",
+        "Task",
+        "CodeArtifact",
+        "Policy",
+        "ToolDefinition",
+        "Test",
+        "EvaluationCase",
+        "Gate",
+        "DesignSet",
+        "DesignArtifact"
+      ]
+    },
+    {
+      "type": "DERIVES_FROM",
+      "sources": ["DesignSet"],
+      "targets": ["ImpactSet"]
+    },
+    {
+      "type": "DERIVES_FROM",
+      "sources": ["Iteration"],
+      "targets": ["Repository"]
+    },
+    {
+      "type": "SUPERSEDES",
+      "sources": [
+        "Requirement",
+        "Constraint",
+        "Decision",
+        "Component",
+        "ExecutionPlan",
+        "Task",
+        "CodeArtifact",
+        "Policy",
+        "ToolDefinition",
+        "Test",
+        "EvaluationCase",
+        "Gate",
+        "DesignSet",
+        "DesignArtifact"
+      ],
+      "targets": [
+        "Requirement",
+        "Constraint",
+        "Decision",
+        "Component",
+        "ExecutionPlan",
+        "Task",
+        "CodeArtifact",
+        "Policy",
+        "ToolDefinition",
+        "Test",
+        "EvaluationCase",
+        "Gate",
+        "DesignSet",
+        "DesignArtifact"
+      ]
+    },
+    {
+      "type": "GENERATED_BY",
+      "sources": [
+        "Requirement",
+        "Constraint",
+        "Decision",
+        "Component",
+        "ExecutionPlan",
+        "Task",
+        "CodeArtifact",
+        "Policy",
+        "ToolDefinition",
+        "Test",
+        "EvaluationCase",
+        "Gate",
+        "DesignSet",
+        "DesignArtifact"
+      ],
+      "targets": ["Run"]
+    },
+    {
+      "type": "RESUMES",
+      "sources": ["Run"],
+      "targets": ["Run"]
+    },
+    {
+      "type": "DECOMPOSES_TO",
+      "sources": ["Intent"],
+      "targets": ["Requirement"]
+    },
+    {
+      "type": "ADDRESSES",
+      "sources": ["Decision"],
+      "targets": ["Requirement"]
+    },
+    {
+      "type": "SPECIFIES",
+      "sources": ["DesignArtifact"],
+      "targets": ["Requirement", "Decision", "Component", "Test"]
+    },
+    {
+      "type": "CONSTRAINED_BY",
+      "sources": [
+        "Requirement",
+        "Constraint",
+        "Decision",
+        "Component",
+        "ExecutionPlan",
+        "Task",
+        "CodeArtifact",
+        "Policy",
+        "ToolDefinition",
+        "Test",
+        "EvaluationCase",
+        "Gate",
+        "DesignSet",
+        "DesignArtifact"
+      ],
+      "targets": ["Constraint"]
+    },
+    {
+      "type": "GOVERNED_BY",
+      "sources": [
+        "Requirement",
+        "Constraint",
+        "Decision",
+        "Component",
+        "ExecutionPlan",
+        "Task",
+        "CodeArtifact",
+        "Policy",
+        "ToolDefinition",
+        "Test",
+        "EvaluationCase",
+        "Gate",
+        "DesignSet",
+        "DesignArtifact"
+      ],
+      "targets": ["Policy"]
+    },
+    {
+      "type": "SHAPES",
+      "sources": ["Decision"],
+      "targets": ["Component"]
+    },
+    {
+      "type": "REALIZES",
+      "sources": ["CodeArtifact"],
+      "targets": ["Component"]
+    },
+    {
+      "type": "IMPLEMENTS",
+      "sources": ["Task"],
+      "targets": ["Requirement", "Decision", "DesignArtifact"]
+    },
+    {
+      "type": "VERIFIES",
+      "sources": ["Test"],
+      "targets": ["Requirement", "Constraint"]
+    },
+    {
+      "type": "EVALUATES",
+      "sources": ["EvaluationCase"],
+      "targets": ["Task", "Run"]
+    },
+    {
+      "type": "EXECUTES",
+      "sources": ["Run"],
+      "targets": ["Task", "Gate", "EvaluationCase"]
+    },
+    {
+      "type": "INVOKES",
+      "sources": ["Run"],
+      "targets": ["ToolDefinition"]
+    },
+    {
+      "type": "PRODUCES",
+      "sources": ["Run"],
+      "targets": ["Evidence"]
+    },
+    {
+      "type": "PRODUCES",
+      "sources": ["RootCauseAnalysis"],
+      "targets": ["ImprovementCandidate"]
+    },
+    {
+      "type": "SUPPORTS",
+      "sources": ["Evidence"],
+      "targets": ["Test", "Requirement", "EvaluationCase"]
+    },
+    {
+      "type": "REFUTES",
+      "sources": ["Evidence"],
+      "targets": ["Test", "Requirement", "EvaluationCase"]
+    },
+    {
+      "type": "VIOLATES",
+      "sources": ["Finding"],
+      "targets": ["Requirement", "Constraint", "Policy"]
+    },
+    {
+      "type": "CONTAINS",
+      "sources": ["Project", "Repository", "Iteration"],
+      "targets": [
+        "Project",
+        "Repository",
+        "Iteration",
+        "Intent",
+        "Requirement",
+        "Constraint",
+        "Decision",
+        "Component",
+        "ExecutionPlan",
+        "Task",
+        "CodeArtifact",
+        "Policy",
+        "ToolDefinition",
+        "Test",
+        "EvaluationCase",
+        "Gate",
+        "ContextBundle",
+        "Run",
+        "Checkpoint",
+        "Evidence",
+        "ApprovalRequest",
+        "Approval",
+        "Finding",
+        "RootCauseAnalysis",
+        "ImprovementCandidate",
+        "ImpactSet",
+        "DesignSet",
+        "DesignArtifact"
+      ]
+    },
+    {
+      "type": "CONTAINS",
+      "sources": ["ExecutionPlan"],
+      "targets": ["Task"]
+    },
+    {
+      "type": "CONTAINS",
+      "sources": ["DesignSet"],
+      "targets": ["Decision", "Component", "DesignArtifact"]
+    },
+    {
+      "type": "DEPENDS_ON",
+      "sources": ["Task"],
+      "targets": ["Task"]
+    },
+    {
+      "type": "USES_CONTEXT",
+      "sources": ["Run"],
+      "targets": ["ContextBundle"]
+    },
+    {
+      "type": "CAPTURES",
+      "sources": ["Checkpoint"],
+      "targets": ["Run", "Iteration"]
+    },
+    {
+      "type": "BLOCKS",
+      "sources": ["Finding"],
+      "targets": ["Task", "Iteration"]
+    },
+    {
+      "type": "REQUESTS_APPROVAL_FOR",
+      "sources": ["ApprovalRequest"],
+      "targets": [
+        "Requirement",
+        "Constraint",
+        "Decision",
+        "Component",
+        "ExecutionPlan",
+        "Task",
+        "CodeArtifact",
+        "Policy",
+        "ToolDefinition",
+        "Test",
+        "EvaluationCase",
+        "Gate",
+        "DesignSet",
+        "DesignArtifact"
+      ]
+    },
+    {
+      "type": "RESOLVES",
+      "sources": ["Approval"],
+      "targets": ["ApprovalRequest"]
+    },
+    {
+      "type": "APPROVES",
+      "sources": ["Approval"],
+      "targets": [
+        "Requirement",
+        "Constraint",
+        "Decision",
+        "Component",
+        "ExecutionPlan",
+        "Task",
+        "CodeArtifact",
+        "Policy",
+        "ToolDefinition",
+        "Test",
+        "EvaluationCase",
+        "Gate",
+        "DesignSet",
+        "DesignArtifact"
+      ]
+    },
+    {
+      "type": "DIAGNOSED_BY",
+      "sources": ["Finding"],
+      "targets": ["RootCauseAnalysis"]
+    },
+    {
+      "type": "PROPOSES_CHANGE_TO",
+      "sources": ["ImprovementCandidate"],
+      "targets": [
+        "Requirement",
+        "Constraint",
+        "Decision",
+        "Component",
+        "ExecutionPlan",
+        "Task",
+        "CodeArtifact",
+        "Policy",
+        "ToolDefinition",
+        "Test",
+        "EvaluationCase",
+        "Gate",
+        "DesignSet",
+        "DesignArtifact"
+      ]
+    },
+    {
+      "type": "TRIGGERS",
+      "sources": ["Finding", "ImprovementCandidate"],
+      "targets": ["ImpactSet"]
+    },
+    {
+      "type": "MAY_IMPACT",
+      "sources": [
+        "Requirement",
+        "Constraint",
+        "Decision",
+        "Component",
+        "ExecutionPlan",
+        "Task",
+        "CodeArtifact",
+        "Policy",
+        "ToolDefinition",
+        "Test",
+        "EvaluationCase",
+        "Gate",
+        "DesignSet",
+        "DesignArtifact"
+      ],
+      "targets": [
+        "Requirement",
+        "Constraint",
+        "Decision",
+        "Component",
+        "ExecutionPlan",
+        "Task",
+        "CodeArtifact",
+        "Policy",
+        "ToolDefinition",
+        "Test",
+        "EvaluationCase",
+        "Gate",
+        "DesignSet",
+        "DesignArtifact"
+      ]
+    }
+  ],
+  "propagation_rules": [
+    {
+      "type": "REFUTES",
+      "direction": "forward",
+      "defaultRisk": "high",
+      "allowsInference": false
+    },
+    {
+      "type": "VIOLATES",
+      "direction": "forward",
+      "defaultRisk": "high",
+      "allowsInference": false
+    },
+    {
+      "type": "BLOCKS",
+      "direction": "forward",
+      "defaultRisk": "high",
+      "allowsInference": false
+    },
+    {
+      "type": "VERIFIES",
+      "direction": "both",
+      "defaultRisk": "medium",
+      "allowsInference": true
+    },
+    {
+      "type": "ADDRESSES",
+      "direction": "inverse",
+      "defaultRisk": "medium",
+      "allowsInference": true
+    },
+    {
+      "type": "SHAPES",
+      "direction": "forward",
+      "defaultRisk": "medium",
+      "allowsInference": true
+    },
+    {
+      "type": "SPECIFIES",
+      "direction": "both",
+      "defaultRisk": "high",
+      "allowsInference": false
+    },
+    {
+      "type": "REALIZES",
+      "direction": "inverse",
+      "defaultRisk": "high",
+      "allowsInference": true
+    },
+    {
+      "type": "IMPLEMENTS",
+      "direction": "inverse",
+      "defaultRisk": "medium",
+      "allowsInference": true
+    },
+    {
+      "type": "DECOMPOSES_TO",
+      "direction": "forward",
+      "defaultRisk": "medium",
+      "allowsInference": false
+    },
+    {
+      "type": "CONSTRAINED_BY",
+      "direction": "both",
+      "defaultRisk": "high",
+      "allowsInference": false
+    },
+    {
+      "type": "GOVERNED_BY",
+      "direction": "both",
+      "defaultRisk": "high",
+      "allowsInference": false
+    },
+    {
+      "type": "DEPENDS_ON",
+      "direction": "both",
+      "defaultRisk": "low",
+      "allowsInference": false
+    },
+    {
+      "type": "DERIVES_FROM",
+      "direction": "inverse",
+      "defaultRisk": "medium",
+      "allowsInference": false
+    },
+    {
+      "type": "SUPERSEDES",
+      "direction": "forward",
+      "defaultRisk": "low",
+      "allowsInference": false
+    },
+    {
+      "type": "DIAGNOSED_BY",
+      "direction": "forward",
+      "defaultRisk": "low",
+      "allowsInference": false
+    },
+    {
+      "type": "PROPOSES_CHANGE_TO",
+      "direction": "forward",
+      "defaultRisk": "medium",
+      "allowsInference": false
+    },
+    {
+      "type": "MAY_IMPACT",
+      "direction": "forward",
+      "defaultRisk": "low",
+      "allowsInference": true
+    }
+  ]
+}

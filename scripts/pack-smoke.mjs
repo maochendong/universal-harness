@@ -256,7 +256,7 @@ try {
   }
 
   const newFirst = runHarness(
-    ["new", "smoke-app", "--intent", "build the first capability"],
+    ["new", "smoke-app", "--intent", "build the first capability", "--profile", "lite"],
     sandbox,
   );
   if (newFirst.json.status !== "approval_required") {
@@ -284,7 +284,7 @@ try {
   execFileSync("git", ["commit", "-m", "legacy baseline"], { cwd: legacyRoot, env: harnessEnv });
 
   const adoptFirst = runHarness(
-    ["adopt", "legacy-app", "--intent", "introduce the requested change"],
+    ["adopt", "legacy-app", "--intent", "introduce the requested change", "--profile", "lite"],
     sandbox,
   );
   if (adoptFirst.json.status !== "approval_required") {
@@ -296,6 +296,8 @@ try {
       "legacy-app",
       "--intent",
       "introduce the requested change",
+      "--profile",
+      "lite",
       "--approve",
       adoptFirst.json.data.staging_operation_id,
     ],
