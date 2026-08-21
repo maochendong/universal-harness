@@ -15,6 +15,7 @@ export * from "./project-gates.js";
 export * from "./model-providers.js";
 export * from "./managed-interpret.js";
 export * from "./managed-pipeline-ports.js";
+export * from "./managed-capture-coordinator.js";
 export * from "./project-agent.js";
 export { LiveProgressReporter, type LiveProgressReporterOptions } from "./live-progress.js";
 export {
