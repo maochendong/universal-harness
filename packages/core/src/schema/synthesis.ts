@@ -188,6 +188,22 @@ export const ContextEnrichmentInputSchema = strictObject({
 export type ContextEnrichmentInput = Static<typeof ContextEnrichmentInputSchema>;
 
 /**
+ * Versioned iteration_narrative input (model advisory 10, PG-7/T17): called
+ * only after the authoritative snapshot commits; the strict output schema
+ * carries no verdict or evidence fields, so the narrative can never modify
+ * the snapshot, the verdict or mint evidence.
+ */
+export const IterationNarrativeInputSchema = strictObject({
+  purpose: Type.Literal("iteration_narrative"),
+  schema_version: Type.Literal(GROUNDED_SYNTHESIS_SCHEMA_VERSIONS.iteration_narrative),
+  binding_digest: DigestSchema,
+  conversation_id: IdentifierSchema,
+  run_id: IdentifierSchema,
+  bundle: ProjectContextBundleRecordSchema,
+});
+export type IterationNarrativeInput = Static<typeof IterationNarrativeInputSchema>;
+
+/**
  * The domain result record (model advisory 5.3). Run provenance — tokens,
  * duration, raw artifacts — belongs to the Task 8 invocation record and never
  * enters this semantic digest.

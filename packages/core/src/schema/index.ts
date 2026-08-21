@@ -10,6 +10,7 @@ export * from "./edge.js";
 export * from "./envelope.js";
 export * from "./event.js";
 export * from "./feedback.js";
+export * from "./feedback-analysis.js";
 export * from "./impact-advisory.js";
 export * from "./model-invocation.js";
 export * from "./node.js";

@@ -1,8 +1,8 @@
-import type { GroundedSynthesisPurpose } from "../schema/profile.js";
 import type {
   ApprovalBriefInput,
   ContextEnrichmentInput,
   GroundedSynthesisOutput,
+  IterationNarrativeInput,
   ProjectDiscoveryInput,
 } from "../schema/synthesis.js";
 
@@ -36,23 +36,9 @@ export interface GroundedSynthesisFailure {
 }
 
 /**
- * Minimal input for the purpose whose compiler lands in T17
- * (iteration_narrative). It still pins the purpose, schema version, binding
- * and bundle so the isolation and versioning rules already apply uniformly.
- * `approval_brief` graduated in T7 and `context_enrichment` in T14
- * (`ContextEnrichmentInputSchema` in schema/synthesis).
+ * Every purpose graduated to its versioned input schema (T7/T14/T17); the
+ * strict input/output pairs below are the only shapes the port accepts.
  */
-export interface GroundedSynthesisStubInput<P extends GroundedSynthesisPurpose> {
-  readonly purpose: P;
-  readonly schema_version: string;
-  readonly binding_digest: string;
-  readonly conversation_id: string;
-  readonly run_id: string;
-  readonly bundle_digest: string;
-}
-
-export type IterationNarrativeInput = GroundedSynthesisStubInput<"iteration_narrative">;
-
 export type GroundedSynthesisInput =
   ProjectDiscoveryInput | ContextEnrichmentInput | ApprovalBriefInput | IterationNarrativeInput;
 

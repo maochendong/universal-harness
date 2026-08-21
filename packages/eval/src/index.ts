@@ -87,6 +87,23 @@ export {
   type TargetLayer,
 } from "./feedback/router.js";
 export {
+  FEEDBACK_ANALYSIS_ISSUE_CODES,
+  HUMAN_REVIEW_CONFIDENCE_THRESHOLD,
+  candidateDisposition,
+  createInMemoryFeedbackAnalysisPort,
+  shouldInvokeFeedbackAnalysis,
+  validateFeedbackAnalysisOutput,
+  type FeedbackAnalysisIssue,
+  type FeedbackAnalysisPort,
+  type FeedbackAnalysisResult,
+} from "./feedback/analysis.js";
+export {
+  FEEDBACK_ANALYSIS_PROMPT_CONTRACT,
+  FEEDBACK_ANALYSIS_PROMPT_PORT_ID,
+  FEEDBACK_ANALYSIS_PROMPT_REGISTRATION,
+  FEEDBACK_ANALYSIS_PROMPT_VERSION,
+} from "./feedback/prompt-contract.js";
+export {
   IMPROVEMENT_EXTENSION_KEY,
   IMPROVEMENT_TARGET_KINDS,
   buildImprovementCandidate,

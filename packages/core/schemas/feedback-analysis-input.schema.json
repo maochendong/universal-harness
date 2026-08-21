@@ -1,0 +1,171 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.universal-harness.dev/1.1/feedback-analysis-input.schema.json",
+  "additionalProperties": false,
+  "type": "object",
+  "required": [
+    "purpose",
+    "schema_version",
+    "binding_digest",
+    "conversation_id",
+    "run_id",
+    "finding_digest",
+    "deterministic_rca",
+    "bundle"
+  ],
+  "properties": {
+    "purpose": { "const": "feedback_analysis", "type": "string" },
+    "schema_version": { "const": "feedback_analysis.v1", "type": "string" },
+    "binding_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
+    "conversation_id": {
+      "minLength": 3,
+      "maxLength": 160,
+      "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+      "type": "string"
+    },
+    "run_id": {
+      "minLength": 3,
+      "maxLength": 160,
+      "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+      "type": "string"
+    },
+    "finding_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
+    "deterministic_rca": {
+      "additionalProperties": false,
+      "type": "object",
+      "required": ["rule", "category", "layer", "confidence"],
+      "properties": {
+        "rule": { "minLength": 1, "type": "string" },
+        "category": { "minLength": 1, "type": "string" },
+        "layer": { "minLength": 1, "type": "string" },
+        "confidence": { "minimum": 0, "maximum": 1, "type": "number" }
+      }
+    },
+    "bundle": {
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "protocol_version",
+        "record_kind",
+        "bundle_id",
+        "session_id",
+        "purpose",
+        "project_baseline_digest",
+        "profile_digest",
+        "policy_digest",
+        "budget",
+        "sources",
+        "exclusions",
+        "content_digest",
+        "record_digest"
+      ],
+      "properties": {
+        "protocol_version": { "const": "1.1.0", "type": "string" },
+        "record_kind": { "const": "project_context_bundle", "type": "string" },
+        "bundle_id": {
+          "minLength": 3,
+          "maxLength": 160,
+          "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+          "type": "string"
+        },
+        "session_id": {
+          "minLength": 3,
+          "maxLength": 160,
+          "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+          "type": "string"
+        },
+        "purpose": {
+          "anyOf": [
+            { "const": "proposal", "type": "string" },
+            { "const": "review", "type": "string" },
+            { "const": "approval_brief", "type": "string" },
+            { "const": "context_enrichment", "type": "string" }
+          ]
+        },
+        "project_baseline_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
+        "profile_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
+        "policy_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
+        "budget": {
+          "additionalProperties": false,
+          "type": "object",
+          "required": ["max_files", "max_bytes_per_source", "max_total_bytes", "max_summary_chars"],
+          "properties": {
+            "max_files": { "minimum": 1, "type": "integer" },
+            "max_bytes_per_source": { "minimum": 1, "type": "integer" },
+            "max_total_bytes": { "minimum": 1, "type": "integer" },
+            "max_summary_chars": { "minimum": 1, "type": "integer" }
+          }
+        },
+        "sources": {
+          "uniqueItems": true,
+          "type": "array",
+          "items": {
+            "additionalProperties": false,
+            "type": "object",
+            "required": [
+              "locator",
+              "source_kind",
+              "source_digest",
+              "selection_reason",
+              "classification",
+              "summary",
+              "truncated"
+            ],
+            "properties": {
+              "locator": { "minLength": 1, "maxLength": 400, "type": "string" },
+              "source_kind": {
+                "anyOf": [
+                  { "const": "manifest", "type": "string" },
+                  { "const": "readme", "type": "string" },
+                  { "const": "gate", "type": "string" },
+                  { "const": "graph", "type": "string" },
+                  { "const": "adr", "type": "string" },
+                  { "const": "api", "type": "string" },
+                  { "const": "schema", "type": "string" },
+                  { "const": "policy", "type": "string" }
+                ]
+              },
+              "source_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
+              "selection_reason": { "minLength": 1, "type": "string" },
+              "classification": {
+                "anyOf": [
+                  { "const": "public_project", "type": "string" },
+                  { "const": "internal_project", "type": "string" },
+                  { "const": "restricted", "type": "string" }
+                ]
+              },
+              "summary": { "type": "string" },
+              "truncated": { "type": "boolean" }
+            }
+          }
+        },
+        "exclusions": {
+          "uniqueItems": true,
+          "type": "array",
+          "items": {
+            "additionalProperties": false,
+            "type": "object",
+            "required": ["locator", "reason"],
+            "properties": {
+              "locator": { "minLength": 1, "maxLength": 400, "type": "string" },
+              "reason": {
+                "anyOf": [
+                  { "const": "path_policy_denied", "type": "string" },
+                  { "const": "secret_pattern", "type": "string" },
+                  { "const": "symlink_escape", "type": "string" },
+                  { "const": "untracked", "type": "string" },
+                  { "const": "binary", "type": "string" },
+                  { "const": "oversize", "type": "string" },
+                  { "const": "budget_exceeded", "type": "string" },
+                  { "const": "unreadable", "type": "string" }
+                ]
+              }
+            }
+          }
+        },
+        "content_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
+        "record_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" }
+      }
+    }
+  }
+}

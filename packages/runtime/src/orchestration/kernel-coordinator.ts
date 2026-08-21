@@ -64,6 +64,7 @@ import {
   type ContextCandidate,
 } from "../context/compiler.js";
 import { selectTaskNeighborhood } from "../context/selector.js";
+import { narrateIteration } from "../snapshot/narrative.js";
 import { enrichContextBundle } from "../context/enrichment.js";
 import {
   TaskBundleBindingError,
@@ -3765,6 +3766,10 @@ async function phaseSnapshot(ctx: PipelineContext): Promise<PhaseStep> {
   await commitIterationNode(ctx, "completed");
   await regenerateTasksProjection(ctx);
   await ctx.engine.advance(ctx.workflowOperationId, "completed");
+  // PG-7: the narrative is compiled only after the authoritative snapshot
+  // commits; a failure produces a recoverable projection finding and never
+  // changes the snapshot, the verdicts or this outcome.
+  await narrateIteration(ctx, snapshot, contentDigest(snapshot));
   let ledgerCommit: string | null = null;
   if (deps.vcs !== undefined) {
     const committed = await deps.vcs.commit(deps.projectRoot, {

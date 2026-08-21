@@ -20,6 +20,11 @@ import {
 import { EdgeSchema } from "./edge.js";
 import { EventSchema } from "./event.js";
 import { FeedbackSchema } from "./feedback.js";
+import {
+  FeedbackAnalysisInputSchema,
+  FeedbackAnalysisOutputSchema,
+  FeedbackAnalysisRecordSchema,
+} from "./feedback-analysis.js";
 import { NodeSchema } from "./node.js";
 import { ObservationEventSchema } from "./observation.js";
 import { LedgerOperationSchema, OperationSchema, WorkflowOperationSchema } from "./operation.js";
@@ -60,6 +65,7 @@ import {
   ApprovalBriefOutputSchema,
   ContextEnrichmentOutputSchema,
   GroundedSynthesisRecordSchema,
+  IterationNarrativeInputSchema,
   IterationNarrativeOutputSchema,
   ProjectDiscoveryInputSchema,
   ProjectDiscoveryOutputSchema,
@@ -220,6 +226,9 @@ export const PROTOCOL_1_1_SCHEMA_REGISTRY = createDomainSchemaRegistry({
     { key: "plan-proposal", schema: PlanProposalRecordSchema },
     { key: "plan-proposal-output", schema: PlanProposalOutputSchema },
     { key: "tdd-cycle", schema: TddCycleRecordSchema },
+    { key: "feedback-analysis", schema: FeedbackAnalysisRecordSchema },
+    { key: "feedback-analysis-output", schema: FeedbackAnalysisOutputSchema },
+    { key: "feedback-analysis-input", schema: FeedbackAnalysisInputSchema },
     { key: "capability-plan", schema: CapabilityPlanRecordSchema },
     { key: "capture-session", schema: CaptureSessionRecordSchema },
     { key: "clarification-question", schema: ClarificationQuestionRecordSchema },
@@ -239,6 +248,7 @@ export const PROTOCOL_1_1_SCHEMA_REGISTRY = createDomainSchemaRegistry({
     { key: "approval-brief-input", schema: ApprovalBriefInputSchema },
     { key: "approval-brief-output", schema: ApprovalBriefOutputSchema },
     { key: "iteration-narrative-output", schema: IterationNarrativeOutputSchema },
+    { key: "iteration-narrative-input", schema: IterationNarrativeInputSchema },
     { key: "prd-proposal", schema: PrdProposalRecordSchema },
     { key: "prd-proposal-content", schema: PrdProposalContentSchema },
     { key: "prd-proposal-draft", schema: PrdProposalDraftSchema },

@@ -411,6 +411,18 @@ export {
   type TaskTddVerdictInput,
 } from "./tdd/verdict.js";
 export {
+  DOWNSTREAM_ARTIFACT_KINDS,
+  INVALIDATION_MATRIX,
+  UPSTREAM_DRIFT_KINDS,
+  planDownstreamInvalidation,
+  survivesDrift,
+  type DownstreamArtifactKind,
+  type DownstreamInvalidation,
+  type InvalidationResumePhase,
+  type UpstreamDriftKind,
+} from "./orchestration/invalidation.js";
+export { narrateIteration } from "./snapshot/narrative.js";
+export {
   TIER_WEIGHTS,
   allocateTierBudgets,
   estimateTokens,

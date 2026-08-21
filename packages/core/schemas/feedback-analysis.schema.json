@@ -1,0 +1,204 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.universal-harness.dev/1.1/feedback-analysis.schema.json",
+  "additionalProperties": false,
+  "type": "object",
+  "required": [
+    "protocol_version",
+    "record_kind",
+    "analysis_id",
+    "workflow_operation_id",
+    "iteration_id",
+    "finding_digest",
+    "binding_digest",
+    "conversation_id",
+    "run_id",
+    "input_digest",
+    "output",
+    "record_digest"
+  ],
+  "properties": {
+    "protocol_version": { "const": "1.1.0", "type": "string" },
+    "record_kind": { "const": "feedback_analysis", "type": "string" },
+    "analysis_id": {
+      "minLength": 3,
+      "maxLength": 160,
+      "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+      "type": "string"
+    },
+    "workflow_operation_id": {
+      "minLength": 3,
+      "maxLength": 160,
+      "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+      "type": "string"
+    },
+    "iteration_id": {
+      "minLength": 3,
+      "maxLength": 160,
+      "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+      "type": "string"
+    },
+    "finding_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
+    "binding_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
+    "conversation_id": {
+      "minLength": 3,
+      "maxLength": 160,
+      "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+      "type": "string"
+    },
+    "run_id": {
+      "minLength": 3,
+      "maxLength": 160,
+      "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+      "type": "string"
+    },
+    "input_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
+    "output": {
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "purpose",
+        "schema_version",
+        "finding_digest",
+        "diagnoses",
+        "change_seed_candidates",
+        "verification_suggestions"
+      ],
+      "properties": {
+        "purpose": { "const": "feedback_analysis", "type": "string" },
+        "schema_version": { "const": "feedback_analysis.v1", "type": "string" },
+        "finding_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
+        "diagnoses": {
+          "type": "array",
+          "items": {
+            "additionalProperties": false,
+            "type": "object",
+            "required": ["summary", "confidence", "risk", "source_refs"],
+            "properties": {
+              "summary": { "minLength": 1, "type": "string" },
+              "confidence": { "minimum": 0, "maximum": 1, "type": "number" },
+              "risk": {
+                "anyOf": [
+                  { "const": "low", "type": "string" },
+                  { "const": "medium", "type": "string" },
+                  { "const": "high", "type": "string" }
+                ]
+              },
+              "source_refs": {
+                "minItems": 1,
+                "type": "array",
+                "items": {
+                  "additionalProperties": false,
+                  "type": "object",
+                  "required": ["kind", "ref", "digest"],
+                  "properties": {
+                    "kind": {
+                      "anyOf": [
+                        { "const": "finding", "type": "string" },
+                        { "const": "evidence", "type": "string" },
+                        { "const": "graph_node", "type": "string" },
+                        { "const": "bundle_source", "type": "string" }
+                      ]
+                    },
+                    "ref": { "minLength": 1, "maxLength": 400, "type": "string" },
+                    "digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "change_seed_candidates": {
+          "type": "array",
+          "items": {
+            "additionalProperties": false,
+            "type": "object",
+            "required": ["summary", "seed_kind", "confidence", "risk", "source_refs"],
+            "properties": {
+              "summary": { "minLength": 1, "type": "string" },
+              "seed_kind": {
+                "anyOf": [
+                  { "const": "content-change", "type": "string" },
+                  { "const": "rename-with-change", "type": "string" },
+                  { "const": "pure-rename", "type": "string" },
+                  { "const": "finding", "type": "string" },
+                  { "const": "improvement", "type": "string" }
+                ]
+              },
+              "confidence": { "minimum": 0, "maximum": 1, "type": "number" },
+              "risk": {
+                "anyOf": [
+                  { "const": "low", "type": "string" },
+                  { "const": "medium", "type": "string" },
+                  { "const": "high", "type": "string" }
+                ]
+              },
+              "source_refs": {
+                "minItems": 1,
+                "type": "array",
+                "items": {
+                  "additionalProperties": false,
+                  "type": "object",
+                  "required": ["kind", "ref", "digest"],
+                  "properties": {
+                    "kind": {
+                      "anyOf": [
+                        { "const": "finding", "type": "string" },
+                        { "const": "evidence", "type": "string" },
+                        { "const": "graph_node", "type": "string" },
+                        { "const": "bundle_source", "type": "string" }
+                      ]
+                    },
+                    "ref": { "minLength": 1, "maxLength": 400, "type": "string" },
+                    "digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "verification_suggestions": {
+          "type": "array",
+          "items": {
+            "additionalProperties": false,
+            "type": "object",
+            "required": ["summary", "confidence", "risk", "source_refs"],
+            "properties": {
+              "summary": { "minLength": 1, "type": "string" },
+              "confidence": { "minimum": 0, "maximum": 1, "type": "number" },
+              "risk": {
+                "anyOf": [
+                  { "const": "low", "type": "string" },
+                  { "const": "medium", "type": "string" },
+                  { "const": "high", "type": "string" }
+                ]
+              },
+              "source_refs": {
+                "minItems": 1,
+                "type": "array",
+                "items": {
+                  "additionalProperties": false,
+                  "type": "object",
+                  "required": ["kind", "ref", "digest"],
+                  "properties": {
+                    "kind": {
+                      "anyOf": [
+                        { "const": "finding", "type": "string" },
+                        { "const": "evidence", "type": "string" },
+                        { "const": "graph_node", "type": "string" },
+                        { "const": "bundle_source", "type": "string" }
+                      ]
+                    },
+                    "ref": { "minLength": 1, "maxLength": 400, "type": "string" },
+                    "digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "record_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" }
+  }
+}

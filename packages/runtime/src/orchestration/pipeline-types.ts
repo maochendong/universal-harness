@@ -187,6 +187,12 @@ export interface OrchestratorDependencies {
    * exactly as deterministically compiled.
    */
   readonly contextEnrichment?: GroundedSynthesisPort;
+  /**
+   * PG-7 iteration narrative (GroundedSynthesisPort, purpose
+   * iteration_narrative), invoked only after the authoritative snapshot
+   * commits. Absent means no narrative is compiled.
+   */
+  readonly iterationNarrative?: GroundedSynthesisPort;
   /** Design module ports; an active design_governance without ports blocks. */
   readonly design?: {
     readonly proposal?: DesignProposalPort;
