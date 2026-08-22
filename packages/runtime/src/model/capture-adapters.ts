@@ -296,6 +296,21 @@ export function createModelBackedPrdProposalPort(deps: ModelBackedAdapterDeps): 
           source_kind: "intent",
           text: input.session.intent_text,
         },
+        // The draft must restate verifiable digests verbatim; they only exist
+        // on the session record and the bundle manifest, so they join the
+        // prompt explicitly (T24 coordinator dogfood: an invisible digest is
+        // a hallucinated one).
+        {
+          source_id: "session-binding",
+          source_kind: "session_binding",
+          text: canonicalizeJson({
+            intent_digest: input.session.intent_digest,
+            proposal_bundle_sources: input.proposal_context_bundle.sources.map((source) => ({
+              locator: source.locator,
+              source_digest: source.source_digest,
+            })),
+          }),
+        },
         ...sourceItems(input.proposal_context_bundle, deps),
         {
           source_id: "accepted-answers",
@@ -370,6 +385,13 @@ export function createModelBackedPrdReviewPort(deps: ModelBackedAdapterDeps): Pr
           source_id: "validation-report",
           source_kind: "validation_report",
           text: canonicalizeJson(input.validation_report),
+        },
+        // The rubric's dimension registry must be visible: dimension ids are
+        // a closed vocabulary the report validator checks verbatim (T24).
+        {
+          source_id: "review-rubric",
+          source_kind: "review_rubric",
+          text: canonicalizeJson(input.rubric),
         },
       ];
       const compiled = compileOrThrow(

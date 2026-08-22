@@ -42,7 +42,7 @@ export const PRD_REVIEW_PROMPT_CONTRACT: PromptContract = definePromptContract({
   },
   domain_rubric: {
     segment_id: "domain-rubric",
-    text: "Check completeness, ambiguity, internal conflicts, unverifiable outcomes, boundary conditions and test-first readiness for every rubric dimension. A finding must cite the proposal section it targets. When a dimension cannot be assessed from the provided inputs, request manual input instead of guessing.",
+    text: "Assess every dimension of the supplied review rubric exactly once: each dimension assessment and finding must copy its dimension_id verbatim from the review rubric input — no other dimension id is valid, and this prose is guidance, not the registry. A finding must cite the proposal section it targets. When a dimension cannot be assessed from the provided inputs, request manual input instead of guessing.",
   },
   profile_overlays: {
     lite: {

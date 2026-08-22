@@ -243,61 +243,61 @@
     "contract_id": "harness:prompt:prd-proposal",
     "prompt_version": "prd-proposal.v1",
     "profile": "governed",
-    "contract_digest": "4b0375f2cf2b4856f216b5c7fe5d012d82048895b7f9c47d952fdc6ec9738283",
+    "contract_digest": "8fa9f6f44a237467ae5307caa70a01a6af6b306adb51c597f3beba9d948e3039",
     "profile_overlay_digest": "a8c265391dc38793e91092eed57b715e318304c0dc04c3002d3602853de00416",
     "output_schema_digest": "4ef4a880c7f9f291dad5691d3180ba278c3be50729a37c67391303c826ac1e36",
     "input_bundle_digest": "c8f885b2301f9abf9548454517a2d0beed6c16568728511c2400aeb182801c40",
-    "compiled_prompt_digest": "7b175e12431e1a312a81c3579b7b20ec6d44f36f9a62f1698902055cf8938ae6"
+    "compiled_prompt_digest": "425a9cf415ce95c7ffd59e5cff95ba0c527153f72475186cff4d65033ca9c405"
   },
   {
     "contract_id": "harness:prompt:prd-proposal",
     "prompt_version": "prd-proposal.v1",
     "profile": "lite",
-    "contract_digest": "4b0375f2cf2b4856f216b5c7fe5d012d82048895b7f9c47d952fdc6ec9738283",
+    "contract_digest": "8fa9f6f44a237467ae5307caa70a01a6af6b306adb51c597f3beba9d948e3039",
     "profile_overlay_digest": "8bdf3f5c7824936a66c7efdd45eaf4c690d4fc55a55da740855afed98ac598a8",
     "output_schema_digest": "4ef4a880c7f9f291dad5691d3180ba278c3be50729a37c67391303c826ac1e36",
     "input_bundle_digest": "c8f885b2301f9abf9548454517a2d0beed6c16568728511c2400aeb182801c40",
-    "compiled_prompt_digest": "acc67aa69df001f7d371dca778cd6e05b7d098d256ecfa89cb4bb0c5c61c7d70"
+    "compiled_prompt_digest": "50f74fd95152e0108f743a3658e669074fdcbd0fdcb1895b91668b8bc0d1f8de"
   },
   {
     "contract_id": "harness:prompt:prd-proposal",
     "prompt_version": "prd-proposal.v1",
     "profile": "standard",
-    "contract_digest": "4b0375f2cf2b4856f216b5c7fe5d012d82048895b7f9c47d952fdc6ec9738283",
+    "contract_digest": "8fa9f6f44a237467ae5307caa70a01a6af6b306adb51c597f3beba9d948e3039",
     "profile_overlay_digest": "7392e4313e0f8e4113ce883d26244a957ee2c9bbad80cbe9ba6b9c28a91fe7b4",
     "output_schema_digest": "4ef4a880c7f9f291dad5691d3180ba278c3be50729a37c67391303c826ac1e36",
     "input_bundle_digest": "c8f885b2301f9abf9548454517a2d0beed6c16568728511c2400aeb182801c40",
-    "compiled_prompt_digest": "ae903115338756d119430d8884df951f9860c5604e23438a262f2d14e805bf1d"
+    "compiled_prompt_digest": "f517cc6d9f3b4f352cc363973699727a1713ef2a254ffc5f3e7c79210ab5c9a9"
   },
   {
     "contract_id": "harness:prompt:prd-review",
     "prompt_version": "prd-review.v1",
     "profile": "governed",
-    "contract_digest": "c80fbef84fcbe44ea8ad46f8e296ae1adb0a46e181aca22018556645513344e9",
+    "contract_digest": "d9c05e6060fd2cc3442826741eaa43f43ae7be72aacbb0374f7773f16d99d009",
     "profile_overlay_digest": "7753f6dc6d491d11cccc7e4a628e2fe5bcdb432a5f696aaae25f2c351ba32b64",
     "output_schema_digest": "35d0ec9cf6cf4c5f4248f2d2e2f91aa13b0376cba8431e7db0f84a4df3ac9fdd",
     "input_bundle_digest": "c8f885b2301f9abf9548454517a2d0beed6c16568728511c2400aeb182801c40",
-    "compiled_prompt_digest": "7b16c446df66aa91053e7a32df7e26987280de9fd636c57fc25e6a20a8a3f3e8"
+    "compiled_prompt_digest": "db33b9f1e6da7f05132ade0b7bf4b8cf95ba2475377d60dac22fb849ad3b33b9"
   },
   {
     "contract_id": "harness:prompt:prd-review",
     "prompt_version": "prd-review.v1",
     "profile": "lite",
-    "contract_digest": "c80fbef84fcbe44ea8ad46f8e296ae1adb0a46e181aca22018556645513344e9",
+    "contract_digest": "d9c05e6060fd2cc3442826741eaa43f43ae7be72aacbb0374f7773f16d99d009",
     "profile_overlay_digest": "f258fcc78c97b827f8c3b73004fedefb150f2daeb94f7c221157d5dd2e66c4ea",
     "output_schema_digest": "35d0ec9cf6cf4c5f4248f2d2e2f91aa13b0376cba8431e7db0f84a4df3ac9fdd",
     "input_bundle_digest": "c8f885b2301f9abf9548454517a2d0beed6c16568728511c2400aeb182801c40",
-    "compiled_prompt_digest": "72bb910786773c4b4e0fde3686ab6324b520916fcaca02b6ff5ece1a91e72f2b"
+    "compiled_prompt_digest": "a87d8e464fc1a2f06225c25d71d3774d6f9b5a6f31e3f57d7b05ed5cbf20389b"
   },
   {
     "contract_id": "harness:prompt:prd-review",
     "prompt_version": "prd-review.v1",
     "profile": "standard",
-    "contract_digest": "c80fbef84fcbe44ea8ad46f8e296ae1adb0a46e181aca22018556645513344e9",
+    "contract_digest": "d9c05e6060fd2cc3442826741eaa43f43ae7be72aacbb0374f7773f16d99d009",
     "profile_overlay_digest": "e8ba781778e8f8e542f599089898ba58ac990ec6e4a021157654687a8043bdc8",
     "output_schema_digest": "35d0ec9cf6cf4c5f4248f2d2e2f91aa13b0376cba8431e7db0f84a4df3ac9fdd",
     "input_bundle_digest": "c8f885b2301f9abf9548454517a2d0beed6c16568728511c2400aeb182801c40",
-    "compiled_prompt_digest": "751742e42e085c9c3c2227151bb3b4235e2f14b4b703102abada4220691347e4"
+    "compiled_prompt_digest": "7d9acc05262ea88d365995e0d47566fa901052bf35e933bd3c62a789bfabbc42"
   },
   {
     "contract_id": "harness:prompt:project-discovery",
