@@ -22,6 +22,7 @@ import {
 import { type IntentShape } from "../planning/mode-selector.js";
 import { type PlanProposalPort } from "../planning/plan-proposal.js";
 import { type TaskSpecification } from "../planning/task.js";
+import { type CaptureCoordinatorSeam } from "./capture-coordinator.js";
 import {
   type ClarificationQuestion,
   type ConstraintInput,
@@ -166,6 +167,14 @@ export interface OrchestratorDependencies {
   /** Actor recorded for interactively resolved decisions. */
   readonly decisionActor?: string;
   readonly interpret?: IntentInterpreter;
+  /**
+   * Protocol-1.1 capture seam (slice 2): when present, capture runs through
+   * the PrdCaptureCoordinator — proposal/review/risk stages, the approval
+   * bridge and the atomic accepted transaction — and the legacy interpreter,
+   * baseline approval and baseline commit are skipped entirely. Absent keeps
+   * the exact legacy capture behavior.
+   */
+  readonly capture?: CaptureCoordinatorSeam;
   readonly execution?: ExecutionBinding;
   /** Legacy host seam; treated as an unproven delegated Agent binding. */
   readonly execute?: OrchestrationExecutor;

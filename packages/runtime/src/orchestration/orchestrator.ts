@@ -28,7 +28,6 @@ import { resumeCommandFor } from "../approval/interaction.js";
 import { evidenceBindingsOf, type GateEvidenceRecord } from "../gates/evidence.js";
 import { hashWorktreeCode } from "../snapshot/anchor.js";
 import { readExecutionPlanContent } from "../planning/execution-plan.js";
-import { requirementBaselineDigest } from "../requirements/baseline.js";
 import { type SnapshotRecord } from "../snapshot/builder.js";
 import {
   WorkflowEngine,
@@ -95,6 +94,16 @@ export {
   type TaskEnvelopeScopePort,
 } from "./pipeline-types.js";
 export {
+  CAPTURE_APPROVAL_OBJECT_TYPE,
+  captureSessionIdFor,
+  findBridgedCaptureApprovalDecision,
+  readBridgedCaptureApprovalDecision,
+  requirementProposalViewOf,
+  startCaptureCommandFor,
+  type CaptureCoordinatorSeam,
+  type CaptureCoordinatorSessionContext,
+} from "./capture-coordinator.js";
+export {
   createDefaultGateSuite,
   createDirectExecutor,
   createGenericInterpreter,
@@ -119,7 +128,10 @@ export async function runIteration(
       `workflow operation ${open} is still open; resume or abort it before starting a new iteration`,
     );
   }
-  const captured = await captureProposal(deps, input.intent);
+  const iterationId =
+    input.iterationId ??
+    `iteration_${sha256Hex(`${input.intent}:${String(readCommittedOperations(harnessRoot(deps)).length)}`).slice(0, 16)}`;
+  const captured = await captureProposal(deps, input.intent, iterationId);
   if (captured.status === "clarification_required") {
     return { status: "input_required", questions: captured.questions };
   }
@@ -128,12 +140,10 @@ export async function runIteration(
   const projectId = `project_${readManagedManifest(deps.projectRoot).name}`;
   const started = await engine.startOperation({
     projectId,
-    iterationId:
-      input.iterationId ??
-      `iteration_${sha256Hex(`${input.intent}:${String(readCommittedOperations(harnessRoot(deps)).length)}`).slice(0, 16)}`,
+    iterationId,
     goal: input.intent,
     baselineCommit: deps.readBaseline(),
-    requirementBaselineDigest: requirementBaselineDigest(captured.proposal),
+    requirementBaselineDigest: captured.baselineDigest,
     policyDigest: policy.digest,
     phase: "capture",
     budgetCeiling: { steps: 30, tokens: 120000 },

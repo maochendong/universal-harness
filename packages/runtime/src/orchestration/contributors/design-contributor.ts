@@ -33,6 +33,7 @@ import {
   materializeProjectGraph,
   nowOf,
   refreshWorkingState,
+  testSeedCriterionBinding,
 } from "../kernel-coordinator.js";
 import type { DesignContribution, PhaseStep, PipelineContext } from "../kernel-coordinator.js";
 
@@ -110,18 +111,16 @@ function designFacts(ctx: PipelineContext, impactSet: NodeRecord, nodes: readonl
   const pairs: CriterionTestPair[] = nodes
     .filter((node) => node.type === "Test" && node.status === "accepted")
     .flatMap((node) => {
-      const extension = node.extensions ?? {};
-      const criterion = extension["acceptance_criterion_id"];
-      const verifies = extension["verifies"];
-      return typeof criterion === "string" && typeof verifies === "string"
-        ? [
+      const binding = testSeedCriterionBinding(node);
+      return binding === undefined
+        ? []
+        : [
             {
-              requirement_id: verifies,
-              acceptance_criterion_id: criterion,
+              requirement_id: binding.verifies,
+              acceptance_criterion_id: binding.acceptance_criterion_id,
               test_node_id: node.id,
             },
-          ]
-        : [];
+          ];
     });
   return { mustChange, risks, pairs };
 }

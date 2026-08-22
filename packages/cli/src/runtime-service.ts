@@ -32,7 +32,9 @@ import {
   resumeIteration,
   runIteration,
   auditGraph,
+  readBridgedCaptureApprovalDecision,
   type ApprovalPrompter,
+  type CaptureCoordinatorSeam,
   type EvaluationPort,
   type IntentInterpreter,
   type OrchestrationExecutor,
@@ -45,6 +47,7 @@ import type { SemanticSeedProvider } from "@universal-harness-internal/plugin-sd
 import { materializeLedger, pageEdges, pageNodes } from "@universal-harness-internal/graph";
 import {
   contentDigest,
+  domainRecordId,
   appendProfileDecisionRecord,
   appendProjectProfileRecord,
   createProfileDecisionRecord,
@@ -57,6 +60,7 @@ import {
   ProfileSelectionError,
   ProjectLayoutError,
   DEFAULT_PROFILE_POLICY_DIGEST,
+  PROTOCOL_1_1_VERSION,
   type EdgeRecord,
   type NodeRecord,
   type ObservationEvent,
@@ -85,6 +89,12 @@ import type {
 import { createConfiguredAgentExecutor } from "./project-agent.js";
 import { createConfiguredGateSuite } from "./project-gates.js";
 import { createManagedIntentInterpreter } from "./managed-interpret.js";
+import {
+  DEFAULT_CAPTURE_REVIEW_RUBRIC,
+  ManagedCaptureCoordinatorError,
+  createManagedCaptureCoordinator,
+  defaultCaptureRiskPolicy,
+} from "./managed-capture-coordinator.js";
 import { createManagedPipelinePorts } from "./managed-pipeline-ports.js";
 import {
   ProjectRuntimeConfigError,
@@ -216,6 +226,98 @@ export function createEvalPackagePort(now: () => string): EvaluationPort {
 
 function gitHead(projectRoot: string): string {
   return execFileSync("git", ["rev-parse", "HEAD"], { cwd: projectRoot, encoding: "utf8" }).trim();
+}
+
+function projectIdForProject(projectRoot: string): string {
+  return `project_${readManagedManifest(projectRoot).name}`;
+}
+
+/** HEAD-bound baseline digest; an unborn or unreadable HEAD degrades to a stable constant. */
+function baselineDigestForProject(projectRoot: string): string {
+  try {
+    return contentDigest({ repository_head: gitHead(projectRoot) });
+  } catch {
+    return contentDigest({ repository_head: "unborn" });
+  }
+}
+
+/**
+ * Protocol-1.1 slice 2 capture gating: with no `model_providers` or no
+ * committed profile record (pre-1.1 legacy project) the capture phase keeps
+ * its exact current behavior. With both, capture runs through the assembled
+ * PrdCaptureCoordinator; a declared-but-uncovered slot fails closed as a
+ * configuration error rather than degrading. The ProfileDecision identity
+ * derives deterministically from the stable decision inputs (core has no
+ * profile-decision reader yet), the approval bridge reads the same engine
+ * ledger the legacy surface writes, and the risk policy routes every capture
+ * to human approval.
+ */
+export function managedCaptureSeamForProject(
+  projectRoot: string,
+  runtimeConfig: ProjectRuntimeConfig,
+  options: {
+    readonly fetch?: typeof fetch;
+    readonly environment?: Readonly<Record<string, string | undefined>>;
+  } = {},
+): CaptureCoordinatorSeam | undefined {
+  if (runtimeConfig.model_providers === undefined) return undefined;
+  let profile: ProjectProfileRecord | undefined;
+  try {
+    profile = readLatestProjectProfile(projectRoot, projectIdForProject(projectRoot));
+  } catch (error) {
+    if (error instanceof ProjectLayoutError) return undefined;
+    throw error;
+  }
+  if (profile === undefined) return undefined;
+  const decisionInput = {
+    decision_kind: "project_profile_change",
+    project_id: profile.project_id,
+    decided_profile_id: profile.profile_id,
+    policy_digest: profile.policy_digest,
+    profile_record_digest: profile.record_digest,
+  } as const;
+  const baselineDigest = baselineDigestForProject(projectRoot);
+  let assembled: ReturnType<typeof createManagedCaptureCoordinator>;
+  try {
+    assembled = createManagedCaptureCoordinator({
+      projectRoot,
+      runtimeConfig,
+      profile,
+      profile_decision_id: domainRecordId({
+        domain_tag: "profile_decision",
+        id_prefix: "profile-decision",
+        protocol_version: PROTOCOL_1_1_VERSION,
+        canonical_input: decisionInput,
+      }),
+      profile_decision_digest: contentDigest(decisionInput),
+      project_baseline_digest: baselineDigest,
+      policy: defaultCaptureRiskPolicy(profile.project_id, profile.profile_id),
+      rubric: DEFAULT_CAPTURE_REVIEW_RUBRIC,
+      readBaseline: () => gitHead(projectRoot),
+      readApprovalDecision: (requestId, decisionId) =>
+        readBridgedCaptureApprovalDecision(projectRoot, requestId, decisionId),
+      ...(options.fetch === undefined ? {} : { fetch: options.fetch }),
+      ...(options.environment === undefined ? {} : { environment: options.environment }),
+    });
+  } catch (error) {
+    if (error instanceof ManagedCaptureCoordinatorError) {
+      throw new OrchestrationError(
+        error.code === "binding_drift" ? "binding_drift" : "configuration",
+        error.message,
+      );
+    }
+    throw error;
+  }
+  if (assembled === undefined) return undefined;
+  return {
+    coordinator: assembled.coordinator,
+    session_context: {
+      project_profile_digest: profile.record_digest,
+      profile_decision_digest: contentDigest(decisionInput),
+      capture_policy_digest: profile.policy_digest,
+      project_baseline_digest: baselineDigest,
+    },
+  };
 }
 
 /** Map one orchestration outcome onto the canonical command result. */
@@ -366,6 +468,7 @@ export function createOrchestratedRuntimeService(
               identity,
             );
           };
+    const captureSeam = managedCaptureSeamForProject(projectRoot, runtimeConfig);
     return {
       projectRoot,
       readBaseline: () => gitHead(projectRoot),
@@ -376,6 +479,7 @@ export function createOrchestratedRuntimeService(
           ? createGenericInterpreter()
           : managedCaptureInterpreter(projectRoot, runtimeConfig)),
       ...managedPipelinePortsFor(projectRoot, runtimeConfig),
+      ...(captureSeam === undefined ? {} : { capture: captureSeam }),
       ...(injectedExecutor === undefined
         ? configuredAgent === undefined
           ? {}
@@ -500,17 +604,10 @@ export function createOrchestratedRuntimeService(
     }
   };
 
-  const projectIdFor = (projectRoot: string): string =>
-    `project_${readManagedManifest(projectRoot).name}`;
+  const projectIdFor = (projectRoot: string): string => projectIdForProject(projectRoot);
 
   /** HEAD-bound baseline digest; an unborn or unreadable HEAD degrades to a stable constant. */
-  const baselineDigestFor = (projectRoot: string): string => {
-    try {
-      return contentDigest({ repository_head: gitHead(projectRoot) });
-    } catch {
-      return contentDigest({ repository_head: "unborn" });
-    }
-  };
+  const baselineDigestFor = (projectRoot: string): string => baselineDigestForProject(projectRoot);
 
   /**
    * T20 slice 1 capture routing: when the committed runtime config declares a

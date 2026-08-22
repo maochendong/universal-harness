@@ -49,6 +49,9 @@ const OUT_PATH = process.argv[2] ?? join(tmpdir(), `harness-dogfood-${String(Dat
 
 const SLOTS = [
   "prd_proposal",
+  "prd_review",
+  "project_discovery",
+  "approval_brief",
   "design_proposal",
   "design_review",
   "impact_advisory",

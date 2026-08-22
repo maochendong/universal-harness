@@ -9,9 +9,13 @@ import { readPrdReviewReports } from "../review/store.js";
 import { readCaptureRiskAssessments } from "../risk/store.js";
 import type { CaptureStageHandler } from "../capture/commands.js";
 import { sealRecordEnvelope } from "../schema/envelope.js";
+import type { CaptureSessionRecord } from "../schema/capture.js";
 import type { PrdProposalRecord } from "../schema/proposal.js";
-import type { RequirementBaselineCriterionSeed } from "../schema/acceptance.js";
-import { buildAcceptedPrdGraph, acceptedNodeArtifactPath } from "./graph.js";
+import type {
+  RequirementBaselineCriterionSeed,
+  RequirementBaselineRecord,
+} from "../schema/acceptance.js";
+import { buildAcceptedPrdGraph, acceptedNodeArtifactPath, type AcceptedPrdGraph } from "./graph.js";
 import {
   createAcceptedPrdRecord,
   createRequirementBaselineRecord,
@@ -68,6 +72,71 @@ export function deriveCaptureAcceptanceApprovalDigest(approval: {
       decision: "approve",
     })
   );
+}
+
+/** The deterministic Criterion → Test seed bindings of one accepted graph. */
+function criterionTestSeedsFor(
+  proposal: PrdProposalRecord,
+  graph: AcceptedPrdGraph,
+): RequirementBaselineCriterionSeed[] {
+  const testRevisionById = new Map(
+    graph.nodes.filter((node) => node.type === "Test").map((node) => [node.id, node.revision]),
+  );
+  return proposal.content.acceptance_criteria.map((criterion) => {
+    const testId = deriveCaptureTestSeedId(criterion.criterion_id);
+    const revision = testRevisionById.get(testId);
+    if (revision === undefined) {
+      throw new Error(`internal: no test node built for criterion ${criterion.criterion_id}`);
+    }
+    return {
+      criterion_id: criterion.criterion_id,
+      requirement_id: criterion.requirement_id,
+      criterion_semantic_digest: criterion.criterion_semantic_digest,
+      test_id: testId,
+      test_revision: revision,
+    };
+  });
+}
+
+/**
+ * The requirement baseline the accept stage will commit for the session's
+ * current proposal: a pure function of committed facts (the proposal, the
+ * accepted history and the accepted graph nodes), so a caller that must bind
+ * the baseline digest before approval — the orchestrator seam — pre-derives
+ * exactly what the accepted transaction will seal. Undefined when the session
+ * has no committed current proposal.
+ */
+export function expectedCaptureAcceptanceBaseline(
+  projectRoot: string,
+  session: CaptureSessionRecord,
+): RequirementBaselineRecord | undefined {
+  if (session.current_proposal_digest === undefined) return undefined;
+  const proposal = findPrdProposalByDigest(
+    projectRoot,
+    session.session_id,
+    session.current_proposal_digest,
+  );
+  if (proposal === undefined) return undefined;
+  const prdRevision =
+    readAcceptedPrdRecords(projectRoot, deriveAcceptedPrdId(session.session_id)).length + 1;
+  const graph = buildAcceptedPrdGraph(
+    {
+      session_id: session.session_id,
+      iteration_id: session.iteration_id,
+      // Provenance never participates in node identity or revision, so the
+      // preview binds neutral values; only the seed ids and revisions matter.
+      actor: "capture-baseline-preview",
+      timestamp: "1970-01-01T00:00:00.000Z",
+      priorNodes: readAcceptedGraphNodes(projectRoot),
+    },
+    proposal,
+  );
+  return createRequirementBaselineRecord({
+    session,
+    proposal,
+    prd_revision: prdRevision,
+    criterion_test_seeds: criterionTestSeedsFor(proposal, graph),
+  });
 }
 
 export function createCaptureAcceptanceStageHandler(
@@ -212,25 +281,7 @@ export function createCaptureAcceptanceStageHandler(
       },
       proposal,
     );
-    const testRevisionById = new Map(
-      graph.nodes.filter((node) => node.type === "Test").map((node) => [node.id, node.revision]),
-    );
-    const seeds: RequirementBaselineCriterionSeed[] = proposal.content.acceptance_criteria.map(
-      (criterion) => {
-        const testId = deriveCaptureTestSeedId(criterion.criterion_id);
-        const revision = testRevisionById.get(testId);
-        if (revision === undefined) {
-          throw new Error(`internal: no test node built for criterion ${criterion.criterion_id}`);
-        }
-        return {
-          criterion_id: criterion.criterion_id,
-          requirement_id: criterion.requirement_id,
-          criterion_semantic_digest: criterion.criterion_semantic_digest,
-          test_id: testId,
-          test_revision: revision,
-        };
-      },
-    );
+    const seeds = criterionTestSeedsFor(proposal, graph);
     const baseline = createRequirementBaselineRecord({
       session,
       proposal,

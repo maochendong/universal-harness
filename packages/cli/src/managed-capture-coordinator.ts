@@ -42,6 +42,7 @@ import {
   type ModelSlotDefault,
   type PrdCaptureCoordinator,
   type PrdReviewRubric,
+  type ProfileId,
   type ProjectContextBudget,
   type ProjectContextSource,
   type ProjectProfileRecord,
@@ -138,6 +139,35 @@ const CAPTURE_CONTEXT_BUDGET: ProjectContextBudget = {
 } as const;
 
 const PRODUCER_IDENTITY = "universal-harness-cli" as const;
+
+/**
+ * Production defaults for the capture review rubric and risk policy (slice 2;
+ * a project-level override can be wired later). The rubric mirrors the domain
+ * test fixtures — clarity/completeness/testability, all mandatory. The policy
+ * never allows policy-auto approval: every captured PRD routes to the human
+ * approval surface, matching the legacy requirement-baseline approval.
+ */
+export const DEFAULT_CAPTURE_REVIEW_RUBRIC: PrdReviewRubric = {
+  rubric_id: "capture-review-rubric",
+  dimensions: [
+    { dimension_id: "clarity", prompt: "Is every requirement unambiguous?" },
+    { dimension_id: "completeness", prompt: "Does the PRD cover the intent?" },
+    { dimension_id: "testability", prompt: "Is every criterion observable?" },
+  ],
+  mandatory_dimension_ids: ["clarity", "completeness", "testability"],
+};
+
+export function defaultCaptureRiskPolicy(
+  projectId: string,
+  profileId: ProfileId,
+): CaptureRiskPolicy {
+  return {
+    project_id: projectId,
+    profile_id: profileId,
+    allow_policy_auto_approval: false,
+    policy_actor: `policy:capture-${profileId}@1`,
+  };
+}
 
 /** The Capture-scope grounded purposes, in canonical (sorted) order. */
 const CAPTURE_SCOPE_PURPOSES = ["approval_brief", "project_discovery"] as const;

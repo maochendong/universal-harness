@@ -6,13 +6,18 @@ import {
   canonicalizeLocator,
   compileCriterionAssertions,
   contentDigest,
+  deriveAcceptedPrdId,
+  expectedCaptureAcceptanceBaseline,
+  findPrdProposalByDigest,
   harnessRootFor,
+  readAcceptedPrdRecords,
   readCommittedOperations,
   readManagedManifest,
   resolveHarnessPath,
   sha256Hex,
   ulid,
   validateSchema,
+  type CaptureOutcome,
   type EdgeRecord,
   type LifecycleEvent,
   type NodeRecord,
@@ -135,6 +140,15 @@ import {
   commitRequirementBaseline,
   requirementBaselineDigest,
 } from "../requirements/baseline.js";
+import {
+  CAPTURE_APPROVAL_OBJECT_TYPE,
+  captureSessionIdFor,
+  clarificationQuestionViewOf,
+  findBridgedCaptureApprovalDecision,
+  requirementProposalViewOf,
+  startCaptureCommandFor,
+  type CaptureCoordinatorSeam,
+} from "./capture-coordinator.js";
 import {
   buildSnapshot,
   snapshotCompletionBlockers,
@@ -686,13 +700,27 @@ function normalizeClarificationOffer(offer: ClarificationOffer): readonly Clarif
 export async function captureProposal(
   deps: OrchestratorDependencies,
   intent: string,
+  iterationId?: string,
 ): Promise<
-  | { readonly status: "captured"; readonly proposal: RequirementProposal }
+  | {
+      readonly status: "captured";
+      readonly proposal: RequirementProposal;
+      readonly baselineDigest: string;
+    }
   | {
       readonly status: "clarification_required";
       readonly questions: readonly ClarificationQuestion[];
     }
 > {
+  if (deps.capture !== undefined) {
+    if (iterationId === undefined) {
+      throw new OrchestrationError(
+        "configuration",
+        "coordinated capture requires the iteration id the session binds to",
+      );
+    }
+    return captureProposalCoordinated(deps, deps.capture, intent, iterationId);
+  }
   const interpreted = deps.interpret === undefined ? undefined : await deps.interpret(intent);
   if (typeof interpreted === "object" && interpreted !== null && "clarification" in interpreted) {
     // The interpreter judged the intent ambiguous and offered structured,
@@ -707,7 +735,109 @@ export async function captureProposal(
     requirements: interpreted?.requirements ?? [],
     ...(interpreted?.constraints === undefined ? {} : { constraints: interpreted.constraints }),
   };
-  return captureRequirements(input, { newId: captureIdMint(input) });
+  const captured = captureRequirements(input, { newId: captureIdMint(input) });
+  if (captured.status === "clarification_required") return captured;
+  return {
+    status: "captured",
+    proposal: captured.proposal,
+    baselineDigest: requirementBaselineDigest(captured.proposal),
+  };
+}
+/**
+ * Coordinated capture drive (protocol-1.1 slice 2): start or resume the
+ * deterministic session for this intent and advance it to its first waiting
+ * point. An accepted session yields the committed acceptance view; a session
+ * awaiting approval yields the proposal view plus exactly the baseline digest
+ * the accepted transaction will seal, so the operation binding is final
+ * before the human decides. Everything else — failure, conflict, blocker or
+ * a waiting point this seam cannot resolve — fails closed as a typed error.
+ */
+async function captureProposalCoordinated(
+  deps: OrchestratorDependencies,
+  seam: CaptureCoordinatorSeam,
+  intent: string,
+  iterationId: string,
+): Promise<
+  | {
+      readonly status: "captured";
+      readonly proposal: RequirementProposal;
+      readonly baselineDigest: string;
+    }
+  | {
+      readonly status: "clarification_required";
+      readonly questions: readonly ClarificationQuestion[];
+    }
+> {
+  const sessionId = captureSessionIdFor(intent);
+  const existing = seam.coordinator.current(sessionId);
+  const outcome = await seam.coordinator.advance(
+    existing === undefined
+      ? startCaptureCommandFor(seam, intent, iterationId)
+      : { command: "resume_capture", session_id: sessionId },
+  );
+  return coordinatedCaptureOutcome(deps, sessionId, outcome);
+}
+function coordinatedCaptureOutcome(
+  deps: OrchestratorDependencies,
+  sessionId: string,
+  outcome: CaptureOutcome,
+):
+  | {
+      readonly status: "captured";
+      readonly proposal: RequirementProposal;
+      readonly baselineDigest: string;
+    }
+  | {
+      readonly status: "clarification_required";
+      readonly questions: readonly ClarificationQuestion[];
+    } {
+  switch (outcome.status) {
+    case "accepted":
+    case "awaiting_approval": {
+      const session = outcome.session;
+      const proposalDigest = session.current_proposal_digest;
+      const proposal =
+        proposalDigest === undefined
+          ? undefined
+          : findPrdProposalByDigest(deps.projectRoot, sessionId, proposalDigest);
+      const baselineDigest =
+        outcome.status === "accepted"
+          ? readAcceptedPrdRecords(deps.projectRoot, deriveAcceptedPrdId(sessionId)).at(-1)
+              ?.requirement_baseline_digest
+          : expectedCaptureAcceptanceBaseline(deps.projectRoot, session)?.record_digest;
+      if (proposal === undefined || baselineDigest === undefined) {
+        throw new OrchestrationError(
+          "configuration",
+          `coordinated capture session ${sessionId} is missing its committed proposal or acceptance baseline`,
+        );
+      }
+      return {
+        status: "captured",
+        proposal: requirementProposalViewOf(session, proposal),
+        baselineDigest,
+      };
+    }
+    case "awaiting_answers":
+      return {
+        status: "clarification_required",
+        questions: outcome.questions.map(clarificationQuestionViewOf),
+      };
+    case "failed":
+      throw new OrchestrationError(
+        outcome.kind === "binding_drift" ? "binding_drift" : "configuration",
+        `coordinated capture failed (${outcome.kind}): ${outcome.message}`,
+      );
+    case "blocked":
+      throw new OrchestrationError(
+        "configuration",
+        `coordinated capture is blocked (${outcome.blocker.reason}): ${outcome.blocker.detail}`,
+      );
+    default:
+      throw new OrchestrationError(
+        "configuration",
+        `coordinated capture rests at ${outcome.status}, which this seam cannot drive`,
+      );
+  }
 }
 type ApprovalStep =
   | { readonly status: "approved"; readonly approvalDigest: string }
@@ -1429,6 +1559,7 @@ export type PhaseStep =
   | { readonly continue: false; readonly outcome: OrchestrationOutcome };
 async function phaseCapture(ctx: PipelineContext): Promise<PhaseStep> {
   const { deps } = ctx;
+  if (deps.capture !== undefined) return phaseCaptureCoordinated(ctx, deps.capture);
   const baselinePath = baselineDocumentArtifactPath(ctx.baselineDigest);
   if (!artifactExists(deps, baselinePath)) {
     const approval = await ensureApproval(ctx, {
@@ -1468,6 +1599,131 @@ async function phaseCapture(ctx: PipelineContext): Promise<PhaseStep> {
         attemptId: currentAttemptId(ctx),
         approvalDigest: approval.approvalDigest,
       },
+    );
+  }
+  await ctx.engine.commitCheckpoint(ctx.workflowOperationId, {
+    boundary: PHASE_CHECKPOINT_BOUNDARY.capture,
+    proposal: { phase: "impact" },
+  });
+  refreshWorkingState(ctx);
+  return { continue: true };
+}
+/**
+ * Consume the bridged human decision into the coordinator (single decision
+ * surface): the engine ledger holds the one committed request/decision pair;
+ * the coordinator consumes it through `apply_approval_decision`, which runs
+ * the atomic accepted transaction on approve. Replay is idempotent on both
+ * sides — the engine replays its terminal decision, the coordinator replays
+ * an already-consumed decision id as a no-op.
+ */
+async function applyBridgedCaptureDecision(
+  ctx: PipelineContext,
+  seam: CaptureCoordinatorSeam,
+  sessionId: string,
+): Promise<void> {
+  const session = seam.coordinator.current(sessionId);
+  const requestId = session?.current_approval_request_id;
+  const objectDigest = session?.current_proposal_digest;
+  if (session === undefined || requestId === undefined || objectDigest === undefined) {
+    throw new OrchestrationError(
+      "configuration",
+      "the capture session lost its approval binding before the decision could be consumed",
+    );
+  }
+  const view = findBridgedCaptureApprovalDecision(
+    ctx.deps.projectRoot,
+    ctx.workflowOperationId,
+    requestId,
+    objectDigest,
+  );
+  if (view === undefined) {
+    throw new OrchestrationError(
+      "configuration",
+      "the approval surface resolved without a committed decision the capture session can consume",
+    );
+  }
+  const outcome = await seam.coordinator.advance({
+    command: "apply_approval_decision",
+    session_id: sessionId,
+    expected_session_digest: session.record_digest,
+    request_id: requestId,
+    decision_id: view.decision_id,
+  });
+  if (outcome.status === "failed") {
+    throw new OrchestrationError(
+      outcome.kind === "binding_drift" ? "binding_drift" : "configuration",
+      `consuming the bridged approval decision failed (${outcome.kind}): ${outcome.message}`,
+    );
+  }
+  if (outcome.status === "conflict") {
+    throw new OrchestrationError(
+      "binding_drift",
+      "the capture session advanced while the approval decision was being consumed",
+    );
+  }
+}
+/**
+ * The coordinated capture phase: approval and the baseline commit already
+ * happened inside the coordinator (risk policy routes to the human route; the
+ * accepted transaction commits the baseline and the graph atomically), so the
+ * legacy ensureApproval/commitRequirementBaseline pair must not run here —
+ * this branch only bridges the human decision and verifies the committed
+ * baseline still matches the checkpoint binding.
+ */
+async function phaseCaptureCoordinated(
+  ctx: PipelineContext,
+  seam: CaptureCoordinatorSeam,
+): Promise<PhaseStep> {
+  const sessionId = captureSessionIdFor(ctx.goal);
+  const session = seam.coordinator.current(sessionId);
+  if (session === undefined) {
+    throw new OrchestrationError(
+      "configuration",
+      "coordinated capture session missing at the capture phase",
+    );
+  }
+  if (session.state === "approval_required") {
+    const requestId = session.current_approval_request_id;
+    const objectDigest = session.current_proposal_digest;
+    if (requestId === undefined || objectDigest === undefined) {
+      throw new OrchestrationError(
+        "configuration",
+        "approval_required capture session without a bound request or proposal",
+      );
+    }
+    const approval = await ensureApproval(ctx, {
+      objectId: requestId,
+      objectType: CAPTURE_APPROVAL_OBJECT_TYPE,
+      objectDigest,
+      risk: "medium",
+      reason: "approve the captured PRD before planning",
+      resumePhase: "capture",
+    });
+    if (approval.status === "required") {
+      return {
+        continue: false,
+        outcome: { status: "approval_required", required: approval.required },
+      };
+    }
+    await applyBridgedCaptureDecision(ctx, seam, sessionId);
+    if (approval.status === "rejected") {
+      return { continue: false, outcome: await rejectOperation(ctx, "captured PRD rejected") };
+    }
+  }
+  const current = seam.coordinator.current(sessionId);
+  if (current === undefined || current.state !== "accepted") {
+    throw new OrchestrationError(
+      "configuration",
+      `coordinated capture session rests at ${current?.state ?? "missing"}, expected accepted`,
+    );
+  }
+  const baseline = readAcceptedPrdRecords(ctx.deps.projectRoot, deriveAcceptedPrdId(sessionId)).at(
+    -1,
+  );
+  if (baseline === undefined || baseline.requirement_baseline_digest !== ctx.baselineDigest) {
+    throw new OrchestrationError(
+      "binding_drift",
+      "the accepted capture baseline no longer matches the approved checkpoint binding",
     );
   }
   await ctx.engine.commitCheckpoint(ctx.workflowOperationId, {
@@ -1570,6 +1826,32 @@ function byId(left: string, right: string): number {
   return left < right ? -1 : left > right ? 1 : 0;
 }
 /**
+ * The criterion binding of one accepted Test seed node. The protocol-1.1
+ * accepted transaction namespaces its extensions under `harness.requirements`
+ * while older writers stored them flat, so both shapes resolve; a node
+ * without a criterion id (e.g. a legacy baseline Test) yields no binding.
+ */
+export function testSeedCriterionBinding(node: NodeRecord):
+  | {
+      readonly acceptance_criterion_id: string;
+      readonly criterion_semantic_digest?: string;
+      readonly verifies: string;
+    }
+  | undefined {
+  const extension = node.extensions ?? {};
+  const namespaced = extension["harness.requirements"] as Record<string, unknown> | undefined;
+  const field = (key: string): unknown => extension[key] ?? namespaced?.[key];
+  const criterion = field("acceptance_criterion_id");
+  const verifies = field("verifies");
+  if (typeof criterion !== "string" || typeof verifies !== "string") return undefined;
+  const semanticDigest = field("criterion_semantic_digest");
+  return {
+    acceptance_criterion_id: criterion,
+    verifies,
+    ...(typeof semanticDigest === "string" ? { criterion_semantic_digest: semanticDigest } : {}),
+  };
+}
+/**
  * The T13 plan proposal channel: canonical criterion assertions compile from
  * accepted Test seeds (with primary strategy bindings when an accepted
  * DesignSet exists), the port only allocates them, and every authoritative
@@ -1594,22 +1876,17 @@ async function planProposalSpecificationsFor(
     const criteria = nodes
       .filter((node) => node.type === "Test" && node.status === "accepted")
       .flatMap((node) => {
-        const extension = node.extensions ?? {};
-        const criterion = extension["acceptance_criterion_id"];
-        const semanticDigest = extension["criterion_semantic_digest"];
-        const verifies = extension["verifies"];
-        return typeof criterion === "string" &&
-          typeof semanticDigest === "string" &&
-          typeof verifies === "string"
-          ? [
+        const binding = testSeedCriterionBinding(node);
+        return binding === undefined || binding.criterion_semantic_digest === undefined
+          ? []
+          : [
               {
-                criterion_id: criterion,
-                criterion_semantic_digest: semanticDigest,
-                requirement_id: verifies,
+                criterion_id: binding.acceptance_criterion_id,
+                criterion_semantic_digest: binding.criterion_semantic_digest,
+                requirement_id: binding.verifies,
                 test_node_id: node.id,
               },
-            ]
-          : [];
+            ];
       });
     const strategies: Record<string, string> = {};
     let designSetDigest: string | undefined;
@@ -3953,11 +4230,11 @@ export async function buildPipelineContext(
       `workflow operation ${workflowOperationId} has no working state`,
     );
   }
-  const captured = await captureProposal(deps, workingState.goal);
+  const captured = await captureProposal(deps, workingState.goal, iterationId);
   if (captured.status === "clarification_required") {
     return { outcome: { status: "input_required", questions: captured.questions } };
   }
-  const baselineDigest = requirementBaselineDigest(captured.proposal);
+  const baselineDigest = captured.baselineDigest;
   if (baselineDigest !== workingState.requirement_baseline_digest) {
     throw new OrchestrationError(
       "binding_drift",

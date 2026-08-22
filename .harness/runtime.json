@@ -26,6 +26,9 @@
       "timeout_ms": 300000,
       "slots": [
         "prd_proposal",
+        "prd_review",
+        "project_discovery",
+        "approval_brief",
         "design_proposal",
         "design_review",
         "impact_advisory",
