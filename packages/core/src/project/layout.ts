@@ -28,9 +28,9 @@ export const MANAGED_GITATTRIBUTES_RELATIVE_PATH = ".gitattributes";
 export const RUNTIME_CONFIG_RELATIVE_PATH = "runtime.json";
 export const GRAPH_DATABASE_RELATIVE_PATH = "cache/graph.db";
 
-/** New projects start on config v2 with every optional network gate disabled. */
+/** New projects start on reference-only config v3 with every network binding disabled. */
 export const DEFAULT_RUNTIME_CONFIG_CONTENT = `${canonicalizeJson({
-  runtime_config_version: 2,
+  runtime_config_version: 3,
   gates: [],
 })}\n`;
 

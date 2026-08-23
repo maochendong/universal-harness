@@ -130,6 +130,14 @@ export function assembleModelProviders(
   config: ProjectRuntimeConfig,
   deps: AssembleModelProvidersDependencies = {},
 ): ManagedProviderResolver {
+  if (config.runtime_config_version === 3) {
+    if (config.model_providers.length > 0) {
+      throw new TrustedModelProviderPolicyError(
+        "runtime config v3 provider references require a TrustedProviderRegistry",
+      );
+    }
+    return createManagedProviderResolver([]);
+  }
   const policies = deps.trustedPolicies ?? BUILTIN_TRUSTED_MODEL_PROVIDER_POLICIES;
   const registrations: ManagedProviderRegistration[] = (config.model_providers ?? []).map(
     (entry) => {

@@ -43,7 +43,7 @@ afterEach(() => {
 });
 
 describe("project runtime configuration", () => {
-  it("commits v2 with zero Judge gates for every new managed project", async () => {
+  it("commits reference-only v3 with zero network bindings for every new managed project", async () => {
     const parent = realpathSync(mkdtempSync(join(tmpdir(), "harness-project-runtime-v2-")));
     roots.push(parent);
     const created = await createNewProject(
@@ -53,16 +53,89 @@ describe("project runtime configuration", () => {
     if (!created.ok) throw new Error(created.error.message);
 
     expect(readProjectRuntimeConfig(created.value.projectRoot)).toEqual({
-      runtime_config_version: 2,
+      runtime_config_version: 3,
       gates: [],
       judge_gates: [],
+      model_providers: [],
     });
     expect(
       execFileSync("git", ["show", "HEAD:.harness/runtime.json"], {
         cwd: created.value.projectRoot,
         encoding: "utf8",
       }),
-    ).toBe('{"gates":[],"runtime_config_version":2}\n');
+    ).toBe('{"gates":[],"runtime_config_version":3}\n');
+  });
+
+  it("reads v3 provider references and rejects repository-owned trust fields", () => {
+    const root = projectWithConfig({
+      runtime_config_version: 3,
+      gates: [],
+      model_providers: [
+        {
+          provider_ref: "deepseek",
+          model: "deepseek-v4-flash",
+          slots: ["prd_proposal"],
+          is_default: true,
+          timeout_ms: 60_000,
+        },
+      ],
+      judge_gates: [
+        {
+          gate_id: "gate_llm_review",
+          name: "LLM review",
+          subject_id: "test_llm_review",
+          requested_mandatory: true,
+          provider_ref: "deepseek",
+          model: "deepseek-v4-flash",
+          prompt_version: "judge.v1",
+          timeout_ms: 60_000,
+        },
+      ],
+    });
+
+    expect(readProjectRuntimeConfig(root)).toMatchObject({
+      runtime_config_version: 3,
+      model_providers: [{ provider_ref: "deepseek", is_default: true }],
+      judge_gates: [{ provider_ref: "deepseek" }],
+    });
+
+    for (const forbidden of ["endpoint", "api_key_env", "env_allowlist", "allow_loopback_http"]) {
+      const poisoned = projectWithConfig({
+        runtime_config_version: 3,
+        gates: [],
+        model_providers: [
+          {
+            provider_ref: "deepseek",
+            model: "deepseek-v4-flash",
+            slots: [],
+            is_default: true,
+            timeout_ms: 60_000,
+            [forbidden]: forbidden === "env_allowlist" ? ["STOLEN_SECRET"] : "STOLEN_SECRET",
+          },
+        ],
+      });
+      expect(() => readProjectRuntimeConfig(poisoned)).toThrowError(
+        new RegExp(`unknown field ${forbidden}`, "u"),
+      );
+    }
+  });
+
+  it("marks v1/v2 inline provider configurations as compatibility-only", () => {
+    const v1 = readProjectRuntimeConfig(
+      projectWithConfig({ runtime_config_version: 1, gates: [] }),
+    );
+    const v2 = readProjectRuntimeConfig(
+      projectWithConfig({ runtime_config_version: 2, gates: [] }),
+    );
+
+    expect(v1.compatibility).toEqual({
+      deprecated: true,
+      code: "legacy_runtime_config_v1",
+    });
+    expect(v2.compatibility).toEqual({
+      deprecated: true,
+      code: "legacy_runtime_config_v2",
+    });
   });
 
   it("reads v2 Judge gates while v1 remains a zero-Judge configuration", () => {

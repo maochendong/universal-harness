@@ -7,8 +7,8 @@ import {
   validateJudgeEndpoint,
 } from "@universal-harness-internal/adapter-gate-llm-judge";
 
-export const PROJECT_RUNTIME_CONFIG_VERSION = 2 as const;
-export const SUPPORTED_PROJECT_RUNTIME_CONFIG_VERSIONS = [1, 2] as const;
+export const PROJECT_RUNTIME_CONFIG_VERSION = 3 as const;
+export const SUPPORTED_PROJECT_RUNTIME_CONFIG_VERSIONS = [1, 2, 3] as const;
 export const PROJECT_RUNTIME_CONFIG_PATH = ".harness/runtime.json" as const;
 
 const DEFAULT_DSH_ENV = [
@@ -70,6 +70,18 @@ export interface ProjectJudgeGateConfig {
   readonly allow_loopback_http?: boolean;
 }
 
+export interface ProjectJudgeGateReference {
+  readonly gate_id: string;
+  readonly name: string;
+  readonly subject_id: string;
+  readonly requested_mandatory: boolean;
+  readonly provider_ref: string;
+  readonly model: string;
+  readonly prompt_version: string;
+  readonly timeout_ms: number;
+  readonly seed?: number;
+}
+
 export interface ProjectModelProviderConfig {
   readonly provider_id: string;
   readonly endpoint: string;
@@ -84,13 +96,46 @@ export interface ProjectModelProviderConfig {
   readonly allow_loopback_http?: boolean;
 }
 
-export interface ProjectRuntimeConfig {
-  readonly runtime_config_version: 1 | 2;
+export interface ProjectModelProviderReference {
+  readonly provider_ref: string;
+  readonly model: string;
+  readonly slots: readonly string[];
+  readonly is_default: boolean;
+  readonly timeout_ms: number;
+}
+
+export interface ProjectRuntimeCompatibilityDiagnostic {
+  readonly deprecated: true;
+  readonly code: "legacy_runtime_config_v1" | "legacy_runtime_config_v2";
+}
+
+interface ProjectRuntimeConfigBase {
   readonly agent?: ProjectAgentConfig;
   readonly gates: readonly ProjectGateCommandConfig[];
-  readonly judge_gates?: readonly ProjectJudgeGateConfig[];
+  /** Non-enumerable read diagnostic; never persisted back into the project. */
+  readonly compatibility?: ProjectRuntimeCompatibilityDiagnostic;
+}
+
+export interface ProjectRuntimeConfigV1 extends ProjectRuntimeConfigBase {
+  readonly runtime_config_version: 1;
+  readonly judge_gates?: undefined;
+  readonly model_providers?: undefined;
+}
+
+export interface ProjectRuntimeConfigV2 extends ProjectRuntimeConfigBase {
+  readonly runtime_config_version: 2;
+  readonly judge_gates: readonly ProjectJudgeGateConfig[];
   readonly model_providers?: readonly ProjectModelProviderConfig[];
 }
+
+export interface ProjectRuntimeConfigV3 extends ProjectRuntimeConfigBase {
+  readonly runtime_config_version: 3;
+  readonly judge_gates: readonly ProjectJudgeGateReference[];
+  readonly model_providers: readonly ProjectModelProviderReference[];
+}
+
+export type ProjectRuntimeConfig =
+  ProjectRuntimeConfigV1 | ProjectRuntimeConfigV2 | ProjectRuntimeConfigV3;
 
 function fail(message: string): never {
   throw new ProjectRuntimeConfigError(message);
@@ -324,10 +369,101 @@ function parseModelProvider(value: unknown, index: number): ProjectModelProvider
   };
 }
 
+function parseJudgeGateReference(value: unknown, index: number): ProjectJudgeGateReference {
+  const context = `judge_gates[${String(index)}]`;
+  const record = object(value, context);
+  exactKeys(
+    record,
+    [
+      "gate_id",
+      "name",
+      "subject_id",
+      "requested_mandatory",
+      "provider_ref",
+      "model",
+      "prompt_version",
+      "timeout_ms",
+      "seed",
+    ],
+    context,
+  );
+  const gateId = string(record.gate_id, `${context}.gate_id`);
+  const subjectId = string(record.subject_id, `${context}.subject_id`);
+  const providerRef = string(record.provider_ref, `${context}.provider_ref`);
+  if (!gateId.startsWith("gate_") || !IDENTIFIER.test(gateId)) {
+    fail(`${context}.gate_id must be a gate_ identifier`);
+  }
+  if (!IDENTIFIER.test(subjectId)) fail(`${context}.subject_id must be an identifier`);
+  if (!IDENTIFIER.test(providerRef)) fail(`${context}.provider_ref must be an identifier`);
+  if (typeof record.requested_mandatory !== "boolean") {
+    fail(`${context}.requested_mandatory must be a boolean`);
+  }
+  const timeout = record.timeout_ms;
+  if (!Number.isInteger(timeout) || (timeout as number) < 1 || (timeout as number) > 300000) {
+    fail(`${context}.timeout_ms must be an integer between 1 and 300000`);
+  }
+  const seed = record.seed;
+  if (seed !== undefined && (!Number.isSafeInteger(seed) || (seed as number) < 0)) {
+    fail(`${context}.seed must be a non-negative safe integer`);
+  }
+  return {
+    gate_id: gateId,
+    name: string(record.name, `${context}.name`),
+    subject_id: subjectId,
+    requested_mandatory: record.requested_mandatory,
+    provider_ref: providerRef,
+    model: string(record.model, `${context}.model`),
+    prompt_version: string(record.prompt_version, `${context}.prompt_version`),
+    timeout_ms: timeout as number,
+    ...(seed === undefined ? {} : { seed: seed as number }),
+  };
+}
+
+function parseModelProviderReference(value: unknown, index: number): ProjectModelProviderReference {
+  const context = `model_providers[${String(index)}]`;
+  const record = object(value, context);
+  exactKeys(record, ["provider_ref", "model", "timeout_ms", "slots", "is_default"], context);
+  const providerRef = string(record.provider_ref, `${context}.provider_ref`);
+  if (!IDENTIFIER.test(providerRef)) fail(`${context}.provider_ref must be an identifier`);
+  const timeout = record.timeout_ms;
+  if (!Number.isInteger(timeout) || (timeout as number) < 1 || (timeout as number) > 300000) {
+    fail(`${context}.timeout_ms must be an integer between 1 and 300000`);
+  }
+  const slots = stringList(record.slots ?? [], `${context}.slots`);
+  for (const [slotIndex, slot] of slots.entries()) {
+    if (!IDENTIFIER.test(slot)) {
+      fail(`${context}.slots[${String(slotIndex)}] must be an identifier`);
+    }
+  }
+  if (typeof record.is_default !== "boolean") fail(`${context}.is_default must be a boolean`);
+  return {
+    provider_ref: providerRef,
+    model: string(record.model, `${context}.model`),
+    slots: [...new Set(slots)].sort(),
+    is_default: record.is_default,
+    timeout_ms: timeout as number,
+  };
+}
+
+function withCompatibility<T extends ProjectRuntimeConfigV1 | ProjectRuntimeConfigV2>(
+  config: T,
+): T {
+  Object.defineProperty(config, "compatibility", {
+    configurable: false,
+    enumerable: false,
+    writable: false,
+    value: {
+      deprecated: true,
+      code: `legacy_runtime_config_v${String(config.runtime_config_version)}`,
+    },
+  });
+  return config;
+}
+
 /** Read and strictly normalize the optional committed project runtime configuration. */
 export function readProjectRuntimeConfig(projectRoot: string): ProjectRuntimeConfig {
   const absolute = join(projectRoot, PROJECT_RUNTIME_CONFIG_PATH);
-  if (!existsSync(absolute)) return { runtime_config_version: 1, gates: [] };
+  if (!existsSync(absolute)) return withCompatibility({ runtime_config_version: 1, gates: [] });
   let raw: unknown;
   try {
     raw = JSON.parse(readFileSync(absolute, "utf8"));
@@ -335,10 +471,17 @@ export function readProjectRuntimeConfig(projectRoot: string): ProjectRuntimeCon
     fail(`${PROJECT_RUNTIME_CONFIG_PATH} is not valid JSON`);
   }
   const record = object(raw, "project runtime config");
-  if (!SUPPORTED_PROJECT_RUNTIME_CONFIG_VERSIONS.includes(record.runtime_config_version as 1 | 2)) {
+  exactKeys(
+    record,
+    ["runtime_config_version", "agent", "gates", "judge_gates", "model_providers"],
+    "project runtime config",
+  );
+  if (
+    !SUPPORTED_PROJECT_RUNTIME_CONFIG_VERSIONS.includes(record.runtime_config_version as 1 | 2 | 3)
+  ) {
     fail(`unsupported runtime_config_version: ${JSON.stringify(record.runtime_config_version)}`);
   }
-  const version = record.runtime_config_version as 1 | 2;
+  const version = record.runtime_config_version as 1 | 2 | 3;
   const gatesRaw = record.gates ?? [];
   if (!Array.isArray(gatesRaw)) fail("gates must be an array");
   const gates = gatesRaw.map(parseGate);
@@ -350,9 +493,10 @@ export function readProjectRuntimeConfig(projectRoot: string): ProjectRuntimeCon
   if (version === 1 && record.judge_gates !== undefined) {
     fail("judge_gates requires runtime_config_version 2");
   }
-  const judgesRaw = version === 2 ? (record.judge_gates ?? []) : [];
+  const judgesRaw = version >= 2 ? (record.judge_gates ?? []) : [];
   if (!Array.isArray(judgesRaw)) fail("judge_gates must be an array");
-  const judgeGates = judgesRaw.map(parseJudgeGate);
+  const judgeGates =
+    version === 3 ? judgesRaw.map(parseJudgeGateReference) : judgesRaw.map(parseJudgeGate);
   for (const gate of judgeGates) {
     if (ids.has(gate.gate_id)) fail(`gate ${gate.gate_id} is declared twice`);
     ids.add(gate.gate_id);
@@ -360,27 +504,46 @@ export function readProjectRuntimeConfig(projectRoot: string): ProjectRuntimeCon
   if (version === 1 && record.model_providers !== undefined) {
     fail("model_providers requires runtime_config_version 2");
   }
-  const providersRaw = version === 2 ? record.model_providers : undefined;
-  let modelProviders: ProjectModelProviderConfig[] | undefined;
+  const providersRaw = version >= 2 ? record.model_providers : undefined;
+  let modelProviders: ProjectModelProviderConfig[] | ProjectModelProviderReference[] | undefined;
   if (providersRaw !== undefined) {
     if (!Array.isArray(providersRaw)) fail("model_providers must be an array");
-    modelProviders = providersRaw.map(parseModelProvider);
+    modelProviders =
+      version === 3
+        ? providersRaw.map(parseModelProviderReference)
+        : providersRaw.map(parseModelProvider);
     const providerIds = new Set<string>();
     let defaults = 0;
     for (const provider of modelProviders) {
-      if (providerIds.has(provider.provider_id)) {
-        fail(`model provider ${provider.provider_id} is declared twice`);
+      const providerRef = "provider_ref" in provider ? provider.provider_ref : provider.provider_id;
+      if (providerIds.has(providerRef)) {
+        fail(`model provider ${providerRef} is declared twice`);
       }
-      providerIds.add(provider.provider_id);
+      providerIds.add(providerRef);
       if (provider.is_default) defaults += 1;
     }
     if (defaults > 1) fail("model_providers allows at most one default provider");
   }
+  const agent = record.agent === undefined ? {} : { agent: parseAgent(record.agent) };
+  if (version === 1) {
+    return withCompatibility({ runtime_config_version: 1, ...agent, gates });
+  }
+  if (version === 2) {
+    return withCompatibility({
+      runtime_config_version: 2,
+      ...agent,
+      gates,
+      judge_gates: judgeGates as ProjectJudgeGateConfig[],
+      ...(modelProviders === undefined
+        ? {}
+        : { model_providers: modelProviders as ProjectModelProviderConfig[] }),
+    });
+  }
   return {
-    runtime_config_version: version,
-    ...(record.agent === undefined ? {} : { agent: parseAgent(record.agent) }),
+    runtime_config_version: 3,
+    ...agent,
     gates,
-    ...(version === 1 ? {} : { judge_gates: judgeGates }),
-    ...(modelProviders === undefined ? {} : { model_providers: modelProviders }),
+    judge_gates: judgeGates as ProjectJudgeGateReference[],
+    model_providers: (modelProviders ?? []) as ProjectModelProviderReference[],
   };
 }

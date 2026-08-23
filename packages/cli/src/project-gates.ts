@@ -332,7 +332,10 @@ export function createConfiguredGateSuite(
       }),
     );
   }
-  const judgeGates = config.judge_gates ?? [];
+  if (config.runtime_config_version === 3 && config.judge_gates.length > 0) {
+    throw new Error("runtime config v3 Judge references require a TrustedProviderRegistry");
+  }
+  const judgeGates = config.runtime_config_version === 2 ? config.judge_gates : [];
   const graph = judgeGates.length === 0 ? undefined : currentGraph(projectRoot);
   for (const judge of judgeGates) {
     const resolution = resolveLlmJudgeMandatory(
