@@ -4,6 +4,8 @@ import { join } from "node:path";
 
 import { afterEach, describe, expect, it } from "vitest";
 
+import { createTrustedProviderRegistry } from "@universal-harness-internal/core";
+
 import { assembleModelProviders, readProjectRuntimeConfig } from "../src/index.js";
 
 const roots: string[] = [];
@@ -32,6 +34,21 @@ const DEEPSeek_ENTRY = {
   timeout_ms: 60000,
   slots: ["grounded_synthesis", "design_review"],
 };
+
+function registryFor(
+  entry: Pick<typeof DEEPSeek_ENTRY, "provider_id" | "endpoint" | "api_key_env" | "env_allowlist">,
+) {
+  return createTrustedProviderRegistry([
+    {
+      provider_ref: entry.provider_id,
+      provider_identity: `provider_${entry.provider_id}`,
+      endpoint: entry.endpoint,
+      api_key_env: entry.api_key_env,
+      env_allowlist: entry.env_allowlist,
+      allowed_consumers: ["managed_model"],
+    },
+  ]);
+}
 
 describe("model_providers configuration", () => {
   it("parses a v2 model provider declaration", () => {
@@ -111,6 +128,58 @@ describe("model_providers configuration", () => {
 });
 
 describe("assembleModelProviders", () => {
+  it("resolves v3 references only through host trust and never reads repository secret fields", async () => {
+    const root = projectWithConfig({
+      runtime_config_version: 3,
+      gates: [],
+      model_providers: [
+        {
+          provider_ref: "deepseek",
+          model: "deepseek-v4-flash",
+          slots: ["prd_proposal"],
+          is_default: true,
+          timeout_ms: 60_000,
+        },
+      ],
+    });
+    const fetchCalls: string[] = [];
+    const resolver = assembleModelProviders(readProjectRuntimeConfig(root), {
+      registry: createTrustedProviderRegistry([
+        {
+          provider_ref: "deepseek",
+          provider_identity: "provider_deepseek",
+          endpoint: "https://api.deepseek.com/chat/completions",
+          api_key_env: "TRUSTED_DEEPSEEK_KEY",
+          env_allowlist: ["TRUSTED_DEEPSEEK_KEY"],
+          allowed_consumers: ["managed_model"],
+        },
+      ]),
+      environment: {
+        TRUSTED_DEEPSEEK_KEY: "trusted-value",
+        AWS_SECRET_ACCESS_KEY: "repository-must-not-select-this",
+      },
+      fetch: (url, init) => {
+        fetchCalls.push(String(url));
+        expect(new Headers(init?.headers).get("authorization")).toBe("Bearer trusted-value");
+        return Promise.resolve(
+          new Response(JSON.stringify({ choices: [{ message: { content: "{}" } }] }), {
+            status: 200,
+          }),
+        );
+      },
+    });
+
+    const resolved = resolver.resolve("prd_proposal");
+    await resolved?.provider.invoke({
+      messages: [],
+      output_schema_id: "test",
+      timeout_ms: 1_000,
+      max_output_bytes: 1_024,
+    });
+    expect(fetchCalls).toEqual(["https://api.deepseek.com/chat/completions"]);
+    expect(JSON.stringify(resolved)).not.toContain("repository-must-not-select-this");
+  });
+
   it("rejects a repository declaration that does not match the trusted provider policy", () => {
     const root = projectWithConfig({
       runtime_config_version: 2,
@@ -128,14 +197,7 @@ describe("assembleModelProviders", () => {
     expect(() =>
       assembleModelProviders(readProjectRuntimeConfig(root), {
         environment: { AWS_SECRET_ACCESS_KEY: "must-not-be-read" },
-        trustedPolicies: [
-          {
-            provider_id: "deepseek",
-            endpoint: DEEPSeek_ENTRY.endpoint,
-            api_key_env: DEEPSeek_ENTRY.api_key_env,
-            env_allowlist: [DEEPSeek_ENTRY.api_key_env],
-          },
-        ],
+        registry: registryFor(DEEPSeek_ENTRY),
       }),
     ).toThrowError(/trusted provider policy/u);
   });
@@ -158,24 +220,10 @@ describe("assembleModelProviders", () => {
       model_providers: [secondEntry],
     });
     const first = assembleModelProviders(readProjectRuntimeConfig(firstRoot), {
-      trustedPolicies: [
-        {
-          provider_id: "deepseek",
-          endpoint: DEEPSeek_ENTRY.endpoint,
-          api_key_env: DEEPSeek_ENTRY.api_key_env,
-          env_allowlist: [DEEPSeek_ENTRY.api_key_env],
-        },
-      ],
+      registry: registryFor(DEEPSeek_ENTRY),
     }).resolve("grounded_synthesis");
     const second = assembleModelProviders(readProjectRuntimeConfig(secondRoot), {
-      trustedPolicies: [
-        {
-          provider_id: "deepseek",
-          endpoint: secondEntry.endpoint,
-          api_key_env: secondEntry.api_key_env,
-          env_allowlist: [secondEntry.api_key_env],
-        },
-      ],
+      registry: registryFor(secondEntry),
     }).resolve("grounded_synthesis");
 
     expect(first?.provider_config.config_digest).not.toBe(second?.provider_config.config_digest);

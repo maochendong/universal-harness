@@ -41,9 +41,24 @@ export const CAPTURE_BLOCK_REASONS = [
   "review_blocked",
   "risk_policy_denied",
   "approval_brief_provider_required",
+  "managed_model_failure",
 ] as const;
 export type CaptureBlockReason = (typeof CAPTURE_BLOCK_REASONS)[number];
 export const CaptureBlockReasonSchema = enumerated(CAPTURE_BLOCK_REASONS);
+
+export const MANAGED_MODEL_FAILURE_CODES = [
+  "provider_required",
+  "provider_unavailable",
+  "timeout",
+  "budget_exhausted",
+  "invalid_output",
+  "independence_violation",
+  "version_mismatch",
+  "policy_denied",
+  "uncertain",
+] as const;
+export type ManagedModelFailureCode = (typeof MANAGED_MODEL_FAILURE_CODES)[number];
+export const ManagedModelFailureCodeSchema = enumerated(MANAGED_MODEL_FAILURE_CODES);
 
 /** Invocation purposes committed before any Capture-stage model call. */
 export const CAPTURE_INVOCATION_PURPOSES = [
@@ -208,5 +223,7 @@ export const CaptureBlockerRecordSchema = recordEnvelopeSchema("capture_blocker"
   reason: CaptureBlockReasonSchema,
   resume_state: CaptureStateSchema,
   detail: Type.String({ minLength: 1 }),
+  failure_schema_version: Type.Optional(Type.Literal("managed-model-failure.v1")),
+  failure_code: Type.Optional(ManagedModelFailureCodeSchema),
 });
 export type CaptureBlockerRecord = Static<typeof CaptureBlockerRecordSchema>;

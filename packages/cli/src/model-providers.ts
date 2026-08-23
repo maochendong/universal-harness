@@ -1,4 +1,10 @@
-import { contentDigest } from "@universal-harness-internal/core";
+import {
+  contentDigest,
+  createTrustedProviderRegistry,
+  TrustedProviderError,
+  type ResolvedTrustedProvider,
+  type TrustedProviderRegistry,
+} from "@universal-harness-internal/core";
 import {
   createManagedProviderResolver,
   createOpenAiCompatManagedProvider,
@@ -7,37 +13,17 @@ import {
   type ManagedProviderResolver,
 } from "@universal-harness-internal/runtime";
 
-import type { ProjectModelProviderConfig, ProjectRuntimeConfig } from "./project-runtime-config.js";
-
-/**
- * Assembly seam for the managed model layer: turns the committed
- * `model_providers` declarations into per-slot provider registrations. The
- * resolver is injected wherever ModelBackedAdapterDeps are built; slots with
- * no coverage resolve to undefined so the runner keeps failing closed with
- * `provider_required`. API keys are never read here — only the env var names
- * travel into the provider instances.
- */
+import type {
+  ProjectModelProviderConfig,
+  ProjectModelProviderReference,
+  ProjectRuntimeConfig,
+} from "./project-runtime-config.js";
 
 export interface AssembleModelProvidersDependencies {
   readonly fetch?: typeof fetch;
   readonly environment?: Readonly<Record<string, string | undefined>>;
-  /**
-   * Host-owned trust policy. Project runtime configuration is untrusted input:
-   * it may select a provider id, model, slots and budget, but it cannot choose
-   * which ambient secret is sent to which network endpoint. Embedders can
-   * replace the built-in policies through this seam without placing policy in
-   * the managed repository.
-   */
-  readonly trustedPolicies?: readonly TrustedModelProviderPolicy[];
-}
-
-export interface TrustedModelProviderPolicy {
-  readonly provider_id: string;
-  readonly endpoint: string;
-  readonly api_key_env: string;
-  readonly env_allowlist: readonly string[];
-  /** Test/host-only; a repository declaration cannot grant this capability. */
-  readonly allow_loopback_http?: boolean;
+  /** Host-owned trust root. It is never loaded from the managed repository. */
+  readonly registry?: TrustedProviderRegistry;
 }
 
 export class TrustedModelProviderPolicyError extends Error {
@@ -49,20 +35,17 @@ export class TrustedModelProviderPolicyError extends Error {
   }
 }
 
-/**
- * Minimal host trust root shipped by the standalone CLI. Additional providers
- * must be supplied by a trusted host integration, never by the project being
- * executed. This keeps a cloned repository from redirecting an ambient secret
- * merely by editing `.harness/runtime.json`.
- */
-export const BUILTIN_TRUSTED_MODEL_PROVIDER_POLICIES: readonly TrustedModelProviderPolicy[] = [
+/** Release-owned default. Embedders may inject a different host registry. */
+export const BUILTIN_TRUSTED_PROVIDER_REGISTRY = createTrustedProviderRegistry([
   {
-    provider_id: "deepseek",
+    provider_ref: "deepseek",
+    provider_identity: "provider_deepseek",
     endpoint: "https://api.deepseek.com/chat/completions",
     api_key_env: "DEEPSEEK_API_KEY",
     env_allowlist: ["DEEPSEEK_API_KEY"],
+    allowed_consumers: ["managed_model", "llm_judge"],
   },
-];
+]);
 
 function canonicalEndpoint(value: string): string {
   return new URL(value).toString();
@@ -72,106 +55,97 @@ function normalizedNames(values: readonly string[]): readonly string[] {
   return [...new Set(values)].sort();
 }
 
-function policyDigest(policy: TrustedModelProviderPolicy): string {
-  return contentDigest({
-    provider_id: policy.provider_id,
-    endpoint: canonicalEndpoint(policy.endpoint),
-    api_key_env: policy.api_key_env,
-    env_allowlist: normalizedNames(policy.env_allowlist),
-    allow_loopback_http: policy.allow_loopback_http ?? false,
-  });
-}
-
-function trustedPolicyFor(
+function assertLegacyExactMatch(
   entry: ProjectModelProviderConfig,
-  policies: readonly TrustedModelProviderPolicy[],
-): TrustedModelProviderPolicy {
-  const matches = policies.filter((policy) => policy.provider_id === entry.provider_id);
-  if (matches.length !== 1) {
-    throw new TrustedModelProviderPolicyError(
-      `trusted provider policy requires exactly one host policy for ${entry.provider_id}`,
-    );
-  }
-  const policy = matches[0] as TrustedModelProviderPolicy;
+  trusted: ResolvedTrustedProvider,
+): void {
   const projectNames = normalizedNames(entry.env_allowlist);
-  const policyNames = normalizedNames(policy.env_allowlist);
-  const matchesPolicy =
-    canonicalEndpoint(entry.endpoint) === canonicalEndpoint(policy.endpoint) &&
-    entry.api_key_env === policy.api_key_env &&
-    projectNames.length === policyNames.length &&
-    projectNames.every((name, index) => name === policyNames[index]) &&
-    (entry.allow_loopback_http ?? false) === (policy.allow_loopback_http ?? false);
-  if (!matchesPolicy) {
+  const trustedNames = normalizedNames(trusted.env_allowlist);
+  const matches =
+    canonicalEndpoint(entry.endpoint) === trusted.endpoint &&
+    entry.api_key_env === trusted.api_key_env &&
+    projectNames.length === trustedNames.length &&
+    projectNames.every((name, index) => name === trustedNames[index]) &&
+    (entry.allow_loopback_http ?? false) === trusted.allow_loopback_http;
+  if (!matches) {
     throw new TrustedModelProviderPolicyError(
-      `repository declaration for ${entry.provider_id} does not match its trusted provider policy`,
+      `legacy repository declaration for ${entry.provider_id} does not exactly match its trusted provider policy`,
     );
   }
-  return policy;
 }
 
-/** Digest-stable, secret-free view of one provider declaration. */
+function resolveTrusted(
+  registry: TrustedProviderRegistry,
+  entry: ProjectModelProviderConfig | ProjectModelProviderReference,
+): ResolvedTrustedProvider {
+  const providerRef = "provider_ref" in entry ? entry.provider_ref : entry.provider_id;
+  try {
+    return registry.resolve({ provider_ref: providerRef, consumer: "managed_model" });
+  } catch (error) {
+    if (error instanceof TrustedProviderError) {
+      throw new TrustedModelProviderPolicyError(error.message);
+    }
+    throw error;
+  }
+}
+
 function providerConfigDigest(
-  config: ProjectModelProviderConfig,
-  policy: TrustedModelProviderPolicy,
+  entry: ProjectModelProviderConfig | ProjectModelProviderReference,
+  trusted: ResolvedTrustedProvider,
 ): string {
   return contentDigest({
-    endpoint: canonicalEndpoint(policy.endpoint),
-    model: config.model,
-    api_key_env: policy.api_key_env,
-    env_allowlist: normalizedNames(policy.env_allowlist),
-    trusted_policy_digest: policyDigest(policy),
-    timeout_ms: config.timeout_ms,
-    slots: config.slots,
-    is_default: config.is_default,
+    provider_ref: trusted.provider_ref,
+    provider_identity: trusted.provider_identity,
+    endpoint: trusted.endpoint,
+    model: entry.model,
+    timeout_ms: entry.timeout_ms,
+    slots: normalizedNames(entry.slots),
+    is_default: entry.is_default,
+    trusted_policy_digest: trusted.policy_digest,
   });
 }
 
+/**
+ * Bind untrusted project references to host-owned provider policy. Version 3
+ * contributes only provider/model/slot/budget choices. Version 1/2 records are
+ * compatibility-only and must exactly match the host resolution before any
+ * environment value is read or any network call can be made.
+ */
 export function assembleModelProviders(
   config: ProjectRuntimeConfig,
   deps: AssembleModelProvidersDependencies = {},
 ): ManagedProviderResolver {
-  if (config.runtime_config_version === 3) {
-    if (config.model_providers.length > 0) {
-      throw new TrustedModelProviderPolicyError(
-        "runtime config v3 provider references require a TrustedProviderRegistry",
-      );
+  const registry = deps.registry ?? BUILTIN_TRUSTED_PROVIDER_REGISTRY;
+  const entries = config.model_providers ?? [];
+  const registrations: ManagedProviderRegistration[] = entries.map((entry) => {
+    const trusted = resolveTrusted(registry, entry);
+    if (config.runtime_config_version === 2) {
+      assertLegacyExactMatch(entry as ProjectModelProviderConfig, trusted);
     }
-    return createManagedProviderResolver([]);
-  }
-  const policies = deps.trustedPolicies ?? BUILTIN_TRUSTED_MODEL_PROVIDER_POLICIES;
-  const registrations: ManagedProviderRegistration[] = (config.model_providers ?? []).map(
-    (entry) => {
-      const policy = trustedPolicyFor(entry, policies);
-      return {
-        provider: createOpenAiCompatManagedProvider(
-          {
-            provider_identity: `provider_${entry.provider_id}`,
-            endpoint: policy.endpoint,
-            model: entry.model,
-            api_key_env: policy.api_key_env,
-            env_allowlist: policy.env_allowlist,
-            ...(policy.allow_loopback_http === undefined
-              ? {}
-              : { allow_loopback_http: policy.allow_loopback_http }),
-          },
-          {
-            ...(deps.fetch === undefined ? {} : { fetch: deps.fetch }),
-            ...(deps.environment === undefined ? {} : { ambientEnvironment: deps.environment }),
-          },
-        ),
-        provider_config: {
-          provider_identity: `provider_${entry.provider_id}`,
-          config_digest: providerConfigDigest(entry, policy),
-          budget_profile: "managed-standard",
+    return {
+      provider: createOpenAiCompatManagedProvider(
+        {
+          provider_identity: trusted.provider_identity,
+          endpoint: trusted.endpoint,
+          model: entry.model,
+          api_key_env: trusted.api_key_env,
+          env_allowlist: trusted.env_allowlist,
+          allow_loopback_http: trusted.allow_loopback_http,
         },
-        slots: entry.slots,
-        is_default: entry.is_default,
-        // The declared endpoint timeout doubles as the managed invocation
-        // budget; without it the runner's built-in 60s default would preempt
-        // slow real-model calls long before the provider gives up.
-        budget: { timeout_ms: entry.timeout_ms, max_output_bytes: DEFAULT_BUDGET.max_output_bytes },
-      };
-    },
-  );
+        {
+          ...(deps.fetch === undefined ? {} : { fetch: deps.fetch }),
+          ...(deps.environment === undefined ? {} : { ambientEnvironment: deps.environment }),
+        },
+      ),
+      provider_config: {
+        provider_identity: trusted.provider_identity,
+        config_digest: providerConfigDigest(entry, trusted),
+        budget_profile: "managed-standard",
+      },
+      slots: entry.slots,
+      is_default: entry.is_default,
+      budget: { timeout_ms: entry.timeout_ms, max_output_bytes: DEFAULT_BUDGET.max_output_bytes },
+    };
+  });
   return createManagedProviderResolver(registrations);
 }

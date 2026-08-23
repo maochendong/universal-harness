@@ -515,6 +515,48 @@ describe("clarification loop", () => {
 });
 
 describe("review provider blocker", () => {
+  it("preserves a required model failure as a versioned blocker and resumes the same session", async () => {
+    const root = makeRoot();
+    let providerAvailable = false;
+    const handlers = happyHandlers();
+    const recoveringHandlers: CaptureStageHandlers = {
+      ...handlers,
+      propose: (request) =>
+        providerAvailable
+          ? handlers.propose!(request)
+          : {
+              kind: "stage_failed",
+              failure: {
+                code: "provider_unavailable",
+                summary: "managed provider is unavailable",
+                retryable: true,
+              },
+            },
+    };
+    const { coordinator } = makeCoordinator(root, {}, recoveringHandlers);
+
+    const blocked = await coordinator.advance(startCommand(root));
+    expect(blocked.status).toBe("blocked");
+    if (blocked.status !== "blocked") throw new Error("unreachable");
+    expect(blocked.session.blocked_reason).toBe("managed_model_failure");
+    expect(blocked.blocker).toMatchObject({
+      reason: "managed_model_failure",
+      resume_state: "proposing",
+      failure_schema_version: "managed-model-failure.v1",
+      failure_code: "provider_unavailable",
+    });
+    const sessionId = blocked.session.session_id;
+    expect(readCaptureInvocations(root, sessionId)).toHaveLength(2);
+
+    providerAvailable = true;
+    const resumed = await coordinator.advance({
+      command: "resume_capture",
+      session_id: sessionId,
+    });
+    expect(resumed.status).toBe("awaiting_approval");
+    expect(resumed.session.session_id).toBe(sessionId);
+  });
+
   it("blocks with the typed review_provider_required reason and recovers after configuration", async () => {
     const root = makeRoot();
     const withoutReview = makeCoordinator(root, {}, happyHandlers({ omitReview: true }));

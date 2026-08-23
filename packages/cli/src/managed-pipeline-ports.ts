@@ -13,6 +13,7 @@ import {
   type ModelSlotId,
   type ProfileId,
   type ProjectContextSource,
+  type TrustedProviderRegistry,
   DESIGN_PROPOSAL_PROMPT_PORT_ID,
   DESIGN_REVIEW_PROMPT_PORT_ID,
 } from "@universal-harness-internal/core";
@@ -61,6 +62,7 @@ export interface ManagedPipelinePortsDeps {
   readonly profile_id: ProfileId;
   readonly fetch?: typeof fetch;
   readonly environment?: Readonly<Record<string, string | undefined>>;
+  readonly providerRegistry?: TrustedProviderRegistry;
 }
 
 /**
@@ -206,12 +208,13 @@ export function createManagedPipelinePorts(deps: ManagedPipelinePortsDeps): Mana
   const requiredSlotKeys = requiredPipelineSlotKeysForProfile(deps.profile_id);
   // Lite with no declared providers keeps the exact legacy fallback; a tier
   // with required slots falls through so the coverage check below throws.
-  if (deps.runtimeConfig.model_providers === undefined && requiredSlotKeys.length === 0) {
+  if ((deps.runtimeConfig.model_providers ?? []).length === 0 && requiredSlotKeys.length === 0) {
     return {};
   }
   const resolver = assembleModelProviders(deps.runtimeConfig, {
     ...(deps.fetch === undefined ? {} : { fetch: deps.fetch }),
     ...(deps.environment === undefined ? {} : { environment: deps.environment }),
+    ...(deps.providerRegistry === undefined ? {} : { registry: deps.providerRegistry }),
   });
   const registry = createShippedPromptContractRegistry();
   const shared = {

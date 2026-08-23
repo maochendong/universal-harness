@@ -9,6 +9,7 @@ import type {
   CaptureCheckpointRecord,
   CaptureInvocationPurpose,
   CaptureInvocationRecord,
+  ManagedModelFailureCode,
   CaptureSessionRecord,
   CaptureState,
   ClarificationAnswerRecord,
@@ -492,6 +493,7 @@ export function createCaptureBlockerRecord(input: {
   readonly reason: CaptureBlockReason;
   readonly resume_state: CaptureState;
   readonly detail: string;
+  readonly failure_code?: ManagedModelFailureCode;
 }): CaptureBlockerRecord {
   if (isTerminalCaptureState(input.resume_state) || input.resume_state === "blocked") {
     throw new CaptureRecordError(
@@ -521,6 +523,12 @@ export function createCaptureBlockerRecord(input: {
     reason: input.reason,
     resume_state: input.resume_state,
     detail: input.detail,
+    ...(input.failure_code === undefined
+      ? {}
+      : {
+          failure_schema_version: "managed-model-failure.v1" as const,
+          failure_code: input.failure_code,
+        }),
   });
 }
 

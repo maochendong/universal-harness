@@ -11,8 +11,10 @@ import type {
   CaptureInvocationRecord,
   CaptureSessionRecord,
   CaptureState,
+  ManagedModelFailureCode,
   ClarificationQuestionRecord,
 } from "../schema/capture.js";
+import { MANAGED_MODEL_FAILURE_CODES } from "../schema/capture.js";
 import type {
   ApplyApprovalDecisionCommand,
   CancelCaptureCommand,
@@ -230,6 +232,7 @@ export function createPrdCaptureCoordinator(deps: CaptureCoordinatorDeps): PrdCa
     reason: CaptureBlockReason,
     resumeState: CaptureState,
     detail: string,
+    failureCode?: ManagedModelFailureCode,
   ): CaptureOutcome {
     const revision = reviseCaptureSessionRecord(
       session,
@@ -241,11 +244,29 @@ export function createPrdCaptureCoordinator(deps: CaptureCoordinatorDeps): PrdCa
       reason,
       resume_state: resumeState,
       detail,
+      ...(failureCode === undefined ? {} : { failure_code: failureCode }),
     });
     appendCaptureBlockerRecord(root, blocker);
     appendCaptureSessionRecord(root, revision);
     appendCaptureCheckpointRecord(root, createCaptureCheckpointRecord(revision));
     return { status: "blocked", session: revision, blocker };
+  }
+
+  function stageFailureOutcome(
+    session: CaptureSessionRecord,
+    resumeState: CaptureState,
+    failure: CaptureStageResult & { readonly kind: "stage_failed" },
+  ): CaptureOutcome {
+    if (MANAGED_MODEL_FAILURE_CODES.includes(failure.failure.code as ManagedModelFailureCode)) {
+      return block(
+        session,
+        "managed_model_failure",
+        resumeState,
+        `managed model invocation blocked: ${failure.failure.code}`,
+        failure.failure.code as ManagedModelFailureCode,
+      );
+    }
+    return failed("stage_failed", failure.failure.summary, session);
   }
 
   /**
@@ -582,7 +603,7 @@ export function createPrdCaptureCoordinator(deps: CaptureCoordinatorDeps): PrdCa
           const result = await runHandler("context_compiling", session, invocation);
           if ("status" in result) return result;
           if (result.kind === "stage_failed") {
-            return failed("stage_failed", result.failure.summary, session);
+            return stageFailureOutcome(session, "context_compiling", result);
           }
           if (result.kind !== "context_compiled") {
             return failed("invalid_stage_result", "unexpected context stage result", session);
@@ -601,7 +622,7 @@ export function createPrdCaptureCoordinator(deps: CaptureCoordinatorDeps): PrdCa
           const result = await runHandler("proposing", session, invocation);
           if ("status" in result) return result;
           if (result.kind === "stage_failed") {
-            return failed("stage_failed", result.failure.summary, session);
+            return stageFailureOutcome(session, "proposing", result);
           }
           if (result.kind === "clarification_required") {
             return issueQuestions(session, result.questions, "proposing");
@@ -653,7 +674,7 @@ export function createPrdCaptureCoordinator(deps: CaptureCoordinatorDeps): PrdCa
           const result = await runHandler("reviewing", session, invocation);
           if ("status" in result) return result;
           if (result.kind === "stage_failed") {
-            return failed("stage_failed", result.failure.summary, session);
+            return stageFailureOutcome(session, "reviewing", result);
           }
           if (result.kind === "review_input_required") {
             transition(session, { state: "review_input_required" });
@@ -1228,7 +1249,9 @@ export function createPrdCaptureCoordinator(deps: CaptureCoordinatorDeps): PrdCa
             ? handlers.approvalBrief !== undefined
             : blocker.reason === "capture_budget_exhausted"
               ? session.round + 1 <= maxRounds
-              : false; // risk_policy_denied: only a policy change can clear it
+              : blocker.reason === "managed_model_failure"
+                ? true
+                : false; // risk_policy_denied: only a policy change can clear it
       if (!cleared) {
         return { status: "blocked", session, blocker };
       }

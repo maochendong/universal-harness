@@ -46,6 +46,7 @@ import {
   type ProjectContextBudget,
   type ProjectContextSource,
   type ProjectProfileRecord,
+  type TrustedProviderRegistry,
 } from "@universal-harness-internal/core";
 import {
   createModelBackedGroundedSynthesisPort,
@@ -123,6 +124,7 @@ export interface ManagedCaptureCoordinatorDeps {
   readonly budget?: CaptureBudgetLimits;
   readonly fetch?: typeof fetch;
   readonly environment?: Readonly<Record<string, string | undefined>>;
+  readonly providerRegistry?: TrustedProviderRegistry;
 }
 
 export interface ManagedCaptureCoordinator {
@@ -445,7 +447,7 @@ export function createManagedCaptureCoordinator(
   // through to the empty resolver so the coverage check below fails closed,
   // exactly like a partial declaration. Lite keeps the legacy fallback.
   if (
-    deps.runtimeConfig.model_providers === undefined &&
+    (deps.runtimeConfig.model_providers ?? []).length === 0 &&
     !profileRequiresManagedModelPorts(deps.profile.profile_id)
   ) {
     return undefined;
@@ -453,6 +455,7 @@ export function createManagedCaptureCoordinator(
   const resolver = assembleModelProviders(deps.runtimeConfig, {
     ...(deps.fetch === undefined ? {} : { fetch: deps.fetch }),
     ...(deps.environment === undefined ? {} : { environment: deps.environment }),
+    ...(deps.providerRegistry === undefined ? {} : { registry: deps.providerRegistry }),
   });
   const registry = createShippedPromptContractRegistry();
 

@@ -18,6 +18,7 @@ import {
   type ProfileId,
   type ProjectContextBudget,
   type ProjectContextSource,
+  type TrustedProviderRegistry,
 } from "@universal-harness-internal/core";
 import {
   createModelBackedPrdProposalPort,
@@ -59,6 +60,7 @@ export interface ManagedIntentInterpreterDeps {
   readonly newId: (kind: string) => string;
   readonly fetch?: typeof fetch;
   readonly environment?: Readonly<Record<string, string | undefined>>;
+  readonly providerRegistry?: TrustedProviderRegistry;
   /**
    * Test seam: replace the model-backed proposal port. The clarification
    * mapping is unreachable through the shipped provider (its output schema is
@@ -207,6 +209,7 @@ export function createManagedIntentInterpreter(
   const resolver = assembleModelProviders(deps.runtimeConfig, {
     ...(deps.fetch === undefined ? {} : { fetch: deps.fetch }),
     ...(deps.environment === undefined ? {} : { environment: deps.environment }),
+    ...(deps.providerRegistry === undefined ? {} : { registry: deps.providerRegistry }),
   });
   const resolved = resolver.resolve(PRD_PROPOSAL_PROMPT_PORT_ID);
   if (resolved === undefined) return undefined;
