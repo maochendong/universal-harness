@@ -1,5 +1,6 @@
 import {
   TDD_VERDICT_TO_GENERIC,
+  TDD_VERDICT_STATES,
   type CapabilityId,
   type DomainStatusMapping,
   type GenericCapabilityStatus,
@@ -55,6 +56,7 @@ const MODULE_CAPABILITIES = [
   "impact_analysis",
   "independent_evaluation",
   "advanced_audit",
+  "strict_tdd",
 ] as const;
 export type ModuleStatusCapabilityId = (typeof MODULE_CAPABILITIES)[number];
 
@@ -113,6 +115,31 @@ function deriveAuditStatus(nodes: readonly NodeRecord[]): string {
   return open.length > 0 ? "audit_warnings_open" : "audit_clean";
 }
 
+function deriveTddStatus(nodes: readonly NodeRecord[]): string {
+  const statuses = currentNodes(nodes).flatMap((node) => {
+    const extension = node.extensions?.["harness.tdd"];
+    const status =
+      typeof extension === "object" && extension !== null
+        ? (extension as Record<string, unknown>)["domain_status"]
+        : undefined;
+    return typeof status === "string" && (TDD_VERDICT_STATES as readonly string[]).includes(status)
+      ? [status]
+      : [];
+  });
+  if (statuses.length === 0 || statuses.includes("tdd_incomplete_or_invalid")) {
+    return "tdd_incomplete_or_invalid";
+  }
+  if (statuses.includes("historical_without_tdd_proof")) return "historical_without_tdd_proof";
+  if (statuses.every((status) => status === "controlled_not_applicable")) {
+    return "controlled_not_applicable";
+  }
+  if (statuses.every((status) => status === "tdd_proven")) return "tdd_proven";
+  if (statuses.every((status) => status === "tdd_proven" || status === "framework_proven")) {
+    return "framework_proven";
+  }
+  return "tdd_incomplete_or_invalid";
+}
+
 /** The current domain status of one module, derived from graph facts only. */
 export function deriveModuleDomainStatus(
   capabilityId: ModuleStatusCapabilityId,
@@ -120,5 +147,6 @@ export function deriveModuleDomainStatus(
 ): string {
   if (capabilityId === "impact_analysis") return deriveImpactStatus(nodes);
   if (capabilityId === "independent_evaluation") return deriveEvaluationStatus(nodes);
+  if (capabilityId === "strict_tdd") return deriveTddStatus(nodes);
   return deriveAuditStatus(nodes);
 }

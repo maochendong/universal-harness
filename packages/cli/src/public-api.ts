@@ -17,6 +17,7 @@ export * from "./managed-interpret.js";
 export * from "./managed-pipeline-ports.js";
 export * from "./managed-capture-coordinator.js";
 export * from "./project-agent.js";
+export * from "./strict-tdd-host.js";
 export { LiveProgressReporter, type LiveProgressReporterOptions } from "./live-progress.js";
 export {
   createOrchestratedRuntimeService,

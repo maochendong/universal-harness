@@ -139,6 +139,14 @@ describe("module status projection through the shared projector", () => {
     actor: "human:reviewer",
     effective_from: "2026-08-20T00:00:00Z",
   });
+  const governedProfile = createProjectProfileRecord({
+    project_id: "project_demo",
+    revision: 2,
+    profile_id: "governed",
+    policy_digest: "a".repeat(64),
+    actor: "human:reviewer",
+    effective_from: "2026-08-20T00:30:00Z",
+  });
 
   it("registers only the slim five generic statuses", () => {
     for (const mapping of MODULE_STATUS_MAPPINGS) {
@@ -198,5 +206,16 @@ describe("module status projection through the shared projector", () => {
     for (const entry of entries) {
       expect(entry.generic_status).toBe("not_enabled_by_profile");
     }
+  });
+
+  it("projects strict_tdd as active for the profile that requires it", () => {
+    const strict = projectProfileModuleStatus(governedProfile, { nodes: [] }).find(
+      (entry) => entry.capability_id === "strict_tdd",
+    );
+    expect(strict).toMatchObject({
+      resolution: "active",
+      domain_status: "tdd_incomplete_or_invalid",
+      generic_status: "invalid_or_incomplete",
+    });
   });
 });

@@ -6,6 +6,7 @@
  * the built-in DeepSeek trust entry and never persists credential values.
  */
 import { execFileSync, spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import {
   cpSync,
   existsSync,
@@ -46,6 +47,10 @@ function filesBelow(directory) {
 
 function readJson(path) {
   return JSON.parse(readFileSync(path, "utf8"));
+}
+
+function digestValue(value) {
+  return createHash("sha256").update(JSON.stringify(value)).digest("hex");
 }
 
 function latest(records) {
@@ -189,7 +194,7 @@ function proposalDraft(items) {
   };
 }
 
-function designProposal(input) {
+function designProposal(input, profile) {
   const requirementId = input.must_change_requirement_ids[0];
   const suffix = requirementId.replace(/^[a-z][a-z0-9-]*_/u, "").slice(0, 24);
   const decisionId = `decision_dogfood-${suffix}`;
@@ -250,17 +255,35 @@ function designProposal(input) {
           body: {
             scenarios: ["Run the full managed loop."],
             test_levels: ["end-to-end"],
-            required_gates: [],
+            required_gates: profile === "governed" ? ["gate_dogfood"] : [],
             required_evidence: ["gate_evidence"],
             tdd: [
               {
                 requirement_id: requirementId,
-                applicability: {
-                  status: "not_applicable",
-                  category: "non_executable_projection",
-                  reason:
-                    "The dogfood operation validates orchestration evidence and changes no executable product behavior.",
-                },
+                applicability:
+                  profile === "governed"
+                    ? {
+                        status: "required",
+                        baseline_guard_gates: ["gate_dogfood"],
+                        target_gate: "gate_dogfood",
+                        test_selectors: ["tests/dogfood.test.ts"],
+                        failure_oracle:
+                          "the accepted dogfood assertion fails before implementation",
+                        path_policy: {
+                          test: ["tests/**"],
+                          test_config: [],
+                          production: ["src/**"],
+                          immutable: [".harness/**"],
+                        },
+                        framework_profile_digest: "f".repeat(64),
+                        refactor_policy: "not_planned",
+                      }
+                    : {
+                        status: "not_applicable",
+                        category: "non_executable_projection",
+                        reason:
+                          "The Standard dogfood operation validates orchestration evidence without executable product behavior.",
+                      },
               },
             ],
           },
@@ -303,7 +326,7 @@ function designProposal(input) {
   };
 }
 
-function fakeOutput(schema, items) {
+function fakeOutput(schema, items, profile) {
   switch (schema) {
     case "prd-proposal-draft":
       return proposalDraft(items);
@@ -375,7 +398,7 @@ function fakeOutput(schema, items) {
       };
     }
     case "design-proposal-output":
-      return designProposal(items.get("design-proposal-input")?.value);
+      return designProposal(items.get("design-proposal-input")?.value, profile);
     case "design-review-output": {
       const input = items.get("design-review-input")?.value;
       return {
@@ -443,10 +466,10 @@ function fakeRegistry() {
   };
 }
 
-async function fakeFetch(_input, init) {
+async function fakeFetch(_input, init, profile) {
   const body = JSON.parse(String(init?.body ?? "{}"));
   const prompt = extractPrompt(body);
-  const output = fakeOutput(prompt.schema, prompt.items);
+  const output = fakeOutput(prompt.schema, prompt.items, profile);
   return new globalThis.Response(
     JSON.stringify({
       choices: [{ message: { content: JSON.stringify(output) } }],
@@ -568,6 +591,8 @@ function summarizeProject(projectRoot, profile, terminal, approvals, modelCalls)
   const plan = plans.toSorted((left, right) => left.revision - right.revision).at(-1);
   const evaluations = recordsBelow(projectRoot, "artifacts/evaluations");
   const taskVerdicts = recordsBelow(projectRoot, "artifacts/task-verdicts");
+  const tddCycles = recordsBelow(projectRoot, "artifacts/tdd-cycles");
+  const tddEvidence = recordsBelow(projectRoot, "artifacts/tdd-evidence");
   const tddStatuses = taskVerdicts.flatMap((record) => {
     const status = record.extensions?.["harness.tdd"]?.domain_status;
     return typeof status === "string" ? [status] : [];
@@ -618,11 +643,81 @@ function summarizeProject(projectRoot, profile, terminal, approvals, modelCalls)
           : tddStatuses.includes("tdd_incomplete_or_invalid")
             ? "tdd_incomplete_or_invalid"
             : "missing",
+    tdd_cycles: tddCycles.filter((record) => record.status === "completed").length,
+    tdd_evidence_types: [...new Set(tddEvidence.map((record) => record.evidence_type))].sort(),
   };
 }
 
+function createDogfoodStrictTddPort(runtimeApi, projectRoot) {
+  const evidence = runtimeApi.createInMemoryTddEvidenceStore();
+  return runtimeApi.createStrictTddExecutionRunner({
+    workspace: runtimeApi.createInMemoryWorkspacePort({}, { baseline_commit: "dogfood-baseline" }),
+    evidence,
+    effectivePolicy: { fields: [], layers: [], digest: digestValue("dogfood-policy") },
+    readBaseline: () =>
+      execFileSync("git", ["rev-parse", "HEAD"], { cwd: projectRoot, encoding: "utf8" }).trim(),
+    gate: {
+      run({ phase, contract }) {
+        const cluster = contract.assertion_clusters[0];
+        const failed = phase === "red";
+        return Promise.resolve({
+          result: {
+            outcome: "structured",
+            runs: [
+              {
+                selector_id: cluster.target_test_selectors[0],
+                status: failed ? "failed" : "passed",
+                assertion_id: cluster.assertion_ids[0],
+                ...(failed
+                  ? {
+                      failure_kind: "assertion_failure",
+                      message:
+                        cluster.failure_oracle.normalized_message_patterns?.[0] ??
+                        "the accepted dogfood assertion fails before implementation",
+                    }
+                  : {}),
+              },
+            ],
+          },
+          target_gate_binding_digest: digestValue({ gate: cluster.target_gate_id }),
+          framework_profile_digest: cluster.framework_profile_digest,
+          executor_environment_digest: digestValue("packaged-dogfood-environment"),
+          output_artifact: {
+            locator: `memory://dogfood/${phase}`,
+            digest: digestValue({ phase, task: contract.task_id }),
+          },
+        });
+      },
+    },
+    executor: {
+      authorTests({ task }) {
+        return Promise.resolve({
+          files: [
+            {
+              path: "tests/dogfood.test.ts",
+              content: `test("${task.id}", () => expect(dogfood()).toBe(true));\n`,
+            },
+          ],
+        });
+      },
+      implement({ task }) {
+        return Promise.resolve({
+          files: [
+            {
+              path: "src/dogfood.ts",
+              content: "export const dogfood = () => true;\n",
+            },
+          ],
+          implementation_revision: digestValue({ task: task.id, state: "green" }),
+        });
+      },
+    },
+  });
+}
+
 async function installedHost(input) {
-  const { createOrchestratedRuntimeService } = await import("universal-harness");
+  const runtimeApi = await import("universal-harness");
+  const { createOrchestratedRuntimeService } = runtimeApi;
   const parent = join(input.root, `profile-${input.profile}`);
   mkdirSync(parent, { recursive: true });
   const io = { writeStdout() {}, writeStderr() {}, isInteractive: false };
@@ -631,10 +726,10 @@ async function installedHost(input) {
     input.providerMode === "fake"
       ? async (...args) => {
           modelCalls += 1;
-          return fakeFetch(...args);
+          return fakeFetch(...args, input.profile);
         }
       : undefined;
-  const runtime = createOrchestratedRuntimeService({
+  const runtimeOptions = {
     cwd: parent,
     io,
     decisionActor: "human:dogfood-policy",
@@ -645,9 +740,10 @@ async function installedHost(input) {
           providerEnvironment: { HARNESS_DOGFOOD_KEY: "fixture-only-not-a-secret" },
         }
       : {}),
-  });
+  };
+  const bootstrapRuntime = createOrchestratedRuntimeService(runtimeOptions);
   const projectName = `dogfood-${input.profile}`;
-  const created = await runtime.newProject({
+  const created = await bootstrapRuntime.newProject({
     name: projectName,
     intent: "Prove the complete managed Harness vertical loop without changing product files.",
     profile: input.profile,
@@ -661,12 +757,19 @@ async function installedHost(input) {
   // runtime configuration exists. Close it against its original baseline;
   // mutating configuration underneath an approval checkpoint would be drift.
   if (created.data?.workflow_operation_id !== undefined && created.status !== "completed") {
-    await runtime.abort({
+    await bootstrapRuntime.abort({
       projectRoot,
       workflowOperationId: created.data.workflow_operation_id,
     });
   }
   writeRuntimeConfig(projectRoot, input.profile, input.providerMode, input.agentScript);
+  const runtime = createOrchestratedRuntimeService({
+    ...runtimeOptions,
+    cwd: projectRoot,
+    ...(input.profile === "governed"
+      ? { strictTdd: createDogfoodStrictTddPort(runtimeApi, projectRoot) }
+      : {}),
+  });
   const iteration = await runtime.iterate({
     projectRoot,
     text: "Run the authoritative three-profile remediation dogfood iteration.",

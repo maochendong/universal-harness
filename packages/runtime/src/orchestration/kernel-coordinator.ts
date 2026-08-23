@@ -3597,6 +3597,23 @@ async function phaseExecute(ctx: PipelineContext): Promise<PhaseStep> {
         );
         if (newArtifacts.length > 0) {
           await commitArtifacts(deps, ctx.workflowOperationId, currentAttemptId(ctx), newArtifacts);
+          // TDD cycle/evidence/grant files are Harness-owned control-plane
+          // writes. Refresh the VCS observation after their Ledger commit so
+          // the Agent write-set attestation compares only work performed by
+          // the task, never the authority records that unlocked it.
+          if (deps.vcs !== undefined && beforeDiff !== undefined) {
+            const observed = await deps.vcs.diffSummary(
+              deps.projectRoot,
+              ctx.workingState.baseline_commit,
+            );
+            if (!observed.ok) {
+              throw new OrchestrationError(
+                "configuration",
+                `post-TDD-evidence VCS inspection failed: ${observed.error.message}`,
+              );
+            }
+            beforeDiff = observed.value;
+          }
         }
         result = executed.result;
         if (executed.outcome.status === "blocked") {

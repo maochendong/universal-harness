@@ -40,6 +40,7 @@ import {
   type OrchestrationOutcome,
   type OrchestratorDependencies,
   type PhaseProgressEvent,
+  type StrictTddExecutionPort,
   type TaskEnvelopeScopePort,
 } from "@universal-harness-internal/runtime";
 import type { SemanticSeedProvider } from "@universal-harness-internal/plugin-sdk";
@@ -118,6 +119,8 @@ export interface OrchestratedServiceOptions {
   readonly newId?: (kind: string) => string;
   readonly interpret?: IntentInterpreter;
   readonly execute?: OrchestrationExecutor;
+  /** Host-owned strict TDD executor for required TaskTddContracts. */
+  readonly strictTdd?: StrictTddExecutionPort;
   /** Explicit task path scope for injected executors and hermetic hosts. */
   readonly taskEnvelopeScope?: TaskEnvelopeScopePort;
   readonly evaluate?: EvaluationPort;
@@ -533,6 +536,7 @@ export function createOrchestratedRuntimeService(
       ...managedPipelinePortsFor(projectRoot, runtimeConfig),
       ...(captureSeam === undefined ? {} : { capture: captureSeam }),
       ...(capabilityPlanCompiler === undefined ? {} : { capabilityPlanCompiler }),
+      ...(options.strictTdd === undefined ? {} : { strictTdd: options.strictTdd }),
       ...(injectedExecutor === undefined
         ? configuredAgent === undefined
           ? {}

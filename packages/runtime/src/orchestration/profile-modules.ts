@@ -29,9 +29,10 @@ import {
  * The single profile → module-resolution derivation (plan T9/T12). An explicit
  * Lite profile deactivates every module capability; Standard/Governed activate
  * design_governance (required by their profile definitions) while a legacy
- * project without a profile record keeps the pre-1.1 pipeline; strict_tdd
- * reports inactive in every profile until its work package wires it. The
- * facade trim and the status Read API both consume this function — the kernel
+ * project without a profile record keeps the pre-1.1 pipeline. Governed also
+ * activates its required strict_tdd module; Standard keeps that conditional
+ * capability inactive until a final CapabilityPlan selects it. The facade
+ * trim and status Read API both consume this function — the kernel
  * coordinator itself never sees a profile.
  */
 export interface ProfileModuleResolution {
@@ -44,8 +45,6 @@ const PIPELINE_MODULE_CAPABILITIES = [
   "independent_evaluation",
   "advanced_audit",
 ] as const;
-
-const UNWIRED_CAPABILITIES: readonly CapabilityId[] = ["strict_tdd"];
 
 /**
  * design_governance activates only where the profile definition requires it
@@ -71,10 +70,10 @@ export function resolveProfileModules(
       capability_id: "design_governance",
       resolution: designGovernanceActive(profile) ? "active" : "inactive_by_profile",
     },
-    ...UNWIRED_CAPABILITIES.map((capabilityId): ProfileModuleResolution => ({
-      capability_id: capabilityId,
-      resolution: "inactive_by_profile",
-    })),
+    {
+      capability_id: "strict_tdd",
+      resolution: profile?.profile_id === "governed" ? "active" : "inactive_by_profile",
+    },
   ];
 }
 

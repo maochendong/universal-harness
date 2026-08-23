@@ -49,6 +49,10 @@ describe("packaged CLI three-profile vertical loop", { timeout: 300_000 }, () =>
     expect(governed.execute_subgraph).toBe("strict_tdd");
     expect(governed.model_invocations).toBeGreaterThan(0);
     expect(governed.evaluation_status).toBe("passed");
-    expect(["tdd_proven", "controlled_not_applicable"]).toContain(governed.tdd_status);
+    expect(governed.tdd_status).toBe("tdd_proven");
+    expect(governed.tdd_cycles).toBeGreaterThan(0);
+    expect(governed.tdd_evidence_types).toEqual(
+      expect.arrayContaining(["baseline_test_result", "red_test_result", "green_test_result"]),
+    );
   });
 });
