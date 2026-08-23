@@ -1,6 +1,7 @@
 import { PROTOCOL_VERSION, contentDigest, validateSchema } from "@universal-harness-internal/core";
 
 import type { TaskAcceptanceAssertion } from "../planning/task.js";
+import { computeTaskTddVerdict, type TaskTddVerdictInput } from "../tdd/verdict.js";
 
 export interface TaskVerdictAssertion {
   readonly assertion_id: string;
@@ -43,6 +44,8 @@ export interface BuildTaskVerdictInput {
   readonly gates: readonly TaskVerdictGateInput[];
   readonly evaluations: readonly TaskVerdictEvidenceInput[];
   readonly createdAt: string;
+  /** Accepted strict-TDD facts. Omitted for Protocol 1.0 compatibility. */
+  readonly tdd?: TaskTddVerdictInput;
 }
 
 function uniqueSorted(values: readonly string[]): string[] {
@@ -101,7 +104,10 @@ function buildVerdict(input: BuildTaskVerdictInput, evaluationActive: boolean): 
         evidence_ids: evidenceIds,
       };
     });
-  const passed = assertionVerdicts.length > 0 && assertionVerdicts.every((entry) => entry.passed);
+  const tddVerdict = input.tdd === undefined ? undefined : computeTaskTddVerdict(input.tdd);
+  const tddPasses = tddVerdict === undefined || tddVerdict.verdict !== "tdd_incomplete_or_invalid";
+  const passed =
+    assertionVerdicts.length > 0 && assertionVerdicts.every((entry) => entry.passed) && tddPasses;
   const content = {
     protocol_version: PROTOCOL_VERSION,
     record_kind: "task_verdict" as const,
@@ -116,6 +122,17 @@ function buildVerdict(input: BuildTaskVerdictInput, evaluationActive: boolean): 
       input.evaluations.map((evaluation) => evaluation.evidence_id),
     ),
     created_at: input.createdAt,
+    ...(tddVerdict === undefined
+      ? {}
+      : {
+          extensions: {
+            "harness.tdd": {
+              domain_status: tddVerdict.verdict,
+              generic_status: tddVerdict.generic_status,
+              reason: tddVerdict.reason,
+            },
+          },
+        }),
   };
   const record = { ...content, digest: contentDigest(content) };
   const validation = validateSchema("runtime", record);

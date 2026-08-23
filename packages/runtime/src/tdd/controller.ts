@@ -65,6 +65,7 @@ export interface TddCycleView {
   readonly test_patch_digest?: string;
   readonly red_evidence?: TddEvidenceBinding;
   readonly green_evidence?: TddEvidenceBinding;
+  readonly refactor_evidence?: TddEvidenceBinding;
   readonly implementation_revision?: string;
   readonly block_reason?: string;
 }
@@ -335,6 +336,7 @@ export function acceptGreenEvidence(
     readonly production_write_set: readonly string[];
     readonly implementation_write_scopes: readonly string[];
     readonly implementation_revision: string;
+    readonly refactor_planned?: boolean;
   },
 ): { readonly next: TddCycleView; readonly issues: readonly TddEvidenceIssue[] } {
   if (view.state !== "implementation" || view.red_evidence === undefined) {
@@ -365,6 +367,11 @@ export function acceptGreenEvidence(
   if (input.result.runs.some((run) => run.status === "failed")) {
     issues.push(issue("oracle_mismatch", "green evidence still carries failing runs"));
   }
+  const redSelectors = [...view.red_evidence.selector_ids].sort();
+  const greenSelectors = input.result.runs.map((run) => run.selector_id).sort();
+  if (JSON.stringify(redSelectors) !== JSON.stringify(greenSelectors)) {
+    issues.push(issue("binding_drift", "green selectors drifted from accepted RedEvidence"));
+  }
   if (issues.length > 0) return { next: view, issues };
   const evidence = binding("green_test_result", view, input, {
     test_patch_digest: input.test_patch_digest,
@@ -373,12 +380,74 @@ export function acceptGreenEvidence(
   return {
     next: {
       ...view,
-      state: "cycle_completed",
+      state: input.refactor_planned === true ? "refactor" : "cycle_completed",
       green_evidence: evidence,
       implementation_revision: input.implementation_revision,
     },
     issues: [],
   };
+}
+
+export function acceptRefactorEvidence(
+  view: TddCycleView,
+  input: VerificationInput & {
+    readonly production_write_set: readonly string[];
+    readonly refactor_write_scopes: readonly string[];
+    readonly implementation_revision: string;
+  },
+): { readonly next: TddCycleView; readonly issues: readonly TddEvidenceIssue[] } {
+  if (view.state !== "refactor" || view.green_evidence === undefined) {
+    return {
+      next: view,
+      issues: [issue("state_order", `refactor evidence in state ${view.state}`)],
+    };
+  }
+  const issues = bindingDigestChecks(view, input);
+  const violations = attestWriteSet(input.production_write_set, input.refactor_write_scopes);
+  if (violations.length > 0) {
+    issues.push(
+      issue("write_set_violation", `refactor writes outside the grant: ${violations.join(", ")}`),
+    );
+  }
+  if (input.result.outcome !== "structured") {
+    issues.push(
+      issue(
+        "unstructured_result",
+        `refactor evidence outcome ${input.result.outcome} proves nothing`,
+      ),
+    );
+    return { next: view, issues };
+  }
+  const greenSelectors = [...view.green_evidence.selector_ids].sort();
+  const refactorSelectors = input.result.runs.map((run) => run.selector_id).sort();
+  if (JSON.stringify(greenSelectors) !== JSON.stringify(refactorSelectors)) {
+    issues.push(issue("binding_drift", "refactor selectors drifted from accepted GreenEvidence"));
+  }
+  if (input.result.runs.some((run) => run.status !== "passed")) {
+    issues.push(issue("oracle_mismatch", "refactor evidence carries a non-passing run"));
+  }
+  if (issues.length > 0) return { next: view, issues };
+  const evidence = binding("refactor_test_result", view, input, {
+    test_patch_digest: input.test_patch_digest,
+    selector_ids: input.result.runs.map((run) => run.selector_id),
+  });
+  return {
+    next: {
+      ...view,
+      state: "cycle_completed",
+      refactor_evidence: evidence,
+      implementation_revision: input.implementation_revision,
+    },
+    issues: [],
+  };
+}
+
+/** Terminate one attempt without discarding already accepted evidence. */
+export function terminateTddCycle(
+  view: TddCycleView,
+  input: { readonly status: "blocked" | "invalidated"; readonly reason: string },
+): TddCycleView {
+  return { ...view, state: input.status, block_reason: input.reason };
 }
 
 /** Seal the immutable per-attempt record (design 9.4 field completeness). */
@@ -414,6 +483,9 @@ export function buildTddCycleRecord(view: TddCycleView): TddCycleRecord {
     ...(view.green_evidence === undefined
       ? {}
       : { green_evidence_digest: evidenceDigest(view.green_evidence) }),
+    ...(view.refactor_evidence === undefined
+      ? {}
+      : { refactor_evidence_digest: evidenceDigest(view.refactor_evidence) }),
     ...(view.implementation_revision === undefined
       ? {}
       : { implementation_revision: view.implementation_revision }),

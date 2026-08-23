@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { buildTaskVerdict } from "../../src/evaluation/task-verdict.js";
+import type { TddCycleRecord } from "@universal-harness-internal/core";
 
 const assertion = {
   assertion_id: "assertion_01",
@@ -48,5 +49,33 @@ describe("buildTaskVerdict", () => {
 
     expect(verdict.verdict).toBe("failed");
     expect(verdict.assertion_verdicts[0]?.passed).toBe(false);
+  });
+
+  it("fails closed with a TDD domain verdict when strict proof is missing", () => {
+    const verdict = buildTaskVerdict({
+      verdictId: "verdict_03",
+      iterationId: "iteration_01",
+      taskId: "task_01",
+      runIds: ["run_01"],
+      assertions: [assertion],
+      gates: [{ gate_id: "gate_test", passed: true, evidence_id: "evidence_gate" }],
+      evaluations: [{ passed: true, evidence_id: "evidence_eval" }],
+      createdAt: "2026-08-17T00:00:00.000Z",
+      tdd: {
+        capability_enabled: true,
+        contract_mode: "required",
+        required_assertion_ids: ["assertion_01"],
+        cycles: [] as TddCycleRecord[],
+        current_contract_digest: "a".repeat(64),
+        gates_passed: true,
+        evaluation_passed: true,
+      },
+    });
+
+    expect(verdict.verdict).toBe("failed");
+    expect(verdict.extensions?.["harness.tdd"]).toMatchObject({
+      domain_status: "tdd_incomplete_or_invalid",
+      generic_status: "invalid_or_incomplete",
+    });
   });
 });

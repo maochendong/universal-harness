@@ -34,6 +34,7 @@ import type { ToolRegistry } from "../tools/registry.js";
 import { type AbortReason, type RecoverableBlockReason } from "../workflow/state-machine.js";
 import { type OrchestrationPhase } from "./phases.js";
 import { type ExecutionBinding, type OrchestrationExecutor } from "./execution-binding.js";
+import type { StrictTddExecutionPort } from "../tdd/execution-runner.js";
 
 /**
  * Shared orchestration contracts (plan Task 8-A): the error vocabulary,
@@ -184,6 +185,8 @@ export interface OrchestratorDependencies {
    */
   readonly capabilityPlan?: CapabilityPlanRecord;
   readonly execution?: ExecutionBinding;
+  /** Required-task executor used only when the accepted DAG marks execute with strict_tdd. */
+  readonly strictTdd?: StrictTddExecutionPort;
   /** Legacy host seam; treated as an unproven delegated Agent binding. */
   readonly execute?: OrchestrationExecutor;
   /**

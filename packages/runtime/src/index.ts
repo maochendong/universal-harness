@@ -198,7 +198,10 @@ export {
 export {
   CAPABILITY_DAG_KERNEL_NODE_IDS,
   createCapabilityDagRunnerRegistry,
+  createStrictTddExecuteDagRunner,
   type CapabilityDagRunnerPorts,
+  type StrictTddExecuteDagRunnerPorts,
+  type TddTaskRouteOutcome,
 } from "./orchestration/capability-dag-runners.js";
 export {
   captureRequirements,
@@ -413,15 +416,29 @@ export {
   acceptBaselineEvidence,
   acceptGreenEvidence,
   acceptRedEvidence,
+  acceptRefactorEvidence,
   buildTddCycleRecord,
   createTddCycle,
   freezeTestPatch,
   matchFailureOracle,
+  terminateTddCycle,
   type StructuredTestResult,
   type TddCycleState,
   type TddCycleView,
   type TddEvidenceIssue,
 } from "./tdd/controller.js";
+export {
+  createInMemoryTddEvidenceStore,
+  createStrictTddExecutionRunner,
+  type InMemoryTddEvidenceStore,
+  type StrictTddExecutionPort,
+  type StrictTddExecutionRunnerOptions,
+  type StrictTddGateObservation,
+  type StrictTddGatePort,
+  type StrictTddPhaseExecutorPort,
+  type StrictTddTaskOutcome,
+  type TddEvidenceStore,
+} from "./tdd/execution-runner.js";
 export {
   computeTaskTddVerdict,
   type TaskTddVerdict,
