@@ -12,7 +12,15 @@
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { drivePastApprovals, expect, git, makeRuntime, makeTempDir, runJson } from "../driver.mjs";
+import {
+  drivePastApprovals,
+  expect,
+  git,
+  makeAttestedExecutor,
+  makeRuntime,
+  makeTempDir,
+  runJson,
+} from "../driver.mjs";
 
 const parent = makeTempDir("harness-example-adopt-");
 try {
@@ -30,9 +38,10 @@ try {
   git(projectRoot, "commit", "-m", "legacy baseline");
 
   const intent = "introduce the requested change";
+  const execute = makeAttestedExecutor();
   const staged = await runJson(["adopt", "legacy-app", "--intent", intent, "--profile", "lite"], {
     cwd: parent,
-    runtime: makeRuntime(parent),
+    runtime: makeRuntime(parent, { execute }),
   });
   expect(staged.json.status === "approval_required", "adoption preview awaits approval");
   expect(staged.json.data.object_type === "AdoptionBaseline", "staged object is the baseline");
@@ -55,9 +64,9 @@ try {
       "--approve",
       staged.json.data.staging_operation_id,
     ],
-    { cwd: parent, runtime: makeRuntime(parent) },
+    { cwd: parent, runtime: makeRuntime(parent, { execute }) },
   );
-  const session = { cwd: projectRoot, runtime: makeRuntime(projectRoot) };
+  const session = { cwd: projectRoot, runtime: makeRuntime(projectRoot, { execute }) };
   const { result } = await drivePastApprovals(committed, session);
   expect(typeof result.json.data.snapshot_id === "string", "adopt loop lands a snapshot");
 

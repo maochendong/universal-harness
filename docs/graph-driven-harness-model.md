@@ -293,6 +293,7 @@ Lifecycle Event 记录一次受治理操作已经发生的关键里程碑。每�
 | `AfterToolCall` | 工具调用后 | 工具与批准 | 记录工具结果、对账信息和副作用完成状态。 |
 | `ApprovalRequired` | 需要批准 | 工具与批准 | 记录工作流因精确对象和风险需要人类决议。 |
 | `CheckpointCommitted` | 检查点已提交 | 恢复与质量 | 证明可恢复进度已原子进入 Ledger。 |
+| `CheckpointInvalidated` | 检查点已失效 | 恢复与质量 | 记录因上游权威对象变化而失效的旧进度，恢复时不得复用该检查点。 |
 | `GateCompleted` | 门禁已完成 | 恢复与质量 | 保存门禁的最终治理结果，而不是仅显示实时进度。 |
 | `EvaluationCompleted` | 评估已完成 | 恢复与质量 | 记录 Run / Task 的最终评估事实和证据绑定。 |
 | `FindingCreated` | 发现已创建 | Finding 生命周期 | 把失败、风险或审计缺口追加为可治理问题。 |

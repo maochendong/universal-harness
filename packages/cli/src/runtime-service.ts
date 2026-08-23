@@ -66,6 +66,7 @@ import {
   type ObservationEvent,
   type ProfileId,
   type ProjectProfileRecord,
+  type TrustedProviderRegistry,
 } from "@universal-harness-internal/core";
 
 import type { GateDefinition, ToolRegistry } from "@universal-harness-internal/runtime";
@@ -138,6 +139,11 @@ export interface OrchestratedServiceOptions {
   /** Receives the same disposable observation appended to the live spool. */
   readonly onObservation?: (event: ObservationEvent) => void;
   readonly semanticProvider?: SemanticSeedProvider;
+  /** Host-owned provider trust root; managed projects may reference but never define it. */
+  readonly providerRegistry?: TrustedProviderRegistry;
+  /** Injectable transport and environment for hermetic provider/Judge hosts. */
+  readonly providerFetch?: typeof fetch;
+  readonly providerEnvironment?: Readonly<Record<string, string | undefined>>;
   /**
    * Interactive profile chooser (protocol 1.1): invoked only when the session
    * is interactive and no explicit --profile was passed. Returning null (EOF,
@@ -260,6 +266,7 @@ export function managedCaptureSeamForProject(
   options: {
     readonly fetch?: typeof fetch;
     readonly environment?: Readonly<Record<string, string | undefined>>;
+    readonly providerRegistry?: TrustedProviderRegistry;
   } = {},
 ): CaptureCoordinatorSeam | undefined {
   let profile: ProjectProfileRecord | undefined;
@@ -299,6 +306,9 @@ export function managedCaptureSeamForProject(
         readBridgedCaptureApprovalDecision(projectRoot, requestId, decisionId),
       ...(options.fetch === undefined ? {} : { fetch: options.fetch }),
       ...(options.environment === undefined ? {} : { environment: options.environment }),
+      ...(options.providerRegistry === undefined
+        ? {}
+        : { providerRegistry: options.providerRegistry }),
     });
   } catch (error) {
     if (error instanceof ManagedCaptureCoordinatorError) {
@@ -462,7 +472,17 @@ export function createOrchestratedRuntimeService(
         : undefined;
     const configuredGateSuite =
       options.gates === undefined && options.toolRegistry === undefined
-        ? createConfiguredGateSuite(projectRoot, runtimeConfig)
+        ? createConfiguredGateSuite(projectRoot, runtimeConfig, {
+            ...(options.providerRegistry === undefined
+              ? {}
+              : { providerRegistry: options.providerRegistry }),
+            ...(options.providerEnvironment === undefined
+              ? {}
+              : { ambientEnvironment: options.providerEnvironment }),
+            ...(options.providerFetch === undefined
+              ? {}
+              : { judgeTransport: { fetch: options.providerFetch } }),
+          })
         : undefined;
     const injectedExecutor = options.execute;
     const createObservationPublisher =
@@ -485,7 +505,15 @@ export function createOrchestratedRuntimeService(
               identity,
             );
           };
-    const captureSeam = managedCaptureSeamForProject(projectRoot, runtimeConfig);
+    const captureSeam = managedCaptureSeamForProject(projectRoot, runtimeConfig, {
+      ...(options.providerRegistry === undefined
+        ? {}
+        : { providerRegistry: options.providerRegistry }),
+      ...(options.providerFetch === undefined ? {} : { fetch: options.providerFetch }),
+      ...(options.providerEnvironment === undefined
+        ? {}
+        : { environment: options.providerEnvironment }),
+    });
     return {
       projectRoot,
       readBaseline: () => gitHead(projectRoot),
@@ -671,6 +699,13 @@ export function createOrchestratedRuntimeService(
                 project_baseline_digest: baselineDigestFor(projectRoot),
               },
               newId: options.newId ?? ((kind: string) => `${kind}_${ulid()}`),
+              ...(options.providerRegistry === undefined
+                ? {}
+                : { providerRegistry: options.providerRegistry }),
+              ...(options.providerFetch === undefined ? {} : { fetch: options.providerFetch }),
+              ...(options.providerEnvironment === undefined
+                ? {}
+                : { environment: options.providerEnvironment }),
             });
       return managed === undefined ? generic(intent) : managed(intent);
     };
@@ -705,6 +740,13 @@ export function createOrchestratedRuntimeService(
         projectRoot,
         runtimeConfig,
         profile_id: profile.profile_id,
+        ...(options.providerRegistry === undefined
+          ? {}
+          : { providerRegistry: options.providerRegistry }),
+        ...(options.providerFetch === undefined ? {} : { fetch: options.providerFetch }),
+        ...(options.providerEnvironment === undefined
+          ? {}
+          : { environment: options.providerEnvironment }),
       });
     } catch (error) {
       if (error instanceof ManagedPipelinePortsError) {

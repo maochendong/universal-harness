@@ -12,19 +12,28 @@
 import { join } from "node:path";
 import { rmSync } from "node:fs";
 
-import { drivePastApprovals, expect, git, makeRuntime, makeTempDir, runJson } from "../driver.mjs";
+import {
+  drivePastApprovals,
+  expect,
+  git,
+  makeAttestedExecutor,
+  makeRuntime,
+  makeTempDir,
+  runJson,
+} from "../driver.mjs";
 
 const parent = makeTempDir("harness-example-new-");
 try {
   const intent = "build the first capability";
+  const execute = makeAttestedExecutor();
   const first = await runJson(["new", "example-app", "--intent", intent, "--profile", "lite"], {
     cwd: parent,
-    runtime: makeRuntime(parent),
+    runtime: makeRuntime(parent, { execute }),
   });
   expect(first.json.status === "approval_required", "new should pause for the baseline approval");
 
   const projectRoot = join(parent, "example-app");
-  const session = { cwd: projectRoot, runtime: makeRuntime(projectRoot) };
+  const session = { cwd: projectRoot, runtime: makeRuntime(projectRoot, { execute }) };
   const { result, approved } = await drivePastApprovals(first, session);
   expect(approved.includes("RequirementBaseline"), "baseline approval recorded");
   // Lite is kernel-only (plan T9): no module object is ever approved.

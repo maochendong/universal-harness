@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 
 import { afterEach, describe, expect, it } from "vitest";
 
+import { createTrustedProviderRegistry } from "../../packages/core/src/index.js";
 import { FileEventStream, readLatestSnapshot } from "../../packages/runtime/src/index.js";
 
 import {
@@ -104,11 +105,22 @@ describe("M2 governed vertical loop", { timeout: 120_000 }, () => {
     const previousSecret = process.env[secretName];
     process.env[secretName] = "m2-e2e-secret-value";
     try {
+      const providerRegistry = createTrustedProviderRegistry([
+        {
+          provider_ref: "m2-loopback",
+          provider_identity: "provider_m2-loopback",
+          endpoint: judge.endpoint,
+          api_key_env: secretName,
+          env_allowlist: [secretName],
+          allowed_consumers: ["llm_judge"],
+          allow_loopback_http: true,
+        },
+      ]);
       writeFileSync(
         join(projectRoot, ".harness", "runtime.json"),
         `${JSON.stringify(
           {
-            runtime_config_version: 2,
+            runtime_config_version: 3,
             gates: [],
             judge_gates: [
               {
@@ -116,14 +128,11 @@ describe("M2 governed vertical loop", { timeout: 120_000 }, () => {
                 name: "M2 semantic review",
                 subject_id: "test_t0001",
                 requested_mandatory: false,
-                endpoint: judge.endpoint,
+                provider_ref: "m2-loopback",
                 model: "fake-reviewer-v1",
                 prompt_version: "m2-e2e-v1",
-                api_key_env: secretName,
-                env_allowlist: [secretName],
                 timeout_ms: 5_000,
                 seed: 17,
-                allow_loopback_http: true,
               },
             ],
           },
@@ -135,7 +144,7 @@ describe("M2 governed vertical loop", { timeout: 120_000 }, () => {
       git(projectRoot, "add", ".harness/runtime.json");
       git(projectRoot, "commit", "-m", "test: enable M2 judge fixture");
 
-      const harness = makeHarness(projectRoot, newId);
+      const harness = makeHarness(projectRoot, newId, { providerRegistry });
       const session = { cwd: projectRoot, runtime: harness.runtime };
       result = await runJson(["iterate", "exercise the complete M2 governed loop"], session);
       expect(result.json["status"]).toBe("approval_required");

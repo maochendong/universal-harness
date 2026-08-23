@@ -55,6 +55,36 @@ export function evidenceDigest(text) {
   return createHash("sha256").update(text).digest("hex");
 }
 
+/** Explicit deterministic executor for examples that focus on new/adopt. */
+export function makeAttestedExecutor() {
+  return (envelope) =>
+    Promise.resolve({
+      outcome: "handoff",
+      termination_reason: "completion",
+      completion_claimed: true,
+      summary: `example executor completed ${envelope.task_id}`,
+      state_proposal: null,
+      dropped_proposal_fields: [],
+      change_summary: { files_changed: 0, insertions: 0, deletions: 0, paths: [] },
+      tool_activity: { total_calls: 0, governed_calls: 0, by_tool: {} },
+      usage: {
+        input_tokens: null,
+        output_tokens: null,
+        total_tokens: null,
+        duration_ms: 0,
+        metering: "unmetered",
+      },
+      evidence: [
+        {
+          kind: "attestation",
+          locator: `example://${envelope.task_id}`,
+          digest: evidenceDigest(envelope.digest),
+        },
+      ],
+      undeclared_writes: [],
+    });
+}
+
 function captureIo() {
   const out = [];
   const err = [];
