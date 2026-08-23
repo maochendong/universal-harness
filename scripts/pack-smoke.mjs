@@ -12,7 +12,9 @@
  *  - `harness --version` / `--help` work through the installed `.bin` shim and
  *    the package root imports as ESM with its canonical identity;
  *  - the two required vertical loop demos, `harness new` and `harness adopt`,
- *    each drive to a completed snapshot through the real approval pauses.
+ *    first fail closed without an executor, then explicitly abort that sealed
+ *    baseline, bind a deterministic dsh Agent, and complete a fresh iteration
+ *    through the real approval pauses to a snapshot.
  */
 import { execFileSync, spawnSync } from "node:child_process";
 import {
@@ -255,14 +257,70 @@ try {
     return result.json;
   }
 
+  function configureSmokeAgent(projectRoot) {
+    const agentScript = join(projectRoot, "scripts", "pack-smoke-agent.mjs");
+    mkdirSync(dirname(agentScript), { recursive: true });
+    writeFileSync(
+      agentScript,
+      [
+        'if (process.argv.includes("--version")) {',
+        '  console.log("pack-smoke-dsh 1.0.0");',
+        "} else {",
+        '  console.log("deterministic packed agent completed the task");',
+        "}",
+        "",
+      ].join("\n"),
+      "utf8",
+    );
+    const configPath = join(projectRoot, ".harness", "runtime.json");
+    const config = JSON.parse(readFileSync(configPath, "utf8"));
+    config.runtime_config_version = 3;
+    config.agent = {
+      provider: "dsh",
+      expected_version: "pack-smoke-dsh 1.0.0",
+      executable: process.execPath,
+      launcher_args: [agentScript],
+      env_allowlist: ["HOME", "LANG", "PATH", "TMPDIR"],
+      allowed_read_paths: [],
+      proposed_write_paths: [],
+    };
+    config.gates = [];
+    config.judge_gates = [];
+    delete config.model_providers;
+    writeFileSync(configPath, `${JSON.stringify(config, null, 2)}\n`, "utf8");
+    execFileSync("git", ["add", ".harness/runtime.json", "scripts/pack-smoke-agent.mjs"], {
+      cwd: projectRoot,
+      env: harnessEnv,
+    });
+    execFileSync("git", ["commit", "-m", "chore: configure pack smoke executor"], {
+      cwd: projectRoot,
+      env: harnessEnv,
+    });
+  }
+
+  function restartAfterExecutorBinding(blocked, projectRoot, intent) {
+    if (
+      blocked.json.status !== "blocked" ||
+      blocked.json.data?.reason !== "missing_input" ||
+      !String(blocked.json.data?.detail ?? "").includes("executor_required")
+    ) {
+      fail(`loop did not fail closed for a missing executor: ${JSON.stringify(blocked.json)}`);
+    }
+    const aborted = runHarness(["abort", blocked.json.data.workflow_operation_id], projectRoot);
+    if (aborted.json.status !== "ok") {
+      fail(`could not abort the sealed no-executor operation: ${JSON.stringify(aborted.json)}`);
+    }
+    configureSmokeAgent(projectRoot);
+    return runHarness(["iterate", intent], projectRoot);
+  }
+
   const newFirst = runHarness(
     ["new", "smoke-app", "--intent", "build the first capability", "--profile", "lite"],
     sandbox,
   );
-  if (newFirst.json.status !== "approval_required") {
-    fail(`harness new did not pause for approval: ${JSON.stringify(newFirst.json)}`);
-  }
-  const newResult = drivePastApprovals(newFirst, join(sandbox, "smoke-app"));
+  const newRoot = join(sandbox, "smoke-app");
+  const newReady = restartAfterExecutorBinding(newFirst, newRoot, "complete the first capability");
+  const newResult = drivePastApprovals(newReady, newRoot);
   if (typeof newResult.data.snapshot_id !== "string") {
     fail("harness new completed without a snapshot");
   }
@@ -303,7 +361,12 @@ try {
     ],
     sandbox,
   );
-  drivePastApprovals(adoptCommitted, legacyRoot);
+  const adoptReady = restartAfterExecutorBinding(
+    adoptCommitted,
+    legacyRoot,
+    "complete the requested change",
+  );
+  drivePastApprovals(adoptReady, legacyRoot);
   const snapshot = runHarness(["snapshot"], legacyRoot);
   if (snapshot.json.status !== "ok" || snapshot.json.data.status !== "completed") {
     fail(`adopt loop ended without a completed snapshot: ${JSON.stringify(snapshot.json)}`);
