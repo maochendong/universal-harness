@@ -10,6 +10,7 @@ import {
   type RuntimeService,
 } from "../../packages/cli/src/index.js";
 import type { AgentRunResult, AgentTaskEnvelope } from "../../packages/plugin-sdk/src/index.js";
+import type { TrustedProviderRegistry } from "../../packages/core/src/index.js";
 import type { GateDefinition, ToolRegistry } from "../../packages/runtime/src/index.js";
 
 /**
@@ -54,10 +55,21 @@ export function makeTempDir(prefix: string): string {
 export function git(cwd: string, ...args: string[]): string {
   // Pin autocrlf off (Windows runners default it to true, which would dirty
   // clean repositories) and disable auto gc (no detached maintenance).
-  return execFileSync("git", ["-c", "core.autocrlf=false", "-c", "gc.auto=0", ...args], {
+  const result = execFileSync("git", ["-c", "core.autocrlf=false", "-c", "gc.auto=0", ...args], {
     cwd,
     encoding: "utf8",
   });
+  if (args[0] === "init") {
+    for (const [key, value] of [
+      ["user.name", "Harness Test"],
+      ["user.email", "harness-test@example.invalid"],
+      ["core.autocrlf", "false"],
+      ["commit.gpgsign", "false"],
+    ] as const) {
+      execFileSync("git", ["config", "--local", key, value], { cwd });
+    }
+  }
+  return result;
 }
 
 export interface Captured {
@@ -138,6 +150,8 @@ export function makeHarness(
     readonly toolRegistry?: ToolRegistry;
     /** Source paths the deterministic Agent run reports as changed. */
     readonly reportedSourcePaths?: readonly string[];
+    /** Host-owned registry for trusted model/Judge test providers. */
+    readonly providerRegistry?: TrustedProviderRegistry;
   },
 ): E2eHarness {
   const executor = makeExecutor(injection?.reportedSourcePaths);
@@ -157,6 +171,9 @@ export function makeHarness(
         }),
     ...(injection?.gates === undefined ? {} : { gates: injection.gates }),
     ...(injection?.toolRegistry === undefined ? {} : { toolRegistry: injection.toolRegistry }),
+    ...(injection?.providerRegistry === undefined
+      ? {}
+      : { providerRegistry: injection.providerRegistry }),
   });
   return { runtime, executorCalls: executor.calls };
 }

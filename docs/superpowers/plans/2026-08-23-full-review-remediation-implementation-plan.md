@@ -749,7 +749,7 @@ git commit -m "fix(release): require real cross-platform evidence"
 - Modify: `tests/e2e/helpers.ts`
 - Modify: `packages/runtime/test/bootstrap/helpers.ts`
 - Verify: `adapters/vcs-git/test/helpers.ts`
-- Delete: `docs/codebuddy-to-universal-harness-evolution.md`
+- Delete: the obsolete former-product evolution document
 - Modify: `docs/superpowers/plans/2026-08-17-dashboard-approvals-and-dsh-output-implementation-plan.md`
 - Modify: `scripts/check-standalone.mjs`
 - Create: `scripts/standalone-scan.mjs`
@@ -786,7 +786,7 @@ Do not mutate global Git config.
 
 - [ ] **Step 3: Remove former-product branding from tracked content and classify immutable history**
 
-Delete the obsolete evolution document and replace the one filename reference with a product-neutral description. Keep the full-history scan, but replace the monolithic `git log -p` check with commit/path/blob-level findings. `standalone-history-exceptions.json` may suppress only the exact pre-remediation commit, path and blob digest for the migration document; an unknown commit, path or digest with the same brand must still fail. This preserves immutable Git history without turning a broad substring exception into a bypass.
+Delete the obsolete evolution document and replace its filename references with product-neutral descriptions. Keep the full-history scan, but replace the monolithic `git log -p` check with commit/path/blob-level findings. `standalone-history-exceptions.json` may suppress only the exact pre-remediation commit, path and blob digest for the migration document; an unknown commit, path or digest with the same brand must still fail. This preserves immutable Git history without turning a broad substring exception into a bypass.
 
 The release test must prove both cases:
 
@@ -829,7 +829,7 @@ Expected: pass.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add tests/e2e/helpers.ts packages/runtime/test/bootstrap/helpers.ts adapters/vcs-git/test/helpers.ts docs/codebuddy-to-universal-harness-evolution.md docs/superpowers/plans/2026-08-17-dashboard-approvals-and-dsh-output-implementation-plan.md scripts/check-standalone.mjs scripts/standalone-scan.mjs scripts/standalone-history-exceptions.json tests/release/standalone-history-scan.test.ts
+git add tests/e2e/helpers.ts packages/runtime/test/bootstrap/helpers.ts adapters/vcs-git/test/helpers.ts docs/ docs/superpowers/plans/2026-08-17-dashboard-approvals-and-dsh-output-implementation-plan.md scripts/check-standalone.mjs scripts/standalone-scan.mjs scripts/standalone-history-exceptions.json tests/release/standalone-history-scan.test.ts
 git commit -m "fix(ci): make git fixtures hermetic and standalone"
 ```
 

@@ -30,10 +30,21 @@ export function makeTempDir(prefix: string): string {
 export function git(cwd: string, ...args: string[]): string {
   // Pin autocrlf off (Windows runners default it to true, which would dirty
   // clean repositories) and disable auto gc (no detached maintenance).
-  return execFileSync("git", ["-c", "core.autocrlf=false", "-c", "gc.auto=0", ...args], {
+  const result = execFileSync("git", ["-c", "core.autocrlf=false", "-c", "gc.auto=0", ...args], {
     cwd,
     encoding: "utf8",
   });
+  if (args[0] === "init") {
+    for (const [key, value] of [
+      ["user.name", "Harness Test"],
+      ["user.email", "harness-test@example.invalid"],
+      ["core.autocrlf", "false"],
+      ["commit.gpgsign", "false"],
+    ] as const) {
+      execFileSync("git", ["config", "--local", key, value], { cwd });
+    }
+  }
+  return result;
 }
 
 export function writeTree(root: string, files: Readonly<Record<string, string>>): void {
@@ -55,7 +66,7 @@ export function makeRepo(files: Readonly<Record<string, string>>, leaf?: string)
   if (leaf !== undefined) mkdirSync(root);
   git(root, "init", "-b", "main");
   git(root, "config", "user.name", "Harness Test");
-  git(root, "config", "user.email", "harness-test@example.com");
+  git(root, "config", "user.email", "harness-test@example.invalid");
   git(root, "config", "commit.gpgsign", "false");
   writeTree(root, files);
   git(root, "add", "-A");

@@ -1,0 +1,11 @@
+{
+  "schema_version": "standalone-history-exceptions.v1",
+  "exceptions": [
+    {
+      "commit": "3d311a0d9be1764c6ec959ef3122b7dbaa3ec53a",
+      "path": "docs/codebuddy-to-universal-harness-evolution.md",
+      "blob_digest": "875f62a8c8a465675d3f1f1ed5cfe717c8026d85",
+      "reason": "Immutable pre-remediation migration document removed from the current tree"
+    }
+  ]
+}

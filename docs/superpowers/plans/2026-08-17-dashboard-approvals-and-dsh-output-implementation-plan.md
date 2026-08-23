@@ -94,5 +94,4 @@
 1. 运行各包聚焦测试和 Dashboard Playwright E2E。
 2. 运行静态检查、格式检查和全量 `pnpm test`。
 3. 更新 Dashboard/运行观测文档，说明 Approvals 真相来源和 dsh 可观测边界。
-4. 确认 `docs/codebuddy-to-universal-harness-evolution.md` 未被暂存或修改。
-
+4. 确认旧产品迁移说明文档未被暂存或修改。
