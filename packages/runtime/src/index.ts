@@ -1043,9 +1043,12 @@ export {
 } from "./orchestration/approval-runtime.js";
 export {
   classifyRunFailure,
+  executeRequiredTddTask,
   orderExecutionTasks,
   resolveExecutionBinding,
+  type RequiredTddExecution,
   type RunFailureDisposition,
+  type StrictTddArtifact,
 } from "./orchestration/execution-runtime.js";
 export {
   verificationBindingsEqual,

@@ -186,6 +186,7 @@ import {
 } from "./execution-binding.js";
 import {
   classifyRunFailure,
+  executeRequiredTddTask,
   orderExecutionTasks,
   resolveExecutionBinding,
 } from "./execution-runtime.js";
@@ -193,6 +194,7 @@ import { verificationBindingsEqual, type VerifyPhaseArtifact } from "./verificat
 import { finalizeSnapshotLedger } from "./snapshot-runtime.js";
 export {
   classifyRunFailure,
+  executeRequiredTddTask,
   orderExecutionTasks,
   resolveExecutionBinding,
 } from "./execution-runtime.js";
@@ -3451,8 +3453,29 @@ async function phaseExecute(ctx: PipelineContext): Promise<PhaseStep> {
     throw error;
   }
   const grantDigests = [...authority.grants.values()].map((grant) => grant.digest).sort();
+  const strictTddEnabled = ctx.capabilityPlan?.operation_dag.nodes.some(
+    (node) => node.node_id === "execute" && node.subgraph === "strict_tdd",
+  );
   let lastRun: { readonly runId: string; readonly result: AgentRunResult } | undefined;
   for (const task of tasks) {
+    const tddContract = strictTddEnabled === true ? loadTaskTddContract(ctx, task.id) : undefined;
+    if (strictTddEnabled === true && tddContract === undefined) {
+      throw new OrchestrationError(
+        "binding_drift",
+        `strict_tdd Task ${task.id} has no accepted TaskTddContract`,
+      );
+    }
+    const requiredTdd = tddContract?.contract_mode === "required";
+    const currentTddCycleCompleted =
+      requiredTdd !== true ||
+      readJsonDirectory(ctx.deps, "artifacts/tdd-cycles").some(
+        (candidate) =>
+          typeof candidate === "object" &&
+          candidate !== null &&
+          (candidate as Partial<TddCycleRecord>).task_id === task.id &&
+          (candidate as Partial<TddCycleRecord>).contract_digest === tddContract.contract_digest &&
+          (candidate as Partial<TddCycleRecord>).status === "completed",
+      );
     const completed = loadCompletedRun(ctx, task.id);
     if (completed !== undefined && completed.result.completion_claimed) {
       // A claimed run whose committed evaluation failed must be re-executed
@@ -3462,7 +3485,7 @@ async function phaseExecute(ctx: PipelineContext): Promise<PhaseStep> {
       const failedEvaluation = loadEvaluateArtifacts(deps, ctx.iterationId).some(
         (artifact) => artifact.run_digest === completedDigest && !artifact.result.passed,
       );
-      if (!failedEvaluation) {
+      if (!failedEvaluation && currentTddCycleCompleted) {
         await commitRunFact(ctx, completed.runId, completed.result);
         lastRun = completed;
         continue;
@@ -3513,7 +3536,7 @@ async function phaseExecute(ctx: PipelineContext): Promise<PhaseStep> {
     observe(ctx, () =>
       ctx.observations.runStarted(activeRunId, {
         task_id: task.id,
-        executor: "agent",
+        executor: requiredTdd ? "strict-tdd-controller" : binding.name,
         ...(binding.adapter_profile === undefined
           ? {}
           : { adapter_control_profile: binding.adapter_profile }),
@@ -3553,16 +3576,42 @@ async function phaseExecute(ctx: PipelineContext): Promise<PhaseStep> {
     // A throw here is a process-level crash: no terminal record is written and
     // resume reconciles the open run. Typed failures come back as results.
     let result: AgentRunResult;
+    let strictTddBlockedReason: string | undefined;
     let observedOutput = false;
     try {
-      result = await executor(envelope as AgentTaskEnvelope, {
-        onOutput: (output) => {
-          observedOutput = true;
-          observe(ctx, () =>
-            ctx.observations.runOutput(activeRunId, output.chunk, { stream: output.stream }),
+      if (requiredTdd) {
+        if (deps.strictTdd === undefined || ctx.capabilityPlan === undefined) {
+          throw new OrchestrationError(
+            "configuration",
+            "strict_tdd required Task has no StrictTddExecutionPort",
           );
-        },
-      });
+        }
+        const executed = await executeRequiredTddTask({
+          port: deps.strictTdd,
+          task,
+          contract: tddContract,
+          capabilityPlanDigest: ctx.capabilityPlan.record_digest,
+        });
+        const newArtifacts = executed.artifacts.filter(
+          (artifact) => !artifactExists(deps, artifact.path),
+        );
+        if (newArtifacts.length > 0) {
+          await commitArtifacts(deps, ctx.workflowOperationId, currentAttemptId(ctx), newArtifacts);
+        }
+        result = executed.result;
+        if (executed.outcome.status === "blocked") {
+          strictTddBlockedReason = executed.outcome.reason;
+        }
+      } else {
+        result = await executor(envelope as AgentTaskEnvelope, {
+          onOutput: (output) => {
+            observedOutput = true;
+            observe(ctx, () =>
+              ctx.observations.runOutput(activeRunId, output.chunk, { stream: output.stream }),
+            );
+          },
+        });
+      }
     } finally {
       clearInterval(heartbeat);
     }
@@ -3680,6 +3729,15 @@ async function phaseExecute(ctx: PipelineContext): Promise<PhaseStep> {
 
     if (!(result.outcome === "handoff" && result.completion_claimed)) {
       await ctx.modules.evaluate?.evaluateTaskRun(ctx, task.id, { runId: activeRunId, result });
+      if (strictTddBlockedReason !== undefined) {
+        const outcome = await blockWithSnapshot(ctx, {
+          reason: "repairable_gate_failure",
+          detail: `task ${task.id} did not produce accepted TDD evidence: ${strictTddBlockedReason}`,
+          resumePhase: "execute",
+          input: snapshotBaseInput(ctx, [{ task_id: task.id, required: true, outcome: "failed" }]),
+        });
+        return { continue: false, outcome };
+      }
       const failure = classifyRunFailure(result);
       if ("abort" in failure) {
         await ctx.engine.abort(ctx.workflowOperationId, {
