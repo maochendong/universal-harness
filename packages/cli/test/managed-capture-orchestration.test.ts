@@ -8,10 +8,12 @@ import { afterEach, describe, expect, it } from "vitest";
 import { createGitVcsAdapter } from "@universal-harness-internal/adapter-vcs-git";
 import type { AgentRunResult, AgentTaskEnvelope } from "@universal-harness-internal/plugin-sdk";
 import {
+  appendProfileDecisionRecord,
   appendProjectProfileRecord,
   contentDigest,
   createInMemoryDesignProposalPort,
   createInMemoryDesignReviewPort,
+  createProfileDecisionRecord,
   createProjectProfileRecord,
   harnessRootFor,
   intentDigestOf,
@@ -113,15 +115,29 @@ async function bootstrapProject(
   if (!outcome.ok) throw new Error(outcome.error.message);
   const projectRoot = outcome.value.projectRoot;
   if (options.profile) {
+    const projectId = `project_${readManagedManifest(projectRoot).name}`;
     appendProjectProfileRecord(
       projectRoot,
       createProjectProfileRecord({
-        project_id: `project_${readManagedManifest(projectRoot).name}`,
+        project_id: projectId,
         revision: 1,
         profile_id: options.profileId ?? "standard",
         policy_digest: "0".repeat(64),
         actor: "human:tester",
         effective_from: FIXED_NOW,
+      }),
+    );
+    appendProfileDecisionRecord(
+      projectRoot,
+      createProfileDecisionRecord({
+        decision_kind: "project_profile_change",
+        project_id: projectId,
+        actor: "human:tester",
+        idempotency_key: `profile-decision:${projectId}:1`,
+        current_profile_id: options.profileId ?? "standard",
+        decided_profile_id: options.profileId ?? "standard",
+        policy_digest: "0".repeat(64),
+        decided_at: FIXED_NOW,
       }),
     );
   }
@@ -501,7 +517,7 @@ describe("managed capture seam gating", () => {
     }
   });
 
-  it("returns undefined without model_providers for a lite profile record", async () => {
+  it("uses the zero-model deterministic capture coordinator for a lite profile", async () => {
     const newId = sequentialIds();
     const projectRoot = await bootstrapProject("capture-gate-lite", newId, {
       profile: true,
@@ -509,7 +525,7 @@ describe("managed capture seam gating", () => {
     });
     expect(
       managedCaptureSeamForProject(projectRoot, readProjectRuntimeConfig(projectRoot)),
-    ).toBeUndefined();
+    ).toBeDefined();
   });
 
   it("returns undefined for a pre-1.1 project without a profile record", async () => {

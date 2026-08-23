@@ -47,12 +47,12 @@ import type { SemanticSeedProvider } from "@universal-harness-internal/plugin-sd
 import { materializeLedger, pageEdges, pageNodes } from "@universal-harness-internal/graph";
 import {
   contentDigest,
-  domainRecordId,
   appendProfileDecisionRecord,
   appendProjectProfileRecord,
   createProfileDecisionRecord,
   createProjectProfileRecord,
   readLatestProjectProfile,
+  readProfileDecisionRecords,
   readManagedManifest,
   resolveIterationProfile,
   resolveProfileSelection,
@@ -60,7 +60,6 @@ import {
   ProfileSelectionError,
   ProjectLayoutError,
   DEFAULT_PROFILE_POLICY_DIGEST,
-  PROTOCOL_1_1_VERSION,
   type EdgeRecord,
   type NodeRecord,
   type ObservationEvent,
@@ -88,6 +87,7 @@ import type {
   RuntimeService,
 } from "./router.js";
 import { createConfiguredAgentExecutor } from "./project-agent.js";
+import { createProjectCapabilityPlanCompiler } from "./capability-plan-compiler.js";
 import { createConfiguredGateSuite } from "./project-gates.js";
 import { createManagedIntentInterpreter } from "./managed-interpret.js";
 import {
@@ -277,13 +277,19 @@ export function managedCaptureSeamForProject(
     throw error;
   }
   if (profile === undefined) return undefined;
-  const decisionInput = {
-    decision_kind: "project_profile_change",
-    project_id: profile.project_id,
-    decided_profile_id: profile.profile_id,
-    policy_digest: profile.policy_digest,
-    profile_record_digest: profile.record_digest,
-  } as const;
+  const decision = readProfileDecisionRecords(projectRoot)
+    .filter(
+      (candidate) =>
+        candidate.project_id === profile.project_id &&
+        candidate.decided_profile_id === profile.profile_id,
+    )
+    .at(-1);
+  if (decision === undefined) {
+    throw new OrchestrationError(
+      "configuration",
+      `ProjectProfile ${profile.record_digest} has no persisted ProfileDecision`,
+    );
+  }
   const baselineDigest = baselineDigestForProject(projectRoot);
   let assembled: ReturnType<typeof createManagedCaptureCoordinator>;
   try {
@@ -291,13 +297,8 @@ export function managedCaptureSeamForProject(
       projectRoot,
       runtimeConfig,
       profile,
-      profile_decision_id: domainRecordId({
-        domain_tag: "profile_decision",
-        id_prefix: "profile-decision",
-        protocol_version: PROTOCOL_1_1_VERSION,
-        canonical_input: decisionInput,
-      }),
-      profile_decision_digest: contentDigest(decisionInput),
+      profile_decision_id: decision.profile_decision_id,
+      profile_decision_digest: decision.record_digest,
       project_baseline_digest: baselineDigest,
       policy: defaultCaptureRiskPolicy(profile.project_id, profile.profile_id),
       rubric: DEFAULT_CAPTURE_REVIEW_RUBRIC,
@@ -324,7 +325,7 @@ export function managedCaptureSeamForProject(
     coordinator: assembled.coordinator,
     session_context: {
       project_profile_digest: profile.record_digest,
-      profile_decision_digest: contentDigest(decisionInput),
+      profile_decision_digest: decision.record_digest,
       capture_policy_digest: profile.policy_digest,
       project_baseline_digest: baselineDigest,
     },
@@ -514,6 +515,20 @@ export function createOrchestratedRuntimeService(
         ? {}
         : { environment: options.providerEnvironment }),
     });
+    const capabilityPlanCompiler =
+      captureSeam === undefined
+        ? undefined
+        : createProjectCapabilityPlanCompiler({
+            projectRoot,
+            runtimeConfig,
+            ...(options.providerRegistry === undefined
+              ? {}
+              : { providerRegistry: options.providerRegistry }),
+            ...(options.providerFetch === undefined ? {} : { fetch: options.providerFetch }),
+            ...(options.providerEnvironment === undefined
+              ? {}
+              : { environment: options.providerEnvironment }),
+          });
     return {
       projectRoot,
       readBaseline: () => gitHead(projectRoot),
@@ -525,6 +540,7 @@ export function createOrchestratedRuntimeService(
           : managedCaptureInterpreter(projectRoot, runtimeConfig)),
       ...managedPipelinePortsFor(projectRoot, runtimeConfig),
       ...(captureSeam === undefined ? {} : { capture: captureSeam }),
+      ...(capabilityPlanCompiler === undefined ? {} : { capabilityPlanCompiler }),
       ...(injectedExecutor === undefined
         ? configuredAgent === undefined
           ? {}
@@ -678,35 +694,42 @@ export function createOrchestratedRuntimeService(
       const managed =
         profile === undefined
           ? undefined
-          : createManagedIntentInterpreter({
-              projectRoot,
-              runtimeConfig,
-              profile_id: profile.profile_id,
-              session_context: {
-                project_profile_digest: profile.record_digest,
-                // Core has no profile-decision reader yet; derived
-                // deterministically from the stable decision inputs.
-                profile_decision_digest: contentDigest({
-                  decision_kind: "project_profile_change",
-                  project_id: profile.project_id,
-                  decided_profile_id: profile.profile_id,
-                  policy_digest: profile.policy_digest,
-                  profile_record_digest: profile.record_digest,
-                }),
-                capture_policy_digest: profile.policy_digest,
-                // No requirement baseline exists before capture; the digest
-                // binds the git baseline (HEAD) the intent is read against.
-                project_baseline_digest: baselineDigestFor(projectRoot),
-              },
-              newId: options.newId ?? ((kind: string) => `${kind}_${ulid()}`),
-              ...(options.providerRegistry === undefined
-                ? {}
-                : { providerRegistry: options.providerRegistry }),
-              ...(options.providerFetch === undefined ? {} : { fetch: options.providerFetch }),
-              ...(options.providerEnvironment === undefined
-                ? {}
-                : { environment: options.providerEnvironment }),
-            });
+          : (() => {
+              const decision = readProfileDecisionRecords(projectRoot)
+                .filter(
+                  (candidate) =>
+                    candidate.project_id === profile.project_id &&
+                    candidate.decided_profile_id === profile.profile_id,
+                )
+                .at(-1);
+              if (decision === undefined) {
+                throw new OrchestrationError(
+                  "configuration",
+                  `ProjectProfile ${profile.record_digest} has no persisted ProfileDecision`,
+                );
+              }
+              return createManagedIntentInterpreter({
+                projectRoot,
+                runtimeConfig,
+                profile_id: profile.profile_id,
+                session_context: {
+                  project_profile_digest: profile.record_digest,
+                  profile_decision_digest: decision.record_digest,
+                  capture_policy_digest: profile.policy_digest,
+                  // No requirement baseline exists before capture; the digest
+                  // binds the git baseline (HEAD) the intent is read against.
+                  project_baseline_digest: baselineDigestFor(projectRoot),
+                },
+                newId: options.newId ?? ((kind: string) => `${kind}_${ulid()}`),
+                ...(options.providerRegistry === undefined
+                  ? {}
+                  : { providerRegistry: options.providerRegistry }),
+                ...(options.providerFetch === undefined ? {} : { fetch: options.providerFetch }),
+                ...(options.providerEnvironment === undefined
+                  ? {}
+                  : { environment: options.providerEnvironment }),
+              });
+            })();
       return managed === undefined ? generic(intent) : managed(intent);
     };
   };

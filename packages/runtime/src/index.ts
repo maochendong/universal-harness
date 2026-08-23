@@ -989,6 +989,8 @@ export {
   submitCaptureAnswers,
   type CaptureCoordinatorSeam,
   type CaptureCoordinatorSessionContext,
+  type CapabilityPlanCompilationRequest,
+  type CapabilityPlanCompilerPort,
   type AbortIterationInput,
   type AbortedIteration,
   type ClarificationOffer,

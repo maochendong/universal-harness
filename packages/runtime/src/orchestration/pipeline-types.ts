@@ -138,6 +138,31 @@ export type TaskEnvelopeScopePort = (task: TaskSpecification) => {
   readonly allowed_read_paths: readonly string[];
   readonly proposed_write_paths: readonly string[];
 };
+
+/**
+ * Host composition seam for Protocol 1.1 CapabilityPlan compilation. The
+ * runtime owns when a revision is required and which authoritative digests it
+ * binds; the CLI/host owns ProjectProfile, ProfileDecision, Provider and
+ * prompt-registry resolution. Returning anything other than the requested
+ * operation/stage is binding drift.
+ */
+export interface CapabilityPlanCompilationRequest {
+  readonly operation_id: string;
+  /** Initial lets the host choose Standard provisional vs direct final. */
+  readonly stage: "initial" | "provisional" | "final";
+  readonly requirement_digest: string;
+  readonly risk_digest: string;
+  readonly policy_digest: string;
+  readonly baseline_digest: string;
+  readonly accepted_design_set?: {
+    readonly design_set_digest: string;
+    readonly test_strategy_digest: string;
+  };
+  readonly supersedes?: CapabilityPlanRecord;
+}
+export type CapabilityPlanCompilerPort = (
+  input: CapabilityPlanCompilationRequest,
+) => CapabilityPlanRecord;
 /**
  * Incremental phase progress streamed to observers while a pipeline runs.
  * Pure side-channel: never written to the ledger; lets long-running hosts
@@ -185,6 +210,12 @@ export interface OrchestratorDependencies {
    * are used only by the Protocol 1.0 compatibility path.
    */
   readonly capabilityPlan?: CapabilityPlanRecord;
+  /**
+   * Production Protocol 1.1 compiler. Unlike `capabilityPlan` (the embedder
+   * compatibility seam), this port is invoked after accepted Capture and, for
+   * Standard, again after accepted DesignSet finalization.
+   */
+  readonly capabilityPlanCompiler?: CapabilityPlanCompilerPort;
   readonly execution?: ExecutionBinding;
   /** Required-task executor used only when the accepted DAG marks execute with strict_tdd. */
   readonly strictTdd?: StrictTddExecutionPort;

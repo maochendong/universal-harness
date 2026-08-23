@@ -126,6 +126,24 @@ export function moduleContributionsForCapabilityPlan(
   };
 }
 
+/**
+ * Protocol 1.1 runner registry. Registration is deliberately broader than
+ * activation: the accepted CapabilityPlan DAG is the only authority that
+ * resolves/invokes a module runner, so an inactive registered contributor
+ * receives exactly zero calls without profile-name branching here.
+ */
+export function registeredModuleContributions(options?: {
+  readonly design?: DesignContributionOptions;
+  readonly impact?: ImpactContributionOptions;
+}): ModuleContributions {
+  return {
+    impact: createImpactContribution(options?.impact),
+    design: createDesignContribution(options?.design),
+    evaluate: createEvaluationContribution(),
+    audit: createAuditContribution(),
+  };
+}
+
 const projector = createCapabilityStatusProjector(MODULE_STATUS_MAPPINGS);
 
 /**

@@ -49,6 +49,14 @@ export class DagEngineError extends Error {
 
 export type DagRunOutcome =
   | {
+      readonly status: "paused";
+      readonly operation_id: string;
+      readonly node_id: string;
+      readonly reason: "until_phase";
+      readonly executed_nodes: readonly string[];
+      readonly replayed_nodes: readonly string[];
+    }
+  | {
       readonly status: "replan_required";
       readonly operation_id: string;
       readonly node_id: string;
@@ -355,6 +363,16 @@ export class WorkflowDagEngine {
           operation_id: request.operation_id,
           node_id: node.node_id,
           next_plan_digest: result.next_plan_digest,
+          executed_nodes: executedNodes,
+          replayed_nodes: replayedNodes,
+        };
+      }
+      if (result.status === "paused") {
+        return {
+          status: "paused",
+          operation_id: request.operation_id,
+          node_id: node.node_id,
+          reason: result.reason,
           executed_nodes: executedNodes,
           replayed_nodes: replayedNodes,
         };

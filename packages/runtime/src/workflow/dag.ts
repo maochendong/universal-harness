@@ -30,6 +30,12 @@ export interface DagApprovalNotice {
 export type DagNodeResult =
   | { readonly status: "committed"; readonly produces?: readonly DagProducedBinding[] }
   | {
+      /** Durable node boundary requested by a host's bounded drive command. */
+      readonly status: "paused";
+      readonly reason: "until_phase";
+      readonly produces?: readonly DagProducedBinding[];
+    }
+  | {
       readonly status: "plan_superseded";
       readonly next_plan_digest: string;
       readonly produces: readonly DagProducedBinding[];

@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import { createGitVcsAdapter } from "@universal-harness-internal/adapter-vcs-git";
+import type { AgentRunResult, AgentTaskEnvelope } from "@universal-harness-internal/plugin-sdk";
 import {
   materializeLedger,
   pageEdges,
@@ -53,6 +54,30 @@ const INTENT = "Ship a CSV export for the monthly report.";
 const DECISION_ID = "decision_01K1DEC";
 const STRATEGY_ID = "designartifact_01K1TST";
 
+function completeWithoutWrites(envelope: AgentTaskEnvelope): Promise<AgentRunResult> {
+  return Promise.resolve({
+    outcome: "handoff",
+    termination_reason: "completion",
+    completion_claimed: true,
+    summary: `completed ${envelope.task_id}`,
+    state_proposal: null,
+    dropped_proposal_fields: [],
+    change_summary: { files_changed: 0, insertions: 0, deletions: 0, paths: [] },
+    tool_activity: { total_calls: 0, governed_calls: 0, by_tool: {} },
+    usage: {
+      input_tokens: null,
+      output_tokens: null,
+      total_tokens: null,
+      duration_ms: 0,
+      metering: "unmetered",
+    },
+    evidence: [
+      { kind: "attestation", locator: `envelope://${envelope.task_id}`, digest: "a".repeat(64) },
+    ],
+    undeclared_writes: [],
+  });
+}
+
 function makeDeps(
   projectRoot: string,
   newId: (kind: string) => string,
@@ -65,6 +90,7 @@ function makeDeps(
     newId,
     vcs: createGitVcsAdapter(),
     interpret: createGenericInterpreter(),
+    execute: completeWithoutWrites,
     ...overrides,
   };
 }

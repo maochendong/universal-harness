@@ -2,6 +2,7 @@ import { existsSync, readdirSync, readFileSync } from "node:fs";
 import {
   LedgerRepository,
   PROTOCOL_VERSION,
+  PROTOCOL_1_1_SCHEMA_REGISTRY,
   canonicalizeJson,
   canonicalizeLocator,
   assertCapabilityPlanFinal,
@@ -20,12 +21,17 @@ import {
   ulid,
   validateCriterionAssertionCoverage,
   validateSchema,
+  verifyRecordEnvelope,
+  type CapabilityPlanRecord,
   type CaptureAnswerInput,
+  type BindingKind,
   type CaptureOutcome,
   type CaptureSessionRecord,
   type EdgeRecord,
   type LifecycleEvent,
   type NodeRecord,
+  type TaskTddContract,
+  type TddCycleRecord,
 } from "@universal-harness-internal/core";
 import {
   generateImpactSet,
@@ -129,6 +135,7 @@ import {
   type TaskVerdictRecord,
 } from "../evaluation/task-verdict.js";
 import { projectTaskVerdict } from "../evaluation/outcome-projection.js";
+import type { TaskTddVerdictInput } from "../tdd/verdict.js";
 import {
   assessOpenIterationMigration,
   buildOpenIterationMigrationRecord,
@@ -170,6 +177,10 @@ import {
 import { type AbortReason, type RecoverableBlockReason } from "../workflow/state-machine.js";
 import { type WorkingState } from "../workflow/working-state.js";
 import { phaseLifecycleEvents } from "./lifecycle-events.js";
+import { createCapabilityDagRuntime } from "./capability-dag-runtime.js";
+import { createCapabilityDagRunnerRegistry } from "./capability-dag-runners.js";
+import { LedgerDagCheckpointStore } from "../workflow/ledger-dag-checkpoint-store.js";
+import type { DagNodeResult } from "../workflow/dag.js";
 import {
   ORCHESTRATION_PHASES,
   PHASE_CHECKPOINT_BOUNDARY,
@@ -607,7 +618,11 @@ export interface PipelineContext {
   readonly baselineDigest: string;
   readonly observations: ObservationPublisherPort;
   /** Module contributors registered for this operation; empty means Kernel-only. */
-  readonly modules: ModuleContributions;
+  modules: ModuleContributions;
+  /** Accepted routing authority for this Protocol 1.1 operation. */
+  capabilityPlan?: CapabilityPlanRecord;
+  /** True only while the CapabilityPlan DAG owns phase ordering. */
+  protocol11Dag?: boolean;
   impactSet?: NodeRecord;
   designSet?: NodeRecord;
   plan?: { readonly node: NodeRecord; readonly content: ExecutionPlanContent };
@@ -1056,6 +1071,209 @@ export function loadAcceptedDesignSet(ctx: PipelineContext): NodeRecord | undefi
   } finally {
     graph.close();
   }
+}
+
+function capabilityPlanArtifactPath(plan: CapabilityPlanRecord): string {
+  return `artifacts/capability-plans/${plan.capability_plan_id}/${String(plan.revision)}.json`;
+}
+
+function assertCapabilityPlanRecord(value: unknown, path: string): CapabilityPlanRecord {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    throw new OrchestrationError(
+      "binding_drift",
+      `CapabilityPlan artifact is not an object: ${path}`,
+    );
+  }
+  const record = value as Record<string, unknown>;
+  const validation = PROTOCOL_1_1_SCHEMA_REGISTRY.validate("capability-plan", record);
+  if (!validation.valid || !verifyRecordEnvelope(record)) {
+    throw new OrchestrationError(
+      "binding_drift",
+      `CapabilityPlan artifact failed validation: ${path}: ${validation.errors
+        .map((issue) => issue.message)
+        .join("; ")}`,
+    );
+  }
+  return record as unknown as CapabilityPlanRecord;
+}
+
+/** Schema-verified revisions for exactly one operation, oldest first. */
+export function loadCapabilityPlans(ctx: PipelineContext): CapabilityPlanRecord[] {
+  const directory = resolveHarnessPath(harnessRoot(ctx.deps), "artifacts/capability-plans");
+  if (!existsSync(directory)) return [];
+  const plans: CapabilityPlanRecord[] = [];
+  for (const planDirectory of readdirSync(directory, { withFileTypes: true })) {
+    if (!planDirectory.isDirectory()) continue;
+    const relativeDirectory = `artifacts/capability-plans/${planDirectory.name}`;
+    const absoluteDirectory = resolveHarnessPath(harnessRoot(ctx.deps), relativeDirectory);
+    for (const name of readdirSync(absoluteDirectory)
+      .filter((entry) => /^[0-9]+\.json$/u.test(entry))
+      .sort((left, right) => Number.parseInt(left, 10) - Number.parseInt(right, 10))) {
+      const path = `${relativeDirectory}/${name}`;
+      const parsed = readJsonArtifact<unknown>(ctx.deps, path);
+      const plan = assertCapabilityPlanRecord(parsed, path);
+      if (plan.operation_id === ctx.workflowOperationId) plans.push(plan);
+    }
+  }
+  return plans.sort((left, right) => left.revision - right.revision);
+}
+
+async function persistCapabilityPlan(
+  ctx: PipelineContext,
+  plan: CapabilityPlanRecord,
+): Promise<void> {
+  if (plan.operation_id !== ctx.workflowOperationId) {
+    throw new OrchestrationError("binding_drift", "CapabilityPlan belongs to another operation");
+  }
+  assertCapabilityPlanRecord(plan, capabilityPlanArtifactPath(plan));
+  const path = capabilityPlanArtifactPath(plan);
+  const existing = readJsonArtifact<unknown>(ctx.deps, path);
+  if (existing !== undefined) {
+    const persisted = assertCapabilityPlanRecord(existing, path);
+    if (persisted.record_digest !== plan.record_digest) {
+      throw new OrchestrationError(
+        "binding_drift",
+        `CapabilityPlan revision ${String(plan.revision)} already exists with another digest`,
+      );
+    }
+    return;
+  }
+  await commitArtifacts(ctx.deps, ctx.workflowOperationId, currentAttemptId(ctx), [
+    { path, content: `${canonicalizeJson(plan)}\n` },
+  ]);
+}
+
+function acceptedPrdForOperation(ctx: PipelineContext) {
+  return readAcceptedPrdRecords(ctx.deps.projectRoot)
+    .filter((record) => record.workflow_operation_id === ctx.workflowOperationId)
+    .at(-1);
+}
+
+function acceptedDesignBinding(designSet: NodeRecord): {
+  readonly design_set_digest: string;
+  readonly test_strategy_digest: string;
+} {
+  const extension = readDesignSetExtension(designSet);
+  const primaryStrategyIds = new Set(
+    extension.content.coverage.flatMap((coverage) =>
+      coverage.test_strategy_coverage.map((entry) => entry.primary_test_strategy_id),
+    ),
+  );
+  const strategyBindings = extension.bindings.nodes
+    .filter((binding) => primaryStrategyIds.has(binding.node_id))
+    .map((binding) => ({
+      node_id: binding.node_id,
+      revision: binding.revision,
+      digest: binding.digest,
+    }));
+  if (strategyBindings.length !== primaryStrategyIds.size) {
+    throw new OrchestrationError(
+      "binding_drift",
+      "accepted DesignSet does not bind every primary test strategy",
+    );
+  }
+  return {
+    design_set_digest: extension.content_digest,
+    test_strategy_digest: contentDigest(strategyBindings),
+  };
+}
+
+async function ensureInitialCapabilityPlan(ctx: PipelineContext): Promise<CapabilityPlanRecord> {
+  const supplied = ctx.deps.capabilityPlan;
+  if (supplied !== undefined) {
+    ctx.capabilityPlan = supplied;
+    return supplied;
+  }
+  const existing = loadCapabilityPlans(ctx).at(-1);
+  if (existing !== undefined) {
+    ctx.capabilityPlan = existing;
+    return existing;
+  }
+  const compiler = ctx.deps.capabilityPlanCompiler;
+  if (compiler === undefined) {
+    throw new OrchestrationError(
+      "configuration",
+      "Protocol 1.1 operation has no CapabilityPlan compiler",
+    );
+  }
+  const accepted = acceptedPrdForOperation(ctx);
+  if (accepted === undefined || accepted.requirement_baseline_digest !== ctx.baselineDigest) {
+    throw new OrchestrationError(
+      "binding_drift",
+      "CapabilityPlan compilation requires the accepted PRD bound to this operation",
+    );
+  }
+  const plan = compiler({
+    operation_id: ctx.workflowOperationId,
+    stage: "initial",
+    requirement_digest: accepted.record_digest,
+    risk_digest: accepted.risk_assessment_digest,
+    policy_digest: ctx.workingState.policy_digest,
+    baseline_digest: contentDigest({ repository_head: ctx.workingState.baseline_commit }),
+  });
+  await persistCapabilityPlan(ctx, plan);
+  ctx.capabilityPlan = plan;
+  return plan;
+}
+
+function activateModulesFromCapabilityPlan(
+  available: ModuleContributions,
+  plan: CapabilityPlanRecord,
+): ModuleContributions {
+  const active = new Set(
+    plan.capabilities
+      .filter((entry) => entry.resolution === "active")
+      .map((entry) => entry.capability_id),
+  );
+  return {
+    ...(active.has("impact_analysis") && available.impact !== undefined
+      ? { impact: available.impact }
+      : {}),
+    ...(active.has("design_governance") && available.design !== undefined
+      ? { design: available.design }
+      : {}),
+    ...(active.has("independent_evaluation") && available.evaluate !== undefined
+      ? { evaluate: available.evaluate }
+      : {}),
+    ...(active.has("advanced_audit") && available.audit !== undefined
+      ? { audit: available.audit }
+      : {}),
+  };
+}
+
+async function finalizeCapabilityPlan(
+  ctx: PipelineContext,
+  provisional: CapabilityPlanRecord,
+  designSet: NodeRecord,
+): Promise<CapabilityPlanRecord> {
+  if (provisional.compilation_stage === "final") return provisional;
+  const compiler = ctx.deps.capabilityPlanCompiler;
+  const accepted = acceptedPrdForOperation(ctx);
+  if (compiler === undefined || accepted === undefined) {
+    throw new OrchestrationError(
+      "configuration",
+      "CapabilityPlan finalization requires compiler and accepted PRD bindings",
+    );
+  }
+  const finalPlan = compiler({
+    operation_id: ctx.workflowOperationId,
+    stage: "final",
+    requirement_digest: accepted.record_digest,
+    risk_digest: accepted.risk_assessment_digest,
+    policy_digest: ctx.workingState.policy_digest,
+    baseline_digest: provisional.baseline_digest,
+    accepted_design_set: acceptedDesignBinding(designSet),
+    supersedes: provisional,
+  });
+  if (finalPlan.supersedes_digest !== provisional.record_digest) {
+    throw new OrchestrationError(
+      "binding_drift",
+      "final CapabilityPlan does not supersede the active provisional revision",
+    );
+  }
+  await persistCapabilityPlan(ctx, finalPlan);
+  ctx.capabilityPlan = finalPlan;
+  return finalPlan;
 }
 export function loadPlan(
   ctx: PipelineContext,
@@ -2143,6 +2361,9 @@ async function planProposalSpecificationsFor(
       impact_set_digest: readImpactSetContent(impactSet).content_digest,
       policy_digest: ctx.workingState.policy_digest,
       ...(designSetDigest === undefined ? {} : { design_set_digest: designSetDigest }),
+      ...(ctx.capabilityPlan === undefined
+        ? {}
+        : { capability_plan_digest: ctx.capabilityPlan.record_digest }),
       canonical_assertions: canonical,
       known_requirement_ids: knownIds("Requirement"),
       known_decision_ids: knownIds("Decision"),
@@ -2351,11 +2572,313 @@ function deriveKernelImpactSet(ctx: PipelineContext): NodeRecord {
     graph.close();
   }
 }
+
+const taskTddContractArtifactPath = (taskId: string): string =>
+  `artifacts/tdd-contracts/${taskId}.json`;
+
+function loadTaskTddContract(ctx: PipelineContext, taskId: string): TaskTddContract | undefined {
+  const value = readJsonArtifact<unknown>(ctx.deps, taskTddContractArtifactPath(taskId));
+  if (value === undefined) return undefined;
+  const validation = PROTOCOL_1_1_SCHEMA_REGISTRY.validate(
+    "task-tdd-contract",
+    value as Record<string, unknown>,
+  );
+  if (!validation.valid) {
+    throw new OrchestrationError(
+      "binding_drift",
+      `TaskTddContract for ${taskId} failed validation: ${validation.errors
+        .map((issue) => issue.message)
+        .join("; ")}`,
+    );
+  }
+  return value as TaskTddContract;
+}
+
+function taskTddVerdictInput(
+  ctx: PipelineContext,
+  task: TaskSpecification,
+  gatesPassed: boolean,
+  evaluationPassed: boolean | undefined,
+): TaskTddVerdictInput | undefined {
+  const capabilityEnabled = ctx.capabilityPlan?.operation_dag.nodes.some(
+    (node) => node.node_id === "execute" && node.subgraph === "strict_tdd",
+  );
+  if (capabilityEnabled !== true) return undefined;
+  const contract = loadTaskTddContract(ctx, task.id);
+  if (contract === undefined) {
+    throw new OrchestrationError(
+      "binding_drift",
+      `strict_tdd Task ${task.id} has no accepted TaskTddContract`,
+    );
+  }
+  const cycles = readJsonDirectory(ctx.deps, "artifacts/tdd-cycles").filter(
+    (cycle): cycle is TddCycleRecord =>
+      typeof cycle === "object" &&
+      cycle !== null &&
+      (cycle as { readonly task_id?: unknown }).task_id === task.id,
+  );
+  return {
+    capability_enabled: true,
+    contract_mode: contract.contract_mode,
+    required_assertion_ids: (task.assertions ?? []).map((entry) => entry.assertion_id),
+    cycles,
+    current_contract_digest: contract.contract_digest,
+    gates_passed: gatesPassed,
+    ...(evaluationPassed === undefined ? {} : { evaluation_passed: evaluationPassed }),
+    ...(contract.not_applicable_binding === undefined
+      ? {}
+      : { not_applicable_binding: contract.not_applicable_binding }),
+    ...(contract.assertion_clusters[0]?.refactor_policy === undefined
+      ? {}
+      : { refactor_policy: contract.assertion_clusters[0].refactor_policy }),
+  };
+}
+
+/**
+ * Compile the accepted DesignSet test strategy into one immutable contract
+ * per Task. The planner never invents TDD applicability: every field below
+ * is traced through Task Assertion -> accepted Test seed -> Criterion ->
+ * Requirement -> primary accepted test_strategy asset.
+ */
+async function compileTaskTddContracts(ctx: PipelineContext): Promise<void> {
+  const capabilityPlan = ctx.capabilityPlan;
+  if (
+    capabilityPlan === undefined ||
+    !capabilityPlan.operation_dag.nodes.some(
+      (node) => node.node_id === "execute" && node.subgraph === "strict_tdd",
+    )
+  ) {
+    return;
+  }
+  const plan = ctx.plan ?? loadPlan(ctx);
+  const designSet = ctx.designSet ?? loadAcceptedDesignSet(ctx);
+  const acceptedPrd = acceptedPrdForOperation(ctx);
+  if (plan === undefined || designSet === undefined || acceptedPrd === undefined) {
+    throw new OrchestrationError(
+      "binding_drift",
+      "strict_tdd contract compilation requires accepted PRD, DesignSet and final Plan",
+    );
+  }
+  ctx.plan = plan;
+  ctx.designSet = designSet;
+  const design = readDesignSetExtension(designSet);
+  const graph = materializeProjectGraph(ctx.deps.projectRoot);
+  try {
+    const latestNode = new Map<string, NodeRecord>();
+    for (const node of graph.nodes) {
+      const current = latestNode.get(node.id);
+      if (current === undefined || current.revision < node.revision) latestNode.set(node.id, node);
+    }
+    for (const task of plan.content.tasks) {
+      const existing = loadTaskTddContract(ctx, task.id);
+      if (existing !== undefined) {
+        if (
+          existing.capability_plan_digest !== capabilityPlan.record_digest ||
+          existing.plan_digest !== plan.content.content_digest
+        ) {
+          throw new OrchestrationError(
+            "binding_drift",
+            `TaskTddContract for ${task.id} binds a superseded plan`,
+          );
+        }
+        continue;
+      }
+      const testBindings = (task.assertions ?? []).flatMap((assertion) =>
+        assertion.test_ids.map((testId) => {
+          const test = latestNode.get(testId);
+          const binding = test === undefined ? undefined : testSeedCriterionBinding(test);
+          if (binding === undefined) {
+            throw new OrchestrationError(
+              "binding_drift",
+              `strict_tdd assertion ${assertion.assertion_id} references Test ${testId} without accepted Criterion lineage`,
+            );
+          }
+          return { assertion, testId, binding };
+        }),
+      );
+      if (testBindings.length === 0) {
+        throw new OrchestrationError(
+          "binding_drift",
+          `strict_tdd task ${task.id} has no accepted Test binding`,
+        );
+      }
+      const strategyIds = new Set<string>();
+      for (const entry of testBindings) {
+        const coverage = design.content.coverage.find(
+          (candidate) => candidate.requirement_id === entry.binding.verifies,
+        );
+        const strategy = coverage?.test_strategy_coverage.find(
+          (candidate) =>
+            candidate.acceptance_criterion_id === entry.binding.acceptance_criterion_id &&
+            candidate.test_node_id === entry.testId,
+        );
+        if (strategy === undefined) {
+          throw new OrchestrationError(
+            "binding_drift",
+            `accepted DesignSet does not assign a primary test strategy to ${entry.binding.acceptance_criterion_id}/${entry.testId}`,
+          );
+        }
+        strategyIds.add(strategy.primary_test_strategy_id);
+      }
+      if (strategyIds.size !== 1) {
+        throw new OrchestrationError(
+          "binding_drift",
+          `strict_tdd task ${task.id} spans ${String(strategyIds.size)} primary test strategies; Planner must keep one strategy per Task`,
+        );
+      }
+      const strategyId = [...strategyIds][0] as string;
+      const strategy = latestNode.get(strategyId);
+      const artifact = strategy?.extensions?.["harness.design.artifact"] as
+        | {
+            readonly artifact_kind?: string;
+            readonly body?: {
+              readonly tdd?: readonly {
+                readonly requirement_id: string;
+                readonly applicability:
+                  | {
+                      readonly status: "required";
+                      readonly baseline_guard_gates: readonly string[];
+                      readonly target_gate: string;
+                      readonly test_selectors: readonly string[];
+                      readonly failure_oracle: string;
+                      readonly path_policy: {
+                        readonly test: readonly string[];
+                        readonly test_config: readonly string[];
+                        readonly production: readonly string[];
+                        readonly immutable: readonly string[];
+                      };
+                      readonly framework_profile_digest: string;
+                      readonly refactor_policy: string;
+                    }
+                  | {
+                      readonly status: "not_applicable";
+                      readonly category:
+                        "documentation_only" | "research_only" | "non_executable_projection";
+                      readonly reason: string;
+                    };
+              }[];
+            };
+          }
+        | undefined;
+      if (strategy === undefined || artifact?.artifact_kind !== "test_strategy") {
+        throw new OrchestrationError(
+          "binding_drift",
+          `primary strategy ${strategyId} is not an accepted test_strategy asset`,
+        );
+      }
+      const requirementIds = [...new Set(testBindings.map((entry) => entry.binding.verifies))];
+      const applicability = artifact.body?.tdd?.find(
+        (entry) => requirementIds.length === 1 && entry.requirement_id === requirementIds[0],
+      )?.applicability;
+      if (applicability === undefined) {
+        throw new OrchestrationError(
+          "binding_drift",
+          `test strategy ${strategyId} has no unambiguous TDD applicability for task ${task.id}`,
+        );
+      }
+      const base = {
+        contract_id: `tdd-contract_${contentDigest({ task: task.id, plan: plan.content.content_digest }).slice(0, 16)}`,
+        task_id: task.id,
+        contract_mode: applicability.status,
+        accepted_prd_digest: acceptedPrd.record_digest,
+        requirement_baseline_digest: ctx.baselineDigest,
+        impact_set_digest: plan.content.impact_set_digest,
+        design_set_digest: design.content_digest,
+        capability_plan_digest: capabilityPlan.record_digest,
+        test_strategy_asset_id: strategyId,
+        test_strategy_digest: strategy.digest,
+        plan_digest: plan.content.content_digest,
+        assertion_clusters:
+          applicability.status === "required"
+            ? [
+                {
+                  cluster_id: `tdd-cluster_${contentDigest({ task: task.id, strategy: strategyId }).slice(0, 16)}`,
+                  logical_cycle_id: `tdd-cycle_${contentDigest({ task: task.id, assertions: testBindings.map((entry) => entry.assertion.assertion_id) }).slice(0, 16)}`,
+                  requirement_ids: requirementIds,
+                  acceptance_criterion_ids: [
+                    ...new Set(testBindings.map((entry) => entry.binding.acceptance_criterion_id)),
+                  ].sort(),
+                  assertion_ids: [
+                    ...new Set(testBindings.map((entry) => entry.assertion.assertion_id)),
+                  ].sort(),
+                  test_node_ids: [...new Set(testBindings.map((entry) => entry.testId))].sort(),
+                  target_gate_id: applicability.target_gate,
+                  target_test_selectors: [...applicability.test_selectors],
+                  baseline_guard_gate_ids: [...applicability.baseline_guard_gates],
+                  failure_oracle: {
+                    selector_ids: [...applicability.test_selectors],
+                    allowed_failure_kinds: ["assertion_failure" as const],
+                    assertion_ids: [
+                      ...new Set(testBindings.map((entry) => entry.assertion.assertion_id)),
+                    ].sort(),
+                    normalized_message_patterns: [applicability.failure_oracle],
+                  },
+                  path_policy: {
+                    test: [...applicability.path_policy.test],
+                    test_config: [...applicability.path_policy.test_config],
+                    production: [...applicability.path_policy.production],
+                    immutable: [...applicability.path_policy.immutable],
+                  },
+                  framework_profile_digest: applicability.framework_profile_digest,
+                  refactor_policy:
+                    applicability.refactor_policy === "planned" ? "planned" : "not_planned",
+                },
+              ]
+            : [],
+        ...(applicability.status === "not_applicable"
+          ? {
+              not_applicable_binding: {
+                category: applicability.category,
+                reason: applicability.reason,
+              },
+            }
+          : {}),
+        phase_budgets: {
+          test_authoring: {
+            max_runs: Math.max(1, task.budget.steps),
+            max_duration_ms: 300_000,
+            max_steps: Math.max(1, task.budget.steps),
+            max_tokens: Math.max(1, task.budget.tokens),
+          },
+          implementation: {
+            max_runs: Math.max(1, task.budget.steps),
+            max_duration_ms: 300_000,
+            max_steps: Math.max(1, task.budget.steps),
+            max_tokens: Math.max(1, task.budget.tokens),
+          },
+        },
+      } satisfies Omit<TaskTddContract, "contract_digest">;
+      const contract: TaskTddContract = { ...base, contract_digest: contentDigest(base) };
+      const validation = PROTOCOL_1_1_SCHEMA_REGISTRY.validate(
+        "task-tdd-contract",
+        contract as unknown as Record<string, unknown>,
+      );
+      if (!validation.valid) {
+        throw new OrchestrationError(
+          "configuration",
+          `compiled TaskTddContract for ${task.id} is invalid: ${validation.errors
+            .map((issue) => issue.message)
+            .join("; ")}`,
+        );
+      }
+      await commitArtifacts(ctx.deps, ctx.workflowOperationId, currentAttemptId(ctx), [
+        {
+          path: taskTddContractArtifactPath(task.id),
+          content: `${canonicalizeJson(contract)}\n`,
+        },
+      ]);
+    }
+  } finally {
+    graph.close();
+  }
+}
+
 async function phasePlan(ctx: PipelineContext, gateIds: readonly string[]): Promise<PhaseStep> {
   const { deps } = ctx;
-  if (deps.capabilityPlan !== undefined) {
+  const capabilityPlan = ctx.capabilityPlan ?? deps.capabilityPlan;
+  if (capabilityPlan !== undefined) {
     try {
-      assertCapabilityPlanFinal(deps.capabilityPlan);
+      assertCapabilityPlanFinal(capabilityPlan);
     } catch (error) {
       throw new OrchestrationError(
         "binding_drift",
@@ -2369,6 +2892,7 @@ async function phasePlan(ctx: PipelineContext, gateIds: readonly string[]): Prom
   );
   if (existing !== undefined) {
     ctx.plan = existing;
+    await compileTaskTddContracts(ctx);
     await ctx.engine.commitCheckpoint(ctx.workflowOperationId, {
       boundary: PHASE_CHECKPOINT_BOUNDARY.plan,
       proposal: {
@@ -2461,6 +2985,7 @@ async function phasePlan(ctx: PipelineContext, gateIds: readonly string[]): Prom
     [...records.edges, ...implementsEdgesFor(ctx, specifications, records.tasks)],
   );
   ctx.plan = { node: records.plan, content: readExecutionPlanContent(records.plan) };
+  await compileTaskTddContracts(ctx);
   await ctx.engine.commitCheckpoint(ctx.workflowOperationId, {
     boundary: PHASE_CHECKPOINT_BOUNDARY.plan,
     proposal: {
@@ -2594,7 +3119,7 @@ async function phaseContext(ctx: PipelineContext): Promise<PhaseStep> {
       const outcome = await enrichContextBundle({
         port: deps.contextEnrichment,
         bundleRecord: bundle.record,
-        conversation_id: `context-enrichment-conversation_${ctx.workflowOperationId.replace(/^[a-z][a-z0-9-]*_/u, "")}`,
+        conversation_id: `context-enrichment-conversation_${ctx.workflowOperationId.replace(/^[a-z][a-z0-9-]*_/u, "")}_${bundle.record.task_id.replace(/^[a-z][a-z0-9-]*_/u, "")}`,
         run_id: `context-enrichment-run_${currentAttemptId(ctx)}_${bundle.record.task_id.replace(/^[a-z][a-z0-9-]*_/u, "")}`,
       });
       if (outcome.status === "failed") {
@@ -4080,7 +4605,9 @@ async function phaseSnapshot(ctx: PipelineContext): Promise<PhaseStep> {
     );
   }
   if (verifyStored === undefined) {
-    const driftAudit = await commitAuditContribution(ctx);
+    const driftAudit = ctx.protocol11Dag
+      ? { blockingFindingIds: [] }
+      : await commitAuditContribution(ctx);
     const detail =
       driftAudit.blockingFindingIds.length > 0
         ? `graph audit blocked completion: ${driftAudit.blockingFindingIds.join(", ")}`
@@ -4124,6 +4651,12 @@ async function phaseSnapshot(ctx: PipelineContext): Promise<PhaseStep> {
       gates: verifyStored.results.map((result) => result.evidence_id),
       ...(evaluation === undefined ? {} : { evaluation: evaluation.evidenceId }),
     }).slice(0, 16)}`;
+    const tdd = taskTddVerdictInput(
+      ctx,
+      task,
+      verifyStored.results.every((result) => result.passed),
+      evaluation?.passed,
+    );
     const verdictInput = {
       verdictId,
       iterationId: ctx.iterationId,
@@ -4136,6 +4669,7 @@ async function phaseSnapshot(ctx: PipelineContext): Promise<PhaseStep> {
         evidence_id: result.evidence_id,
       })),
       createdAt: nowOf(deps),
+      ...(tdd === undefined ? {} : { tdd }),
     };
     const verdict =
       evaluation === undefined
@@ -4184,7 +4718,7 @@ async function phaseSnapshot(ctx: PipelineContext): Promise<PhaseStep> {
     });
     return { continue: false, outcome };
   }
-  const audit = await commitAuditContribution(ctx);
+  const audit = ctx.protocol11Dag ? { blockingFindingIds: [] } : await commitAuditContribution(ctx);
   if (audit.blockingFindingIds.length > 0) {
     const outcome = await blockWithSnapshot(ctx, {
       reason: "repairable_gate_failure",
@@ -4348,25 +4882,479 @@ async function advanceIntoPhase(ctx: PipelineContext, phase: OrchestrationPhase)
   await ctx.engine.advance(ctx.workflowOperationId, target);
   refreshWorkingState(ctx);
 }
+
+function gateSuiteFor(ctx: PipelineContext): {
+  readonly gates: readonly GateDefinition[];
+  readonly registry: ToolRegistry;
+} {
+  return ctx.deps.gates === undefined
+    ? createDefaultGateSuite(ctx.deps.projectRoot)
+    : {
+        gates: ctx.deps.gates,
+        registry:
+          ctx.deps.toolRegistry ??
+          (() => {
+            throw new OrchestrationError(
+              "configuration",
+              "custom gates require an explicit tool registry",
+            );
+          })(),
+      };
+}
+
+function approvalNotice(outcome: OrchestrationOutcome): DagNodeResult {
+  if (outcome.status === "approval_required") {
+    return {
+      status: "awaiting_approval",
+      approval: {
+        object_id: outcome.required.object_id,
+        object_kind: outcome.required.object_type,
+        object_digest: outcome.required.object_digest,
+      },
+    };
+  }
+  return {
+    status: "blocked",
+    reason: outcome.status,
+    detail:
+      "detail" in outcome
+        ? outcome.detail
+        : `operation paused with orchestration outcome ${outcome.status}`,
+  };
+}
+
+/**
+ * Protocol 1.1 production driver. Capture remains the bootstrap that makes
+ * the accepted PRD available; after that boundary the accepted
+ * CapabilityPlan operation_dag is the sole router and every durable node is
+ * journaled through WorkflowDagEngine.
+ */
+async function driveCapabilityPipeline(
+  ctx: PipelineContext,
+  fromPhase: OrchestrationPhase,
+  untilPhase: OrchestrationPhase | undefined,
+): Promise<OrchestrationOutcome> {
+  const suite = gateSuiteFor(ctx);
+  let terminal: OrchestrationOutcome | undefined;
+
+  // Capture is the only legal bootstrap before the plan exists. It remains
+  // idempotent on resume; the DAG capture runner below imports its accepted
+  // RequirementBaseline as the first protocol checkpoint.
+  if (ctx.capabilityPlan === undefined && loadCapabilityPlans(ctx).length === 0) {
+    await advanceIntoPhase(ctx, "capture");
+    emitPhaseProgress(ctx, { type: "phase_started", phase: "capture" });
+    const capture = await phaseCapture(ctx);
+    if (!capture.continue) {
+      emitPhaseProgress(ctx, {
+        type: "phase_paused",
+        phase: "capture",
+        paused_status: capture.outcome.status,
+      });
+      return capture.outcome;
+    }
+    emitPhaseProgress(ctx, { type: "phase_completed", phase: "capture" });
+  }
+
+  let plan = await ensureInitialCapabilityPlan(ctx);
+  const availableModules = ctx.modules;
+  ctx.modules = activateModulesFromCapabilityPlan(availableModules, plan);
+  ctx.protocol11Dag = true;
+
+  const shouldPause = (phase: OrchestrationPhase): boolean =>
+    untilPhase === phase && phase !== "snapshot";
+
+  const runPhaseNode = async (
+    phase: OrchestrationPhase,
+    stepFn: (step: PipelineContext) => Promise<PhaseStep>,
+    produces: () => readonly { readonly kind: BindingKind; readonly digest: string }[],
+  ): Promise<DagNodeResult> => {
+    await advanceIntoPhase(ctx, phase);
+    emitPhaseProgress(ctx, { type: "phase_started", phase });
+    const step = await stepFn(ctx);
+    if (!step.continue) {
+      terminal = step.outcome;
+      const completed = step.outcome.status === "completed";
+      emitPhaseProgress(ctx, {
+        type: completed ? "phase_completed" : "phase_paused",
+        phase,
+        ...(completed ? {} : { paused_status: step.outcome.status }),
+      });
+      if (step.outcome.status === "approval_required") {
+        const required = step.outcome.required;
+        observe(ctx, () =>
+          ctx.observations.approvalRequired({
+            request_id: required.request_id,
+            object_id: required.object_id,
+            object_type: required.object_type,
+            object_digest: required.object_digest,
+            allowed_decisions: [...required.allowed_decisions],
+            resume_phase: required.resume_phase,
+          }),
+        );
+      }
+      return completed
+        ? { status: "committed", produces: produces() }
+        : approvalNotice(step.outcome);
+    }
+    emitPhaseProgress(ctx, { type: "phase_completed", phase });
+    return shouldPause(phase)
+      ? { status: "paused", reason: "until_phase", produces: produces() }
+      : { status: "committed", produces: produces() };
+  };
+
+  const captureRunner = (): DagNodeResult => {
+    const accepted = acceptedPrdForOperation(ctx);
+    if (accepted === undefined || accepted.requirement_baseline_digest !== ctx.baselineDigest) {
+      return {
+        status: "blocked",
+        reason: "capture_checkpoint_binding_drift",
+        detail: "accepted Capture baseline no longer matches the operation",
+      };
+    }
+    return shouldPause("capture")
+      ? {
+          status: "paused",
+          reason: "until_phase",
+          produces: [{ kind: "requirement_baseline", digest: ctx.baselineDigest }],
+        }
+      : {
+          status: "committed",
+          produces: [{ kind: "requirement_baseline", digest: ctx.baselineDigest }],
+        };
+  };
+
+  const runners = createCapabilityDagRunnerRegistry({
+    kernel: {
+      capture: captureRunner,
+      capability_decision: () => ({ status: "committed" }),
+      plan: () =>
+        runPhaseNode(
+          "plan",
+          (step) =>
+            phasePlan(
+              step,
+              suite.gates.map((gate) => gate.gate_id),
+            ),
+          () => {
+            const executionPlan = ctx.plan ?? loadPlan(ctx);
+            if (executionPlan === undefined) {
+              throw new OrchestrationError("binding_drift", "Plan runner committed no plan");
+            }
+            return [{ kind: "execution_plan", digest: executionPlan.content.content_digest }];
+          },
+        ),
+      context: () =>
+        runPhaseNode("context", phaseContext, () => [
+          {
+            kind: "context_bundle",
+            digest: contentDigest(
+              [...ctx.bundles.values()]
+                .map((bundle) => ({ task_id: bundle.task_id, digest: bundle.digest }))
+                .sort((left, right) => left.task_id.localeCompare(right.task_id)),
+            ),
+          },
+        ]),
+      execute: (dagContext) =>
+        runPhaseNode(
+          "execute",
+          async (step) => {
+            if (dagContext.node.subgraph === "strict_tdd") {
+              const tasks = step.plan?.content.tasks ?? loadPlan(step)?.content.tasks ?? [];
+              const contracts = tasks.map((task) => loadTaskTddContract(step, task.id));
+              if (contracts.some((contract) => contract === undefined)) {
+                throw new OrchestrationError(
+                  "binding_drift",
+                  "strict_tdd execute node has a Task without an accepted TaskTddContract",
+                );
+              }
+              if (
+                contracts.some((contract) => contract?.contract_mode === "required") &&
+                step.deps.strictTdd === undefined
+              ) {
+                await commitIterationNode(step, "blocked");
+                await step.engine.block(step.workflowOperationId, {
+                  reason: "missing_input",
+                  detail:
+                    "strict_tdd required Task has no StrictTddExecutionPort; production execution remains locked",
+                  proposal: {
+                    phase: "execute",
+                    set_next_action: resumeCommandFor(step.workflowOperationId),
+                  },
+                });
+                refreshWorkingState(step);
+                return {
+                  continue: false,
+                  outcome: {
+                    status: "blocked",
+                    workflowOperationId: step.workflowOperationId,
+                    iterationId: step.iterationId,
+                    reason: "missing_input",
+                    detail:
+                      "strict_tdd required Task has no StrictTddExecutionPort; production execution remains locked",
+                    resumeCommand: resumeCommandFor(step.workflowOperationId),
+                  },
+                };
+              }
+            }
+            return phaseExecute(step);
+          },
+          () =>
+            dagContext.node.subgraph === "strict_tdd"
+              ? [
+                  {
+                    kind: "tdd_contract",
+                    digest: contentDigest(
+                      (ctx.plan?.content.tasks ?? []).map((task) => {
+                        const contract = loadTaskTddContract(ctx, task.id);
+                        if (contract === undefined) {
+                          throw new OrchestrationError(
+                            "binding_drift",
+                            `strict_tdd execute committed without contract for ${task.id}`,
+                          );
+                        }
+                        return {
+                          task_id: task.id,
+                          contract_digest: contract.contract_digest,
+                        };
+                      }),
+                    ),
+                  },
+                ]
+              : [],
+        ),
+      verify: () =>
+        runPhaseNode(
+          "verify",
+          (step) => phaseVerify(step, suite.gates, suite.registry),
+          () => {
+            const stored = loadVerifyArtifact(ctx.deps, ctx.iterationId, verifyBindings(ctx));
+            if (stored === undefined) {
+              throw new OrchestrationError(
+                "binding_drift",
+                "Verify runner committed no gate result",
+              );
+            }
+            return [{ kind: "gate_evidence", digest: contentDigest(stored) }];
+          },
+        ),
+      snapshot: () =>
+        runPhaseNode("snapshot", phaseSnapshot, () => {
+          if (terminal?.status !== "completed") {
+            throw new OrchestrationError("binding_drift", "Snapshot runner committed no snapshot");
+          }
+          const snapshot = readJsonArtifact<SnapshotRecord>(
+            ctx.deps,
+            `artifacts/snapshots/${terminal.snapshotId}.json`,
+          );
+          if (snapshot === undefined) {
+            throw new OrchestrationError("binding_drift", "completed Snapshot artifact is missing");
+          }
+          return [{ kind: "snapshot", digest: snapshot.digest }];
+        }),
+    },
+    modules: {
+      ...(ctx.modules.impact === undefined
+        ? {}
+        : {
+            impact_analysis: () =>
+              runPhaseNode("impact", ctx.modules.impact!.runPhase, () => {
+                const impactSet = ctx.impactSet ?? loadFrozenImpactSet(ctx);
+                if (impactSet === undefined) {
+                  throw new OrchestrationError("binding_drift", "Impact runner committed no set");
+                }
+                return [
+                  { kind: "impact_set", digest: readImpactSetContent(impactSet).content_digest },
+                ];
+              }),
+          }),
+      ...(ctx.modules.design === undefined
+        ? {}
+        : {
+            design_governance: async () => {
+              const result = await runPhaseNode("design", ctx.modules.design!.runPhase, () => {
+                const designSet = ctx.designSet ?? loadAcceptedDesignSet(ctx);
+                if (designSet === undefined) {
+                  throw new OrchestrationError("binding_drift", "Design runner committed no set");
+                }
+                return [
+                  { kind: "design_set", digest: readDesignSetExtension(designSet).content_digest },
+                ];
+              });
+              if (result.status !== "committed" && result.status !== "paused") return result;
+              const designSet = ctx.designSet ?? loadAcceptedDesignSet(ctx);
+              if (designSet === undefined) {
+                throw new OrchestrationError("binding_drift", "accepted DesignSet disappeared");
+              }
+              const finalPlan = await finalizeCapabilityPlan(ctx, plan, designSet);
+              if (finalPlan.record_digest === plan.record_digest) return result;
+              plan = finalPlan;
+              ctx.modules = activateModulesFromCapabilityPlan(availableModules, finalPlan);
+              return {
+                status: "plan_superseded",
+                next_plan_digest: finalPlan.record_digest,
+                produces: result.produces ?? [],
+              };
+            },
+          }),
+      ...(ctx.modules.evaluate === undefined
+        ? {}
+        : {
+            independent_evaluation: () =>
+              runPhaseNode("evaluate", ctx.modules.evaluate!.runPhase, () => [
+                {
+                  kind: "evaluation_report",
+                  digest: contentDigest(loadEvaluateArtifacts(ctx.deps, ctx.iterationId)),
+                },
+              ]),
+          }),
+      ...(ctx.modules.audit === undefined
+        ? {}
+        : {
+            advanced_audit: async () => {
+              const report = await commitAuditContribution(ctx);
+              const completedSnapshot =
+                terminal?.status === "completed"
+                  ? readJsonArtifact<SnapshotRecord>(
+                      ctx.deps,
+                      `artifacts/snapshots/${terminal.snapshotId}.json`,
+                    )
+                  : undefined;
+              const artifact = {
+                operation_id: ctx.workflowOperationId,
+                iteration_id: ctx.iterationId,
+                capability_plan_digest: plan.record_digest,
+                ...(completedSnapshot === undefined
+                  ? {}
+                  : { snapshot_digest: completedSnapshot.digest }),
+                blocking_finding_ids: [...report.blockingFindingIds],
+                created_at: nowOf(ctx.deps),
+              };
+              const digest = contentDigest(artifact);
+              await commitArtifacts(ctx.deps, ctx.workflowOperationId, currentAttemptId(ctx), [
+                {
+                  path: `artifacts/audit-reports/${digest}.json`,
+                  content: `${canonicalizeJson({ ...artifact, digest })}\n`,
+                },
+              ]);
+              if (ctx.deps.vcs !== undefined) {
+                await ctx.deps.vcs.commit(ctx.deps.projectRoot, {
+                  message: `harness: record advanced audit ${ctx.iterationId}`,
+                  paths: [".harness"],
+                  identity: HARNESS_COMMIT_IDENTITY,
+                });
+              }
+              return { status: "committed", produces: [{ kind: "audit_report", digest }] };
+            },
+          }),
+    },
+  });
+
+  const operation = ctx.engine.getOperation(ctx.workflowOperationId);
+  if (operation === undefined) {
+    throw new OrchestrationError("operation_not_found", "operation disappeared before DAG run");
+  }
+  const runtime = createCapabilityDagRuntime({
+    store: new LedgerDagCheckpointStore({
+      projectRoot: ctx.deps.projectRoot,
+      project_id: `project_${readManagedManifest(ctx.deps.projectRoot).name}`,
+      iteration_id: ctx.iterationId,
+      attempt_id: operation.attempt_id,
+      readBaseline: ctx.deps.readBaseline,
+      ...(ctx.deps.now === undefined ? {} : { now: ctx.deps.now }),
+    }),
+    runners,
+  });
+  const result = await runtime.run({ operation_id: ctx.workflowOperationId, plan });
+  if (result.status === "replan_required") {
+    if (untilPhase === "design") {
+      return {
+        status: "advanced",
+        workflowOperationId: ctx.workflowOperationId,
+        iterationId: ctx.iterationId,
+        completedPhase: "design",
+      };
+    }
+    return driveCapabilityPipeline(ctx, fromPhase, untilPhase);
+  }
+  if (result.status === "paused") {
+    const completedPhase = result.node_id as OrchestrationPhase;
+    return {
+      status: "advanced",
+      workflowOperationId: ctx.workflowOperationId,
+      iterationId: ctx.iterationId,
+      completedPhase,
+    };
+  }
+  if (terminal !== undefined) {
+    if (terminal.status !== "completed") return terminal;
+    let ledgerCommit = terminal.ledgerCommit;
+    if (ctx.deps.vcs !== undefined) {
+      const committed = await ctx.deps.vcs.commit(ctx.deps.projectRoot, {
+        message: `harness: finalize capability dag ${ctx.iterationId}`,
+        paths: [".harness"],
+        identity: HARNESS_COMMIT_IDENTITY,
+      });
+      if (committed.ok) ledgerCommit = committed.value;
+    }
+    return {
+      ...terminal,
+      ledgerCommit,
+      repositoryHead: ctx.deps.readBaseline(),
+    };
+  }
+  if (result.status === "completed") {
+    throw new OrchestrationError(
+      "binding_drift",
+      "CapabilityPlan DAG completed without an authoritative Snapshot outcome",
+    );
+  }
+  if (result.status === "failed") {
+    if (result.message.includes("executor_required")) {
+      await commitIterationNode(ctx, "blocked");
+      await ctx.engine.block(ctx.workflowOperationId, {
+        reason: "missing_input",
+        detail: result.message,
+        proposal: {
+          phase: "plan",
+          set_next_action: resumeCommandFor(ctx.workflowOperationId),
+        },
+      });
+      refreshWorkingState(ctx);
+      return {
+        status: "blocked",
+        workflowOperationId: ctx.workflowOperationId,
+        iterationId: ctx.iterationId,
+        reason: "missing_input",
+        detail: result.message,
+        resumeCommand: resumeCommandFor(ctx.workflowOperationId),
+      };
+    }
+    throw new OrchestrationError(
+      "configuration",
+      `CapabilityPlan node ${result.node_id} failed: ${result.message}`,
+    );
+  }
+  if (result.status === "awaiting_approval") {
+    throw new OrchestrationError(
+      "binding_drift",
+      `CapabilityPlan node ${result.node_id} paused without its orchestration approval outcome`,
+    );
+  }
+  throw new OrchestrationError(
+    "configuration",
+    `CapabilityPlan node ${result.node_id} blocked: ${result.detail}`,
+  );
+}
+
 export async function drivePipeline(
   ctx: PipelineContext,
   fromPhase: OrchestrationPhase,
   untilPhase: OrchestrationPhase | undefined,
 ): Promise<OrchestrationOutcome> {
-  const suite =
-    ctx.deps.gates === undefined
-      ? createDefaultGateSuite(ctx.deps.projectRoot)
-      : {
-          gates: ctx.deps.gates,
-          registry:
-            ctx.deps.toolRegistry ??
-            (() => {
-              throw new OrchestrationError(
-                "configuration",
-                "custom gates require an explicit tool registry",
-              );
-            })(),
-        };
+  if (ctx.deps.capabilityPlan !== undefined || ctx.deps.capabilityPlanCompiler !== undefined) {
+    return driveCapabilityPipeline(ctx, fromPhase, untilPhase);
+  }
+  const suite = gateSuiteFor(ctx);
   let completedPhase: OrchestrationPhase | undefined;
   // Kernel steps are built in; module phases dispatch to registered
   // contributors only. A module with no registered step is skipped entirely:

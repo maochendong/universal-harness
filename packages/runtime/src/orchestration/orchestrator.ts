@@ -68,6 +68,7 @@ import type {
 import {
   moduleContributionsForCapabilityPlan,
   moduleContributionsForProfile,
+  registeredModuleContributions,
 } from "./profile-modules.js";
 
 function contributionsForOperation(
@@ -83,6 +84,12 @@ function contributionsForOperation(
       );
     }
     return moduleContributionsForCapabilityPlan(deps.capabilityPlan, {
+      ...(deps.design === undefined ? {} : { design: deps.design }),
+      ...(deps.impactAdvisory === undefined ? {} : { impact: { advisory: deps.impactAdvisory } }),
+    });
+  }
+  if (deps.capabilityPlanCompiler !== undefined) {
+    return registeredModuleContributions({
       ...(deps.design === undefined ? {} : { design: deps.design }),
       ...(deps.impactAdvisory === undefined ? {} : { impact: { advisory: deps.impactAdvisory } }),
     });
@@ -108,6 +115,8 @@ export {
   ORCHESTRATION_ERROR_KINDS,
   OrchestrationError,
   type ClarificationOffer,
+  type CapabilityPlanCompilationRequest,
+  type CapabilityPlanCompilerPort,
   type EvaluationPort,
   type EvaluationPortInput,
   type EvaluationPortResult,

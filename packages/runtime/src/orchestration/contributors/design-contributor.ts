@@ -1,3 +1,5 @@
+import { existsSync, readFileSync, readdirSync } from "node:fs";
+
 import {
   canonicalizeJson,
   compileDesignProposalBundle,
@@ -5,12 +7,16 @@ import {
   contentDigest,
   createDesignReviewRecord,
   createDesignSetProposalRecord,
+  PROTOCOL_1_1_SCHEMA_REGISTRY,
+  readCommittedOperations,
   readManagedManifest,
+  resolveHarnessPath,
   validateDesignReviewOutput,
   type DesignProposalPort,
   type DesignReviewDraft,
   type DesignReviewPort,
   type DesignSetContent,
+  type DesignSetProposalRecord,
   type NodeRecord,
 } from "@universal-harness-internal/core";
 import {
@@ -22,12 +28,14 @@ import {
 } from "@universal-harness-internal/graph";
 
 import { resumeCommandFor } from "../../approval/interaction.js";
+import { readApprovalRequests } from "../../approval/request.js";
 import { PHASE_CHECKPOINT_BOUNDARY } from "../phases.js";
 import {
   artifactExists,
   commitArtifacts,
   currentAttemptId,
   ensureApproval,
+  harnessRoot,
   loadAcceptedDesignSet,
   loadFrozenImpactSet,
   materializeProjectGraph,
@@ -131,6 +139,88 @@ const ASSET_DIRECTORY: Readonly<Record<string, string>> = {
   DesignArtifact: "artifacts/design-artifacts",
 };
 
+/**
+ * An approval pause is a replay boundary: proposal/review artifacts already
+ * passed their deterministic checks and the ApprovalRequest binds the exact
+ * content digest. Resume must load that immutable proposal instead of asking
+ * a model to recreate it against a later Ledger HEAD.
+ */
+function approvalBoundProposal(ctx: PipelineContext): DesignSetProposalRecord | undefined {
+  const root = harnessRoot(ctx.deps);
+  const requests = readApprovalRequests(
+    root,
+    readCommittedOperations(root),
+    ctx.workflowOperationId,
+  ).filter((request) => request.object_type === "DesignSet");
+  const request = requests.at(-1);
+  if (request === undefined) return undefined;
+  const directory = resolveHarnessPath(root, "artifacts/design-set-proposals");
+  if (!existsSync(directory)) return undefined;
+  for (const name of readdirSync(directory)
+    .filter((entry) => entry.endsWith(".json"))
+    .sort()) {
+    const candidate = JSON.parse(readFileSync(resolveHarnessPath(directory, name), "utf8"));
+    if (!PROTOCOL_1_1_SCHEMA_REGISTRY.validate("design-set-proposal", candidate).valid) continue;
+    const record = candidate as DesignSetProposalRecord;
+    if (
+      record.workflow_operation_id === ctx.workflowOperationId &&
+      record.iteration_id === ctx.iterationId &&
+      record.content_digest === request.object_digest
+    ) {
+      return record;
+    }
+  }
+  throw new Error("DesignSet ApprovalRequest has no matching immutable proposal artifact");
+}
+
+async function commitAcceptedDesign(
+  ctx: PipelineContext,
+  input: {
+    readonly projectId: string;
+    readonly designSetId: string;
+    readonly content: DesignSetContent;
+    readonly approvalDigest: string;
+    readonly nodes: readonly NodeRecord[];
+    readonly edges: Parameters<typeof buildAcceptedDesignSetRecords>[0]["baseEdges"];
+  },
+): Promise<PhaseStep> {
+  const records = buildAcceptedDesignSetRecords({
+    content: input.content,
+    approvalDigest: input.approvalDigest,
+    revision: input.nodes.filter((node) => node.id === input.designSetId).length + 1,
+    baseEdges: input.edges,
+    context: {
+      projectId: input.projectId,
+      iterationId: ctx.iterationId,
+      actor: "workflow-engine",
+      timestamp: nowOf(ctx.deps),
+    },
+  });
+  await commitArtifacts(
+    ctx.deps,
+    ctx.workflowOperationId,
+    currentAttemptId(ctx),
+    [
+      {
+        path: `artifacts/design-sets/${records.designSet.id}/${String(records.designSet.revision)}.json`,
+        content: `${canonicalizeJson(records.designSet)}\n`,
+      },
+      ...records.assets.map((asset) => ({
+        path: `${ASSET_DIRECTORY[asset.type] ?? "artifacts/design-artifacts"}/${asset.id}/${String(asset.revision)}.json`,
+        content: `${canonicalizeJson(asset)}\n`,
+      })),
+    ],
+    [...records.edges],
+  );
+  ctx.designSet = records.designSet;
+  await ctx.engine.commitCheckpoint(ctx.workflowOperationId, {
+    boundary: PHASE_CHECKPOINT_BOUNDARY.design,
+    proposal: { phase: "plan" },
+  });
+  refreshWorkingState(ctx);
+  return { continue: true };
+}
+
 export async function phaseDesign(
   ctx: PipelineContext,
   options: DesignContributionOptions,
@@ -147,13 +237,6 @@ export async function phaseDesign(
     return { continue: true };
   }
 
-  if (options.proposal === undefined) {
-    return blockDesign(
-      ctx,
-      "missing_input",
-      "design_governance is active but no DesignProposalPort is configured",
-    );
-  }
   const impactSet = ctx.impactSet ?? loadFrozenImpactSet(ctx);
   if (impactSet === undefined) {
     throw new Error("design phase requires a frozen ImpactSet");
@@ -172,6 +255,57 @@ export async function phaseDesign(
       policy_digest: ctx.workingState.policy_digest,
       repository_baseline: deps.readBaseline(),
     };
+
+    const persistedProposal = approvalBoundProposal(ctx);
+    if (persistedProposal !== undefined) {
+      const content = persistedProposal.content;
+      if (
+        content.requirement_baseline_digest !== bindings.requirement_baseline_digest ||
+        content.impact_set_id !== bindings.impact_set_id ||
+        content.impact_set_digest !== bindings.impact_set_digest ||
+        content.policy_digest !== bindings.policy_digest
+      ) {
+        throw new Error("approval-bound DesignSet proposal drifted from authoritative inputs");
+      }
+      const designSetId = designSetIdFor(projectId, ctx.iterationId);
+      const approval = await ensureApproval(ctx, {
+        objectId: designSetId,
+        objectType: "DesignSet",
+        objectDigest: persistedProposal.content_digest,
+        risk: content.risk_summary.level,
+        reason: "approve the design set before declarative planning",
+        resumePhase: "design",
+      });
+      if (approval.status === "required") {
+        return {
+          continue: false,
+          outcome: { status: "approval_required", required: approval.required },
+        };
+      }
+      if (approval.status === "rejected") {
+        return blockDesign(
+          ctx,
+          "missing_input",
+          "design set rejected; revise the proposal and resume the design phase",
+        );
+      }
+      return commitAcceptedDesign(ctx, {
+        projectId,
+        designSetId,
+        content,
+        approvalDigest: approval.approvalDigest,
+        nodes,
+        edges,
+      });
+    }
+
+    if (options.proposal === undefined) {
+      return blockDesign(
+        ctx,
+        "missing_input",
+        "design_governance is active but no DesignProposalPort is configured",
+      );
+    }
 
     // 1. Propose.
     const proposalBundle = compileDesignProposalBundle({
@@ -363,42 +497,14 @@ export async function phaseDesign(
     }
 
     // 5. Atomic commit: accepted DesignSet + asset revisions + all edges.
-    const priorRevisions = nodes.filter((node) => node.id === designSetId).length;
-    const records = buildAcceptedDesignSetRecords({
+    return commitAcceptedDesign(ctx, {
+      projectId,
+      designSetId,
       content,
       approvalDigest: approval.approvalDigest,
-      revision: priorRevisions + 1,
-      baseEdges: edges,
-      context: {
-        projectId,
-        iterationId: ctx.iterationId,
-        actor: "workflow-engine",
-        timestamp: nowOf(deps),
-      },
+      nodes,
+      edges,
     });
-    await commitArtifacts(
-      deps,
-      ctx.workflowOperationId,
-      attemptId,
-      [
-        {
-          path: `artifacts/design-sets/${records.designSet.id}/${String(records.designSet.revision)}.json`,
-          content: `${canonicalizeJson(records.designSet)}\n`,
-        },
-        ...records.assets.map((asset) => ({
-          path: `${ASSET_DIRECTORY[asset.type] ?? "artifacts/design-artifacts"}/${asset.id}/${String(asset.revision)}.json`,
-          content: `${canonicalizeJson(asset)}\n`,
-        })),
-      ],
-      [...records.edges],
-    );
-    ctx.designSet = records.designSet;
-    await ctx.engine.commitCheckpoint(ctx.workflowOperationId, {
-      boundary: PHASE_CHECKPOINT_BOUNDARY.design,
-      proposal: { phase: "plan" },
-    });
-    refreshWorkingState(ctx);
-    return { continue: true };
   } finally {
     graph.close();
   }

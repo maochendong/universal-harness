@@ -201,6 +201,30 @@ export function appendProfileDecisionRecord(
 }
 
 /**
+ * All immutable profile decisions in deterministic decision order. Downstream
+ * Protocol 1.1 compilation must bind the persisted decision record itself;
+ * re-deriving a lookalike digest loses actor/approval provenance and can make
+ * Capture- and Operation-scope bindings disagree.
+ */
+export function readProfileDecisionRecords(projectRoot: string): ProfileDecisionRecord[] {
+  const harnessRoot = harnessRootFor(projectRoot);
+  const directory = resolveHarnessPath(harnessRoot, "artifacts/profile-decisions");
+  if (!existsSync(directory)) return [];
+  return readdirSync(directory, { withFileTypes: true })
+    .filter((entry) => entry.isFile() && entry.name.endsWith(".json"))
+    .map((entry) =>
+      readRecord<ProfileDecisionRecord>(
+        resolveHarnessPath(harnessRoot, `artifacts/profile-decisions/${entry.name}`),
+      ),
+    )
+    .sort(
+      (left, right) =>
+        left.decided_at.localeCompare(right.decided_at) ||
+        left.profile_decision_id.localeCompare(right.profile_decision_id),
+    );
+}
+
+/**
  * Commit the Capture-scope bindings before Capture starts (model advisory
  * design 11.1): the record binds the ProfileDecision, Policy, config,
  * baseline and the per-slot prompt/schema versions.

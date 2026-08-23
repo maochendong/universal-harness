@@ -457,6 +457,25 @@ const dogfoodPassed =
   dogfood?.judge_calls === 1 &&
   dogfood?.worktree_clean === true;
 
+const threeProfileDogfoodPath = join(reportsDirectory, "three-profile-dogfood.json");
+let threeProfileDogfood;
+if (existsSync(threeProfileDogfoodPath)) {
+  threeProfileDogfood = JSON.parse(readFileSync(threeProfileDogfoodPath, "utf8"));
+}
+const requiredProfiles = ["lite", "standard", "governed"];
+const threeProfileDogfoodPassed =
+  threeProfileDogfood?.status === "passed" &&
+  requiredProfiles.every((profile) => {
+    const result = threeProfileDogfood.profiles?.find((entry) => entry.profile === profile);
+    return (
+      result?.terminal_status === "completed" &&
+      result?.snapshot_status === "completed" &&
+      result?.gate_status === "passed" &&
+      result?.worktree_clean === true &&
+      typeof result?.capability_plan_digest === "string"
+    );
+  });
+
 const m2DesignStatements = m2Statements();
 if (m2DesignStatements.length !== m2Matrix.length) {
   fail(
@@ -506,6 +525,12 @@ const m2Lines = [
   dogfoodPassed
     ? `已保存真实受管 fixture 的脱敏证据：\`${dogfood.workflow_operation_id}\` → \`${dogfood.snapshot_id}\`；Judge 调用 ${String(dogfood.judge_calls)} 次，终态 ${dogfood.snapshot_status}，工作树干净。`
     : "缺少通过的 `.reports/acceptance/m2-dogfood.json` 纵向闭环证据。",
+  "",
+  "## Full-remediation 三档闭环",
+  "",
+  threeProfileDogfoodPassed
+    ? `Packaged CLI 已完成 Lite / Standard / Governed 三档闭环；三个终态均为 completed Snapshot、Gate passed 且工作树干净。脱敏清单见 \`docs/evidence/full-remediation-three-profile-dogfood.md\`。`
+    : "缺少通过的 `.reports/acceptance/three-profile-dogfood.json` 三档闭环证据。",
   "",
   m2Passed === m2Results.length
     ? "M2 验收矩阵全部具有当前运行证据，发布退出门禁通过。"

@@ -21,6 +21,8 @@ import {
   createCaptureReviewStageHandlers,
   createCaptureRiskStageHandlers,
   createLocalGitProjectContextAdapter,
+  manualCaptureProposalProfile,
+  manualCaptureReviewProfile,
   createPrdCaptureCoordinator,
   harnessRootFor,
   modelSlotDefaultsForProfile,
@@ -42,6 +44,8 @@ import {
   type ModelSlotDefault,
   type PrdCaptureCoordinator,
   type PrdReviewRubric,
+  type PrdProposalPort,
+  type PrdReviewPort,
   type ProfileId,
   type ProjectContextBudget,
   type ProjectContextSource,
@@ -130,7 +134,7 @@ export interface ManagedCaptureCoordinatorDeps {
 export interface ManagedCaptureCoordinator {
   readonly coordinator: PrdCaptureCoordinator;
   /** Digest of the Capture-scope binding record this assembly committed or reused. */
-  readonly binding_record_digest: string;
+  readonly binding_record_digest?: string;
   /** False when the identical binding record was already committed (idempotent reuse). */
   readonly binding_committed: boolean;
 }
@@ -144,6 +148,146 @@ const CAPTURE_CONTEXT_BUDGET: ProjectContextBudget = {
 } as const;
 
 const PRODUCER_IDENTITY = "universal-harness-cli" as const;
+
+function deterministicLiteProposalPort(): PrdProposalPort {
+  return {
+    name: "deterministic-lite-pack",
+    propose(input) {
+      const intent = input.session.intent_text;
+      const source = [
+        {
+          source_kind: "intent" as const,
+          source_id: "intent",
+          source_digest: input.session.intent_digest,
+        },
+      ];
+      return {
+        status: "proposed",
+        draft: {
+          schema_version: "1.1.0",
+          intent: { text: intent, digest: input.session.intent_digest },
+          problem_statement: intent,
+          goals: [
+            {
+              draft_key: "goal-primary",
+              lineage: { kind: "new" },
+              proposed_source_bindings: source,
+              statement: intent,
+            },
+          ],
+          non_goals: [],
+          actors: [
+            {
+              draft_key: "actor-operator",
+              lineage: { kind: "new" },
+              proposed_source_bindings: source,
+              name: "项目操作者",
+              description: "提交需求并验证可观察结果。",
+            },
+          ],
+          scenarios: [
+            {
+              draft_key: "scenario-primary",
+              lineage: { kind: "new" },
+              proposed_source_bindings: source,
+              actor_id: "actor-operator",
+              precondition: "项目已被 Harness 接管。",
+              action: intent,
+              observable_outcome: intent,
+              scenario_kind: "primary",
+            },
+            {
+              draft_key: "scenario-failure",
+              lineage: { kind: "new" },
+              proposed_source_bindings: source,
+              actor_id: "actor-operator",
+              precondition: "必要门禁未通过。",
+              action: "Harness 尝试完成本次迭代。",
+              observable_outcome: "迭代保持阻塞且不会生成完成快照。",
+              scenario_kind: "failure",
+            },
+          ],
+          requirements: [
+            {
+              draft_key: "requirement-primary",
+              lineage: { kind: "new" },
+              proposed_source_bindings: source,
+              statement: intent,
+              priority: "must",
+              change_kind: "must_change",
+              scenario_ids: ["scenario-primary", "scenario-failure"],
+              acceptance_criterion_ids: ["criterion-primary", "criterion-failure"],
+            },
+          ],
+          constraints: [],
+          acceptance_criteria: [
+            {
+              draft_key: "criterion-primary",
+              lineage: { kind: "new" },
+              proposed_source_bindings: source,
+              requirement_id: "requirement-primary",
+              precondition: "项目已被 Harness 接管。",
+              action: intent,
+              observable_outcome: intent,
+              verification_intent: "运行与该需求绑定的必要机械门禁。",
+              test_first_example: "先让绑定的验收测试失败，再实现使其通过。",
+              scenario_kind: "primary",
+            },
+            {
+              draft_key: "criterion-failure",
+              lineage: { kind: "new" },
+              proposed_source_bindings: source,
+              requirement_id: "requirement-primary",
+              precondition: "必要门禁报告失败。",
+              action: "Harness 评估本次迭代。",
+              observable_outcome: "迭代保持阻塞且不会生成完成快照。",
+              verification_intent: "运行失败门禁并检查终态。",
+              test_first_example: "失败门禁必须阻止完成快照。",
+              scenario_kind: "failure",
+            },
+          ],
+          assumptions: [],
+          dependencies: [],
+          risks: [],
+          open_questions: [],
+          glossary: [],
+          context_source_refs: [],
+        },
+      };
+    },
+  };
+}
+
+function deterministicLiteReviewPort(): PrdReviewPort {
+  return {
+    name: "deterministic-lite-review",
+    review(input) {
+      if (!input.validation_report.passed) {
+        return {
+          status: "failed",
+          failure: {
+            code: "invalid_output",
+            retryable: false,
+            summary: "Lite deterministic review requires passed hard gates",
+          },
+        };
+      }
+      return {
+        status: "completed",
+        report: {
+          verdict: "accept",
+          dimensions: input.rubric.dimensions.map((dimension) => ({
+            dimension_id: dimension.dimension_id,
+            status: "satisfied" as const,
+            notes: "确定性硬门禁已验证该维度所需的结构、覆盖与可测试性。",
+          })),
+          findings: [],
+          suggested_questions: [],
+        },
+      };
+    },
+  };
+}
 
 /**
  * Production defaults for the capture review rubric and risk policy (slice 2;
@@ -439,6 +583,73 @@ function commitCaptureScopeBindings(
   return { binding_record_digest: record.record_digest, binding_committed: true };
 }
 
+function createDeterministicLiteCaptureCoordinator(
+  deps: ManagedCaptureCoordinatorDeps,
+): ManagedCaptureCoordinator {
+  const proposalVersion = "deterministic-lite-pack.v1";
+  const reviewVersion = "deterministic-lite-review.v1";
+  const proposalStages = createCaptureProposalStageHandlers({
+    projectRoot: deps.projectRoot,
+    proposal: deterministicLiteProposalPort(),
+    adapter_profile: manualCaptureProposalProfile({
+      adapter_profile_digest: contentDigest({
+        adapter: "deterministic-lite-pack",
+        version: proposalVersion,
+      }),
+      prompt_version_digest: contentDigest(proposalVersion),
+      producer_identity: PRODUCER_IDENTITY,
+    }),
+  });
+  const reviewStages = createCaptureReviewStageHandlers({
+    projectRoot: deps.projectRoot,
+    review: deterministicLiteReviewPort(),
+    rubric: deps.rubric,
+    adapter_profile: manualCaptureReviewProfile({
+      adapter_profile_digest: contentDigest({
+        adapter: "deterministic-lite-review",
+        version: reviewVersion,
+      }),
+      prompt_version_digest: contentDigest(reviewVersion),
+      reviewer_identity: `${PRODUCER_IDENTITY}:lite-review`,
+    }),
+  });
+  const riskStages = createCaptureRiskStageHandlers({
+    projectRoot: deps.projectRoot,
+    policy: deps.policy,
+    policy_digest: deps.profile.policy_digest,
+  });
+  const accept = createCaptureAcceptanceStageHandler({
+    projectRoot: deps.projectRoot,
+    readBaseline: deps.readBaseline,
+    policy_digest: deps.profile.policy_digest,
+  });
+  return {
+    coordinator: createPrdCaptureCoordinator({
+      projectRoot: deps.projectRoot,
+      handlers: {
+        compileContext: createManagedCompileContextHandler({
+          projectRoot: deps.projectRoot,
+          profile: deps.profile,
+        }),
+        propose: proposalStages.propose,
+        validate: proposalStages.validate,
+        review: reviewStages.review,
+        assessRisk: riskStages.assessRisk,
+        accept,
+      },
+      requireCaptureBindings: false,
+      ...(deps.readApprovalDecision === undefined
+        ? {}
+        : { readApprovalDecision: deps.readApprovalDecision }),
+      ...(deps.resolveProfileDecision === undefined
+        ? {}
+        : { resolveProfileDecision: deps.resolveProfileDecision }),
+      ...(deps.budget === undefined ? {} : { budget: deps.budget }),
+    }),
+    binding_committed: false,
+  };
+}
+
 export function createManagedCaptureCoordinator(
   deps: ManagedCaptureCoordinatorDeps,
 ): ManagedCaptureCoordinator | undefined {
@@ -450,7 +661,7 @@ export function createManagedCaptureCoordinator(
     (deps.runtimeConfig.model_providers ?? []).length === 0 &&
     !profileRequiresManagedModelPorts(deps.profile.profile_id)
   ) {
-    return undefined;
+    return createDeterministicLiteCaptureCoordinator(deps);
   }
   const resolver = assembleModelProviders(deps.runtimeConfig, {
     ...(deps.fetch === undefined ? {} : { fetch: deps.fetch }),
