@@ -51,23 +51,19 @@ export interface CaptureCoordinatorSeam {
 export const CAPTURE_APPROVAL_OBJECT_TYPE = "CapturePrdProposal" as const;
 
 /**
- * The capture session binds a workflow operation id, but the coordinator runs
- * before the engine operation exists, so the seam derives a deterministic
- * stand-in from the intent: the same intent always resolves the same session,
- * regardless of process or counter state.
+ * The capture session binds the real workflow operation id (intent-to-prd
+ * design 16.1): the orchestrator opens the Operation before capture runs, so
+ * the session and every Invocation record share the Operation identity and a
+ * crash or clarification pause never splits them. The id pair — never the
+ * intent alone — re-derives the session on any resume.
  */
-function captureOperationIdFor(intent: string): string {
-  return `operation_capture_${sha256Hex(intentDigestOf(intent)).slice(0, 16)}`;
-}
-
-/** The coordinator session id for one intent; re-derivable on any resume. */
-export function captureSessionIdFor(intent: string): string {
+export function captureSessionIdFor(intent: string, workflowOperationId: string): string {
   return domainRecordId({
     domain_tag: "capture_session",
     id_prefix: "capture-session",
     protocol_version: PROTOCOL_1_1_VERSION,
     canonical_input: {
-      workflow_operation_id: captureOperationIdFor(intent),
+      workflow_operation_id: workflowOperationId,
       intent_digest: intentDigestOf(intent),
     },
   });
@@ -78,10 +74,11 @@ export function startCaptureCommandFor(
   seam: CaptureCoordinatorSeam,
   intent: string,
   iterationId: string,
+  workflowOperationId: string,
 ): StartCaptureCommand {
   return {
     command: "start_capture",
-    workflow_operation_id: captureOperationIdFor(intent),
+    workflow_operation_id: workflowOperationId,
     iteration_id: iterationId,
     intent_text: intent,
     ...seam.session_context,
@@ -155,6 +152,8 @@ export function clarificationQuestionViewOf(
   return {
     subject: clarificationSubjectOf(record),
     question: record.question,
+    // The coordinator-issued id the answer-submission command surface binds.
+    questionId: record.question_id,
     ...(labels.length >= 2 && labels.length <= 4 ? { options: labels } : {}),
   };
 }

@@ -16,6 +16,7 @@ import {
   harnessRootFor,
   intentDigestOf,
   readCommittedOperations,
+  readCaptureAnswers,
   readLatestCaptureSession,
   readManagedManifest,
   type DesignProposalInput,
@@ -44,8 +45,10 @@ import { readProjectRuntimeConfig } from "../src/index.js";
  * committed profile record drives capture through the PrdCaptureCoordinator
  * (fake provider via fetch), bridges the human approval through the one
  * engine approval surface, and skips the legacy baseline commit entirely.
- * The gate-off branches keep returning undefined so legacy projects are
- * untouched.
+ * Provider closure is re-verified at preflight (design 11.2): a
+ * Standard/Governed profile without coverage fails closed as a configuration
+ * error, while legacy (no profile record) and Lite projects keep returning
+ * undefined so their paths are untouched.
  */
 const roots: string[] = [];
 
@@ -97,7 +100,11 @@ function providerEntry(slots: readonly string[]) {
 async function bootstrapProject(
   name: string,
   newId: (kind: string) => string,
-  options: { readonly profile: boolean; readonly slots?: readonly string[] } = { profile: true },
+  options: {
+    readonly profile: boolean;
+    readonly slots?: readonly string[];
+    readonly profileId?: "lite" | "standard";
+  } = { profile: true },
 ): Promise<string> {
   const outcome = await createNewProject(
     { parentDirectory: makeTempDir("harness-capture-orch-"), name, intent: INTENT },
@@ -111,7 +118,7 @@ async function bootstrapProject(
       createProjectProfileRecord({
         project_id: `project_${readManagedManifest(projectRoot).name}`,
         revision: 1,
-        profile_id: "standard",
+        profile_id: options.profileId ?? "standard",
         policy_digest: "0".repeat(64),
         actor: "human:tester",
         effective_from: FIXED_NOW,
@@ -327,16 +334,17 @@ const completeEvaluation: EvaluationPort = (input) => {
 };
 
 /** The fake provider: proposal, then review, then the brief grounded in the compiled prompt. */
-function captureFetch(seenBodies: string[]): typeof fetch {
+function captureFetch(
+  seenBodies: string[],
+  options: { readonly clarifyFirst?: boolean } = {},
+): typeof fetch {
   const intentDigest = intentDigestOf(INTENT);
   const intentBinding = {
     source_kind: "intent",
     source_id: "intent",
     source_digest: intentDigest,
   };
-  const proposalDraft = JSON.stringify({
-    schema_version: "1.1.0",
-    intent: { text: INTENT, digest: intentDigest },
+  const draftEntities = {
     problem_statement: "Users cannot archive monthly reports outside the application.",
     goals: [
       {
@@ -380,10 +388,29 @@ function captureFetch(seenBodies: string[]): typeof fetch {
     assumptions: [],
     dependencies: [],
     risks: [],
-    open_questions: [],
     glossary: [],
     context_source_refs: [],
-  });
+  };
+  const proposalDraftFor = (openQuestions: unknown[]): string =>
+    JSON.stringify({
+      schema_version: "1.1.0",
+      intent: { text: INTENT, digest: intentDigest },
+      ...draftEntities,
+      open_questions: openQuestions,
+    });
+  const cleanProposal = proposalDraftFor([]);
+  // The clarifying round carries a blocking open question; the deterministic
+  // gates turn it into a required clarification question before acceptance.
+  const clarifyingProposal = proposalDraftFor([
+    {
+      draft_key: "oq-1",
+      lineage: { kind: "new" },
+      proposed_source_bindings: [intentBinding],
+      question: "导出是否仅包含当前用户可见的数据行？",
+      blocking: true,
+      owner: "",
+    },
+  ]);
   const reviewReport = JSON.stringify({
     verdict: "accept",
     dimensions: ["clarity", "completeness", "testability"].map((dimensionId) => ({
@@ -394,7 +421,10 @@ function captureFetch(seenBodies: string[]): typeof fetch {
     findings: [],
     suggested_questions: [],
   });
-  const fixed = [proposalDraft, reviewReport];
+  const fixed =
+    options.clarifyFirst === true
+      ? [clarifyingProposal, cleanProposal, reviewReport]
+      : [cleanProposal, reviewReport];
   let call = 0;
   return ((_url: string, init?: { body?: unknown }) => {
     const body = String(init?.body ?? "");
@@ -459,9 +489,24 @@ async function approveOnce(
 }
 
 describe("managed capture seam gating", () => {
-  it("returns undefined without model_providers, even with a profile record", async () => {
+  it("fails closed as a configuration error without model_providers when the profile requires managed capture", async () => {
     const newId = sequentialIds();
     const projectRoot = await bootstrapProject("capture-gate-none", newId, { profile: true });
+    try {
+      managedCaptureSeamForProject(projectRoot, readProjectRuntimeConfig(projectRoot));
+      expect.unreachable("expected a configuration failure");
+    } catch (error) {
+      expect(error).toBeInstanceOf(OrchestrationError);
+      expect((error as OrchestrationError).kind).toBe("configuration");
+    }
+  });
+
+  it("returns undefined without model_providers for a lite profile record", async () => {
+    const newId = sequentialIds();
+    const projectRoot = await bootstrapProject("capture-gate-lite", newId, {
+      profile: true,
+      profileId: "lite",
+    });
     expect(
       managedCaptureSeamForProject(projectRoot, readProjectRuntimeConfig(projectRoot)),
     ).toBeUndefined();
@@ -538,17 +583,21 @@ describe("coordinated capture pipeline", { timeout: 90000 }, () => {
     let outcome = await runIteration(deps, { intent: INTENT, intentShape: "pack-converted" });
     expect(outcome.status).toBe("approval_required");
     if (outcome.status !== "approval_required") return;
-    expect(outcome.required.object_type).toBe("CapturePrdProposal");
-    const captureRequest = outcome.required;
+    // Standard low-risk Capture is accepted by the risk-adaptive policy. The
+    // first human-visible approval is therefore the frozen ImpactSet; Capture
+    // acceptance is still proved below by its committed session and graph
+    // facts, rather than by assuming a fixed number of human approvals.
+    expect(outcome.required.object_type).toBe("ImpactSet");
+    const firstRequest = outcome.required;
 
     // A resume without a decision reuses the pending request — no duplicate.
-    const again = await resumeIteration(deps, captureRequest.workflow_operation_id, undefined);
+    const again = await resumeIteration(deps, firstRequest.workflow_operation_id, undefined);
     expect(again.status).toBe("approval_required");
     if (again.status !== "approval_required") return;
-    expect(again.required.request_id).toBe(captureRequest.request_id);
-    expect(approvalRequestsFor(projectRoot, captureRequest.workflow_operation_id)).toHaveLength(1);
+    expect(again.required.request_id).toBe(firstRequest.request_id);
+    expect(approvalRequestsFor(projectRoot, firstRequest.workflow_operation_id)).toHaveLength(1);
 
-    const approvals: string[] = [captureRequest.object_type];
+    const approvals: string[] = [firstRequest.object_type];
     outcome = await approveOnce(deps, again);
     let guard = 0;
     while (outcome.status === "approval_required") {
@@ -558,16 +607,12 @@ describe("coordinated capture pipeline", { timeout: 90000 }, () => {
       outcome = await approveOnce(deps, outcome);
     }
     expect(outcome.status).toBe("completed");
-    expect(approvals).toEqual([
-      "CapturePrdProposal",
-      "ImpactSet",
-      "DesignSet",
-      "ExecutionAuthorizationSpec",
-    ]);
+    expect(approvals).toEqual(["ImpactSet", "DesignSet", "ExecutionAuthorizationSpec"]);
 
-    // Exactly three model calls: proposal, review, approval brief. The
-    // resumes above added none — the coordinator replays committed facts.
-    expect(seenBodies).toHaveLength(3);
+    // Exactly two model calls: proposal and review. Risk-adaptive acceptance
+    // creates no human ApprovalRequest, so it also creates no approval brief;
+    // the resumes above add no calls because committed facts are replayed.
+    expect(seenBodies).toHaveLength(2);
 
     // The accepted transaction wrote the Test seeds with their criterion
     // bindings, and the design phase saw the compiled pairs.
@@ -586,10 +631,112 @@ describe("coordinated capture pipeline", { timeout: 90000 }, () => {
 
     // The capture session is accepted and the legacy baseline document was
     // never written — the accepted transaction owns the baseline commit.
-    const session = readLatestCaptureSession(projectRoot, captureSessionIdFor(INTENT));
+    const session = readLatestCaptureSession(
+      projectRoot,
+      captureSessionIdFor(INTENT, firstRequest.workflow_operation_id),
+    );
     expect(session?.state).toBe("accepted");
     expect(
       existsSync(join(harnessRootFor(projectRoot), "artifacts", "requirement-baselines")),
     ).toBe(false);
+  });
+
+  it("pauses on a blocking open question and completes after resume submits the answer", async () => {
+    const newId = sequentialIds();
+    const projectRoot = await bootstrapProject("capture-clarify", newId, {
+      profile: true,
+      slots: CAPTURE_SLOTS,
+    });
+    const seenBodies: string[] = [];
+    const seam = managedCaptureSeamForProject(projectRoot, readProjectRuntimeConfig(projectRoot), {
+      fetch: captureFetch(seenBodies, { clarifyFirst: true }),
+      environment: { DEEPSEEK_API_KEY: "sk-test" },
+    });
+    expect(seam).toBeDefined();
+
+    const deps: OrchestratorDependencies = {
+      projectRoot,
+      readBaseline: () => headOf(projectRoot),
+      now: () => FIXED_NOW,
+      newId,
+      vcs: createGitVcsAdapter(),
+      interpret: createGenericInterpreter(),
+      capture: seam,
+      design: {
+        proposal: createInMemoryDesignProposalPort(designProposalScript),
+        review: createInMemoryDesignReviewPort(designAcceptReviewScript),
+      },
+      execution: {
+        kind: "agent",
+        name: "test-agent",
+        deterministic: false,
+        adapter_profile: TEST_AGENT_PROFILE,
+        execute: ((envelope: AgentTaskEnvelope) =>
+          Promise.resolve(claimedResult(envelope))) as OrchestrationExecutor,
+      },
+      evaluate: completeEvaluation,
+    };
+
+    // The blocking open question pauses capture: the operation already exists
+    // and the input_required payload carries the full 16.1 binding.
+    const first = await runIteration(deps, { intent: INTENT, intentShape: "pack-converted" });
+    expect(first.status).toBe("input_required");
+    if (first.status !== "input_required") return;
+    expect(first.workflowOperationId).toBeDefined();
+    if (first.workflowOperationId === undefined) return;
+    const workflowOperationId = first.workflowOperationId;
+    expect(first.captureSessionId).toBe(captureSessionIdFor(INTENT, workflowOperationId));
+    expect(first.sessionRevision).toBeGreaterThanOrEqual(1);
+    expect(first.expectedDigest).toMatch(/^[a-f0-9]{64}$/u);
+    expect(first.resumeCommand).toBe(`harness resume ${workflowOperationId}`);
+    expect(first.questions).toHaveLength(1);
+    const questionId = first.questions[0]?.questionId;
+    expect(questionId).toBeDefined();
+    if (questionId === undefined) return;
+
+    // The session and its invocation trail bind the real operation id.
+    const pausedSession = readLatestCaptureSession(projectRoot, first.captureSessionId ?? "");
+    expect(pausedSession?.workflow_operation_id).toBe(workflowOperationId);
+    expect(pausedSession?.state).toBe("clarification_required");
+
+    // A bare resume re-surfaces the same payload instead of crashing.
+    const resurfaced = await resumeIteration(deps, workflowOperationId, undefined);
+    expect(resurfaced.status).toBe("input_required");
+    if (resurfaced.status !== "input_required") return;
+    expect(resurfaced.captureSessionId).toBe(first.captureSessionId);
+    expect(resurfaced.expectedDigest).toBe(first.expectedDigest);
+
+    // Submitting the answer resumes the pipeline. Low-risk Capture is accepted
+    // automatically, so the first surfaced request is the frozen ImpactSet.
+    let outcome = await resumeIteration(deps, workflowOperationId, {
+      intent: "",
+      answers: [
+        {
+          question_id: questionId,
+          answer_kind: "free_text",
+          value: "仅导出当前用户可见的数据行。",
+        },
+      ],
+    });
+    expect(outcome.status).toBe("approval_required");
+    const approvals: string[] = [];
+    let guard = 0;
+    while (outcome.status === "approval_required") {
+      guard += 1;
+      if (guard > 10) throw new Error("approval loop did not terminate");
+      approvals.push(outcome.required.object_type);
+      outcome = await approveOnce(deps, outcome);
+    }
+    expect(outcome.status).toBe("completed");
+    expect(approvals).toEqual(["ImpactSet", "DesignSet", "ExecutionAuthorizationSpec"]);
+
+    // Three model calls: clarifying proposal, clean proposal and review. The
+    // low-risk Capture is auto-accepted, so no approval brief is requested.
+    expect(seenBodies).toHaveLength(3);
+    const committedAnswers = readCaptureAnswers(projectRoot, first.captureSessionId ?? "");
+    expect(committedAnswers).toHaveLength(1);
+    expect(committedAnswers[0]?.question_id).toBe(questionId);
+    const session = readLatestCaptureSession(projectRoot, first.captureSessionId ?? "");
+    expect(session?.state).toBe("accepted");
   });
 });

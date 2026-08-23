@@ -6,6 +6,7 @@ import {
   canonicalizeLocator,
   compileCriterionAssertions,
   contentDigest,
+  criterionSemanticDigest,
   deriveAcceptedPrdId,
   expectedCaptureAcceptanceBaseline,
   findPrdProposalByDigest,
@@ -16,8 +17,11 @@ import {
   resolveHarnessPath,
   sha256Hex,
   ulid,
+  validateCriterionAssertionCoverage,
   validateSchema,
+  type CaptureAnswerInput,
   type CaptureOutcome,
+  type CaptureSessionRecord,
   type EdgeRecord,
   type LifecycleEvent,
   type NodeRecord,
@@ -288,12 +292,10 @@ export function executionBindingFor(deps: OrchestratorDependencies): ExecutionBi
       execute: deps.execute,
     };
   }
-  return {
-    kind: "workflow",
-    name: "built-in-direct-workflow",
-    deterministic: true,
-    execute: createDirectExecutor(),
-  };
+  throw new OrchestrationError(
+    "configuration",
+    "executor_required: implementation work requires an explicit agent or deterministic workflow execution binding",
+  );
 }
 /**
  * Default verify phase: the universal ledger-integrity gate replays and
@@ -697,10 +699,22 @@ function normalizeClarificationOffer(offer: ClarificationOffer): readonly Clarif
     return { ...question, options: [...choices, CLARIFICATION_OTHER_OPTION] };
   });
 }
+/**
+ * Sentinel bound as `requirement_baseline_digest` when the operation opens
+ * before capture runs (coordinated path, intent-to-prd design 16.1): the
+ * requirement baseline only materializes once the capture session produces
+ * its proposal, so the capture phase seals the real digest into the
+ * checkpoint that closes the phase. The sentinel is a plain digest, never a
+ * valid baseline.
+ */
+export const PENDING_REQUIREMENT_BASELINE_DIGEST = contentDigest({
+  requirement_baseline: "pending_capture",
+});
 export async function captureProposal(
   deps: OrchestratorDependencies,
   intent: string,
   iterationId?: string,
+  workflowOperationId?: string,
 ): Promise<
   | {
       readonly status: "captured";
@@ -710,16 +724,18 @@ export async function captureProposal(
   | {
       readonly status: "clarification_required";
       readonly questions: readonly ClarificationQuestion[];
+      /** The coordinated session awaiting the answers; absent on the legacy interpreter path. */
+      readonly session?: CaptureSessionRecord;
     }
 > {
   if (deps.capture !== undefined) {
-    if (iterationId === undefined) {
+    if (iterationId === undefined || workflowOperationId === undefined) {
       throw new OrchestrationError(
         "configuration",
-        "coordinated capture requires the iteration id the session binds to",
+        "coordinated capture requires the iteration and workflow operation ids the session binds to",
       );
     }
-    return captureProposalCoordinated(deps, deps.capture, intent, iterationId);
+    return captureProposalCoordinated(deps, deps.capture, intent, iterationId, workflowOperationId);
   }
   const interpreted = deps.interpret === undefined ? undefined : await deps.interpret(intent);
   if (typeof interpreted === "object" && interpreted !== null && "clarification" in interpreted) {
@@ -757,6 +773,7 @@ async function captureProposalCoordinated(
   seam: CaptureCoordinatorSeam,
   intent: string,
   iterationId: string,
+  workflowOperationId: string,
 ): Promise<
   | {
       readonly status: "captured";
@@ -766,13 +783,14 @@ async function captureProposalCoordinated(
   | {
       readonly status: "clarification_required";
       readonly questions: readonly ClarificationQuestion[];
+      readonly session?: CaptureSessionRecord;
     }
 > {
-  const sessionId = captureSessionIdFor(intent);
+  const sessionId = captureSessionIdFor(intent, workflowOperationId);
   const existing = seam.coordinator.current(sessionId);
   const outcome = await seam.coordinator.advance(
     existing === undefined
-      ? startCaptureCommandFor(seam, intent, iterationId)
+      ? startCaptureCommandFor(seam, intent, iterationId, workflowOperationId)
       : { command: "resume_capture", session_id: sessionId },
   );
   return coordinatedCaptureOutcome(deps, sessionId, outcome);
@@ -790,6 +808,7 @@ function coordinatedCaptureOutcome(
   | {
       readonly status: "clarification_required";
       readonly questions: readonly ClarificationQuestion[];
+      readonly session?: CaptureSessionRecord;
     } {
   switch (outcome.status) {
     case "accepted":
@@ -821,6 +840,7 @@ function coordinatedCaptureOutcome(
       return {
         status: "clarification_required",
         questions: outcome.questions.map(clarificationQuestionViewOf),
+        session: outcome.session,
       };
     case "failed":
       throw new OrchestrationError(
@@ -838,6 +858,55 @@ function coordinatedCaptureOutcome(
         `coordinated capture rests at ${outcome.status}, which this seam cannot drive`,
       );
   }
+}
+/**
+ * Answer submission for a session awaiting clarification (intent-to-prd
+ * design 16.1): the only write path is the coordinator's
+ * `submit_clarification_answers` command, bound to the session digest read at
+ * submission time. Replay is idempotent (already-applied answers are a
+ * no-op); an unknown question, a conflicting answer or a session that moved
+ * on fails closed as a typed error, and a digest conflict is binding drift.
+ * Returns the outcome so the caller can keep driving the resumed pipeline.
+ */
+export async function submitCaptureAnswers(
+  deps: OrchestratorDependencies,
+  seam: CaptureCoordinatorSeam,
+  intent: string,
+  workflowOperationId: string,
+  answers: readonly CaptureAnswerInput[],
+): Promise<CaptureOutcome> {
+  const sessionId = captureSessionIdFor(intent, workflowOperationId);
+  const session = seam.coordinator.current(sessionId);
+  if (session === undefined) {
+    throw new OrchestrationError(
+      "operation_not_found",
+      `workflow operation ${workflowOperationId} has no capture session to answer`,
+    );
+  }
+  const outcome = await seam.coordinator.advance({
+    command: "submit_clarification_answers",
+    session_id: sessionId,
+    expected_session_digest: session.record_digest,
+    actor: deps.decisionActor ?? "human:local",
+    answers,
+  });
+  if (outcome.status === "conflict") {
+    throw new OrchestrationError(
+      "binding_drift",
+      `capture session ${sessionId} advanced while the answers were being submitted; re-read the session and retry`,
+    );
+  }
+  if (outcome.status === "failed") {
+    throw new OrchestrationError(
+      outcome.kind === "binding_drift"
+        ? "binding_drift"
+        : outcome.kind === "session_not_found"
+          ? "operation_not_found"
+          : "configuration",
+      `capture answer submission failed (${outcome.kind}): ${outcome.message}`,
+    );
+  }
+  return outcome;
 }
 type ApprovalStep =
   | { readonly status: "approved"; readonly approvalDigest: string }
@@ -1674,7 +1743,7 @@ async function phaseCaptureCoordinated(
   ctx: PipelineContext,
   seam: CaptureCoordinatorSeam,
 ): Promise<PhaseStep> {
-  const sessionId = captureSessionIdFor(ctx.goal);
+  const sessionId = captureSessionIdFor(ctx.goal, ctx.workflowOperationId);
   const session = seam.coordinator.current(sessionId);
   if (session === undefined) {
     throw new OrchestrationError(
@@ -1728,7 +1797,7 @@ async function phaseCaptureCoordinated(
   }
   await ctx.engine.commitCheckpoint(ctx.workflowOperationId, {
     boundary: PHASE_CHECKPOINT_BOUNDARY.capture,
-    proposal: { phase: "impact" },
+    proposal: { phase: "impact", set_requirement_baseline_digest: ctx.baselineDigest },
   });
   refreshWorkingState(ctx);
   return { continue: true };
@@ -1738,8 +1807,11 @@ async function phaseCaptureCoordinated(
  * approved baseline, each independently verifiable through its own acceptance
  * slice, every task bound to the full approved impact set (the binding check
  * requires must-change coverage; path-level partitioning is the port's job).
- * With a single requirement this degenerates to exactly the historical
- * single-task plan, id and digest included.
+ * Every accepted criterion compiles to its canonical criterion_assertion —
+ * the kernel invariant of provable TDD design 7.1 holds for the default
+ * planner exactly as for the proposal channel — and the coverage validator
+ * fails closed on any gap. With a single requirement this degenerates to
+ * exactly the historical single-task plan, id and digest included.
  */
 async function taskSpecificationsFor(
   ctx: PipelineContext,
@@ -1754,6 +1826,21 @@ async function taskSpecificationsFor(
     .sort(byId);
   const acceptedTests = new Set(acceptedTestIds);
   const testIdsByRequirement = new Map<string, string[]>();
+  // Canonical criterion lineage of the accepted baseline (provable TDD design
+  // 7.1 — a kernel invariant of every Protocol 1.1 plan, independent of
+  // strict_tdd): managed-capture Test seeds carry the criterion binding the
+  // assertion identity compiles from; legacy baseline seeds only carry the
+  // description/verification pair, matched back to their criterion below.
+  const boundCriteria: {
+    readonly criterion_id: string;
+    readonly criterion_semantic_digest: string;
+    readonly requirement_id: string;
+    readonly test_node_id: string;
+  }[] = [];
+  const legacySeedsByVerifies = new Map<
+    string,
+    { readonly id: string; readonly description: string; readonly verification: string }[]
+  >();
   const graph = materializeProjectGraph(ctx.deps.projectRoot);
   try {
     for (const edge of graph.edges) {
@@ -1761,6 +1848,25 @@ async function taskSpecificationsFor(
       const existing = testIdsByRequirement.get(edge.target_id) ?? [];
       existing.push(edge.source_id);
       testIdsByRequirement.set(edge.target_id, existing);
+    }
+    for (const node of graph.nodes) {
+      if (node.type !== "Test" || node.status !== "accepted" || !acceptedTests.has(node.id))
+        continue;
+      const binding = testSeedCriterionBinding(node);
+      if (binding !== undefined && binding.criterion_semantic_digest !== undefined) {
+        boundCriteria.push({
+          criterion_id: binding.acceptance_criterion_id,
+          criterion_semantic_digest: binding.criterion_semantic_digest,
+          requirement_id: binding.verifies,
+          test_node_id: node.id,
+        });
+        continue;
+      }
+      const seed = legacyTestSeedContent(node);
+      if (seed === undefined) continue;
+      const seeds = legacySeedsByVerifies.get(seed.verifies) ?? [];
+      seeds.push({ id: node.id, description: seed.description, verification: seed.verification });
+      legacySeedsByVerifies.set(seed.verifies, seeds);
     }
   } finally {
     graph.close();
@@ -1798,7 +1904,74 @@ async function taskSpecificationsFor(
       gateIds: [...gateIds],
     });
   }
-  return clusteredRequirements.map((requirement) => ({
+  // Every accepted criterion compiles to exactly one canonical
+  // criterion_assertion whose identity follows the harness:criterion-assertion
+  // formula (criterion id + semantic digest + schema version) — never a
+  // positional or whole-object digest, so an unrelated insertion or a
+  // non-semantic change never rotates an unchanged criterion's assertion.
+  const criterionInputsFor = (
+    requirement: (typeof clusteredRequirements)[number],
+  ): {
+    criterion_id: string;
+    criterion_semantic_digest: string;
+    requirement_id: string;
+    test_node_id: string;
+  }[] => {
+    const bound = boundCriteria
+      .filter((criterion) => criterion.requirement_id === requirement.id)
+      .sort((left, right) => byId(left.criterion_id, right.criterion_id));
+    if (bound.length > 0) return bound.map((criterion) => ({ ...criterion }));
+    // Legacy baselines carry no criterion bindings on their Test seeds; the
+    // canonical identity derives from the acceptance pair itself through the
+    // same semantic mapping the legacy proposal adapter establishes
+    // (precondition-free, action and observable outcome equal the
+    // description), paired with the seed that verifies it.
+    const seeds = [...(legacySeedsByVerifies.get(requirement.id) ?? [])];
+    return requirement.acceptance.map((criterion) => {
+      const semanticDigest = criterionSemanticDigest({
+        requirement_id: requirement.id,
+        precondition: "",
+        action: criterion.description,
+        observable_outcome: criterion.description,
+        verification_intent: criterion.verification,
+        scenario_kind: "primary",
+      });
+      const seedIndex = seeds.findIndex(
+        (seed) =>
+          seed.description === criterion.description &&
+          seed.verification === criterion.verification,
+      );
+      if (seedIndex === -1) {
+        throw new PlanningError(
+          "invalid_specification",
+          `accepted criterion of requirement ${requirement.id} has no Test seed in the requirement baseline`,
+        );
+      }
+      const seed = seeds.splice(seedIndex, 1)[0] as (typeof seeds)[number];
+      return {
+        criterion_id: `criterion_${contentDigest({ requirement: requirement.id, criterion_semantic_digest: semanticDigest }).slice(0, 16)}`,
+        criterion_semantic_digest: semanticDigest,
+        requirement_id: requirement.id,
+        test_node_id: seed.id,
+      };
+    });
+  };
+  const descriptorsByRequirement = new Map(
+    clusteredRequirements.map(
+      (requirement) =>
+        [requirement.id, compileCriterionAssertions(criterionInputsFor(requirement))] as const,
+    ),
+  );
+  // A bound criterion whose requirement left the proposal view is baseline
+  // drift; it compiles but finds no owning task, and coverage fails closed.
+  const knownRequirementIds = new Set(clusteredRequirements.map((requirement) => requirement.id));
+  const descriptors = [
+    ...[...descriptorsByRequirement.values()].flat(),
+    ...compileCriterionAssertions(
+      boundCriteria.filter((criterion) => !knownRequirementIds.has(criterion.requirement_id)),
+    ),
+  ];
+  const specifications: TaskSpecification[] = clusteredRequirements.map((requirement) => ({
     id: `task_${contentDigest({ goal: ctx.goal, outputs: [requirement.id] }).slice(0, 16)}`,
     objective: ctx.goal,
     impact_paths: impactPaths.map((path) => [...path]),
@@ -1809,18 +1982,41 @@ async function taskSpecificationsFor(
     risk: "low",
     budget: { steps: 30, tokens: 120000 },
     acceptance: requirement.acceptance.map((criterion) => ({ ...criterion })),
-    assertions: requirement.acceptance.map((criterion, index) => ({
-      assertion_id: `assertion_${contentDigest({
-        requirement: requirement.id,
-        criterion,
-        index,
-      }).slice(0, 16)}`,
-      test_ids: [...requirement.testIds],
+    assertions: (descriptorsByRequirement.get(requirement.id) ?? []).map((descriptor) => ({
+      assertion_id: descriptor.assertion_id,
+      assertion_kind: "criterion_assertion" as const,
+      acceptance_criterion_id: descriptor.acceptance_criterion_id,
+      criterion_semantic_digest: descriptor.criterion_semantic_digest,
+      test_ids: [descriptor.test_node_id],
       required_gate_ids: [...gateIds],
       evidence_requirements: ["gate_evidence"],
     })),
     required_gates: [...gateIds],
   }));
+  const coverage = validateCriterionAssertionCoverage({
+    descriptors,
+    accepted_criteria: descriptors.map((descriptor) => ({
+      criterion_id: descriptor.acceptance_criterion_id,
+      criterion_semantic_digest: descriptor.criterion_semantic_digest,
+    })),
+    task_assertion_assignments: Object.fromEntries(
+      specifications.map((specification) => [
+        specification.id,
+        (specification.assertions ?? []).map((assertion) => assertion.assertion_id),
+      ]),
+    ),
+  });
+  if (coverage.length > 0) {
+    throw new PlanningError(
+      "invalid_specification",
+      `default decomposition failed criterion assertion coverage: ${coverage
+        .map(
+          (issue) => `${issue.code}${issue.target_id === undefined ? "" : ` (${issue.target_id})`}`,
+        )
+        .join(", ")}`,
+    );
+  }
+  return specifications;
 }
 function byId(left: string, right: string): number {
   return left < right ? -1 : left > right ? 1 : 0;
@@ -1852,6 +2048,32 @@ export function testSeedCriterionBinding(node: NodeRecord):
   };
 }
 /**
+ * The acceptance pair of one legacy baseline Test seed (design 12 baseline
+ * commit): description/verification/verifies, flat or namespaced like the
+ * criterion binding above. A node without the full pair — a managed-capture
+ * seed, for instance — is not a legacy acceptance seed.
+ */
+function legacyTestSeedContent(
+  node: NodeRecord,
+):
+  | { readonly description: string; readonly verification: string; readonly verifies: string }
+  | undefined {
+  const extension = node.extensions ?? {};
+  const namespaced = extension["harness.requirements"] as Record<string, unknown> | undefined;
+  const field = (key: string): unknown => extension[key] ?? namespaced?.[key];
+  const description = field("description");
+  const verification = field("verification");
+  const verifies = field("verifies");
+  if (
+    typeof description !== "string" ||
+    typeof verification !== "string" ||
+    typeof verifies !== "string"
+  ) {
+    return undefined;
+  }
+  return { description, verification, verifies };
+}
+/**
  * The T13 plan proposal channel: canonical criterion assertions compile from
  * accepted Test seeds (with primary strategy bindings when an accepted
  * DesignSet exists), the port only allocates them, and every authoritative
@@ -1873,8 +2095,15 @@ async function planProposalSpecificationsFor(
   const graph = materializeProjectGraph(ctx.deps.projectRoot);
   try {
     const nodes = [...graph.nodes];
+    const acceptedTestIds = readImpactSetContent(impactSet)
+      .entries.filter((entry) => entry.node_type === "Test")
+      .map((entry) => entry.node_id)
+      .sort(byId);
+    const acceptedTests = new Set(acceptedTestIds);
     const criteria = nodes
-      .filter((node) => node.type === "Test" && node.status === "accepted")
+      .filter(
+        (node) => node.type === "Test" && node.status === "accepted" && acceptedTests.has(node.id),
+      )
       .flatMap((node) => {
         const binding = testSeedCriterionBinding(node);
         return binding === undefined || binding.criterion_semantic_digest === undefined
@@ -1947,11 +2176,6 @@ async function planProposalSpecificationsFor(
     // Mirror the default decomposition's test assignment: accepted Test
     // entries verify their requirements through VERIFIES edges, and
     // unassigned tests attach to the first requirement.
-    const acceptedTestIds = readImpactSetContent(impactSet)
-      .entries.filter((entry) => entry.node_type === "Test")
-      .map((entry) => entry.node_id)
-      .sort(byId);
-    const acceptedTests = new Set(acceptedTestIds);
     const testsByRequirement = new Map<string, string[]>();
     for (const edge of graph.edges) {
       if (edge.type !== "VERIFIES" || !acceptedTests.has(edge.source_id)) continue;
@@ -1964,14 +2188,28 @@ async function planProposalSpecificationsFor(
     );
     const assigned = new Set([...testsByRequirement.values()].flat());
     const unassigned = acceptedTestIds.filter((testId) => !assigned.has(testId));
-    const requirementTestIds = Object.fromEntries(
-      sortedRequirements.map((requirement, index) => [
-        requirement.id,
-        [
+    const legacyTestSeeds = Object.fromEntries(
+      sortedRequirements.map((requirement, index) => {
+        const testIds = [
           ...(testsByRequirement.get(requirement.id) ?? []),
           ...(index === 0 ? unassigned : []),
-        ].sort(byId),
-      ]),
+        ];
+        const seeds = testIds.flatMap((testId) => {
+          const node = nodes.find((candidate) => candidate.id === testId);
+          if (node === undefined) return [];
+          const content = legacyTestSeedContent(node);
+          return content === undefined
+            ? []
+            : [
+                {
+                  description: content.description,
+                  verification: content.verification,
+                  test_node_id: testId,
+                },
+              ];
+        });
+        return [requirement.id, seeds] as const;
+      }),
     );
     return materializePlanTasks(result.tasks, {
       canonical_assertions: canonical,
@@ -1983,7 +2221,7 @@ async function planProposalSpecificationsFor(
           requirement.acceptance.map((criterion) => ({ ...criterion })),
         ]),
       ),
-      requirement_test_ids: requirementTestIds,
+      legacy_test_seeds: legacyTestSeeds,
     });
   } finally {
     graph.close();
@@ -4230,12 +4468,43 @@ export async function buildPipelineContext(
       `workflow operation ${workflowOperationId} has no working state`,
     );
   }
-  const captured = await captureProposal(deps, workingState.goal, iterationId);
+  const captured = await captureProposal(deps, workingState.goal, iterationId, workflowOperationId);
   if (captured.status === "clarification_required") {
-    return { outcome: { status: "input_required", questions: captured.questions } };
+    // Capture cannot advance without the answers: block the operation as a
+    // typed, resumable pause (resume phase capture) and surface the full
+    // answer-submission payload (intent-to-prd design 16.1).
+    const current = engine.getOperation(workflowOperationId);
+    if (current !== undefined && current.state !== "blocked") {
+      await engine.block(workflowOperationId, {
+        reason: "missing_input",
+        detail: "capture requires clarification answers before the pipeline can continue",
+        proposal: { phase: "capture", set_next_action: resumeCommandFor(workflowOperationId) },
+      });
+    }
+    return {
+      outcome: {
+        status: "input_required",
+        questions: captured.questions,
+        ...(captured.session === undefined
+          ? {}
+          : {
+              workflowOperationId,
+              captureSessionId: captured.session.session_id,
+              sessionRevision: captured.session.revision,
+              expectedDigest: captured.session.record_digest,
+              resumeCommand: resumeCommandFor(workflowOperationId),
+            }),
+      },
+    };
   }
   const baselineDigest = captured.baselineDigest;
-  if (baselineDigest !== workingState.requirement_baseline_digest) {
+  // The pending sentinel means capture has not sealed its baseline into a
+  // checkpoint yet (operation opened before capture ran); the capture phase
+  // binds it below. Anything else must match the approved checkpoint binding.
+  if (
+    baselineDigest !== workingState.requirement_baseline_digest &&
+    workingState.requirement_baseline_digest !== PENDING_REQUIREMENT_BASELINE_DIGEST
+  ) {
     throw new OrchestrationError(
       "binding_drift",
       "re-derived requirement baseline digest no longer matches the approved checkpoint binding",

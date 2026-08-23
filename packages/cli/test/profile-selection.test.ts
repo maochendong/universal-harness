@@ -162,7 +162,9 @@ describe("profile selection on new/adopt", () => {
     const runtime = createOrchestratedRuntimeService({
       cwd: parent,
       io: captured.io,
-      selectProfile: () => Promise.resolve("standard"),
+      // Lite: the interactive choice is the point; Standard/Governed now also
+      // require committed model_providers before the pipeline may run.
+      selectProfile: () => Promise.resolve("lite"),
       // The baseline approval still pauses; this test only pins the profile choice.
       prompter: { prompt: () => Promise.resolve(null) },
     });
@@ -173,7 +175,7 @@ describe("profile selection on new/adopt", () => {
     });
     expect(exitCode).toBe(EXIT_CODES.approvalRequired);
     const data = parseResult(captured)["data"] as Record<string, unknown>;
-    expect(data["profile_id"]).toBe("standard");
+    expect(data["profile_id"]).toBe("lite");
   });
 
   it(
@@ -187,12 +189,12 @@ describe("profile selection on new/adopt", () => {
 
       const staged = captureIo();
       const stagedExit = await runCli(
-        ["adopt", repo, "--intent", "change it", "--profile", "standard", "--json"],
+        ["adopt", repo, "--intent", "change it", "--profile", "lite", "--json"],
         { io: staged.io, cwd: "/" },
       );
       expect(stagedExit).toBe(EXIT_CODES.approvalRequired);
       const stagedData = parseResult(staged)["data"] as Record<string, unknown>;
-      expect(String(stagedData["resume_command"])).toContain("--profile standard");
+      expect(String(stagedData["resume_command"])).toContain("--profile lite");
 
       const approved = captureIo();
       const approvedExit = await runCli(
@@ -202,7 +204,7 @@ describe("profile selection on new/adopt", () => {
           "--intent",
           "change it",
           "--profile",
-          "standard",
+          "lite",
           "--approve",
           String(stagedData["staging_operation_id"]),
           "--json",
@@ -211,14 +213,14 @@ describe("profile selection on new/adopt", () => {
       );
       expect(approvedExit).toBe(EXIT_CODES.approvalRequired);
       const approvedData = parseResult(approved)["data"] as Record<string, unknown>;
-      expect(approvedData["profile_id"]).toBe("standard");
+      expect(approvedData["profile_id"]).toBe("lite");
 
       const profilesRoot = join(repo, ".harness", "artifacts", "project-profiles");
       const [projectDirectory] = readdirSync(profilesRoot);
       const profile = JSON.parse(
         readFileSync(join(profilesRoot, projectDirectory, "1.json"), "utf8"),
       ) as Record<string, unknown>;
-      expect(profile["profile_id"]).toBe("standard");
+      expect(profile["profile_id"]).toBe("lite");
       expect(profile["revision"]).toBe(1);
     },
   );
@@ -340,10 +342,12 @@ describe("profile selection on iterate/resume", () => {
           cwd: projectRoot,
         },
       );
-      expect(exitCode).toBe(EXIT_CODES.approvalRequired);
-      const data = parseResult(changed)["data"] as Record<string, unknown>;
-      expect(data["profile_id"]).toBe("standard");
-      expect(data["profile_revision"]).toBe(2);
+      // The change is committed before the pipeline preflight runs; Standard
+      // without committed model_providers then fails closed (design 11.2)
+      // instead of silently degrading to the deterministic path.
+      expect(exitCode).toBe(EXIT_CODES.operationFailed);
+      const changedData = parseResult(changed)["data"] as Record<string, unknown>;
+      expect(changedData["kind"]).toBe("configuration");
 
       // Append-only history: revision 1 is untouched, revision 2 supersedes it.
       expect(readFileSync(join(profilesDirectory, "1.json"), "utf8")).toBe(revisionOne);

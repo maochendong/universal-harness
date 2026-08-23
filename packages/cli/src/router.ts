@@ -1,6 +1,6 @@
 import { execFileSync } from "node:child_process";
 
-import { canonicalizeJson } from "@universal-harness-internal/core";
+import { canonicalizeJson, type CaptureAnswerInput } from "@universal-harness-internal/core";
 import type { PhaseProgressEvent } from "@universal-harness-internal/runtime";
 
 import { EXIT_CODES, asCliError, usageError } from "./errors.js";
@@ -75,6 +75,12 @@ export interface ResumeRequest {
   readonly projectRoot: string;
   /** Migrate a legacy (profile-less) project explicitly before resuming. */
   readonly profile?: string;
+  /**
+   * Clarification answers for a capture session awaiting input (design
+   * 16.1): submitted through the coordinator's digest-bound command surface
+   * before the pipeline resumes.
+   */
+  readonly answers?: readonly CaptureAnswerInput[];
 }
 
 export interface AbortRequest {
@@ -328,12 +334,14 @@ record returns input_required until --profile selects one explicitly; passing
 a different --profile records a new project profile revision that only
 affects future operations.
 `,
-  resume: `Usage: harness resume <workflow-operation-id> [--profile <lite|standard|governed>] [--json]
+  resume: `Usage: harness resume <workflow-operation-id> [--profile <lite|standard|governed>] [--answer <question-id>=<value> ...] [--answers <file.json>] [--json]
 
 Resume a paused orchestration from its last committed checkpoint. The
-workflow operation id is returned by earlier blocked or deferred runs. A
-legacy project without a profile record must pass --profile once to migrate
-explicitly before resuming.
+workflow operation id is returned by earlier blocked or deferred runs. When
+capture pauses with clarification questions, submit answers with --answer
+(repeatable) or an --answers JSON file; a bare resume re-surfaces the
+questions. A legacy project without a profile record must pass --profile
+once to migrate explicitly before resuming.
 `,
   abort: `Usage: harness abort <workflow-operation-id> [--actor <id>] [--json]
 

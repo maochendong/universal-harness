@@ -189,6 +189,20 @@ describe("model invocation crash reconciliation", () => {
     ).toHaveLength(0);
   });
 
+  it("replays the persisted validated value after a crash without calling the provider again", async () => {
+    const root = makeTempDir("harness-fault-validated-value-");
+    const provider = providerReturning(VALID_OUTPUT);
+    const first = await runManagedInvocation(params(root, provider));
+    expect(first.status).toBe("validated");
+
+    const second = await runManagedInvocation(params(root, provider));
+    expect(second.status).toBe("replayed");
+    if (second.status !== "replayed") return;
+    expect(second.value).toEqual(JSON.parse(VALID_OUTPUT));
+    expect(second.output_digest).toBe(first.status === "validated" ? first.output_digest : "");
+    expect(provider.invoke as ReturnType<typeof vi.fn>).toHaveBeenCalledTimes(1);
+  });
+
   it("replays after a post-consumption crash with zero provider calls", async () => {
     const root = makeTempDir("harness-fault-consumed-");
     const provider = providerReturning(VALID_OUTPUT);
@@ -200,7 +214,27 @@ describe("model invocation crash reconciliation", () => {
     );
     const second = await runManagedInvocation(params(root, provider));
     expect(second.status).toBe("replayed");
+    if (second.status !== "replayed") return;
+    expect(second.value).toEqual(JSON.parse(VALID_OUTPUT));
     expect(provider.invoke as ReturnType<typeof vi.fn>).toHaveBeenCalledTimes(1);
     expect(recoverableModelInvocations(readModelInvocationRecords(root))).toHaveLength(0);
+  });
+
+  it("resumes after a crash between digest invalidation and the replacement attempt", async () => {
+    const root = makeTempDir("harness-fault-invalidated-");
+    const provider = providerReturning(VALID_OUTPUT);
+    const first = await runManagedInvocation(params(root, provider));
+    expect(first.status).toBe("validated");
+    const validated = readModelInvocationRecords(root).at(-1)!;
+    appendModelInvocationRecord(root, transitionModelInvocation(validated, "invalidated"));
+
+    const next = params(root, provider);
+    const replacement = await runManagedInvocation({
+      ...next,
+      compiled: { ...next.compiled, compiled_prompt_digest: "7".repeat(64) },
+    });
+
+    expect(replacement.status).toBe("validated");
+    expect(Math.max(...readModelInvocationRecords(root).map((record) => record.attempt))).toBe(2);
   });
 });

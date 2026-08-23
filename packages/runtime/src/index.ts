@@ -941,6 +941,7 @@ export {
   readBridgedCaptureApprovalDecision,
   requirementProposalViewOf,
   startCaptureCommandFor,
+  submitCaptureAnswers,
   type CaptureCoordinatorSeam,
   type CaptureCoordinatorSessionContext,
   type AbortIterationInput,

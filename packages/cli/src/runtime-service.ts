@@ -95,7 +95,7 @@ import {
   createManagedCaptureCoordinator,
   defaultCaptureRiskPolicy,
 } from "./managed-capture-coordinator.js";
-import { createManagedPipelinePorts } from "./managed-pipeline-ports.js";
+import { ManagedPipelinePortsError, createManagedPipelinePorts } from "./managed-pipeline-ports.js";
 import {
   ProjectRuntimeConfigError,
   readProjectRuntimeConfig,
@@ -242,11 +242,13 @@ function baselineDigestForProject(projectRoot: string): string {
 }
 
 /**
- * Protocol-1.1 slice 2 capture gating: with no `model_providers` or no
- * committed profile record (pre-1.1 legacy project) the capture phase keeps
- * its exact current behavior. With both, capture runs through the assembled
- * PrdCaptureCoordinator; a declared-but-uncovered slot fails closed as a
- * configuration error rather than degrading. The ProfileDecision identity
+ * Protocol-1.1 slice 2 capture gating: a pre-1.1 legacy project without a
+ * committed profile record keeps its exact current behavior. With a profile
+ * record, capture runs through the assembled PrdCaptureCoordinator; provider
+ * closure is re-verified deterministically at preflight (design 11.2), so a
+ * Standard/Governed profile missing `model_providers` coverage for any
+ * capture slot fails closed as a configuration error rather than degrading —
+ * only Lite keeps the no-config legacy fallback. The ProfileDecision identity
  * derives deterministically from the stable decision inputs (core has no
  * profile-decision reader yet), the approval bridge reads the same engine
  * ledger the legacy surface writes, and the risk policy routes every capture
@@ -260,7 +262,6 @@ export function managedCaptureSeamForProject(
     readonly environment?: Readonly<Record<string, string | undefined>>;
   } = {},
 ): CaptureCoordinatorSeam | undefined {
-  if (runtimeConfig.model_providers === undefined) return undefined;
   let profile: ProjectProfileRecord | undefined;
   try {
     profile = readLatestProjectProfile(projectRoot, projectIdForProject(projectRoot));
@@ -366,9 +367,25 @@ function outcomeToResult(
     case "input_required":
       return {
         command,
-        status: "failed",
+        status: "input_required",
         message: `mandatory input missing: ${outcome.questions.map((question) => question.question).join("; ")}`,
-        data: { ...extra, questions: outcome.questions.map((question) => ({ ...question })) },
+        data: {
+          ...extra,
+          questions: outcome.questions.map((question) => ({ ...question })),
+          ...(outcome.workflowOperationId === undefined
+            ? {}
+            : { workflow_operation_id: outcome.workflowOperationId }),
+          ...(outcome.captureSessionId === undefined
+            ? {}
+            : { capture_session_id: outcome.captureSessionId }),
+          ...(outcome.sessionRevision === undefined
+            ? {}
+            : { session_revision: outcome.sessionRevision }),
+          ...(outcome.expectedDigest === undefined
+            ? {}
+            : { expected_digest: outcome.expectedDigest }),
+          ...(outcome.resumeCommand === undefined ? {} : { resume_command: outcome.resumeCommand }),
+        },
       };
     case "blocked":
       return {
@@ -663,15 +680,17 @@ export function createOrchestratedRuntimeService(
    * T20 slice 2 design/impact/context routing: when the committed runtime
    * config declares providers covering the pipeline slots, the orchestrator
    * dependencies carry the model-backed ports (design proposal/review, impact
-   * advisory, context enrichment, iteration narrative); anything else keeps
-   * the exact current deterministic/blocked behavior. Projects without a
-   * profile record are pre-1.1 legacy and get no model-backed ports at all.
+   * advisory, context enrichment, iteration narrative). Provider closure is
+   * re-verified at this preflight point (design 11.2): a Standard/Governed
+   * profile missing `model_providers` — or coverage for any required blocking
+   * slot — fails closed as a configuration error; Lite and pre-1.1 legacy
+   * projects (no profile record) keep the exact current
+   * deterministic/blocked behavior.
    */
   const managedPipelinePortsFor = (
     projectRoot: string,
     runtimeConfig: ProjectRuntimeConfig,
   ): ReturnType<typeof createManagedPipelinePorts> => {
-    if (runtimeConfig.model_providers === undefined) return {};
     let profile: ProjectProfileRecord | undefined;
     try {
       profile = readLatestProjectProfile(projectRoot, projectIdFor(projectRoot));
@@ -680,11 +699,18 @@ export function createOrchestratedRuntimeService(
       throw error;
     }
     if (profile === undefined) return {};
-    return createManagedPipelinePorts({
-      projectRoot,
-      runtimeConfig,
-      profile_id: profile.profile_id,
-    });
+    try {
+      return createManagedPipelinePorts({
+        projectRoot,
+        runtimeConfig,
+        profile_id: profile.profile_id,
+      });
+    } catch (error) {
+      if (error instanceof ManagedPipelinePortsError) {
+        throw new OrchestrationError("configuration", error.message);
+      }
+      throw error;
+    }
   };
 
   /** Persist the initial profile baseline and its decision (append-only). */
@@ -812,7 +838,11 @@ export function createOrchestratedRuntimeService(
       const outcome = await resumeIteration(
         orchestratorDeps(request.projectRoot),
         request.workflowOperationId,
-        { intent: "", intentShape: "pack-converted" },
+        {
+          intent: "",
+          intentShape: "pack-converted",
+          ...(request.answers === undefined ? {} : { answers: request.answers }),
+        },
       );
       return outcomeToResult("resume", outcome);
     });

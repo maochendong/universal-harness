@@ -146,9 +146,9 @@ function runIdFor(conversationId: string): string {
 }
 
 /**
- * Invoke one compiled prompt through the managed runner (shared by every
- * model-backed adapter): a replayed outcome cannot supply the value because
- * raw outputs are never persisted, so it re-runs fresh exactly once.
+ * Invoke one compiled prompt through the managed runner. Validated structured
+ * values are persisted behind an immutable result locator, so replay returns
+ * the exact first value and never performs a second non-deterministic call.
  */
 export async function invokeManagedPrompt(
   deps: ManagedInvocationAdapterDeps,
@@ -179,43 +179,15 @@ export async function invokeManagedPrompt(
     ...(deps.provider === undefined ? {} : { provider: deps.provider }),
     ...(deps.artifact_sink === undefined ? {} : { artifact_sink: deps.artifact_sink }),
   });
-  if (outcome.status !== "replayed") {
-    return outcome;
-  }
-  // A replay cannot supply the value (raw outputs are never persisted), so
-  // the caller crashed between validation and consumption: run fresh, once.
-  const fresh = await runManagedInvocation({
-    projectRoot: deps.projectRoot,
-    identity: {
-      invocation_id: request.invocation_id,
-      conversation_id: request.conversation_id,
-      run_id: request.run_id,
-    },
-    port_id: request.port_id,
-    ...(request.purpose === undefined ? {} : { purpose: request.purpose }),
-    binding: bindingOf(request.contract, deps.provider_config),
-    output_schema_id: request.output_schema_id,
-    compiled: request.compiled,
-    budget: deps.budget ?? DEFAULT_BUDGET,
-    ...(deps.provider === undefined ? {} : { provider: deps.provider }),
-    ...(deps.artifact_sink === undefined ? {} : { artifact_sink: deps.artifact_sink }),
-    force_fresh: true,
-  });
-  if (fresh.status === "replayed") {
-    throw new PromptPreparationFailureError({
-      code: "prompt_contract_version_mismatch",
-      summary: `invocation ${request.invocation_id} replayed even with force_fresh; the store is inconsistent`,
-      retryable: false,
-    });
-  }
-  return fresh;
+  return outcome;
 }
 
-/** Mark a validated invocation consumed; the value has left the runner. */
+/** Mark a validated invocation consumed; replay of an already-consumed value is idempotent. */
 export function consumeManagedInvocation(
   deps: ManagedInvocationAdapterDeps,
   record: Parameters<typeof transitionModelInvocation>[0],
 ): void {
+  if (record.state === "consumed") return;
   appendModelInvocationRecord(deps.projectRoot, transitionModelInvocation(record, "consumed"));
 }
 

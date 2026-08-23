@@ -6,11 +6,22 @@ import {
   buildLegacyTemplateInput,
   createLegacyIntentInterpreterAdapter,
   resolveCaptureProposalAdapter,
+  type LegacyAcceptanceInput,
 } from "../../src/proposal/legacy.js";
 import type { PrdProposalPort } from "../../src/proposal/port.js";
+import { createPrdProposalRecord } from "../../src/proposal/records.js";
 import type { CaptureUxTelemetryEvent } from "../../src/proposal/telemetry.js";
 import { createManualPrdProposalAdapter } from "../../src/proposal/manual.js";
-import { makeProposalInput, makeSession, makeValidDraft } from "./helpers.js";
+import type { PrdProposalDraft, PrdProposalRecord } from "../../src/schema/proposal.js";
+import type { CaptureSessionRecord } from "../../src/schema/capture.js";
+import {
+  ADAPTER_PROFILE_DIGEST,
+  PROMPT_VERSION_DIGEST,
+  makeBundle,
+  makeProposalInput,
+  makeSession,
+  makeValidDraft,
+} from "./helpers.js";
 
 describe("createLegacyIntentInterpreterAdapter", () => {
   it("maps InterpretedIntent deterministically without guessing new required fields", async () => {
@@ -179,7 +190,139 @@ describe("createLegacyIntentInterpreterAdapter", () => {
     await adapter.propose(makeProposalInput(session));
     expect(events.map((event) => event.kind)).toContain("legacy_interpreter_invoked");
   });
+
+  it("derives criterion draft keys from content, so insertions never rotate them", async () => {
+    const session = makeSession();
+    const alpha = {
+      description: "exporting produces a CSV with the report rows",
+      verification: "compare the CSV rows with the report data",
+    };
+    const beta = {
+      description: "the export completes within the batch window",
+      verification: "inspect the batch log",
+    };
+    const statement = "The user can export the monthly report as a CSV file.";
+    const proposeWith = (acceptance: readonly LegacyAcceptanceInput[]) =>
+      createLegacyIntentInterpreterAdapter({
+        interpreter: () => ({ requirements: [{ statement, acceptance }] }),
+      }).propose(makeProposalInput(session));
+
+    const first = await proposeWith([alpha, beta]);
+    if (first.status !== "proposed") throw new Error("expected a draft");
+    const firstKeys = first.draft.acceptance_criteria.map((criterion) => criterion.draft_key);
+    for (const key of firstKeys) {
+      expect(key).toMatch(/^criterion-[a-f0-9]{64}$/u);
+    }
+
+    // inserting an unrelated criterion before them must not rotate their keys
+    const inserted = await proposeWith([
+      { description: "a failure leaves no partial file", verification: "check the directory" },
+      alpha,
+      beta,
+    ]);
+    if (inserted.status !== "proposed") throw new Error("expected a draft");
+    const insertedKeys = inserted.draft.acceptance_criteria.map((criterion) => criterion.draft_key);
+    expect(insertedKeys[1]).toBe(firstKeys[0]);
+    expect(insertedKeys[2]).toBe(firstKeys[1]);
+    expect(insertedKeys[0]).not.toBe(firstKeys[0]);
+    // requirement references still resolve through draft keys
+    expect(inserted.draft.acceptance_criteria[0]?.requirement_id).toBe(
+      inserted.draft.requirements[0]?.draft_key,
+    );
+    expect(inserted.draft.requirements[0]?.acceptance_criterion_ids).toEqual(insertedKeys);
+  });
+
+  it("continues unchanged criterion lineage so canonical ids survive revisions", async () => {
+    const session = makeSession();
+    const alpha = {
+      description: "exporting produces a CSV with the report rows",
+      verification: "compare the CSV rows with the report data",
+    };
+    const beta = {
+      description: "the export completes within the batch window",
+      verification: "inspect the batch log",
+    };
+    const statement = "The user can export the monthly report as a CSV file.";
+    const adapter = createLegacyIntentInterpreterAdapter({
+      interpreter: () => ({ requirements: [{ statement, acceptance: [alpha, beta] }] }),
+    });
+
+    const first = await adapter.propose(makeProposalInput(session));
+    if (first.status !== "proposed") throw new Error("expected a draft");
+    expect(first.draft.acceptance_criteria[0]?.lineage).toEqual({ kind: "new" });
+    const firstRecord = commitDraft(session, first.draft, 1);
+    // canonical content is sorted by criterion id, so index by action
+    const firstIdByAction = new Map(
+      firstRecord.content.acceptance_criteria.map((criterion) => [
+        criterion.action,
+        criterion.criterion_id,
+      ]),
+    );
+    const alphaId = firstIdByAction.get(alpha.description);
+    const betaId = firstIdByAction.get(beta.description);
+    expect(alphaId).toMatch(/^prd-criterion_/u);
+    expect(betaId).toMatch(/^prd-criterion_/u);
+
+    // revision 2: alpha unchanged, beta reworded — only beta is re-minted
+    const revised = await createLegacyIntentInterpreterAdapter({
+      interpreter: () => ({
+        requirements: [
+          {
+            statement,
+            acceptance: [
+              alpha,
+              {
+                description: "the export finishes inside the batch window",
+                verification: "inspect the batch log",
+              },
+            ],
+          },
+        ],
+      }),
+    }).propose(makeProposalInput(session, { previous_proposal: firstRecord }));
+    if (revised.status !== "proposed") throw new Error("expected a draft");
+    expect(revised.draft.acceptance_criteria[0]?.lineage).toEqual({
+      kind: "continues",
+      previous_entity_id: alphaId,
+    });
+    expect(revised.draft.acceptance_criteria[1]?.lineage).toEqual({ kind: "new" });
+
+    const secondRecord = commitDraft(session, revised.draft, 2, firstRecord);
+    const secondByAction = new Map(
+      secondRecord.content.acceptance_criteria.map((criterion) => [
+        criterion.action,
+        criterion.criterion_id,
+      ]),
+    );
+    expect(secondByAction.get(alpha.description)).toBe(alphaId);
+    expect(secondByAction.get("the export finishes inside the batch window")).not.toBe(betaId);
+    expect(secondByAction.get("the export finishes inside the batch window")).toMatch(
+      /^prd-criterion_[A-Za-z0-9_-]+$/u,
+    );
+  });
 });
+
+function commitDraft(
+  session: CaptureSessionRecord,
+  draft: PrdProposalDraft,
+  revision: number,
+  previous?: PrdProposalRecord,
+): PrdProposalRecord {
+  return createPrdProposalRecord({
+    session,
+    revision,
+    draft,
+    proposal_context_bundle: makeBundle(session),
+    answers: [],
+    ...(previous === undefined ? {} : { previous_proposal: previous }),
+    adapter_profile_digest: ADAPTER_PROFILE_DIGEST,
+    prompt_version_digest: PROMPT_VERSION_DIGEST,
+    producer_identity: "test-producer",
+    invocation_id: "capture-invocation_01K1ABCDEFGHIJKLMNO",
+    conversation_id: "capture-conversation_01K1ABCDEFGHIJKLMNO",
+    evidence_locator: "capture-evidence://capture-invocation_01K1ABCDEFGHIJKLMNO",
+  }).record;
+}
 
 describe("resolveCaptureProposalAdapter compatibility config", () => {
   const session = makeSession();

@@ -56,6 +56,7 @@ import {
 } from "@universal-harness-internal/runtime";
 
 import { assembleModelProviders } from "./model-providers.js";
+import { profileRequiresManagedModelPorts } from "./managed-pipeline-ports.js";
 import { createShippedPromptContractRegistry } from "./prompt-registry.js";
 import type { ProjectRuntimeConfig } from "./project-runtime-config.js";
 
@@ -72,8 +73,10 @@ import type { ProjectRuntimeConfig } from "./project-runtime-config.js";
  * the real domain factory — proposal/validation, review, risk, approval brief
  * and the accepted transaction — over model-backed ports; only the context
  * stage is wired here, wrapping the local-git adapter exactly as the domain
- * test pipelines do. A project without `model_providers` gets no coordinator
- * (undefined); a partial declaration throws instead of degrading — nothing
+ * test pipelines do. A Lite project without `model_providers` gets no
+ * coordinator (undefined); a Standard/Governed project without coverage for
+ * any capture slot — including no declaration at all — throws instead of
+ * degrading (design 11.2 preflight closure): nothing
  * fails open. API keys never travel through here: only the env var names
  * reach the provider instances.
  */
@@ -143,9 +146,10 @@ const PRODUCER_IDENTITY = "universal-harness-cli" as const;
 /**
  * Production defaults for the capture review rubric and risk policy (slice 2;
  * a project-level override can be wired later). The rubric mirrors the domain
- * test fixtures — clarity/completeness/testability, all mandatory. The policy
- * never allows policy-auto approval: every captured PRD routes to the human
- * approval surface, matching the legacy requirement-baseline approval.
+ * test fixtures — clarity/completeness/testability, all mandatory. Lite and
+ * Standard permit the domain engine's narrow low/non-material/high-confidence
+ * policy route; Governed always retains human approval. Risk, upgrade and deny
+ * rules remain authoritative and cannot be bypassed by this default.
  */
 export const DEFAULT_CAPTURE_REVIEW_RUBRIC: PrdReviewRubric = {
   rubric_id: "capture-review-rubric",
@@ -164,7 +168,7 @@ export function defaultCaptureRiskPolicy(
   return {
     project_id: projectId,
     profile_id: profileId,
-    allow_policy_auto_approval: false,
+    allow_policy_auto_approval: profileId !== "governed",
     policy_actor: `policy:capture-${profileId}@1`,
   };
 }
@@ -436,7 +440,16 @@ function commitCaptureScopeBindings(
 export function createManagedCaptureCoordinator(
   deps: ManagedCaptureCoordinatorDeps,
 ): ManagedCaptureCoordinator | undefined {
-  if (deps.runtimeConfig.model_providers === undefined) return undefined;
+  // Provider closure is re-verified deterministically at preflight (design
+  // 11.2): a Standard/Governed project with no `model_providers` at all falls
+  // through to the empty resolver so the coverage check below fails closed,
+  // exactly like a partial declaration. Lite keeps the legacy fallback.
+  if (
+    deps.runtimeConfig.model_providers === undefined &&
+    !profileRequiresManagedModelPorts(deps.profile.profile_id)
+  ) {
+    return undefined;
+  }
   const resolver = assembleModelProviders(deps.runtimeConfig, {
     ...(deps.fetch === undefined ? {} : { fetch: deps.fetch }),
     ...(deps.environment === undefined ? {} : { environment: deps.environment }),

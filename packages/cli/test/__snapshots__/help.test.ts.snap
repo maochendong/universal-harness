@@ -165,12 +165,14 @@ affects future operations.
 `;
 
 exports[`harness CLI help and version > prints per-command help 4`] = `
-"Usage: harness resume <workflow-operation-id> [--profile <lite|standard|governed>] [--json]
+"Usage: harness resume <workflow-operation-id> [--profile <lite|standard|governed>] [--answer <question-id>=<value> ...] [--answers <file.json>] [--json]
 
 Resume a paused orchestration from its last committed checkpoint. The
-workflow operation id is returned by earlier blocked or deferred runs. A
-legacy project without a profile record must pass --profile once to migrate
-explicitly before resuming.
+workflow operation id is returned by earlier blocked or deferred runs. When
+capture pauses with clarification questions, submit answers with --answer
+(repeatable) or an --answers JSON file; a bare resume re-surfaces the
+questions. A legacy project without a profile record must pass --profile
+once to migrate explicitly before resuming.
 "
 `;
 

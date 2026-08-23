@@ -1,4 +1,5 @@
 import {
+  type CaptureAnswerInput,
   type CommitHooks,
   type DesignProposalPort,
   type DesignReviewPort,
@@ -245,6 +246,19 @@ export type OrchestrationOutcome =
   | {
       readonly status: "input_required";
       readonly questions: readonly ClarificationQuestion[];
+      /**
+       * Protocol-1.1 capture session binding (design 16.1), present when a
+       * coordinated capture session awaits clarification answers: the blocked
+       * operation, the session identity and revision, the digest the answer
+       * submission must match, and the command that resumes the loop. Absent
+       * on the legacy interpreter path, which opens no operation and no
+       * session.
+       */
+      readonly workflowOperationId?: string;
+      readonly captureSessionId?: string;
+      readonly sessionRevision?: number;
+      readonly expectedDigest?: string;
+      readonly resumeCommand?: string;
     }
   | {
       readonly status: "blocked";
@@ -287,6 +301,12 @@ export interface RunIterationInput {
   readonly iterationId?: string;
   /** Stop after this phase completes (advanced-command drives). */
   readonly untilPhase?: OrchestrationPhase;
+  /**
+   * Clarification answers for a coordinated capture session awaiting input
+   * (resume only; design 16.1). Submission is idempotent and digest-bound
+   * through the coordinator's `submit_clarification_answers` command.
+   */
+  readonly answers?: readonly CaptureAnswerInput[];
 }
 /**
  * Planner port (comparative design direction 3, card T2): turns the approved

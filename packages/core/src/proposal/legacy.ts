@@ -2,7 +2,7 @@ import type { ClarificationOption } from "../schema/capture.js";
 import type { ClarificationQuestionDraft } from "../capture/records.js";
 import { canonicalizeJson } from "../identity/canonical-json.js";
 import { contentDigest } from "../identity/digest.js";
-import type { PrdProposalDraft } from "../schema/proposal.js";
+import type { PrdProposalDraft, PrdProposalRecord, PrdScenarioKind } from "../schema/proposal.js";
 import type { PrdProposalInput, PrdProposalPort } from "./port.js";
 import { noopCaptureUxTelemetry, type CaptureUxTelemetrySink } from "./telemetry.js";
 
@@ -142,6 +142,73 @@ function mapOffer(offer: LegacyClarificationOffer): ClarificationQuestionDraft[]
   return drafts;
 }
 
+/** NFC, unified newlines, trimmed — the Coordinator canonical text form. */
+function normalizeLegacyText(value: string): string {
+  return value.normalize("NFC").replace(/\r\n?/gu, "\n").trim();
+}
+
+/**
+ * Criterion draft identity (intent-to-prd design 6.4/6.5, provable TDD
+ * design 7.1): a criterion's draft key is derived from its semantic content
+ * — the same business fields `criterionSemanticDigest` covers, with the
+ * parent requirement statement standing in for the canonical requirement id
+ * the adapter cannot know — never from its position, so inserting,
+ * removing or reordering unrelated criteria never rotates an unchanged
+ * criterion's identity.
+ */
+interface LegacyCriterionSemantics {
+  readonly requirement_statement: string;
+  readonly precondition: string;
+  readonly action: string;
+  readonly observable_outcome: string;
+  readonly verification_intent: string;
+  readonly test_first_example: string | null;
+  readonly scenario_kind: PrdScenarioKind;
+}
+
+function legacyCriterionSignature(semantics: LegacyCriterionSemantics): string {
+  return contentDigest({
+    requirement_statement: semantics.requirement_statement,
+    precondition: semantics.precondition,
+    action: semantics.action,
+    observable_outcome: semantics.observable_outcome,
+    verification_intent: semantics.verification_intent,
+    test_first_example: semantics.test_first_example,
+    scenario_kind: semantics.scenario_kind,
+  });
+}
+
+/**
+ * Prior-revision criteria indexed by legacy semantic signature, for
+ * `continues` lineage: an unchanged criterion reclaims its canonical id, so
+ * a new proposal revision never re-mints it. Exact semantic twins are
+ * claimed one per prior criterion; a prior criterion whose semantics the
+ * legacy interface cannot express (non-empty precondition, distinct
+ * outcome, a test-first example) simply never matches.
+ */
+function previousCriterionClaims(previous: PrdProposalRecord | undefined): Map<string, string[]> {
+  const claims = new Map<string, string[]>();
+  if (previous === undefined) return claims;
+  const requirementStatements = new Map(
+    previous.content.requirements.map((requirement) => [requirement.id, requirement.statement]),
+  );
+  for (const criterion of previous.content.acceptance_criteria) {
+    const requirementStatement = requirementStatements.get(criterion.requirement_id);
+    if (requirementStatement === undefined) continue;
+    const signature = legacyCriterionSignature({
+      requirement_statement: requirementStatement,
+      precondition: criterion.precondition,
+      action: criterion.action,
+      observable_outcome: criterion.observable_outcome,
+      verification_intent: criterion.verification_intent,
+      test_first_example: criterion.test_first_example ?? null,
+      scenario_kind: criterion.scenario_kind,
+    });
+    claims.set(signature, [...(claims.get(signature) ?? []), criterion.criterion_id]);
+  }
+  return claims;
+}
+
 function mapInterpretedIntent(
   intent: LegacyInterpretedIntent,
   input: PrdProposalInput,
@@ -151,32 +218,61 @@ function mapInterpretedIntent(
     source_id: "intent",
     source_digest: input.session.intent_digest,
   };
-  const requirements = intent.requirements.map((requirement, requirementIndex) => ({
-    draft_key: `requirement-${String(requirementIndex + 1)}`,
-    lineage: { kind: "new" as const },
-    proposed_source_bindings: [binding],
-    statement: requirement.statement,
-    priority: "must" as const,
-    change_kind: "must_change" as const,
-    scenario_ids: [],
-    acceptance_criterion_ids: requirement.acceptance.map(
-      (_criterion, criterionIndex) =>
-        `criterion-${String(requirementIndex + 1)}-${String(criterionIndex + 1)}`,
-    ),
-  }));
-  const criteria = intent.requirements.flatMap((requirement, requirementIndex) =>
-    requirement.acceptance.map((criterion, criterionIndex) => ({
-      draft_key: `criterion-${String(requirementIndex + 1)}-${String(criterionIndex + 1)}`,
-      lineage: { kind: "new" as const },
-      proposed_source_bindings: [binding],
-      requirement_id: `requirement-${String(requirementIndex + 1)}`,
+  const claims = previousCriterionClaims(input.previous_proposal);
+  const usedSignatures = new Map<string, number>();
+  const mapped = intent.requirements.map((requirement, requirementIndex) => {
+    const requirementKey = `requirement-${String(requirementIndex + 1)}`;
+    const requirementSemantics = {
+      requirement_statement: normalizeLegacyText(requirement.statement),
       precondition: "",
-      action: criterion.description,
-      observable_outcome: criterion.description,
-      verification_intent: criterion.verification,
+      test_first_example: null,
       scenario_kind: "primary" as const,
-    })),
-  );
+    };
+    const criteria = requirement.acceptance.map((criterion) => {
+      const signature = legacyCriterionSignature({
+        ...requirementSemantics,
+        action: normalizeLegacyText(criterion.description),
+        observable_outcome: normalizeLegacyText(criterion.description),
+        verification_intent: normalizeLegacyText(criterion.verification),
+      });
+      // Exact semantic twins are indistinguishable, so only the occurrence
+      // order among twins disambiguates their draft keys (design 6.4).
+      const occurrence = (usedSignatures.get(signature) ?? 0) + 1;
+      usedSignatures.set(signature, occurrence);
+      const draftKey =
+        occurrence === 1
+          ? `criterion-${signature}`
+          : `criterion-${signature}-${String(occurrence)}`;
+      const continued = claims.get(signature)?.shift();
+      return {
+        draft_key: draftKey,
+        lineage:
+          continued === undefined
+            ? { kind: "new" as const }
+            : { kind: "continues" as const, previous_entity_id: continued },
+        proposed_source_bindings: [binding],
+        requirement_id: requirementKey,
+        precondition: "",
+        action: criterion.description,
+        observable_outcome: criterion.description,
+        verification_intent: criterion.verification,
+        scenario_kind: "primary" as const,
+      };
+    });
+    return {
+      requirement: {
+        draft_key: requirementKey,
+        lineage: { kind: "new" as const },
+        proposed_source_bindings: [binding],
+        statement: requirement.statement,
+        priority: "must" as const,
+        change_kind: "must_change" as const,
+        scenario_ids: [],
+        acceptance_criterion_ids: criteria.map((criterion) => criterion.draft_key),
+      },
+      criteria,
+    };
+  });
   const constraints = (intent.constraints ?? []).map((constraint, constraintIndex) => ({
     draft_key: `constraint-${String(constraintIndex + 1)}`,
     lineage: { kind: "new" as const },
@@ -193,9 +289,9 @@ function mapInterpretedIntent(
     non_goals: [],
     actors: [],
     scenarios: [],
-    requirements,
+    requirements: mapped.map((entry) => entry.requirement),
     constraints,
-    acceptance_criteria: criteria,
+    acceptance_criteria: mapped.flatMap((entry) => entry.criteria),
     assumptions: [],
     dependencies: [],
     risks: [],

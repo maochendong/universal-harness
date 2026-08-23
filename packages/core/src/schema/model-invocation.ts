@@ -71,6 +71,8 @@ export const ModelInvocationRecordSchema = recordEnvelopeSchema("model_invocatio
   failure: Type.Optional(ModelPortFailureSchema),
   output_digest: Type.Optional(DigestSchema),
   artifact_locator: Type.Optional(Type.String({ minLength: 1 })),
+  /** Immutable parsed result used for deterministic crash/cache replay. */
+  result_locator: Type.Optional(Type.String({ minLength: 1 })),
   /**
    * PG-8 observability: provider-reported usage, when the provider supplies
    * it. Absent means unavailable — never zero-filled.

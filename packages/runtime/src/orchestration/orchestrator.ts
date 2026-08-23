@@ -52,9 +52,11 @@ import {
   materializeProjectGraph,
   newIdOf,
   nowOf,
+  PENDING_REQUIREMENT_BASELINE_DIGEST,
   readJsonArtifact,
   runNodeArtifactPath,
   runNodeRecord,
+  submitCaptureAnswers,
   workflowDeps,
 } from "./kernel-coordinator.js";
 import { OrchestrationError } from "./pipeline-types.js";
@@ -108,6 +110,7 @@ export {
   createDirectExecutor,
   createGenericInterpreter,
   materializeProjectGraph,
+  submitCaptureAnswers,
 } from "./kernel-coordinator.js";
 export { createDefaultEvaluationPort } from "./contributors/evaluation-contributor.js";
 export { provenQualityTaskIds } from "./contributors/audit-contributor.js";
@@ -131,9 +134,22 @@ export async function runIteration(
   const iterationId =
     input.iterationId ??
     `iteration_${sha256Hex(`${input.intent}:${String(readCommittedOperations(harnessRoot(deps)).length)}`).slice(0, 16)}`;
-  const captured = await captureProposal(deps, input.intent, iterationId);
-  if (captured.status === "clarification_required") {
-    return { status: "input_required", questions: captured.questions };
+  // Coordinated capture binds the session and every invocation to the real
+  // workflow operation (intent-to-prd design 16.1), so the Operation opens
+  // first — phase capture — and capture runs inside the pipeline; the
+  // requirement baseline digest stays the pending sentinel until the capture
+  // phase seals the accepted baseline into its closing checkpoint. The legacy
+  // interpreter path has no session to bind and keeps its historical order:
+  // capture first, then the operation opens with the real digest.
+  let requirementBaselineDigest: string;
+  if (deps.capture !== undefined) {
+    requirementBaselineDigest = PENDING_REQUIREMENT_BASELINE_DIGEST;
+  } else {
+    const captured = await captureProposal(deps, input.intent, iterationId);
+    if (captured.status === "clarification_required") {
+      return { status: "input_required", questions: captured.questions };
+    }
+    requirementBaselineDigest = captured.baselineDigest;
   }
   const policy = effectivePolicy();
   const engine = new WorkflowEngine(workflowDeps(deps));
@@ -143,7 +159,7 @@ export async function runIteration(
     iterationId,
     goal: input.intent,
     baselineCommit: deps.readBaseline(),
-    requirementBaselineDigest: captured.baselineDigest,
+    requirementBaselineDigest,
     policyDigest: policy.digest,
     phase: "capture",
     budgetCeiling: { steps: 30, tokens: 120000 },
@@ -194,6 +210,19 @@ export async function resumeIteration(
       "operation_not_found",
       `workflow operation ${workflowOperationId} has no working state goal`,
     );
+  }
+  if (input?.answers !== undefined && input.answers.length > 0) {
+    if (deps.capture === undefined) {
+      throw new OrchestrationError(
+        "configuration",
+        "clarification answers require a coordinated capture session; this operation has none",
+      );
+    }
+    // The session binds the working-state goal, never the (possibly empty)
+    // resume-input intent; submission happens before the operation reopens so
+    // a rejected answer set leaves the block untouched.
+    const goal = engine.getWorkingState(workflowOperationId)?.goal ?? intent;
+    await submitCaptureAnswers(deps, deps.capture, goal, workflowOperationId, input.answers);
   }
   let resumedRuns: readonly {
     readonly interruptedRunId: string;

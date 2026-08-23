@@ -5,6 +5,7 @@ import { compileCriterionAssertions } from "../../../core/src/index.js";
 import {
   createInMemoryPlanProposalPort,
   createLegacyPlanTasksAdapter,
+  materializePlanTasks,
   validatePlanProposalAllocation,
   type PlanProposalInput,
   type PlanProposalTaskCandidate,
@@ -192,5 +193,48 @@ describe("plan proposal ports", () => {
     expect(result.warnings?.[0]).toContain("deprecated");
     expect(result.tasks[0]?.task_key).toBe("task_legacy");
     expect(result.tasks[0]?.assertion_ids).toEqual([canonicalAssertions()[0]?.assertion_id]);
+  });
+});
+
+describe("legacy criterion materialization", () => {
+  it("binds each fallback criterion assertion to its corresponding Test seed", () => {
+    const tasks = materializePlanTasks(
+      [
+        candidate({
+          assertion_ids: [],
+          requirement_ids: ["requirement_01K1REQ"],
+        }),
+      ],
+      {
+        canonical_assertions: [],
+        impactPaths: [],
+        gateIds: ["gate_target"],
+        requirement_acceptance: {
+          requirement_01K1REQ: [
+            { description: "exports CSV", verification: "CSV gate passes" },
+            { description: "downloads file", verification: "download gate passes" },
+          ],
+        },
+        legacy_test_seeds: {
+          requirement_01K1REQ: [
+            {
+              description: "downloads file",
+              verification: "download gate passes",
+              test_node_id: "test_download",
+            },
+            {
+              description: "exports CSV",
+              verification: "CSV gate passes",
+              test_node_id: "test_csv",
+            },
+          ],
+        },
+      },
+    );
+
+    expect(tasks[0]?.assertions?.map((assertion) => assertion.test_ids)).toEqual([
+      ["test_csv"],
+      ["test_download"],
+    ]);
   });
 });

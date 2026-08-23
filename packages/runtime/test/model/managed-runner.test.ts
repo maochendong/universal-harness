@@ -96,8 +96,10 @@ describe("managed runner provider boundary", () => {
       "max_output_bytes",
       "messages",
       "output_schema_id",
+      "signal",
       "timeout_ms",
     ]);
+    expect(request["signal"]).toBeInstanceOf(AbortSignal);
     expect(JSON.stringify(request)).not.toContain(root);
   });
 
@@ -115,6 +117,23 @@ describe("managed runner provider boundary", () => {
     expect(statesAtCallTime).toEqual(["planned", "started"]);
     const states = readModelInvocationRecords(root).map((record) => record.state);
     expect(states).toEqual(["planned", "started", "completed", "validated"]);
+  });
+
+  it("records provider token usage and Harness-measured duration", async () => {
+    const root = makeTempDir("harness-runner-usage-");
+    let now = 1_000;
+    const provider: ManagedModelProviderPort = {
+      invoke: async () => {
+        now = 1_125;
+        return { ok: true, content: VALID_OUTPUT, usage: { tokens: 37 } };
+      },
+    };
+    const outcome = await runManagedInvocation(params(root, { provider, clock: () => now }));
+    expect(outcome.status).toBe("validated");
+    expect(readModelInvocationRecords(root).at(-1)?.usage).toEqual({
+      tokens: 37,
+      duration_ms: 125,
+    });
   });
 
   it("records a typed provider failure on the invocation record", async () => {
@@ -185,6 +204,24 @@ describe("managed runner replay, cache and independence", () => {
     appendModelInvocationRecord(root, transitionModelInvocation(validated, "consumed"));
 
     const second = await runManagedInvocation(params(root, { provider }));
+    expect(second.status).toBe("replayed");
+    expect(provider.invoke as ReturnType<typeof vi.fn>).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not allow caller input to force a validated result to run twice", async () => {
+    const root = makeTempDir("harness-runner-");
+    const provider = providerReturning(VALID_OUTPUT);
+    const first = await runManagedInvocation(params(root, { provider }));
+    expect(first.status).toBe("validated");
+
+    // Runtime inputs may still contain the removed pre-result-artifact option.
+    // It must be ignored: immutable validated evidence is always replayed.
+    const legacyInput = {
+      ...params(root, { provider }),
+      force_fresh: true,
+    } as RunManagedInvocationParams;
+    const second = await runManagedInvocation(legacyInput);
+
     expect(second.status).toBe("replayed");
     expect(provider.invoke as ReturnType<typeof vi.fn>).toHaveBeenCalledTimes(1);
   });

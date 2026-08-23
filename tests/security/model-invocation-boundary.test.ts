@@ -134,8 +134,10 @@ describe("provider isolation boundary", () => {
       "max_output_bytes",
       "messages",
       "output_schema_id",
+      "signal",
       "timeout_ms",
     ]);
+    expect(request["signal"]).toBeInstanceOf(AbortSignal);
     const serialized = JSON.stringify(request);
     expect(serialized).not.toContain(root);
     expect(serialized).not.toContain("process.env");

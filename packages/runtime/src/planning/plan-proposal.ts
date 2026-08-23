@@ -1,5 +1,7 @@
 import {
   contentDigest,
+  criterionAssertionId,
+  criterionSemanticDigest,
   validateCriterionAssertionCoverage,
   type CriterionAssertionDescriptor,
   type DesignProposalQuestion,
@@ -392,8 +394,17 @@ export function materializePlanTasks(
     readonly requirement_acceptance: Readonly<
       Record<string, readonly { readonly description: string; readonly verification: string }[]>
     >;
-    /** Requirement id → accepted Test node ids verifying it. */
-    readonly requirement_test_ids: Readonly<Record<string, readonly string[]>>;
+    /** Requirement id → exact legacy acceptance pair/Test seed bindings. */
+    readonly legacy_test_seeds: Readonly<
+      Record<
+        string,
+        readonly {
+          readonly description: string;
+          readonly verification: string;
+          readonly test_node_id: string;
+        }[]
+      >
+    >;
   },
 ): TaskSpecification[] {
   const idByKey = new Map(
@@ -427,19 +438,47 @@ export function materializePlanTasks(
         evidence_requirements: ["gate_evidence"],
       }));
     // Without canonical criterion lineage (no managed-capture seeds), fall
-    // back to the deterministic per-acceptance assertions of the default
-    // decomposition so atomic-acceptance checks still hold.
+    // back to assertions over the baseline acceptance pairs — but with the
+    // same canonical identity the default decomposition compiles (semantic
+    // digest over the pair, never a positional mint), so atomic-acceptance
+    // checks and criterion→evidence traceability still hold.
     const assertions =
       canonicalAssertions.length > 0
         ? canonicalAssertions
-        : candidate.requirement_ids.flatMap((requirementId) =>
-            (context.requirement_acceptance[requirementId] ?? []).map((criterion, index) => ({
-              assertion_id: `assertion_${contentDigest({ requirement: requirementId, criterion, index }).slice(0, 16)}`,
-              test_ids: [...(context.requirement_test_ids[requirementId] ?? [])].sort(),
-              required_gate_ids: gatesFor(candidate),
-              evidence_requirements: ["gate_evidence"],
-            })),
-          );
+        : candidate.requirement_ids.flatMap((requirementId) => {
+            const remainingSeeds = [...(context.legacy_test_seeds[requirementId] ?? [])];
+            return (context.requirement_acceptance[requirementId] ?? []).map((criterion) => {
+              const seedIndex = remainingSeeds.findIndex(
+                (seed) =>
+                  seed.description === criterion.description &&
+                  seed.verification === criterion.verification,
+              );
+              if (seedIndex === -1) {
+                throw new Error(
+                  `plan proposal materialization: accepted criterion of ${requirementId} has no corresponding Test seed`,
+                );
+              }
+              const seed = remainingSeeds.splice(seedIndex, 1)[0]!;
+              const semanticDigest = criterionSemanticDigest({
+                requirement_id: requirementId,
+                precondition: "",
+                action: criterion.description,
+                observable_outcome: criterion.description,
+                verification_intent: criterion.verification,
+                scenario_kind: "primary",
+              });
+              const criterionId = `criterion_${contentDigest({ requirement: requirementId, criterion_semantic_digest: semanticDigest }).slice(0, 16)}`;
+              return {
+                assertion_id: criterionAssertionId({
+                  criterion_id: criterionId,
+                  criterion_semantic_digest: semanticDigest,
+                }),
+                test_ids: [seed.test_node_id],
+                required_gate_ids: gatesFor(candidate),
+                evidence_requirements: ["gate_evidence"],
+              };
+            });
+          });
     return {
       id: idByKey.get(candidate.task_key) as string,
       objective: candidate.goal,

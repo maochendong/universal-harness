@@ -35,29 +35,92 @@ function loopback(hostname: string): boolean {
   );
 }
 
-function privateAddress(hostname: string): boolean {
-  const host = hostname.toLowerCase().replace(/^\[|\]$/gu, "");
-  if (loopback(host)) return true;
-  if (
-    host === "0.0.0.0" ||
-    host === "::" ||
-    host.startsWith("fc") ||
-    host.startsWith("fd") ||
-    host.startsWith("fe8") ||
-    host.startsWith("fe9") ||
-    host.startsWith("fea") ||
-    host.startsWith("feb")
-  )
-    return true;
-  const parts = host.split(".").map(Number);
-  if (parts.length !== 4 || parts.some((part) => !Number.isInteger(part))) return false;
-  const [first = -1, second = -1] = parts;
+/**
+ * Parse an IPv6 literal (any RFC 4291 textual form, including an embedded
+ * dotted IPv4 tail) into its eight 16-bit groups. Returns undefined when the
+ * input is not an IPv6 literal, so callers never mistake a hostname for one.
+ */
+function parseIpv6Groups(host: string): readonly number[] | undefined {
+  let rest = host;
+  const tailGroups: number[] = [];
+  const dotted = /(?:^|:)(\d{1,3}(?:\.\d{1,3}){3})$/u.exec(rest);
+  if (dotted !== null) {
+    const bytes = dotted[1]?.split(".").map(Number) ?? [];
+    if (bytes.some((byte) => byte > 255)) return undefined;
+    const [b0 = 0, b1 = 0, b2 = 0, b3 = 0] = bytes;
+    tailGroups.push((b0 << 8) | b1, (b2 << 8) | b3);
+    rest = rest.slice(0, rest.length - (dotted[1]?.length ?? 0));
+    if (rest.endsWith(":") && !rest.endsWith("::")) rest = rest.slice(0, -1);
+  }
+  if (rest === "") return undefined;
+  const halves = rest.split("::");
+  if (halves.length > 2) return undefined;
+  const parsePart = (part: string): number | undefined =>
+    /^[0-9a-f]{1,4}$/u.test(part) ? Number.parseInt(part, 16) : undefined;
+  const head: number[] = [];
+  for (const part of halves[0] === "" ? [] : (halves[0] ?? "").split(":")) {
+    const value = parsePart(part);
+    if (value === undefined) return undefined;
+    head.push(value);
+  }
+  const tail: number[] = [];
+  if (halves.length === 2) {
+    for (const part of halves[1] === "" ? [] : (halves[1] ?? "").split(":")) {
+      const value = parsePart(part);
+      if (value === undefined) return undefined;
+      tail.push(value);
+    }
+  }
+  const present = head.length + tail.length + tailGroups.length;
+  if (halves.length === 1) {
+    // No "::" compression: exactly eight groups are mandatory.
+    if (present !== 8) return undefined;
+    return [...head, ...tailGroups];
+  }
+  const missing = 8 - present;
+  if (missing < 0) return undefined;
+  return [...head, ...Array<number>(missing).fill(0), ...tail, ...tailGroups];
+}
+
+function privateIpv4(first: number, second: number): boolean {
   return (
+    first === 0 ||
     first === 10 ||
+    first === 127 ||
     (first === 172 && second >= 16 && second <= 31) ||
     (first === 192 && second === 168) ||
     (first === 169 && second === 254)
   );
+}
+
+function privateAddress(hostname: string): boolean {
+  const host = hostname
+    .toLowerCase()
+    .replace(/^\[|\]$/gu, "")
+    .replace(/%.*$/u, "");
+  if (loopback(host)) return true;
+  const groups = parseIpv6Groups(host);
+  if (groups !== undefined) {
+    const [a = 0, b = 0, c = 0, d = 0, e = 0, f = 0, g = 0, h = 0] = groups;
+    const firstFiveZero = a === 0 && b === 0 && c === 0 && d === 0 && e === 0;
+    if (firstFiveZero && f === 0xffff) {
+      // IPv4-mapped IPv6 (`::ffff:127.0.0.1`, also reported by Node in the
+      // compressed hex form `::ffff:7f00:1`): judge the embedded IPv4.
+      return privateIpv4((g >> 8) & 0xff, g & 0xff);
+    }
+    if (firstFiveZero && f === 0) {
+      if (g === 0 && h <= 1) return true; // `::` unspecified, `::1` loopback
+      // Deprecated IPv4-compatible IPv6 (`::127.0.0.1`): judge the embedded IPv4.
+      return privateIpv4((g >> 8) & 0xff, g & 0xff);
+    }
+    if ((a & 0xfe00) === 0xfc00) return true; // fc00::/7 unique-local
+    if ((a & 0xffc0) === 0xfe80) return true; // fe80::/10 link-local
+    return false;
+  }
+  const parts = host.split(".").map(Number);
+  if (parts.length !== 4 || parts.some((part) => !Number.isInteger(part))) return false;
+  const [first = -1, second = -1] = parts;
+  return privateIpv4(first, second);
 }
 
 /** Validate the endpoint before any credential or network operation occurs. */

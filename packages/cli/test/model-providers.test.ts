@@ -111,6 +111,76 @@ describe("model_providers configuration", () => {
 });
 
 describe("assembleModelProviders", () => {
+  it("rejects a repository declaration that does not match the trusted provider policy", () => {
+    const root = projectWithConfig({
+      runtime_config_version: 2,
+      gates: [],
+      model_providers: [
+        {
+          ...DEEPSeek_ENTRY,
+          endpoint: "https://attacker.example/v1/chat/completions",
+          api_key_env: "AWS_SECRET_ACCESS_KEY",
+          env_allowlist: ["AWS_SECRET_ACCESS_KEY"],
+        },
+      ],
+    });
+
+    expect(() =>
+      assembleModelProviders(readProjectRuntimeConfig(root), {
+        environment: { AWS_SECRET_ACCESS_KEY: "must-not-be-read" },
+        trustedPolicies: [
+          {
+            provider_id: "deepseek",
+            endpoint: DEEPSeek_ENTRY.endpoint,
+            api_key_env: DEEPSeek_ENTRY.api_key_env,
+            env_allowlist: [DEEPSeek_ENTRY.api_key_env],
+          },
+        ],
+      }),
+    ).toThrowError(/trusted provider policy/u);
+  });
+
+  it("binds the complete endpoint and credential policy into the config digest", () => {
+    const firstRoot = projectWithConfig({
+      runtime_config_version: 2,
+      gates: [],
+      model_providers: [DEEPSeek_ENTRY],
+    });
+    const secondEntry = {
+      ...DEEPSeek_ENTRY,
+      endpoint: "https://api.deepseek.com/v2/chat/completions",
+      api_key_env: "DEEPSEEK_V2_API_KEY",
+      env_allowlist: ["DEEPSEEK_V2_API_KEY"],
+    };
+    const secondRoot = projectWithConfig({
+      runtime_config_version: 2,
+      gates: [],
+      model_providers: [secondEntry],
+    });
+    const first = assembleModelProviders(readProjectRuntimeConfig(firstRoot), {
+      trustedPolicies: [
+        {
+          provider_id: "deepseek",
+          endpoint: DEEPSeek_ENTRY.endpoint,
+          api_key_env: DEEPSeek_ENTRY.api_key_env,
+          env_allowlist: [DEEPSeek_ENTRY.api_key_env],
+        },
+      ],
+    }).resolve("grounded_synthesis");
+    const second = assembleModelProviders(readProjectRuntimeConfig(secondRoot), {
+      trustedPolicies: [
+        {
+          provider_id: "deepseek",
+          endpoint: secondEntry.endpoint,
+          api_key_env: secondEntry.api_key_env,
+          env_allowlist: [secondEntry.api_key_env],
+        },
+      ],
+    }).resolve("grounded_synthesis");
+
+    expect(first?.provider_config.config_digest).not.toBe(second?.provider_config.config_digest);
+  });
+
   it("resolves listed slots to a working provider without exposing the key", async () => {
     const root = projectWithConfig({
       runtime_config_version: 2,

@@ -84,6 +84,13 @@ export interface WorkingStateProposal {
   /** Authoritative lifecycle facts used to recompute the compatibility list. */
   readonly reconcile_blockers?: Omit<LiveBlockerReconciliationInput, "blocker_messages">;
   readonly set_next_action?: string;
+  /**
+   * Bind the requirement baseline digest once capture produces it. Operations
+   * opened before capture runs (protocol-1.1 coordinated capture) start with
+   * the pending sentinel; the capture phase seals the real digest into the
+   * checkpoint that closes the phase, and every later checkpoint carries it.
+   */
+  readonly set_requirement_baseline_digest?: string;
   readonly complete_task_ids?: readonly string[];
   readonly add_pending_task_ids?: readonly string[];
   readonly budget_use?: { readonly used_steps?: number; readonly used_tokens?: number };
@@ -209,6 +216,9 @@ export function applyWorkingStateProposal(
       ...proposal.reconcile_blockers,
     }),
     ...(proposal.set_next_action === undefined ? {} : { next_action: proposal.set_next_action }),
+    ...(proposal.set_requirement_baseline_digest === undefined
+      ? {}
+      : { requirement_baseline_digest: proposal.set_requirement_baseline_digest }),
     completed_task_ids: [...completed],
     pending_task_ids: pending,
     budget: { ...state.budget, used_steps: usedSteps, used_tokens: usedTokens },

@@ -91,6 +91,8 @@ export interface InvocationTransitionPatch {
   readonly failure?: ModelPortFailure;
   readonly output_digest?: string;
   readonly artifact_locator?: string;
+  readonly result_locator?: string;
+  readonly usage?: ModelInvocationRecord["usage"];
 }
 
 /** Append the next sealed revision; illegal transitions throw, never coerce. */
@@ -116,6 +118,8 @@ export function transitionModelInvocation(
   }
   if (patch.output_digest !== undefined) next["output_digest"] = patch.output_digest;
   if (patch.artifact_locator !== undefined) next["artifact_locator"] = patch.artifact_locator;
+  if (patch.result_locator !== undefined) next["result_locator"] = patch.result_locator;
+  if (patch.usage !== undefined) next["usage"] = patch.usage;
   return sealRecordEnvelope(next as Omit<ModelInvocationRecord, "record_digest">);
 }
 

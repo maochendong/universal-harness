@@ -27,6 +27,8 @@ import {
   assertLifecycleOrder,
   auditGraph,
   collectProjectStatus,
+  captureSessionIdFor,
+  createDirectExecutor,
   createDefaultEvaluationPort,
   createGenericInterpreter,
   createNewProject,
@@ -49,6 +51,7 @@ import {
   WorkflowEngine,
   ORCHESTRATION_PHASES,
   type ApprovalPrompter,
+  type CaptureCoordinatorSeam,
   type EvaluationPort,
   type GateDefinition,
   type OrchestrationOutcome,
@@ -63,7 +66,10 @@ import {
   harnessRootFor,
   LedgerRepository,
   contentDigest,
+  createPrdCaptureCoordinator,
+  readCaptureAnswers,
   readCommittedOperations,
+  readLatestCaptureSession,
   sha256Hex,
   type EdgeRecord,
   type NodeRecord,
@@ -2291,6 +2297,149 @@ describe("phase orchestrator", { timeout: 30000 }, () => {
     expect(findOpenWorkflowOperation(projectRoot, () => headOf(projectRoot))).toBeUndefined();
   });
 
+  describe("coordinated capture clarification loop", () => {
+    const QUESTION_DRAFT = {
+      source: "proposal" as const,
+      target_kind: "acceptance_criterion" as const,
+      missing_dimension: "observable_outcome",
+      question: "what observable result defines success?",
+      required: true,
+    };
+
+    /**
+     * A real coordinator whose propose stage always asks: round 0 the base
+     * question, later rounds a follow-up, so an answered session visibly
+     * advances without needing the proposal artifact machinery.
+     */
+    function clarifyingSeam(projectRoot: string): CaptureCoordinatorSeam {
+      return {
+        coordinator: createPrdCaptureCoordinator({
+          projectRoot,
+          handlers: {
+            compileContext: () => ({
+              kind: "context_compiled",
+              bundle_digest: "5".repeat(64),
+            }),
+            propose: (request) => ({
+              kind: "clarification_required",
+              questions: [
+                request.session.round === 0
+                  ? QUESTION_DRAFT
+                  : { ...QUESTION_DRAFT, question: "what latency budget applies?" },
+              ],
+            }),
+          },
+        }),
+        session_context: {
+          project_profile_digest: "a".repeat(64),
+          profile_decision_digest: "b".repeat(64),
+          capture_policy_digest: "c".repeat(64),
+          project_baseline_digest: "d".repeat(64),
+        },
+      };
+    }
+
+    async function startClarifyingIteration(
+      name: string,
+    ): Promise<{ readonly deps: OrchestratorDependencies; readonly projectRoot: string }> {
+      const newId = sequentialIds();
+      const projectRoot = await bootstrapProject(name, newId);
+      const deps = makeDeps(projectRoot, newId, { capture: clarifyingSeam(projectRoot) });
+      return { deps, projectRoot };
+    }
+
+    it("opens the operation before capture and blocks it with the full input_required payload", async () => {
+      const { deps, projectRoot } = await startClarifyingIteration("orch-capture-input");
+      const outcome = await runIteration(deps, { intent: INTENT });
+      expect(outcome.status).toBe("input_required");
+      if (outcome.status !== "input_required") return;
+      // The full answer-submission payload (intent-to-prd design 16.1).
+      const workflowOperationId = outcome.workflowOperationId;
+      expect(workflowOperationId).toBeDefined();
+      if (workflowOperationId === undefined) return;
+      expect(outcome.captureSessionId).toBe(captureSessionIdFor(INTENT, workflowOperationId));
+      expect(outcome.sessionRevision).toBeGreaterThanOrEqual(1);
+      expect(outcome.expectedDigest).toMatch(/^[a-f0-9]{64}$/u);
+      expect(outcome.resumeCommand).toBe(`harness resume ${workflowOperationId}`);
+      expect(outcome.questions).toHaveLength(1);
+      expect(outcome.questions[0]?.questionId).toBeDefined();
+
+      // The session binds the real operation id — no stand-in — and the
+      // operation is blocked as a typed, resumable pause.
+      const session = readLatestCaptureSession(projectRoot, outcome.captureSessionId ?? "");
+      expect(session?.workflow_operation_id).toBe(workflowOperationId);
+      expect(session?.state).toBe("clarification_required");
+      const operation = readCurrentOperation(
+        { projectRoot, readBaseline: () => headOf(projectRoot) },
+        workflowOperationId,
+      );
+      expect(operation?.state).toBe("blocked");
+      expect(findOpenWorkflowOperation(projectRoot, () => headOf(projectRoot))).toBe(
+        workflowOperationId,
+      );
+    });
+
+    it("resurfaces the payload on a bare resume and submits answers through the coordinator", async () => {
+      const { deps, projectRoot } = await startClarifyingIteration("orch-capture-answers");
+      const first = await runIteration(deps, { intent: INTENT });
+      if (first.status !== "input_required" || first.workflowOperationId === undefined) {
+        throw new Error(`expected input_required, got ${first.status}`);
+      }
+      const workflowOperationId = first.workflowOperationId;
+      const currentOperation = () =>
+        readCurrentOperation(
+          { projectRoot, readBaseline: () => headOf(projectRoot) },
+          workflowOperationId,
+        );
+
+      // A resume without answers re-surfaces the same session payload and
+      // leaves the operation blocked.
+      const resurfaced = await resumeIteration(deps, workflowOperationId, undefined);
+      expect(resurfaced.status).toBe("input_required");
+      if (resurfaced.status !== "input_required") return;
+      expect(resurfaced.captureSessionId).toBe(first.captureSessionId);
+      expect(resurfaced.sessionRevision).toBe(first.sessionRevision);
+      expect(resurfaced.expectedDigest).toBe(first.expectedDigest);
+      expect(resurfaced.resumeCommand).toBe(first.resumeCommand);
+      expect(currentOperation()?.state).toBe("blocked");
+
+      // An unknown question id fails closed: typed error, block untouched.
+      await expect(
+        resumeIteration(deps, workflowOperationId, {
+          intent: "",
+          answers: [{ question_id: "question_unknown", answer_kind: "free_text", value: "n/a" }],
+        }),
+      ).rejects.toThrow(/unknown_question/u);
+      expect(currentOperation()?.state).toBe("blocked");
+      expect(readCaptureAnswers(projectRoot, first.captureSessionId ?? "")).toHaveLength(0);
+
+      // The real answer commits through the coordinator's digest-bound
+      // command surface; the session advances into its next round and the
+      // resumed pipeline pauses again with the follow-up question.
+      const questionId = first.questions[0]?.questionId;
+      if (questionId === undefined) throw new Error("question carries no id");
+      const answered = await resumeIteration(deps, workflowOperationId, {
+        intent: "",
+        answers: [
+          {
+            question_id: questionId,
+            answer_kind: "free_text",
+            value: "a 2xx response returned exactly once per order",
+          },
+        ],
+      });
+      expect(answered.status).toBe("input_required");
+      if (answered.status !== "input_required") return;
+      expect(answered.captureSessionId).toBe(first.captureSessionId);
+      expect(answered.sessionRevision).toBeGreaterThan(first.sessionRevision ?? 0);
+      expect(answered.questions[0]?.question).toBe("what latency budget applies?");
+      const committed = readCaptureAnswers(projectRoot, first.captureSessionId ?? "");
+      expect(committed).toHaveLength(1);
+      expect(committed[0]?.question_id).toBe(questionId);
+      expect(currentOperation()?.state).toBe("blocked");
+    });
+  });
+
   it("blocks on a failed mandatory gate and completes after the human repair", async () => {
     const newId = sequentialIds();
     const projectRoot = await bootstrapProject("orch-gate", newId);
@@ -2616,14 +2765,16 @@ describe("phase orchestrator", { timeout: 30000 }, () => {
     );
   });
 
-  it("uses the built-in direct executor and integrity gate by default", async () => {
+  it("fails closed when implementation work has no explicit executor", async () => {
     const newId = sequentialIds();
     const projectRoot = await bootstrapProject("orch-defaults", newId);
     const deps = makeDeps(projectRoot, newId);
     let outcome = await runIteration(deps, { intent: INTENT, intentShape: "pack-converted" });
     outcome = await approveAndResume(deps, outcome);
-    outcome = await approveAndResume(deps, outcome);
-    expect(outcome.status).toBe("completed");
+    await expect(approveAndResume(deps, outcome)).rejects.toMatchObject({
+      kind: "configuration",
+      message: expect.stringContaining("executor_required"),
+    });
   });
 
   it("streams phase progress through the onPhaseProgress observer without touching the ledger", async () => {
@@ -2631,6 +2782,12 @@ describe("phase orchestrator", { timeout: 30000 }, () => {
     const projectRoot = await bootstrapProject("orch-phase-progress", newId);
     const events: PhaseProgressEvent[] = [];
     const deps = makeDeps(projectRoot, newId, {
+      execution: {
+        kind: "workflow",
+        name: "test-explicit-direct-workflow",
+        deterministic: true,
+        execute: createDirectExecutor(),
+      },
       onPhaseProgress: (event) => events.push(event),
     });
 

@@ -18,6 +18,7 @@ import { writeSanitizedPromptArtifact, type PromptArtifactSink } from "./prompt-
 import { promptCacheKey } from "./prompt-cache-key.js";
 import type { CompiledPrompt, CompiledPromptMessage } from "./prompt-compiler.js";
 import { validateModelOutput } from "./result-validation.js";
+import { readValidatedModelResult, writeValidatedModelResult } from "./result-artifact.js";
 
 /**
  * The managed model invocation runner (prompt governance addendum design 8,
@@ -33,10 +34,21 @@ export interface ManagedModelProviderRequest {
   readonly output_schema_id: string;
   readonly timeout_ms: number;
   readonly max_output_bytes: number;
+  /**
+   * Runner-level cancellation: aborted when the invocation budget expires, so
+   * providers holding their own sockets can tear them down immediately instead
+   * of waiting out the full timeout.
+   */
+  readonly signal?: AbortSignal;
+}
+
+export interface ManagedModelProviderUsage {
+  readonly tokens?: number;
+  readonly steps?: number;
 }
 
 export type ManagedModelProviderResponse =
-  | { readonly ok: true; readonly content: string }
+  | { readonly ok: true; readonly content: string; readonly usage?: ManagedModelProviderUsage }
   | { readonly ok: false; readonly failure: ModelPortFailure };
 
 export interface ManagedModelProviderPort {
@@ -65,12 +77,8 @@ export interface RunManagedInvocationParams {
   readonly budget: ManagedInvocationBudget;
   readonly provider?: ManagedModelProviderPort;
   readonly artifact_sink?: PromptArtifactSink;
-  /**
-   * Skip terminal replays and cache hits and mint a fresh attempt. Callers use
-   * this exactly once when a replayed outcome cannot supply the value they
-   * need (raw outputs are never persisted — only digests and locators).
-   */
-  readonly force_fresh?: boolean;
+  /** Harness monotonic clock seam used to measure provider duration. */
+  readonly clock?: () => number;
 }
 
 export type ManagedInvocationOutcome =
@@ -80,7 +88,12 @@ export type ManagedInvocationOutcome =
       readonly value: unknown;
       readonly output_digest: string;
     }
-  | { readonly status: "replayed"; readonly record: ModelInvocationRecord }
+  | {
+      readonly status: "replayed";
+      readonly record: ModelInvocationRecord;
+      readonly value: unknown;
+      readonly output_digest: string;
+    }
   | {
       readonly status: "failed";
       readonly record: ModelInvocationRecord;
@@ -198,6 +211,19 @@ function failed(
 
 const TERMINAL = new Set(["consumed", "failed", "invalidated"]);
 
+function replayed(
+  params: RunManagedInvocationParams,
+  record: ModelInvocationRecord,
+): ManagedInvocationOutcome {
+  const result = readValidatedModelResult(params.projectRoot, record);
+  return {
+    status: "replayed",
+    record,
+    value: result.value,
+    output_digest: result.output_digest,
+  };
+}
+
 export async function runManagedInvocation(
   params: RunManagedInvocationParams,
 ): Promise<ManagedInvocationOutcome> {
@@ -232,26 +258,34 @@ export async function runManagedInvocation(
         `invocation ${params.identity.invocation_id} already exists under a different identity`,
       );
     }
+    const matchingDigests = sameDigests(digestsOf(latest), digests);
     if (TERMINAL.has(latest.state)) {
-      if (!sameDigests(digestsOf(latest), digests)) {
+      // `invalidated` is the durable hand-off between an obsolete attempt and
+      // its replacement. A crash may happen after that transition and before
+      // the new `planned` record, so recovery must accept the replacement
+      // digests and mint the next attempt. Consumed/failed results remain
+      // identity-sealed and reject any digest drift.
+      if (latest.state === "invalidated") {
+        attempt = latest.attempt + 1;
+      } else if (!matchingDigests) {
         throw new ManagedRunnerError(
           "identity_conflict",
           `invocation ${params.identity.invocation_id} is terminal under different digests`,
         );
-      }
-      if (params.force_fresh === true) {
-        attempt = latest.attempt + 1;
-      } else if (latest.state === "consumed" || latest.state === "invalidated") {
-        return { status: "replayed", record: latest };
+      } else if (latest.state === "consumed") {
+        return replayed(params, latest);
       } else {
         return { status: "failed", record: latest, failure: latest.failure! };
       }
-    } else if (params.force_fresh === true) {
-      attempt = latest.attempt + 1;
-    } else if (!sameDigests(digestsOf(latest), digests)) {
+    } else if (!matchingDigests) {
       // Drift: invalidate only the unconsumed result, keep history verbatim.
       transition(params, latest, "invalidated");
       attempt = latest.attempt + 1;
+    } else if (latest.state === "validated") {
+      return replayed(params, latest);
+    } else if (latest.state === "completed" && latest.result_locator !== undefined) {
+      const validated = transition(params, latest, "validated");
+      return replayed(params, validated);
     } else if (latest.state === "planned") {
       attempt = latest.attempt;
     } else {
@@ -284,10 +318,32 @@ export async function runManagedInvocation(
     (record) =>
       record.cache_key === digests.cache_key &&
       record.invocation_id !== params.identity.invocation_id &&
+      record.result_locator !== undefined &&
       (record.state === "validated" || record.state === "consumed"),
   );
-  if (cacheHit !== undefined && params.force_fresh !== true) {
-    return { status: "replayed", record: cacheHit };
+  if (cacheHit !== undefined) {
+    const cached = readValidatedModelResult(params.projectRoot, cacheHit);
+    const planned = plan(params, attempt);
+    const started = transition(params, planned, "started");
+    const resultLocator = writeValidatedModelResult({
+      projectRoot: params.projectRoot,
+      invocation_id: params.identity.invocation_id,
+      attempt,
+      output_schema_id: params.output_schema_id,
+      output_digest: cached.output_digest,
+      value: cached.value,
+    });
+    const completed = transition(params, started, "completed", {
+      output_digest: cached.output_digest,
+      result_locator: resultLocator,
+    });
+    const validated = transition(params, completed, "validated");
+    return {
+      status: "replayed",
+      record: validated,
+      value: cached.value,
+      output_digest: cached.output_digest,
+    };
   }
 
   const planned = plan(params, attempt);
@@ -312,6 +368,10 @@ export async function runManagedInvocation(
   );
 
   let response: ManagedModelProviderResponse;
+  const clock = params.clock ?? Date.now;
+  const startedAt = clock();
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), params.budget.timeout_ms);
   try {
     response = await Promise.race([
       params.provider.invoke({
@@ -319,9 +379,16 @@ export async function runManagedInvocation(
         output_schema_id: params.output_schema_id,
         timeout_ms: params.budget.timeout_ms,
         max_output_bytes: params.budget.max_output_bytes,
+        signal: controller.signal,
       }),
       new Promise<never>((_, reject) => {
-        setTimeout(() => reject(new Error("provider call timed out")), params.budget.timeout_ms);
+        controller.signal.addEventListener(
+          "abort",
+          () => reject(new Error("provider call timed out")),
+          {
+            once: true,
+          },
+        );
       }),
     ]);
   } catch {
@@ -330,6 +397,10 @@ export async function runManagedInvocation(
       started,
       failure("timeout", `provider call exceeded ${params.budget.timeout_ms}ms`, true),
     );
+  } finally {
+    // Clear the budget timer on every path; a fast success must not keep the
+    // process alive until the full timeout elapses.
+    clearTimeout(timer);
   }
   if (!response.ok) {
     return failed(params, started, response.failure);
@@ -354,8 +425,22 @@ export async function runManagedInvocation(
   if (!validation.ok) {
     return failed(params, started, validation.failure);
   }
+  const resultLocator = writeValidatedModelResult({
+    projectRoot: params.projectRoot,
+    invocation_id: params.identity.invocation_id,
+    attempt,
+    output_schema_id: params.output_schema_id,
+    output_digest: validation.output_digest,
+    value: validation.value,
+  });
   const completed = transition(params, started, "completed", {
     output_digest: validation.output_digest,
+    result_locator: resultLocator,
+    usage: {
+      ...(response.usage?.tokens === undefined ? {} : { tokens: response.usage.tokens }),
+      ...(response.usage?.steps === undefined ? {} : { steps: response.usage.steps }),
+      duration_ms: Math.max(0, clock() - startedAt),
+    },
   });
   const validated = transition(params, completed, "validated");
   return {

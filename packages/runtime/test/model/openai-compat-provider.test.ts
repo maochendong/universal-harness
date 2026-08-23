@@ -76,6 +76,27 @@ describe("openai-compat managed provider", () => {
     ]);
   });
 
+  it("normalizes provider token usage when the response reports it", async () => {
+    const provider = createOpenAiCompatManagedProvider(
+      CONFIG,
+      depsWith({
+        fetch: () =>
+          Promise.resolve(
+            jsonResponse({
+              ...chatCompletion("done"),
+              usage: { prompt_tokens: 7, completion_tokens: 4, total_tokens: 11 },
+            }),
+          ),
+      }),
+    );
+
+    expect(await provider.invoke(REQUEST)).toEqual({
+      ok: true,
+      content: "done",
+      usage: { tokens: 11 },
+    });
+  });
+
   it("fails closed with policy_denied when the key env is not allowlisted", async () => {
     const provider = createOpenAiCompatManagedProvider(
       { ...CONFIG, env_allowlist: ["SOME_OTHER_KEY"] },
@@ -129,6 +150,51 @@ describe("openai-compat managed provider", () => {
     if (result.ok) return;
     expect(result.failure.code).toBe("policy_denied");
     expect(result.failure.summary).toContain("private");
+  });
+
+  it.each([
+    "https://[::ffff:127.0.0.1]/chat/completions",
+    "https://[::ffff:7f00:1]/chat/completions",
+    "https://[0:0:0:0:0:ffff:7f00:1]/chat/completions",
+    "https://[::127.0.0.1]/chat/completions",
+    "https://[::ffff:10.0.0.8]/chat/completions",
+    "https://[fe80::1]/chat/completions",
+    "https://[fd00::1]/chat/completions",
+  ])("blocks the private IPv6 textual form %s", async (endpoint) => {
+    const provider = createOpenAiCompatManagedProvider(
+      { ...CONFIG, endpoint },
+      depsWith({ fetch: () => Promise.reject(new Error("must not be called")) }),
+    );
+    const result = await provider.invoke(REQUEST);
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.failure.code).toBe("policy_denied");
+  });
+
+  it("blocks DNS results in the compressed IPv4-mapped hex form", async () => {
+    const provider = createOpenAiCompatManagedProvider(
+      CONFIG,
+      depsWith({
+        resolveHostname: () => Promise.resolve(["::ffff:7f00:1"]),
+        fetch: () => Promise.reject(new Error("must not be called")),
+      }),
+    );
+    const result = await provider.invoke(REQUEST);
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.failure.code).toBe("policy_denied");
+  });
+
+  it("still allows a public IPv6 endpoint", async () => {
+    const provider = createOpenAiCompatManagedProvider(
+      { ...CONFIG, endpoint: "https://[2606:4700:4700::1111]/chat/completions" },
+      depsWith({
+        resolveHostname: () => Promise.resolve(["2606:4700:4700::1111"]),
+        fetch: () => Promise.resolve(jsonResponse(chatCompletion("done"))),
+      }),
+    );
+    const result = await provider.invoke(REQUEST);
+    expect(result).toEqual({ ok: true, content: "done" });
   });
 
   it("retries 429 once and then succeeds", async () => {

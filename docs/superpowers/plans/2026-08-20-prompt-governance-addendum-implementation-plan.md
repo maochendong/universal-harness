@@ -491,6 +491,8 @@ test(protocol): prove prompt governance end to end
 
 ## 18. 最终验收清单
 
+> 状态标注（评审 `cda618f`→`d829863` 后）：本清单各项保持未勾选即为未销项。PG-7～PG-9 要求的 Baseline/Red/Green 不可变证据与三档真实 dogfood 仍有留白（见 `docs/evidence/` 各 dogfood 记录的自我声明）；路线图文档中的"已完成"仅指组件实现（`component_complete`），不代表本清单口径的验收通过。
+
 - [ ] 11 个 Port/purpose 都有领域拥有、版本化且不可静默修改的 Prompt Contract。
 - [ ] 四个领域建议 Port 与 Grounded 四 purpose 使用 `ModelProviderBinding`；`PrdProposalPort`、`PrdReviewPort`、`DesignProposalPort` 保留判别式 Adapter Profile，不扩张五槽位模型。
 - [ ] Binding/Profile 固定 contract/version/digest 与 output Schema digest；Invocation 固定 compiled prompt digest。

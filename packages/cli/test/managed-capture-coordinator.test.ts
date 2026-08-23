@@ -15,6 +15,7 @@ import {
 import {
   ManagedCaptureCoordinatorError,
   createManagedCaptureCoordinator,
+  defaultCaptureRiskPolicy,
   readProjectRuntimeConfig,
   type ManagedCaptureCoordinatorDeps,
 } from "../src/index.js";
@@ -22,9 +23,10 @@ import {
 /**
  * Managed capture coordinator assembly: the factory commits the Capture-scope
  * bindings and composes the protocol-1.1 coordinator from the real domain
- * stage factories over model-backed ports. Projects without `model_providers`
- * get no coordinator; partial declarations throw; a conflicting committed
- * binding is drift. The end-to-end case drives one session to
+ * stage factories over model-backed ports. Lite projects without
+ * `model_providers` get no coordinator; for Standard/Governed a missing
+ * declaration fails closed exactly like a partial one; a conflicting
+ * committed binding is drift. The end-to-end case drives one session to
  * `awaiting_approval` through a queued fake provider.
  */
 const roots: string[] = [];
@@ -80,11 +82,23 @@ afterEach(() => {
   }
 });
 
-function makeProfile() {
+describe("default capture risk policy", () => {
+  it("allows deterministic low-risk auto approval for Lite and Standard but never Governed", () => {
+    expect(defaultCaptureRiskPolicy("project_demo", "lite").allow_policy_auto_approval).toBe(true);
+    expect(defaultCaptureRiskPolicy("project_demo", "standard").allow_policy_auto_approval).toBe(
+      true,
+    );
+    expect(defaultCaptureRiskPolicy("project_demo", "governed").allow_policy_auto_approval).toBe(
+      false,
+    );
+  });
+});
+
+function makeProfile(profileId: "lite" | "standard" = "standard") {
   return createProjectProfileRecord({
     project_id: "project_demo",
     revision: 1,
-    profile_id: "standard",
+    profile_id: profileId,
     policy_digest: POLICY_DIGEST,
     actor: "human:local",
     effective_from: "2026-08-21T00:00:00.000Z",
@@ -111,9 +125,26 @@ function depsFor(
 }
 
 describe("createManagedCaptureCoordinator", () => {
-  it("returns undefined when the project declares no model_providers", () => {
+  it("fails closed when a standard project declares no model_providers", () => {
     const root = projectWithConfig({ runtime_config_version: 2, gates: [] });
-    expect(createManagedCaptureCoordinator(depsFor(root))).toBeUndefined();
+    try {
+      createManagedCaptureCoordinator(depsFor(root));
+      expect.unreachable("expected a slot_unresolved failure");
+    } catch (error) {
+      expect(error).toBeInstanceOf(ManagedCaptureCoordinatorError);
+      expect((error as ManagedCaptureCoordinatorError).code).toBe("slot_unresolved");
+      for (const slot of CAPTURE_SLOTS) {
+        expect((error as ManagedCaptureCoordinatorError).message).toContain(slot);
+      }
+    }
+    expect(readCaptureModelProviderBindings(root)).toEqual([]);
+  });
+
+  it("returns undefined when a lite project declares no model_providers", () => {
+    const root = projectWithConfig({ runtime_config_version: 2, gates: [] });
+    expect(
+      createManagedCaptureCoordinator(depsFor(root, { profile: makeProfile("lite") })),
+    ).toBeUndefined();
     expect(readCaptureModelProviderBindings(root)).toEqual([]);
   });
 

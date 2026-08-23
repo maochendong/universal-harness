@@ -34,8 +34,9 @@ DeepSeek / 任意 chat-completions 兼容 HTTPS 端点
 - **只收编译产物**：Runner 只接受 `CompiledPrompt` + 持久化 binding +
   invocation identity，永远不接受裸 prompt 文本；binding 与编译产物 digest
   漂移即 `binding_drift` 拒绝。
-- **原始输出不落盘**：store 只保存 digest 与 locator；replay 命中时调用方
-  以 `force_fresh` 恰好重跑一次来取值。
+- **原始输出不落盘、验证结果可重放**：provider 原始文本不落盘；Runner 只把
+  通过钉住 Schema 的结构化值写入不可变 result artifact，store 保存其 digest
+  与 locator。replay 必须读取并复核同一 artifact，调用方不能强制再次调用模型。
 - **输出契约在 Runner 端验证**：provider 只回文本，`validateModelOutput`
   按 plan 时钉住的 output schema digest 严格校验（必须是单一 JSON 文档，
   无散文无围栏）。因此 managed 调用**不发 `response_format`**——这是它与

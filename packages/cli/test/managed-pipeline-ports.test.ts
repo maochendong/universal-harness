@@ -13,7 +13,11 @@ import {
 import { readModelInvocationRecords } from "@universal-harness-internal/runtime";
 import { RELATION_RULE_REGISTRY } from "@universal-harness-internal/graph";
 
-import { createManagedPipelinePorts, readProjectRuntimeConfig } from "../src/index.js";
+import {
+  ManagedPipelinePortsError,
+  createManagedPipelinePorts,
+  readProjectRuntimeConfig,
+} from "../src/index.js";
 
 const roots: string[] = [];
 
@@ -55,14 +59,14 @@ afterEach(() => {
 
 function portsFor(
   root: string,
-  overrides: { readonly fetch?: typeof fetch } = {},
+  overrides: { readonly fetch?: typeof fetch; readonly profile_id?: "lite" | "standard" } = {},
 ): ReturnType<typeof createManagedPipelinePorts> {
   return createManagedPipelinePorts({
     projectRoot: root,
     runtimeConfig: readProjectRuntimeConfig(root),
-    profile_id: "standard",
+    profile_id: overrides.profile_id ?? "standard",
     environment: { DEEPSEEK_API_KEY: "sk-test" },
-    ...overrides,
+    ...(overrides.fetch === undefined ? {} : { fetch: overrides.fetch }),
   });
 }
 
@@ -78,9 +82,42 @@ function fetchReturning(content: string, seen: { authorization?: string | null }
 }
 
 describe("createManagedPipelinePorts", () => {
-  it("wires nothing when the project declares no model_providers", () => {
+  it("fails closed when a standard project declares no model_providers", () => {
     const root = projectWithConfig({ runtime_config_version: 2, gates: [] });
-    expect(portsFor(root)).toEqual({});
+    try {
+      portsFor(root);
+      expect.unreachable("expected a provider_required failure");
+    } catch (error) {
+      expect(error).toBeInstanceOf(ManagedPipelinePortsError);
+      expect((error as ManagedPipelinePortsError).code).toBe("provider_required");
+      for (const slot of [
+        "impact_advisory",
+        "design_review",
+        "plan_proposal",
+        "context_enrichment",
+      ]) {
+        expect((error as ManagedPipelinePortsError).message).toContain(slot);
+      }
+      // The non-blocking iteration narrative is never preflight-enforced.
+      expect((error as ManagedPipelinePortsError).message).not.toContain("iteration_narrative");
+    }
+  });
+
+  it("fails closed when a governed project declares no model_providers", () => {
+    const root = projectWithConfig({ runtime_config_version: 2, gates: [] });
+    expect(() =>
+      createManagedPipelinePorts({
+        projectRoot: root,
+        runtimeConfig: readProjectRuntimeConfig(root),
+        profile_id: "governed",
+        environment: { DEEPSEEK_API_KEY: "sk-test" },
+      }),
+    ).toThrowError(ManagedPipelinePortsError);
+  });
+
+  it("wires nothing when a lite project declares no model_providers", () => {
+    const root = projectWithConfig({ runtime_config_version: 2, gates: [] });
+    expect(portsFor(root, { profile_id: "lite" })).toEqual({});
   });
 
   it("wires nothing for slots no declared provider covers", () => {
@@ -89,7 +126,41 @@ describe("createManagedPipelinePorts", () => {
       gates: [],
       model_providers: [providerEntry(["prd_proposal"])],
     });
-    expect(portsFor(root)).toEqual({});
+    expect(portsFor(root, { profile_id: "lite" })).toEqual({});
+  });
+
+  it("fails closed when a standard project leaves a required slot uncovered", () => {
+    const root = projectWithConfig({
+      runtime_config_version: 2,
+      gates: [],
+      model_providers: [providerEntry(["impact_advisory", "plan_proposal", "context_enrichment"])],
+    });
+    try {
+      portsFor(root);
+      expect.unreachable("expected a provider_required failure");
+    } catch (error) {
+      expect(error).toBeInstanceOf(ManagedPipelinePortsError);
+      expect((error as ManagedPipelinePortsError).message).toContain("design_review");
+      expect((error as ManagedPipelinePortsError).message).not.toContain("impact_advisory");
+    }
+  });
+
+  it("wires a standard project with complete required coverage and no optional slots", () => {
+    const root = projectWithConfig({
+      runtime_config_version: 2,
+      gates: [],
+      // design_proposal and iteration_narrative are not required slots.
+      model_providers: [
+        providerEntry(["design_review", "impact_advisory", "plan_proposal", "context_enrichment"]),
+      ],
+    });
+    const ports = portsFor(root);
+    expect(ports.design?.review).toBeDefined();
+    expect(ports.design?.proposal).toBeUndefined();
+    expect(ports.impactAdvisory).toBeDefined();
+    expect(ports.planProposal).toBeDefined();
+    expect(ports.contextEnrichment).toBeDefined();
+    expect(ports.iterationNarrative).toBeUndefined();
   });
 
   it("wires exactly the covered slots", () => {
@@ -98,7 +169,7 @@ describe("createManagedPipelinePorts", () => {
       gates: [],
       model_providers: [providerEntry(["design_proposal", "impact_advisory"])],
     });
-    const ports = portsFor(root);
+    const ports = portsFor(root, { profile_id: "lite" });
     expect(ports.design?.proposal).toBeDefined();
     expect(ports.design?.review).toBeUndefined();
     expect(ports.impactAdvisory).toBeDefined();
@@ -111,7 +182,7 @@ describe("createManagedPipelinePorts", () => {
     const root = projectWithConfig({
       runtime_config_version: 2,
       gates: [],
-      model_providers: [providerEntry(["plan_proposal"])],
+      model_providers: [providerEntry(ALL_SLOTS)],
     });
     const assertions = compileCriterionAssertions([
       {

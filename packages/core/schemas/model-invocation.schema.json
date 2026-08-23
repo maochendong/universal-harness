@@ -104,6 +104,7 @@
     },
     "output_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
     "artifact_locator": { "minLength": 1, "type": "string" },
+    "result_locator": { "minLength": 1, "type": "string" },
     "usage": {
       "additionalProperties": false,
       "type": "object",

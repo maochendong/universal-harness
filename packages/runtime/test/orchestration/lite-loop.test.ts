@@ -7,6 +7,7 @@ import { createGitVcsAdapter } from "@universal-harness-internal/adapter-vcs-git
 
 import {
   collectProjectStatus,
+  createDirectExecutor,
   createGenericInterpreter,
   createNewProject,
   resolveApproval,
@@ -40,6 +41,12 @@ function liteDeps(projectRoot: string, newId: (kind: string) => string): Orchest
     newId,
     vcs: createGitVcsAdapter(),
     interpret: createGenericInterpreter(),
+    execution: {
+      kind: "workflow",
+      name: "test-explicit-direct-workflow",
+      deterministic: true,
+      execute: createDirectExecutor(),
+    },
   };
 }
 
@@ -89,6 +96,35 @@ async function driveToCompletion(
 }
 
 describe("lite kernel-only vertical loop", { timeout: 60000 }, () => {
+  it("fails closed when implementation work has no explicit execution binding", async () => {
+    const newId = sequentialIds();
+    const projectRoot = await bootstrapLiteProject("lite-executor-required", newId);
+    const deps: OrchestratorDependencies = {
+      projectRoot,
+      readBaseline: () => headOf(projectRoot),
+      now: () => FIXED_NOW,
+      newId,
+      vcs: createGitVcsAdapter(),
+      interpret: createGenericInterpreter(),
+    };
+
+    const first = await runIteration(deps, { intent: INTENT, intentShape: "pack-converted" });
+    expect(first.status).toBe("approval_required");
+    if (first.status !== "approval_required") return;
+    await resolveApproval(deps, {
+      requestId: first.required.request_id,
+      decision: "approve",
+      actor: "human:reviewer",
+    });
+
+    await expect(
+      resumeIteration(deps, first.required.workflow_operation_id, undefined),
+    ).rejects.toMatchObject({
+      kind: "configuration",
+      message: expect.stringContaining("executor_required"),
+    });
+  });
+
   it("runs capture to snapshot with zero module or model artifacts", async () => {
     const newId = sequentialIds();
     const projectRoot = await bootstrapLiteProject("lite-loop", newId);

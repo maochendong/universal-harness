@@ -38,9 +38,17 @@ coordinator 的确定性记录校验远严于 legacy 桥，每轮暴露一个「
 - capture 全链（proposal → validate → review → risk → acceptance 门禁）由真实
   模型驱动跑通：proposal/review 多次 consumed；验收门禁给出实质性领域判定
   （准则原子性拆分、blocking 开放问题须人类先答）。
-- **剩余阻断全部是设计行为或暂时性故障**：blocking open question 与人工输入
-  等待点是 coordinator 的核心价值（legacy 桥会静默放过）；seam 目前把这类
-  等待点 fail-closed 为错误而非 input_required 表面，属后续切片（人工输入
-  回路）。governed 档的原子性遵从与间歇超时属 prompt 迭代与端点抖动，用同
-  一脚本可持续回归。
+- **人工输入回路已闭合**（2026-08-23 补记）：blocking open question 等来的不再
+  是 fail-closed 错误。`runIteration` 先建 workflow Operation（phase capture），
+  capture session 与 Invocation 全程绑定真实 operation id（stand-in
+  `operation_capture_*` 约定已移除）；需要澄清时 Operation 以 `missing_input`
+  阻塞（resume phase capture），`input_required` 携带 `workflow_operation_id`、
+  `capture_session_id`、`session_revision`、`expected_digest`、`questions`、
+  `resume_command` 六元组；`harness resume <operation-id> --answer <question-id>=<value>`
+  （可重复）与 `--answers answers.json` 经 coordinator 的
+  `submit_clarification_answers` 命令面提交（幂等、digest 绑定），未知 question
+  id / digest 冲突均以类型化错误 fail closed。集成测试
+  （`managed-capture-orchestration.test.ts` 的 blocking-open-question 用例）证明：
+  澄清暂停 → 裸 resume 重放同一 payload → 提交答案 → 审批 → 迭代完成。
+- governed 档的原子性遵从与间歇超时属 prompt 迭代与端点抖动，用同一脚本可持续回归。
 - legacy 面零变更：无 profile/无配置项目路径不动，全部既有 e2e 原样通过。

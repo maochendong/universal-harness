@@ -49,6 +49,12 @@ export interface ClarificationQuestion {
    * read as an implicit answer.
    */
   readonly options?: readonly string[];
+  /**
+   * Coordinator-issued question id (protocol-1.1 capture sessions only): the
+   * identity `harness resume --answer <question-id>=<value>` binds. Absent on
+   * legacy capture questions, which carry no answer-submission surface.
+   */
+  readonly questionId?: string;
 }
 
 export interface CapturedAcceptanceCriterion {

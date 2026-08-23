@@ -67,14 +67,15 @@
 - Verify: `packages/runtime/test/orchestration/lite-loop.test.ts`
 - Verify: `packages/runtime/test/orchestration/orchestrator.test.ts`
 - Verify: `packages/runtime/test/planning/default-planner-assertions.test.ts`
+- Verify: `packages/runtime/test/planning/plan-proposal.test.ts`
 - Verify: `tests/fault/model-invocation-recovery.test.ts`
 - Verify: `tests/security/model-invocation-boundary.test.ts`
 
 **Interfaces:**
 - Consumes: `runIteration()`, `resumeIteration()`, `ExecutionBinding`, risk-adaptive approval policy.
-- Produces: a stable 148-test remediation regression set and an explicit no-executor negative contract.
+- Produces: a stable 157-test remediation regression set, exact Criterion→Test binding, deterministic model-result replay and an explicit no-executor negative contract.
 
-- [ ] **Step 1: Reproduce the six existing red tests**
+- [x] **Step 1: Reproduce the six existing red tests**
 
 Run:
 
@@ -87,7 +88,7 @@ pnpm exec vitest run --config vitest.workspace.ts \
 
 Expected: six failures — two obsolete Capture approval assertions and four tests that omit an explicit executor.
 
-- [ ] **Step 2: Make Capture approval assertions policy-aware**
+- [x] **Step 2: Make Capture approval assertions policy-aware**
 
 Replace fixed Capture approval expectations with the actually surfaced objects:
 
@@ -98,7 +99,7 @@ expect(approvals).toEqual(["ImpactSet", "DesignSet", "ExecutionAuthorizationSpec
 
 Keep the existing session, model-call-count, criterion-pair and idempotent resume assertions; those prove auto-approval did not bypass Capture acceptance.
 
-- [ ] **Step 3: Turn the old implicit Direct Executor test into the fail-closed contract**
+- [x] **Step 3: Turn the old implicit Direct Executor test into the fail-closed contract**
 
 Use the public orchestration seam:
 
@@ -111,7 +112,7 @@ await expect(approveAndResume(deps, outcome)).rejects.toMatchObject({
 
 Rename the test to `fails closed when implementation work has no explicit executor`.
 
-- [ ] **Step 4: Inject explicit workflow executors where execution is incidental**
+- [x] **Step 4: Inject explicit workflow executors where execution is incidental**
 
 For phase progress and default Planner tests, add:
 
@@ -126,13 +127,13 @@ execution: {
 
 Import `createDirectExecutor` from the runtime public index. Do not restore a production default.
 
-- [ ] **Step 5: Run the targeted set to green**
+- [x] **Step 5: Run the targeted set to green**
 
 Run the Step 1 command.
 
-Expected: all files and all 148 tests pass.
+Expected: all targeted files pass. The broader Step 6 regression count is 157 after adding replay, invalidation-crash and 1:1 Criterion/Test coverage.
 
-- [ ] **Step 6: Verify the complete partial-fix batch**
+- [x] **Step 6: Verify the complete partial-fix batch**
 
 Run:
 
@@ -155,15 +156,16 @@ pnpm exec vitest run --config vitest.workspace.ts \
   packages/runtime/test/model/managed-runner.test.ts \
   packages/runtime/test/model/openai-compat-provider.test.ts \
   packages/runtime/test/planning/default-planner-assertions.test.ts \
+  packages/runtime/test/planning/plan-proposal.test.ts \
   packages/runtime/test/orchestration/lite-loop.test.ts \
   packages/runtime/test/orchestration/orchestrator.test.ts \
   tests/fault/model-invocation-recovery.test.ts \
   tests/security/model-invocation-boundary.test.ts
 ```
 
-Expected: formatting passes for in-scope files, typecheck passes, targeted tests pass.
+Expected: formatting/lint pass for in-scope files, build and all 18 workspace typechecks pass, 15 targeted files / 157 tests pass.
 
-- [ ] **Step 7: Commit only the audited partial-fix batch**
+- [x] **Step 7: Commit only the audited partial-fix batch**
 
 Stage the exact modified files shown by `git status --short`, explicitly excluding `teach/`, inspect `git diff --cached --check`, then commit:
 
@@ -326,6 +328,9 @@ git commit -m "feat(cli): use provider references in runtime config v3"
 ### Task 4: WP1 — Route Managed Model Providers Through the Trusted Registry
 
 **Files:**
+- Modify: `packages/core/src/schema/capture.ts`
+- Modify: `packages/core/src/capture/coordinator.ts`
+- Modify: `packages/core/test/capture/coordinator.test.ts`
 - Modify: `packages/cli/src/model-providers.ts`
 - Modify: `packages/cli/src/managed-capture-coordinator.ts`
 - Modify: `packages/cli/src/managed-pipeline-ports.ts`
@@ -365,18 +370,22 @@ Pass `trusted.endpoint`, `trusted.api_key_env`, `trusted.env_allowlist` and host
 
 Map legacy `provider_id` to `provider_ref`, compare every inline endpoint/env/allowlist/loopback field to the Registry resolution, emit one deprecation diagnostic, and reject any mismatch before secret lookup or fetch.
 
-- [ ] **Step 4: Run managed-provider suites**
+- [ ] **Step 4: Preserve required-call failures as typed resumable blockers**
+
+Map required managed-model failures (`provider_required`, `provider_unavailable`, `timeout`, `budget_exhausted`, `invalid_output`, `independence_violation`, `version_mismatch`, `policy_denied`, `uncertain`) to a versioned Capture blocker reason and retain the failed Invocation record as the only failure truth. Do not leave the Capture session terminal `failed`, do not invent a second failure record, and do not let the Adapter choose an arbitrary resume state. After Registry/config/endpoint recovery, `resume` must continue from the same session and the last valid workflow checkpoint.
+
+- [ ] **Step 5: Run managed-provider suites**
 
 ```bash
 pnpm exec vitest run --config vitest.workspace.ts packages/cli/test/model-providers.test.ts packages/cli/test/managed-capture-orchestration.test.ts packages/cli/test/managed-pipeline-ports.test.ts tests/security/model-invocation-boundary.test.ts
 ```
 
-Expected: pass.
+Add the Core Capture recovery suite and expect all tests to pass, including provider failure → blocked → configuration repair → same-session resume.
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 6: Commit**
 
 ```bash
-git add packages/cli/src/model-providers.ts packages/cli/src/managed-capture-coordinator.ts packages/cli/src/managed-pipeline-ports.ts packages/cli/test/model-providers.test.ts tests/security/model-invocation-boundary.test.ts
+git add packages/core/src/schema/capture.ts packages/core/src/capture/coordinator.ts packages/core/test/capture/coordinator.test.ts packages/cli/src/model-providers.ts packages/cli/src/managed-capture-coordinator.ts packages/cli/src/managed-pipeline-ports.ts packages/cli/test/model-providers.test.ts tests/security/model-invocation-boundary.test.ts
 git commit -m "fix(security): bind model providers to host trust policy"
 ```
 
