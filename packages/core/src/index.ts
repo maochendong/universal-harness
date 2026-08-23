@@ -8,6 +8,7 @@ export * from "./ledger/index.js";
 export * from "./plan/index.js";
 export * from "./profile/index.js";
 export * from "./project/index.js";
+export * from "./provider/trusted-provider.js";
 export * from "./prompt/index.js";
 export * from "./proposal/index.js";
 export * from "./protocol.js";
