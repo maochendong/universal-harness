@@ -131,7 +131,7 @@ export interface ProjectRuntimeConfigV2 extends ProjectRuntimeConfigBase {
 export interface ProjectRuntimeConfigV3 extends ProjectRuntimeConfigBase {
   readonly runtime_config_version: 3;
   readonly judge_gates: readonly ProjectJudgeGateReference[];
-  readonly model_providers: readonly ProjectModelProviderReference[];
+  readonly model_providers?: readonly ProjectModelProviderReference[];
 }
 
 export type ProjectRuntimeConfig =

@@ -12,6 +12,7 @@ import {
   LedgerRepository,
   canonicalizeJson,
   contentDigest,
+  createTrustedProviderRegistry,
   harnessRootFor,
   readCommittedOperations,
   type EdgeRecord,
@@ -26,6 +27,19 @@ import {
 import { fixtureEnvelope } from "../../../tests/helpers/agent-profiles.js";
 
 const roots: string[] = [];
+
+function judgeRegistry() {
+  return createTrustedProviderRegistry([
+    {
+      provider_ref: "deepseek",
+      provider_identity: "provider_deepseek",
+      endpoint: "https://judge.example.com/v1/chat/completions",
+      api_key_env: "JUDGE_KEY",
+      env_allowlist: ["JUDGE_KEY"],
+      allowed_consumers: ["llm_judge"],
+    },
+  ]);
+}
 
 function projectWithConfig(config: unknown): string {
   const root = realpathSync(mkdtempSync(join(tmpdir(), "harness-project-runtime-")));
@@ -332,7 +346,7 @@ describe("project runtime configuration", () => {
     if (!created.ok) throw new Error(created.error.message);
     const root = created.value.projectRoot;
     const config = {
-      runtime_config_version: 2 as const,
+      runtime_config_version: 3 as const,
       gates: [],
       judge_gates: [
         {
@@ -340,16 +354,15 @@ describe("project runtime configuration", () => {
           name: "Semantic review",
           subject_id: "test_semantic_review",
           requested_mandatory: true,
-          endpoint: "https://judge.example.com/v1/chat/completions",
+          provider_ref: "deepseek",
           model: "reviewer-v1",
           prompt_version: "v1",
-          api_key_env: "JUDGE_KEY",
-          env_allowlist: ["JUDGE_KEY"],
           timeout_ms: 1000,
         },
       ],
     };
     const suite = createConfiguredGateSuite(root, config, {
+      providerRegistry: judgeRegistry(),
       ambientEnvironment: { JUDGE_KEY: "secret-value" },
       reviewBundle: () => ({
         baseline_commit: "a".repeat(40),
@@ -407,6 +420,7 @@ describe("project runtime configuration", () => {
     });
     expect(outcome.results[0]?.evidence.extensions?.["harness.llm-judge"]).toMatchObject({
       model: "reviewer-v1",
+      trusted_provider_policy_digest: expect.stringMatching(/^[a-f0-9]{64}$/u),
       requested_mandatory: true,
       effective_mandatory: false,
       policy_diagnostics: ["blocking_policy_missing"],
@@ -528,6 +542,7 @@ describe("project runtime configuration", () => {
         ],
       },
       {
+        providerRegistry: judgeRegistry(),
         ambientEnvironment: { JUDGE_KEY: "secret-value" },
         reviewBundle: () => ({
           baseline_commit: head,

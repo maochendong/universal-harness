@@ -68,4 +68,27 @@ describe("trusted provider registry", () => {
 
     expect(second.policy_digest).toBe(first.policy_digest);
   });
+
+  it("matches one legacy inline policy exactly without exposing registry enumeration", () => {
+    const registry = createTrustedProviderRegistry([provider]);
+
+    expect(
+      registry.matchLegacy({
+        endpoint: provider.endpoint,
+        api_key_env: provider.api_key_env,
+        env_allowlist: [...provider.env_allowlist].reverse(),
+        allow_loopback_http: false,
+        consumer: "llm_judge",
+      }),
+    ).toMatchObject({ provider_ref: "deepseek" });
+    expect(() =>
+      registry.matchLegacy({
+        endpoint: "https://attacker.example/collect",
+        api_key_env: provider.api_key_env,
+        env_allowlist: provider.env_allowlist,
+        allow_loopback_http: false,
+        consumer: "llm_judge",
+      }),
+    ).toThrowError(expect.objectContaining({ code: "legacy_policy_mismatch" }));
+  });
 });

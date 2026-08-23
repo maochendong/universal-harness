@@ -2,11 +2,54 @@ import { describe, expect, it } from "vitest";
 
 import {
   JudgeTransportError,
+  MAX_PROVIDER_RESPONSE_BYTES,
   requestJudgeCompletion,
   validateJudgeEndpoint,
 } from "../src/index.js";
 
 describe("OpenAI-compatible judge transport", () => {
+  it("cancels a streaming body immediately on overflow without full buffering", async () => {
+    let cancelled = false;
+    let arrayBufferCalled = false;
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new Uint8Array(MAX_PROVIDER_RESPONSE_BYTES - 8));
+        controller.enqueue(new Uint8Array(16));
+      },
+      cancel() {
+        cancelled = true;
+      },
+    });
+    const response = {
+      ok: true,
+      status: 200,
+      body,
+      arrayBuffer: () => {
+        arrayBufferCalled = true;
+        return Promise.reject(new Error("arrayBuffer must not be used"));
+      },
+    } as unknown as Response;
+
+    const result = await requestJudgeCompletion(
+      {
+        endpoint: "https://api.example.com/v1/chat/completions",
+        model: "judge-model",
+        api_key_env: "JUDGE_KEY",
+        env_allowlist: ["JUDGE_KEY"],
+        timeout_ms: 1000,
+      },
+      {},
+      {
+        ambientEnvironment: { JUDGE_KEY: "secret" },
+        fetch: () => Promise.resolve(response),
+      },
+    );
+
+    expect(result).toMatchObject({ ok: false, error_kind: "invalid_provider_response" });
+    expect(cancelled).toBe(true);
+    expect(arrayBufferCalled).toBe(false);
+  });
+
   it("allows HTTPS, rejects credentialed/private endpoints and limits HTTP to test loopback", () => {
     expect(validateJudgeEndpoint("https://api.example.com/v1/chat/completions")).toBe(
       "https://api.example.com",

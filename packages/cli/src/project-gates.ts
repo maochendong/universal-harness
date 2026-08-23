@@ -19,8 +19,11 @@ import {
   canonicalizeJson,
   harnessRootFor,
   readCommittedOperations,
+  TrustedProviderError,
   type EdgeRecord,
   type NodeRecord,
+  type ResolvedTrustedProvider,
+  type TrustedProviderRegistry,
 } from "@universal-harness-internal/core";
 import { materializeLedger, pageEdges, pageNodes } from "@universal-harness-internal/graph";
 import {
@@ -33,7 +36,12 @@ import {
   type ToolRegistry,
 } from "@universal-harness-internal/runtime";
 
-import type { ProjectJudgeGateConfig, ProjectRuntimeConfig } from "./project-runtime-config.js";
+import { BUILTIN_TRUSTED_PROVIDER_REGISTRY } from "./model-providers.js";
+import type {
+  ProjectJudgeGateConfig,
+  ProjectJudgeGateReference,
+  ProjectRuntimeConfig,
+} from "./project-runtime-config.js";
 
 export type GateProcessRunner = (
   executable: string,
@@ -45,6 +53,55 @@ export interface ConfiguredGateSuiteOptions {
   readonly ambientEnvironment?: Readonly<Record<string, string | undefined>>;
   readonly judgeTransport?: Omit<JudgeTransportDependencies, "ambientEnvironment">;
   readonly reviewBundle?: (projectRoot: string, gate: ProjectJudgeGateConfig) => ReviewBundleInput;
+  readonly providerRegistry?: TrustedProviderRegistry;
+}
+
+interface ResolvedProjectJudgeGate extends ProjectJudgeGateConfig {
+  readonly trusted_provider_policy_digest: string;
+}
+
+function trustedJudgeProvider(
+  gate: ProjectJudgeGateConfig | ProjectJudgeGateReference,
+  registry: TrustedProviderRegistry,
+): ResolvedTrustedProvider {
+  try {
+    return "provider_ref" in gate
+      ? registry.resolve({ provider_ref: gate.provider_ref, consumer: "llm_judge" })
+      : registry.matchLegacy({
+          endpoint: gate.endpoint,
+          api_key_env: gate.api_key_env,
+          env_allowlist: gate.env_allowlist,
+          allow_loopback_http: gate.allow_loopback_http ?? false,
+          consumer: "llm_judge",
+        });
+  } catch (error) {
+    if (error instanceof TrustedProviderError) {
+      throw new Error(`Judge trusted provider resolution failed: ${error.code}`);
+    }
+    throw error;
+  }
+}
+
+function resolveJudgeGate(
+  gate: ProjectJudgeGateConfig | ProjectJudgeGateReference,
+  registry: TrustedProviderRegistry,
+): ResolvedProjectJudgeGate {
+  const trusted = trustedJudgeProvider(gate, registry);
+  return {
+    gate_id: gate.gate_id,
+    name: gate.name,
+    subject_id: gate.subject_id,
+    requested_mandatory: gate.requested_mandatory,
+    endpoint: trusted.endpoint,
+    model: gate.model,
+    prompt_version: gate.prompt_version,
+    api_key_env: trusted.api_key_env,
+    env_allowlist: trusted.env_allowlist,
+    timeout_ms: gate.timeout_ms,
+    ...(gate.seed === undefined ? {} : { seed: gate.seed }),
+    allow_loopback_http: trusted.allow_loopback_http,
+    trusted_provider_policy_digest: trusted.policy_digest,
+  };
 }
 
 function environmentFor(
@@ -332,10 +389,10 @@ export function createConfiguredGateSuite(
       }),
     );
   }
-  if (config.runtime_config_version === 3 && config.judge_gates.length > 0) {
-    throw new Error("runtime config v3 Judge references require a TrustedProviderRegistry");
-  }
-  const judgeGates = config.runtime_config_version === 2 ? config.judge_gates : [];
+  const providerRegistry = options.providerRegistry ?? BUILTIN_TRUSTED_PROVIDER_REGISTRY;
+  const judgeGates = (config.judge_gates ?? []).map((gate) =>
+    resolveJudgeGate(gate, providerRegistry),
+  );
   const graph = judgeGates.length === 0 ? undefined : currentGraph(projectRoot);
   for (const judge of judgeGates) {
     const resolution = resolveLlmJudgeMandatory(
@@ -399,6 +456,7 @@ export function createConfiguredGateSuite(
             ...(judge.allow_loopback_http === undefined
               ? {}
               : { allow_loopback_http: judge.allow_loopback_http }),
+            trusted_provider_policy_digest: judge.trusted_provider_policy_digest,
           },
           bundle,
           {

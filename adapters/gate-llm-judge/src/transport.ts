@@ -201,6 +201,43 @@ function failureKind(status: number): JudgeTransportErrorKind {
   return status === 429 ? "rate_limited" : "provider_5xx";
 }
 
+/** Read a provider body without ever accepting more than the configured byte budget. */
+export async function readBoundedBody(
+  body: ReadableStream<Uint8Array> | null,
+  maximumBytes: number,
+): Promise<Uint8Array> {
+  if (body === null) {
+    throw new JudgeTransportError("invalid_provider_response", "provider response has no body");
+  }
+  const reader = body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  try {
+    for (;;) {
+      const next = await reader.read();
+      if (next.done) break;
+      total += next.value.byteLength;
+      if (total > maximumBytes) {
+        await reader.cancel("provider response exceeded byte limit");
+        throw new JudgeTransportError(
+          "invalid_provider_response",
+          "provider response exceeded byte limit",
+        );
+      }
+      chunks.push(next.value);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+  const bodyBytes = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bodyBytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return bodyBytes;
+}
+
 /** Perform a bounded OpenAI-compatible request with at most two fixed retries. */
 export async function requestJudgeCompletion(
   config: JudgeTransportConfig,
@@ -268,16 +305,7 @@ export async function requestJudgeCompletion(
       if (response.ok) {
         let value: unknown;
         try {
-          const bytes = new Uint8Array(await response.arrayBuffer());
-          if (bytes.byteLength > MAX_PROVIDER_RESPONSE_BYTES) {
-            return {
-              ok: false,
-              error_kind: "invalid_provider_response",
-              attempts: attempt,
-              retry_count: attempt - 1,
-              endpoint_origin: endpointOrigin,
-            };
-          }
+          const bytes = await readBoundedBody(response.body, MAX_PROVIDER_RESPONSE_BYTES);
           value = JSON.parse(new TextDecoder().decode(bytes)) as unknown;
         } catch {
           return {

@@ -15,6 +15,7 @@ export const LLM_JUDGE_PROVIDER_PROTOCOL = "openai-compatible-v1" as const;
 export interface LlmJudgeConfig extends JudgeTransportConfig {
   readonly prompt_version: string;
   readonly seed?: number;
+  readonly trusted_provider_policy_digest?: string;
 }
 
 export type LlmJudgeRunDependencies = JudgeTransportDependencies;
@@ -23,6 +24,7 @@ export interface LlmJudgeEvidenceMetadata {
   readonly provider_protocol: typeof LLM_JUDGE_PROVIDER_PROTOCOL;
   readonly endpoint_origin: string;
   readonly model: string;
+  readonly trusted_provider_policy_digest?: string;
   readonly parameters: { readonly temperature: 0; readonly seed?: number };
   readonly prompt_version: string;
   readonly prompt_digest: string;
@@ -99,6 +101,11 @@ function errorOutput(input: {
         provider_protocol: LLM_JUDGE_PROVIDER_PROTOCOL,
         endpoint_origin: input.endpointOrigin,
         model: input.config.model,
+        ...(input.config.trusted_provider_policy_digest === undefined
+          ? {}
+          : {
+              trusted_provider_policy_digest: input.config.trusted_provider_policy_digest,
+            }),
         parameters: {
           temperature: 0,
           ...(input.config.seed === undefined ? {} : { seed: input.config.seed }),
@@ -193,6 +200,11 @@ export async function runLlmJudge(
           provider_protocol: LLM_JUDGE_PROVIDER_PROTOCOL,
           endpoint_origin: transport.endpoint_origin,
           model: config.model,
+          ...(config.trusted_provider_policy_digest === undefined
+            ? {}
+            : {
+                trusted_provider_policy_digest: config.trusted_provider_policy_digest,
+              }),
           parameters: {
             temperature: 0,
             ...(config.seed === undefined ? {} : { seed: config.seed }),

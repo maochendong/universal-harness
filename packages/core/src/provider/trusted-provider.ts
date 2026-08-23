@@ -28,13 +28,21 @@ export interface TrustedProviderRegistry {
     readonly provider_ref: string;
     readonly consumer: TrustedProviderConsumer;
   }): ResolvedTrustedProvider;
+  matchLegacy(input: {
+    readonly endpoint: string;
+    readonly api_key_env: string;
+    readonly env_allowlist: readonly string[];
+    readonly allow_loopback_http: boolean;
+    readonly consumer: TrustedProviderConsumer;
+  }): ResolvedTrustedProvider;
 }
 
 export type TrustedProviderErrorCode =
   | "duplicate_provider_ref"
   | "invalid_provider_definition"
   | "provider_not_found"
-  | "consumer_forbidden";
+  | "consumer_forbidden"
+  | "legacy_policy_mismatch";
 
 export class TrustedProviderError extends Error {
   readonly code: TrustedProviderErrorCode;
@@ -169,6 +177,34 @@ export function createTrustedProviderRegistry(
         );
       }
       const { allowed_consumers: _allowedConsumers, ...resolved } = provider;
+      return resolved;
+    },
+    matchLegacy(input: {
+      readonly endpoint: string;
+      readonly api_key_env: string;
+      readonly env_allowlist: readonly string[];
+      readonly allow_loopback_http: boolean;
+      readonly consumer: TrustedProviderConsumer;
+    }): ResolvedTrustedProvider {
+      const endpoint = canonicalEndpoint(input.endpoint);
+      const envAllowlist = canonicalStringSet(input.env_allowlist);
+      const matches = [...providers.values()].filter(
+        (provider) =>
+          provider.allowed_consumers.includes(input.consumer) &&
+          provider.endpoint === endpoint &&
+          provider.api_key_env === input.api_key_env &&
+          provider.allow_loopback_http === input.allow_loopback_http &&
+          provider.env_allowlist.length === envAllowlist.length &&
+          provider.env_allowlist.every((name, index) => name === envAllowlist[index]),
+      );
+      if (matches.length !== 1) {
+        throw new TrustedProviderError(
+          "legacy_policy_mismatch",
+          "legacy inline provider policy does not uniquely match host trust",
+        );
+      }
+      const { allowed_consumers: _allowedConsumers, ...resolved } =
+        matches[0] as StoredTrustedProvider;
       return resolved;
     },
   });
