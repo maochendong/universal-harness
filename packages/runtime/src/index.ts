@@ -189,6 +189,18 @@ export {
   type LedgerDagCheckpointStoreOptions,
 } from "./workflow/ledger-dag-checkpoint-store.js";
 export {
+  createCapabilityDagRuntime,
+  type CapabilityDagRuntime,
+  type CapabilityDagRuntimeDependencies,
+  type CapabilityDagRuntimeInput,
+  type CapabilityDagRuntimeOutcome,
+} from "./orchestration/capability-dag-runtime.js";
+export {
+  CAPABILITY_DAG_KERNEL_NODE_IDS,
+  createCapabilityDagRunnerRegistry,
+  type CapabilityDagRunnerPorts,
+} from "./orchestration/capability-dag-runners.js";
+export {
   captureRequirements,
   type AcceptanceCriterionInput,
   type CaptureContext,
@@ -995,6 +1007,7 @@ export {
   type DesignContributionOptions,
 } from "./orchestration/contributors/design-contributor.js";
 export {
+  moduleContributionsForCapabilityPlan,
   moduleContributionsForProfile,
   projectProfileModuleStatus,
   resolveProfileModules,

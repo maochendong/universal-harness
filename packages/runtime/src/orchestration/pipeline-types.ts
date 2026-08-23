@@ -1,5 +1,6 @@
 import {
   type CaptureAnswerInput,
+  type CapabilityPlanRecord,
   type CommitHooks,
   type DesignProposalPort,
   type DesignReviewPort,
@@ -176,6 +177,12 @@ export interface OrchestratorDependencies {
    * the exact legacy capture behavior.
    */
   readonly capture?: CaptureCoordinatorSeam;
+  /**
+   * Accepted Protocol 1.1 routing authority. When present, module activation
+   * and strict execute behavior come from this exact plan; profile heuristics
+   * are used only by the Protocol 1.0 compatibility path.
+   */
+  readonly capabilityPlan?: CapabilityPlanRecord;
   readonly execution?: ExecutionBinding;
   /** Legacy host seam; treated as an unproven delegated Agent binding. */
   readonly execute?: OrchestrationExecutor;

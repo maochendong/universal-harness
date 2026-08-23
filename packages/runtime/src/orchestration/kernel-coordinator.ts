@@ -4,6 +4,7 @@ import {
   PROTOCOL_VERSION,
   canonicalizeJson,
   canonicalizeLocator,
+  assertCapabilityPlanFinal,
   compileCriterionAssertions,
   contentDigest,
   criterionSemanticDigest,
@@ -2352,6 +2353,16 @@ function deriveKernelImpactSet(ctx: PipelineContext): NodeRecord {
 }
 async function phasePlan(ctx: PipelineContext, gateIds: readonly string[]): Promise<PhaseStep> {
   const { deps } = ctx;
+  if (deps.capabilityPlan !== undefined) {
+    try {
+      assertCapabilityPlanFinal(deps.capabilityPlan);
+    } catch (error) {
+      throw new OrchestrationError(
+        "binding_drift",
+        error instanceof Error ? error.message : "CapabilityPlan is not final",
+      );
+    }
+  }
   const existing = loadPlan(ctx);
   const migrationBlockers = ctx.workingState.blockers.filter((blocker) =>
     blocker.startsWith("migration required:"),

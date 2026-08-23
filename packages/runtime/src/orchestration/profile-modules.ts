@@ -3,6 +3,7 @@ import {
   readLatestProjectProfile,
   type CapabilityId,
   type CapabilityStatusProjection,
+  type CapabilityPlanRecord,
   type NodeRecord,
   type ProjectProfileRecord,
 } from "@universal-harness-internal/core";
@@ -89,6 +90,29 @@ export function moduleContributionsForProfile(
   const resolutions = resolveProfileModules(readLatestProjectProfile(projectRoot, projectId));
   const active = new Set(
     resolutions
+      .filter((resolution) => resolution.resolution === "active")
+      .map((resolution) => resolution.capability_id),
+  );
+  return {
+    ...(active.has("impact_analysis") ? { impact: createImpactContribution(options?.impact) } : {}),
+    ...(active.has("design_governance")
+      ? { design: createDesignContribution(options?.design) }
+      : {}),
+    ...(active.has("independent_evaluation") ? { evaluate: createEvaluationContribution() } : {}),
+    ...(active.has("advanced_audit") ? { audit: createAuditContribution() } : {}),
+  };
+}
+
+/** Build module contributions exclusively from an accepted CapabilityPlan. */
+export function moduleContributionsForCapabilityPlan(
+  plan: CapabilityPlanRecord,
+  options?: {
+    readonly design?: DesignContributionOptions;
+    readonly impact?: ImpactContributionOptions;
+  },
+): ModuleContributions {
+  const active = new Set(
+    plan.capabilities
       .filter((resolution) => resolution.resolution === "active")
       .map((resolution) => resolution.capability_id),
   );

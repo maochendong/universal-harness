@@ -65,7 +65,33 @@ import type {
   OrchestratorDependencies,
   RunIterationInput,
 } from "./pipeline-types.js";
-import { moduleContributionsForProfile } from "./profile-modules.js";
+import {
+  moduleContributionsForCapabilityPlan,
+  moduleContributionsForProfile,
+} from "./profile-modules.js";
+
+function contributionsForOperation(
+  deps: OrchestratorDependencies,
+  projectId: string,
+  operationId: string,
+) {
+  if (deps.capabilityPlan !== undefined) {
+    if (deps.capabilityPlan.operation_id !== operationId) {
+      throw new OrchestrationError(
+        "binding_drift",
+        "accepted CapabilityPlan belongs to a different workflow operation",
+      );
+    }
+    return moduleContributionsForCapabilityPlan(deps.capabilityPlan, {
+      ...(deps.design === undefined ? {} : { design: deps.design }),
+      ...(deps.impactAdvisory === undefined ? {} : { impact: { advisory: deps.impactAdvisory } }),
+    });
+  }
+  return moduleContributionsForProfile(deps.projectRoot, projectId, {
+    ...(deps.design === undefined ? {} : { design: deps.design }),
+    ...(deps.impactAdvisory === undefined ? {} : { impact: { advisory: deps.impactAdvisory } }),
+  });
+}
 
 /**
  * Compatibility facade (plan Task 8-A). The pipeline implementation lives in
@@ -169,10 +195,7 @@ export async function runIteration(
     started.operation.workflow_operation_id,
     started.operation.iteration_id,
     input,
-    moduleContributionsForProfile(deps.projectRoot, projectId, {
-      ...(deps.design === undefined ? {} : { design: deps.design }),
-      ...(deps.impactAdvisory === undefined ? {} : { impact: { advisory: deps.impactAdvisory } }),
-    }),
+    contributionsForOperation(deps, projectId, started.operation.workflow_operation_id),
   );
   if ("outcome" in context) return context.outcome;
   return drivePipeline(context, "capture", input.untilPhase);
@@ -268,13 +291,10 @@ export async function resumeIteration(
         : { deterministicWork: input.deterministicWork }),
       ...(input?.untilPhase === undefined ? {} : { untilPhase: input.untilPhase }),
     },
-    moduleContributionsForProfile(
-      deps.projectRoot,
+    contributionsForOperation(
+      deps,
       `project_${readManagedManifest(deps.projectRoot).name}`,
-      {
-        ...(deps.design === undefined ? {} : { design: deps.design }),
-        ...(deps.impactAdvisory === undefined ? {} : { impact: { advisory: deps.impactAdvisory } }),
-      },
+      workflowOperationId,
     ),
   );
   if ("outcome" in context) return context.outcome;
