@@ -58,6 +58,17 @@ export {
   type FindingGovernanceMetadata,
   type FindingSeverity,
 } from "./finding/governance.js";
+export {
+  createFeedbackAnalysisCoordinator,
+  createInMemoryFeedbackAnalysisStore,
+  type FeedbackAnalysisCoordinator,
+  type FeedbackAnalysisCoordinatorOutcome,
+  type FeedbackAnalysisDisposition,
+  type FeedbackAnalysisEvidence,
+  type FeedbackAnalysisRequest,
+  type FeedbackAnalysisStore,
+  type InMemoryFeedbackAnalysisStore,
+} from "./finding/feedback-analysis-coordinator.js";
 export { projectFindingGroups, type FindingGroupProjection } from "./finding/groups.js";
 export {
   FINDING_GROUP_ACTIONS,

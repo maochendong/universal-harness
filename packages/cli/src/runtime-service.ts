@@ -680,7 +680,8 @@ export function createOrchestratedRuntimeService(
    * T20 slice 2 design/impact/context routing: when the committed runtime
    * config declares providers covering the pipeline slots, the orchestrator
    * dependencies carry the model-backed ports (design proposal/review, impact
-   * advisory, context enrichment, iteration narrative). Provider closure is
+   * advisory, plan proposal, context enrichment, feedback analysis and
+   * iteration narrative). Provider closure is
    * re-verified at this preflight point (design 11.2): a Standard/Governed
    * profile missing `model_providers` — or coverage for any required blocking
    * slot — fails closed as a configuration error; Lite and pre-1.1 legacy

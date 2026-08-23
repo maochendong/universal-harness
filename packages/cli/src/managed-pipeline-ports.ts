@@ -8,6 +8,7 @@ import {
   modelSlotDefaultsForProfile,
   type DesignProposalPort,
   type DesignReviewPort,
+  type FeedbackAnalysisPort,
   type GroundedSynthesisPort,
   type GroundedSynthesisPurpose,
   type ModelSlotId,
@@ -24,6 +25,7 @@ import {
 import {
   createModelBackedDesignProposalPort,
   createModelBackedDesignReviewPort,
+  createModelBackedFeedbackAnalysisPort,
   createModelBackedGroundedSynthesisPort,
   createModelBackedImpactAdvisoryPort,
   createModelBackedPlanProposalPort,
@@ -79,6 +81,7 @@ export interface ManagedPipelinePorts {
   readonly planProposal?: PlanProposalPort;
   readonly contextEnrichment?: GroundedSynthesisPort;
   readonly iterationNarrative?: GroundedSynthesisPort;
+  readonly feedbackAnalysis?: FeedbackAnalysisPort;
 }
 
 const SNAPSHOT_LOCATOR_PREFIX = "harness://snapshots/" as const;
@@ -105,9 +108,8 @@ export class ManagedPipelinePortsError extends Error {
 
 /**
  * The 11.2 operation-scope slots this assembly wires, with the resolver key
- * each resolves under. `feedback_analysis` has no production call point yet
- * and `iteration_narrative` is the sole non-blocking slot (its failure may
- * only raise a projection finding), so neither is preflight-enforced here.
+ * each resolves under. `iteration_narrative` is the sole non-blocking slot;
+ * feedback_analysis is required and fail-closed in Standard/Governed.
  */
 const PIPELINE_SLOT_RESOLVER_KEYS: readonly {
   readonly slot_id: ModelSlotId;
@@ -117,6 +119,7 @@ const PIPELINE_SLOT_RESOLVER_KEYS: readonly {
   { slot_id: "impact_advisory", resolver_key: IMPACT_ADVISORY_PROMPT_PORT_ID },
   { slot_id: "design_review", resolver_key: DESIGN_REVIEW_PROMPT_PORT_ID },
   { slot_id: "plan_proposal", resolver_key: PLAN_PROPOSAL_PROMPT_PORT_ID },
+  { slot_id: "feedback_analysis", resolver_key: "feedback_analysis" },
   {
     slot_id: "grounded_synthesis",
     purpose: "context_enrichment",
@@ -229,6 +232,7 @@ export function createManagedPipelinePorts(deps: ManagedPipelinePortsDeps): Mana
   const planProposal = resolver.resolve(PLAN_PROPOSAL_PROMPT_PORT_ID);
   const contextEnrichment = resolver.resolve("context_enrichment");
   const iterationNarrative = resolver.resolve("iteration_narrative");
+  const feedbackAnalysis = resolver.resolve("feedback_analysis");
 
   // Provider closure is re-verified deterministically at preflight (design
   // 11.2): a required blocking slot with no coverage must never degrade to
@@ -240,6 +244,7 @@ export function createManagedPipelinePorts(deps: ManagedPipelinePortsDeps): Mana
     [PLAN_PROPOSAL_PROMPT_PORT_ID]: planProposal,
     context_enrichment: contextEnrichment,
     iteration_narrative: iterationNarrative,
+    feedback_analysis: feedbackAnalysis,
   };
   const uncovered = requiredSlotKeys.filter((key) => resolvedByKey[key] === undefined);
   if (uncovered.length > 0) {
@@ -326,6 +331,16 @@ export function createManagedPipelinePorts(deps: ManagedPipelinePortsDeps): Mana
             provider_config: iterationNarrative.provider_config,
             provider: iterationNarrative.provider,
             ...budgetOf(iterationNarrative),
+          }),
+        }),
+    ...(feedbackAnalysis === undefined
+      ? {}
+      : {
+          feedbackAnalysis: createModelBackedFeedbackAnalysisPort({
+            ...groundedDeps,
+            provider_config: feedbackAnalysis.provider_config,
+            provider: feedbackAnalysis.provider,
+            ...budgetOf(feedbackAnalysis),
           }),
         }),
   };

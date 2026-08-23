@@ -3,6 +3,7 @@ export * from "./capability/index.js";
 export * from "./capture/index.js";
 export * from "./context/index.js";
 export * from "./design/index.js";
+export * from "./feedback/index.js";
 export * from "./identity/index.js";
 export * from "./ledger/index.js";
 export * from "./plan/index.js";

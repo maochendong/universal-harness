@@ -28,6 +28,7 @@ const ALL_SLOTS = [
   "plan_proposal",
   "context_enrichment",
   "iteration_narrative",
+  "feedback_analysis",
 ] as const;
 
 function providerEntry(slots: readonly string[]) {
@@ -95,6 +96,7 @@ describe("createManagedPipelinePorts", () => {
         "design_review",
         "plan_proposal",
         "context_enrichment",
+        "feedback_analysis",
       ]) {
         expect((error as ManagedPipelinePortsError).message).toContain(slot);
       }
@@ -133,7 +135,14 @@ describe("createManagedPipelinePorts", () => {
     const root = projectWithConfig({
       runtime_config_version: 2,
       gates: [],
-      model_providers: [providerEntry(["impact_advisory", "plan_proposal", "context_enrichment"])],
+      model_providers: [
+        providerEntry([
+          "impact_advisory",
+          "plan_proposal",
+          "context_enrichment",
+          "feedback_analysis",
+        ]),
+      ],
     });
     try {
       portsFor(root);
@@ -151,7 +160,13 @@ describe("createManagedPipelinePorts", () => {
       gates: [],
       // design_proposal and iteration_narrative are not required slots.
       model_providers: [
-        providerEntry(["design_review", "impact_advisory", "plan_proposal", "context_enrichment"]),
+        providerEntry([
+          "design_review",
+          "impact_advisory",
+          "plan_proposal",
+          "context_enrichment",
+          "feedback_analysis",
+        ]),
       ],
     });
     const ports = portsFor(root);
@@ -161,6 +176,7 @@ describe("createManagedPipelinePorts", () => {
     expect(ports.planProposal).toBeDefined();
     expect(ports.contextEnrichment).toBeDefined();
     expect(ports.iterationNarrative).toBeUndefined();
+    expect(ports.feedbackAnalysis).toBeDefined();
   });
 
   it("wires exactly the covered slots", () => {
@@ -176,6 +192,7 @@ describe("createManagedPipelinePorts", () => {
     expect(ports.planProposal).toBeUndefined();
     expect(ports.contextEnrichment).toBeUndefined();
     expect(ports.iterationNarrative).toBeUndefined();
+    expect(ports.feedbackAnalysis).toBeUndefined();
   });
 
   it("runs the plan proposal through the managed layer, authenticated from the environment", async () => {

@@ -5,6 +5,10 @@ import {
 } from "@universal-harness-internal/core";
 
 import type { TaskSpecification } from "../planning/task.js";
+import type {
+  FeedbackAnalysisCoordinator,
+  FeedbackAnalysisRequest,
+} from "../finding/feedback-analysis-coordinator.js";
 import type { StrictTddExecutionPort, StrictTddTaskOutcome } from "../tdd/execution-runner.js";
 import type { DagNodeContext, DagNodeRunner, DagRunnerRegistry } from "../workflow/dag.js";
 
@@ -21,6 +25,43 @@ export const CAPABILITY_DAG_KERNEL_NODE_IDS = [
 export interface CapabilityDagRunnerPorts {
   readonly kernel: Readonly<Record<string, DagNodeRunner>>;
   readonly modules?: Readonly<Partial<Record<CapabilityId, DagNodeRunner>>>;
+  readonly feedbackAnalysis?: {
+    readonly coordinator: FeedbackAnalysisCoordinator;
+    readonly requests: (
+      context: DagNodeContext,
+      result: Awaited<ReturnType<DagNodeRunner>>,
+    ) => readonly FeedbackAnalysisRequest[];
+  };
+}
+
+export type { FeedbackAnalysisRequest } from "../finding/feedback-analysis-coordinator.js";
+
+function withFeedbackAnalysis(
+  runner: DagNodeRunner,
+  feedback: NonNullable<CapabilityDagRunnerPorts["feedbackAnalysis"]>,
+): DagNodeRunner {
+  return async (context) => {
+    const result = await runner(context);
+    if (result.status !== "committed") return result;
+    for (const request of feedback.requests(context, result)) {
+      const outcome = await feedback.coordinator.analyzeFinding(request);
+      if (outcome.status === "blocked") {
+        return {
+          status: "blocked",
+          reason: "feedback_analysis_required",
+          detail: outcome.failure.summary,
+        };
+      }
+      if (outcome.status === "analyzed" && outcome.disposition === "requires_human_review") {
+        return {
+          status: "blocked",
+          reason: "feedback_analysis_review_required",
+          detail: `feedback analysis ${outcome.record.analysis_id} requires human review before routing`,
+        };
+      }
+    }
+    return result;
+  };
 }
 
 /**
@@ -30,9 +71,23 @@ export interface CapabilityDagRunnerPorts {
 export function createCapabilityDagRunnerRegistry(
   ports: CapabilityDagRunnerPorts,
 ): DagRunnerRegistry {
+  const kernel = { ...ports.kernel };
+  const modules = { ...ports.modules };
+  if (ports.feedbackAnalysis !== undefined) {
+    const verify = kernel["verify"];
+    if (verify !== undefined) {
+      kernel["verify"] = withFeedbackAnalysis(verify, ports.feedbackAnalysis);
+    }
+    for (const capabilityId of ["independent_evaluation", "advanced_audit"] as const) {
+      const runner = modules[capabilityId];
+      if (runner !== undefined) {
+        modules[capabilityId] = withFeedbackAnalysis(runner, ports.feedbackAnalysis);
+      }
+    }
+  }
   return Object.freeze({
-    kernel: Object.freeze({ ...ports.kernel }),
-    ...(ports.modules === undefined ? {} : { modules: Object.freeze({ ...ports.modules }) }),
+    kernel: Object.freeze(kernel),
+    ...(ports.modules === undefined ? {} : { modules: Object.freeze(modules) }),
   });
 }
 

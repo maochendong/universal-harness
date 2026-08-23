@@ -5,6 +5,7 @@ import {
   type DesignProposalPort,
   type DesignReviewPort,
   type EdgeRecord,
+  type FeedbackAnalysisPort,
   type GroundedSynthesisPort,
   type LockTuning,
   type NodeRecord,
@@ -213,6 +214,8 @@ export interface OrchestratorDependencies {
    * commits. Absent means no narrative is compiled.
    */
   readonly iterationNarrative?: GroundedSynthesisPort;
+  /** Optional/required semantics are carried by the accepted model binding. */
+  readonly feedbackAnalysis?: FeedbackAnalysisPort;
   /** Design module ports; an active design_governance without ports blocks. */
   readonly design?: {
     readonly proposal?: DesignProposalPort;

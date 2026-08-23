@@ -1,5 +1,6 @@
 export * from "./capture-adapters.js";
 export * from "./design-adapters.js";
+export * from "./feedback-analysis-adapter.js";
 export * from "./impact-advisory-adapter.js";
 export * from "./invocation-records.js";
 export * from "./invocation-store.js";
