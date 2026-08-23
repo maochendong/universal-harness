@@ -27,6 +27,8 @@ Universal Harness 是一个 Graph-native、Provider-neutral 的工程 Harness，
 
 M1、M2 与 Protocol 1.1 的 19-task 能力已经形成统一产品面。除 M1/M2 的执行治理、Finding、Dashboard 与实时事件流外，Harness 还具备三档 Profile、动态 Capability DAG、受管 PRD Capture、DesignSet、可证明 TDD、四个领域模型 Port 与四用途 Grounded Synthesis。请从 [快速开始](docs/getting-started.md) 运行第一次闭环，并在 [完整 Graph-native 模型](docs/graph-driven-harness-model.md) 中理解各能力怎样共同驱动迭代。
 
+当前受版本控制的实现已通过 2182 项全量测试以及 security、fault、performance、E2E、Dashboard 和 pack smoke；打包 CLI 的 Lite / Standard / Governed 三档闭环均到达 completed Snapshot，Governed 留下 `Baseline → Red → Green` 的成对账本证据。发布状态仍以自动报告为准：M1 为 27/28，只有同 commit 的 Ubuntu/macOS/Windows 证据 AC25 尚未验证；M2 为 13/13。详见 [全量评审修复完成证据](docs/evidence/full-review-remediation-completion.md)，不要把本地通过误读为跨平台发布完成。
+
 ## Dashboard 效果
 
 ![Harness Observatory Dashboard：atlas-mvp 项目 Overview](docs/assets/harness-observatory-overview.png)
@@ -181,7 +183,7 @@ flowchart TB
 - **质量反馈**：universal / stack / project 三层 Gate、绑定漂移即失效的 Evidence Freshness、Run 五维评估（outcome / safety / trajectory / efficiency / correct failure）、Finding → 确定性 RCA → 必要的 FeedbackAnalysis → 归属上游 Phase 的修复路由；每次评估都会落地 `Run → Evidence → EvaluationCase → Run/Task` 图链。模型不能覆盖确定性 RCA，低置信度或高风险 Change Seed 必须人工复核，门禁不过不出完成快照。
 - **主动审计**：快照相位自动重跑确定性图审计（可追溯性、freshness、图健康、设计/决策文档覆盖度、Task↔Requirement 挂接、合同条目覆盖、任务证据时效），缺口按内容派生 id 幂等落账为 Finding 并进入人审核级联；`harness status` 以 blockers / warnings 分级呈现；迭代自动增量重扫工作区文档入图。
 - **知识投影**：PRD 从 AcceptedPrdRecord 重建，Architecture/Specification 从 accepted DesignSet、Decision、Component、DesignArtifact 和关系边重建，Plan 显示 DesignSet/Assertion/Task 绑定，Snapshot 显示 TDD proof 与带来源的 iteration narrative；所有 Markdown 投影受管写入、漂移自动重生成，不反向成为权威源。
-- **发布工程**：Linux / macOS CI（Windows 暂时移出矩阵，超时 flake 待查）；security / fault / property / performance 发布门禁；28 条验收标准自动追溯；自包含 npm 包（离线可安装）。
+- **发布工程**：Ubuntu / macOS / Windows 三平台 CI matrix 与同 commit 工件聚合；security / fault / property / performance 发布门禁；28 条验收标准自动追溯；自包含 npm 包（离线可安装）。缺少任一平台工件时 AC25 保持 `not_verified` 并阻止发布，不能用 workflow 文件存在或本地结果代替。
 
 ## 文档
 
@@ -194,6 +196,7 @@ flowchart TB
 - [dsh headless 本机契约](docs/dsh-headless-contract.md)
 - [M1 验收报告](docs/m1-acceptance-report.md)
 - [M2 验收报告](docs/m2-acceptance-report.md)
+- [全量评审修复完成证据](docs/evidence/full-review-remediation-completion.md)
 
 ## 设计文档
 

@@ -1,12 +1,12 @@
-> **状态更正（评审 `cda618f`→`d829863` 后）**：T1–T19 + PG-0–PG-9 在**组件层面**已实现，但评审发现若干"组件已实现、生产编排未接通"的缺口，下方各批次的"已完成"应读作 `component_complete`，而非 `production_wired` 或 `evidence_proven`：
+> **状态更新（2026-08-23，全量修复基线 `ee9d47a`）**：T1–T24 + PG-0–PG-9 的仓库内能力已从 `component_complete` 收敛到 `production_wired`；CapabilityPlan 生产 DAG、strict TDD execute 子图、FeedbackAnalysis 路由和三档 packaged CLI Ledger 证据均已补齐。Governed dogfood 产生 2 个 TDD cycle 及 Baseline/Red/Green Evidence。`evidence_proven` 仍必须按证据作用域理解：本地/hermetic 证据已完成，但当前真实 DeepSeek 调用未验证，AC25 同 commit Ubuntu/macOS/Windows 工件未齐，因此不能声明跨平台发布完成。
 >
 > - `component_complete`：组件/模块实现并有单测；
 > - `production_wired`：生产编排实际遍历该路径（而非 Profile 硬编码或 legacy fallback）；
 > - `evidence_proven`：有不可变实施证据（真实 Agent/Provider 的 Grant/Red/Green/Cycle/Gate/Snapshot 记录）。
 >
-> 按此口径：Capture 澄清回路（Operation/Session 先于模型调用、`resume --answer/--answers`）、默认 Planner 的 canonical Criterion Assertion、Standard/Governed 缺 Provider fail-closed、SSRF/预算执行加固已在本轮修复并接线；final CapabilityPlan 驱动 contributor/Provider binding/DAG、strict_tdd 进入 execute、FeedbackAnalysis（T17）生产调用点、T19 三档真实 Ledger 证据仍为开放项。最终验收清单以两份实施计划末尾的 checkbox 为准（见 `2026-08-18-protocol-1.1-unified-implementation-plan.md` §24 与 `2026-08-20-prompt-governance-addendum-implementation-plan.md` §18，均未全量销项）。
+> 完成矩阵、命令计数与残余风险见 `../../evidence/full-review-remediation-completion.md`。最终验收清单仍以两份实施计划末尾的 checkbox 为准；未勾选项是 Lite Capture UX 指标、当前真实 Provider dogfood 和同 commit 跨平台发布证据，不以历史自述销项。
 
-历史记录：T1–T19 + PG-0–PG-9 组件实现止于 `9d0e3bf`。其后又落地了 Managed 模型 Provider 层（`77d0131`：OpenAI 兼容 provider、槽位 registry、`model_providers` 配置与 CLI 装配）和架构文档（`ae0d448`）。下一项是 T20。
+历史记录：T1–T19 + PG-0–PG-9 组件实现止于 `9d0e3bf`。其后落地 Managed 模型 Provider 层（`77d0131`）、T20–T24 生产改接与引用保真修复，再由 `e860f45` / `0530cba` 定义的全量修复计划完成安全边界、DAG/TDD/Feedback 生产接线、三档证据和 façade 拆分。下图保留为历史实施依赖，不表示 T20 仍待开工。
 
 ````
 ```mermaid
@@ -95,7 +95,7 @@ T13 后出现唯一适合并行的分支：
 2. T18 + PG-8：CLI、Adapter、Read API、Dashboard、Prompt provenance  
 3. T19 + PG-9：Lite/Standard/Governed E2E、真实 Provider dogfood、安全与发布门禁
 
-### 第六批：流水线改接 model-backed 适配器
+### 第六批：流水线改接 model-backed 适配器（已完成）
 
 1. T20：capture/design/impact 主流水线改接 model-backed 适配器
 
@@ -108,7 +108,7 @@ T13 后出现唯一适合并行的分支：
 3. **迁移语义**：无 `model_providers` 的既有项目维持 legacy 路径并输出弃用告警；声明了配置但槽位无覆盖时 fail closed，不设隐式优先级。
 4. **验收**：三档 profile 各跑一遍真实 Provider dogfood（一并消掉 T19 留下的外部条件留白，需有效 API key 与外网）。
 
-## 当前最近的提交目标
+## 历史提交目标
 
 ```
 feat(cli): route capture through model-backed adapters    # T20 切片 1（e7475ad，已完成）

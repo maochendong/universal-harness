@@ -2,7 +2,7 @@
 
 > 日期：2026-08-20
 >
-> 状态：已批准实施
+> 状态：仓库内 Prompt Governance 已实施并通过本地证据审计；跨平台发布与当前真实 Provider 证据待补
 >
 > 设计输入：[Prompt Governance 增补设计](../specs/2026-08-20-prompt-governance-addendum-design.md)
 >
@@ -491,27 +491,27 @@ test(protocol): prove prompt governance end to end
 
 ## 18. 最终验收清单
 
-> 状态标注（评审 `cda618f`→`d829863` 后）：本清单各项保持未勾选即为未销项。PG-7～PG-9 要求的 Baseline/Red/Green 不可变证据与三档真实 dogfood 仍有留白（见 `docs/evidence/` 各 dogfood 记录的自我声明）；路线图文档中的"已完成"仅指组件实现（`component_complete`），不代表本清单口径的验收通过。
+> 2026-08-23 证据审计：11 个 Prompt Contract、隔离的 binding/compiler/runner、三层失败语义、citation/漂移/恢复与领域权限负契约均已由全量测试证明；packaged CLI 三档闭环也已完成，Governed 留有 Baseline/Red/Green Evidence。最后一项继续未勾选，因为 `pnpm test:release` 正确被 AC25 同 commit 三平台证据阻塞，且当前环境没有 DeepSeek 密钥，不能把 hermetic Provider 或历史 dogfood 冒充本轮真实 Provider 证据。
 
-- [ ] 11 个 Port/purpose 都有领域拥有、版本化且不可静默修改的 Prompt Contract。
-- [ ] 四个领域建议 Port 与 Grounded 四 purpose 使用 `ModelProviderBinding`；`PrdProposalPort`、`PrdReviewPort`、`DesignProposalPort` 保留判别式 Adapter Profile，不扩张五槽位模型。
-- [ ] Binding/Profile 固定 contract/version/digest 与 output Schema digest；Invocation 固定 compiled prompt digest。
-- [ ] `prompt_version` 只作为 Registry selector/兼容 alias，必须唯一解析到 binding 中的 contract id/version/digest/Schema；不一致时 fail closed。
-- [ ] Adapter/调用方没有 raw system prompt、动态 Schema 或隐藏 history 注入口。
-- [ ] PromptCompiler 固定七段顺序，项目内容永远只进入 untrusted partition。
-- [ ] Lite/Standard/Governed Overlay 只增加深度，不能弱化 Authority、Schema、风险或审批。
-- [ ] Policy 只通过 allowlisted clause id/参数注入，原始 Policy Markdown 不是指令。
-- [ ] Preparation failure 在 Provider 前 fail closed、零调用、零预算且可恢复。
-- [ ] Provider failure 与 Preparation failure 具有不同 Schema、事件、Dashboard 文案和恢复动作。
-- [ ] preparation、invocation、domain validation 三层失败码具有唯一映射和权威载体；Grounded failure 不形成第二份 truth。
-- [ ] Prompt/cache/conversation/run/Evidence 在 Port/purpose 与 Proposal/Review 间完全隔离。
-- [ ] Prompt 漂移只失效未消费 Result，历史 Invocation 与 Protocol 1.0 不改写。
-- [ ] Impact 不能降风险，Design accept 不能代替人工批准，Plan 不能改 Assertion/Grant，Feedback 不能覆盖确定性 RCA。
-- [ ] Context Prompt 不扩大文件或权限，Narrative 不修改 Snapshot/Verdict 或补造 Evidence。
-- [ ] Lite 未启用槽位零 Prompt 编译、Invocation、Result、Evidence 和 Dashboard 空壳。
-- [ ] Dashboard 默认不泄露完整 Prompt，审计展开只读取脱敏受控 artifact。
-- [ ] Prompt injection、越权输出、citation 语义错误、漂移、crash/resume 和 Provider 对账测试全部通过。
-- [ ] Protocol 1.1 binding/schema golden 的每次 digest 轮换均有逐项人工审核说明，Protocol 1.0 fixture 不改写。
+- [x] 11 个 Port/purpose 都有领域拥有、版本化且不可静默修改的 Prompt Contract。
+- [x] 四个领域建议 Port 与 Grounded 四 purpose 使用 `ModelProviderBinding`；`PrdProposalPort`、`PrdReviewPort`、`DesignProposalPort` 保留判别式 Adapter Profile，不扩张五槽位模型。
+- [x] Binding/Profile 固定 contract/version/digest 与 output Schema digest；Invocation 固定 compiled prompt digest。
+- [x] `prompt_version` 只作为 Registry selector/兼容 alias，必须唯一解析到 binding 中的 contract id/version/digest/Schema；不一致时 fail closed。
+- [x] Adapter/调用方没有 raw system prompt、动态 Schema 或隐藏 history 注入口。
+- [x] PromptCompiler 固定七段顺序，项目内容永远只进入 untrusted partition。
+- [x] Lite/Standard/Governed Overlay 只增加深度，不能弱化 Authority、Schema、风险或审批。
+- [x] Policy 只通过 allowlisted clause id/参数注入，原始 Policy Markdown 不是指令。
+- [x] Preparation failure 在 Provider 前 fail closed、零调用、零预算且可恢复。
+- [x] Provider failure 与 Preparation failure 具有不同 Schema、事件、Dashboard 文案和恢复动作。
+- [x] preparation、invocation、domain validation 三层失败码具有唯一映射和权威载体；Grounded failure 不形成第二份 truth。
+- [x] Prompt/cache/conversation/run/Evidence 在 Port/purpose 与 Proposal/Review 间完全隔离。
+- [x] Prompt 漂移只失效未消费 Result，历史 Invocation 与 Protocol 1.0 不改写。
+- [x] Impact 不能降风险，Design accept 不能代替人工批准，Plan 不能改 Assertion/Grant，Feedback 不能覆盖确定性 RCA。
+- [x] Context Prompt 不扩大文件或权限，Narrative 不修改 Snapshot/Verdict 或补造 Evidence。
+- [x] Lite 未启用槽位零 Prompt 编译、Invocation、Result、Evidence 和 Dashboard 空壳。
+- [x] Dashboard 默认不泄露完整 Prompt，审计展开只读取脱敏受控 artifact。
+- [x] Prompt injection、越权输出、citation 语义错误、漂移、crash/resume 和 Provider 对账测试全部通过。
+- [x] Protocol 1.1 binding/schema golden 的每次 digest 轮换均有逐项人工审核说明，Protocol 1.0 fixture 不改写。
 - [ ] `pnpm test:release`、三档真实 dogfood 和中文验收报告全部完成。
 
 ## 19. 明确不做

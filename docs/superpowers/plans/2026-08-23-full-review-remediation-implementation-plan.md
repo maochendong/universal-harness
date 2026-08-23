@@ -10,6 +10,8 @@
 
 **Spec:** `docs/superpowers/specs/2026-08-23-full-review-remediation-design.md`
 
+**实施状态（2026-08-23）：** WP0–WP5 的仓库内实现、回归与 hermetic packaged CLI 三档证据已经完成；Governed 已产生可证明的 Baseline/Red/Green 链。Task 12 Step 4 因当前环境没有 DeepSeek 密钥为 `not_verified`；Task 14 的完整 release 与同 commit CI 仍被 AC25 Ubuntu/macOS/Windows 工件缺失阻塞。详细证据见 `docs/evidence/full-review-remediation-completion.md`。
+
 ## Global Constraints
 
 - `.harness/runtime.json` 是不可信项目输入，不能定义 endpoint、密钥环境变量、secret allowlist 或 loopback 放宽项。
@@ -184,7 +186,7 @@ git commit -m "fix: stabilize managed capture and execution evidence"
 - Consumes: canonical digest helpers from `packages/core/src/identity`.
 - Produces: `TrustedProviderRegistry`, `ResolvedTrustedProvider`, `TrustedProviderError`, `createTrustedProviderRegistry()`.
 
-- [ ] **Step 1: Write the failing public-seam tests**
+- [x] **Step 1: Write the failing public-seam tests**
 
 Cover exact provider/consumer lookup, duplicate refs, forbidden consumers and stable policy digest:
 
@@ -209,7 +211,7 @@ pnpm exec vitest run --config vitest.workspace.ts packages/core/test/provider/tr
 
 Expected: fail because the module is absent.
 
-- [ ] **Step 2: Implement the registry contract**
+- [x] **Step 2: Implement the registry contract**
 
 Use these public types:
 
@@ -231,7 +233,7 @@ export interface ResolvedTrustedProvider {
 
 Canonicalize URL and sorted allowlists before deriving `policy_digest`; reject duplicate refs and consumer mismatches with `TrustedProviderError`.
 
-- [ ] **Step 3: Run core tests and typecheck**
+- [x] **Step 3: Run core tests and typecheck**
 
 ```bash
 pnpm exec vitest run --config vitest.workspace.ts packages/core/test/provider/trusted-provider.test.ts
@@ -240,7 +242,7 @@ pnpm --filter @universal-harness-internal/core typecheck
 
 Expected: pass.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add packages/core/src/provider/trusted-provider.ts packages/core/test/provider/trusted-provider.test.ts packages/core/src/index.ts
@@ -259,7 +261,7 @@ git commit -m "feat(core): add trusted provider registry"
 - Consumes: `TrustedProviderRegistry.resolve()` from Task 2.
 - Produces: parsed `ProjectRuntimeConfigV3`, `ProjectModelProviderReference`, `ProjectJudgeGateReference`, and v1/v2 compatibility records.
 
-- [ ] **Step 1: Write failing v3 and compatibility tests**
+- [x] **Step 1: Write failing v3 and compatibility tests**
 
 Assert that v3 accepts only reference-owned fields:
 
@@ -280,7 +282,7 @@ pnpm exec vitest run --config vitest.workspace.ts packages/cli/test/project-runt
 
 Expected: fail because version 3 is unsupported.
 
-- [ ] **Step 2: Add the discriminated config types**
+- [x] **Step 2: Add the discriminated config types**
 
 ```ts
 export interface ProjectModelProviderReference {
@@ -305,11 +307,11 @@ export interface ProjectJudgeGateReference {
 
 Set `PROJECT_RUNTIME_CONFIG_VERSION = 3` and retain versions 1/2 as compatibility-only unions.
 
-- [ ] **Step 3: Make new/adopt write v3**
+- [x] **Step 3: Make new/adopt write v3**
 
 Generated `.harness/runtime.json` must contain provider references only. Do not copy endpoint or env names into the project.
 
-- [ ] **Step 4: Run tests and typecheck**
+- [x] **Step 4: Run tests and typecheck**
 
 ```bash
 pnpm exec vitest run --config vitest.workspace.ts packages/cli/test/project-runtime-config.test.ts packages/cli/test/bootstrap-project.test.ts
@@ -318,7 +320,7 @@ pnpm --filter universal-harness typecheck
 
 Expected: pass.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add packages/cli/src/project-runtime-config.ts packages/cli/src/bootstrap-project.ts packages/cli/test/project-runtime-config.test.ts packages/cli/test/bootstrap-project.test.ts
@@ -341,7 +343,7 @@ git commit -m "feat(cli): use provider references in runtime config v3"
 - Consumes: `ProjectModelProviderReference`, `TrustedProviderRegistry`.
 - Produces: `assembleModelProviders(config, { registry, environment, fetch })` with full policy-bound config digest.
 
-- [ ] **Step 1: Write the exfiltration red test**
+- [x] **Step 1: Write the exfiltration red test**
 
 Use a repository v3 config that attempts to add `endpoint` or `api_key_env`, place a sentinel in the ambient environment, and assert zero fetch calls plus no sentinel in thrown messages, records or artifacts.
 
@@ -353,7 +355,7 @@ pnpm exec vitest run --config vitest.workspace.ts packages/cli/test/model-provid
 
 Expected: fail until assembly consumes only the trusted resolution.
 
-- [ ] **Step 2: Replace per-file policy logic with Registry resolution**
+- [x] **Step 2: Replace per-file policy logic with Registry resolution**
 
 Assembly must use:
 
@@ -366,15 +368,15 @@ const trusted = deps.registry.resolve({
 
 Pass `trusted.endpoint`, `trusted.api_key_env`, `trusted.env_allowlist` and host-only loopback flag to the transport. Include `trusted.policy_digest`, model, timeout, slots and default flag in `config_digest`.
 
-- [ ] **Step 3: Implement v1/v2 exact-match compatibility**
+- [x] **Step 3: Implement v1/v2 exact-match compatibility**
 
 Map legacy `provider_id` to `provider_ref`, compare every inline endpoint/env/allowlist/loopback field to the Registry resolution, emit one deprecation diagnostic, and reject any mismatch before secret lookup or fetch.
 
-- [ ] **Step 4: Preserve required-call failures as typed resumable blockers**
+- [x] **Step 4: Preserve required-call failures as typed resumable blockers**
 
 Map required managed-model failures (`provider_required`, `provider_unavailable`, `timeout`, `budget_exhausted`, `invalid_output`, `independence_violation`, `version_mismatch`, `policy_denied`, `uncertain`) to a versioned Capture blocker reason and retain the failed Invocation record as the only failure truth. Do not leave the Capture session terminal `failed`, do not invent a second failure record, and do not let the Adapter choose an arbitrary resume state. After Registry/config/endpoint recovery, `resume` must continue from the same session and the last valid workflow checkpoint.
 
-- [ ] **Step 5: Run managed-provider suites**
+- [x] **Step 5: Run managed-provider suites**
 
 ```bash
 pnpm exec vitest run --config vitest.workspace.ts packages/cli/test/model-providers.test.ts packages/cli/test/managed-capture-orchestration.test.ts packages/cli/test/managed-pipeline-ports.test.ts tests/security/model-invocation-boundary.test.ts
@@ -382,7 +384,7 @@ pnpm exec vitest run --config vitest.workspace.ts packages/cli/test/model-provid
 
 Add the Core Capture recovery suite and expect all tests to pass, including provider failure → blocked → configuration repair → same-session resume.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add packages/core/src/schema/capture.ts packages/core/src/capture/coordinator.ts packages/core/test/capture/coordinator.test.ts packages/cli/src/model-providers.ts packages/cli/src/managed-capture-coordinator.ts packages/cli/src/managed-pipeline-ports.ts packages/cli/test/model-providers.test.ts tests/security/model-invocation-boundary.test.ts
@@ -403,7 +405,7 @@ git commit -m "fix(security): bind model providers to host trust policy"
 - Consumes: `ProjectJudgeGateReference`, `TrustedProviderRegistry`.
 - Produces: Judge Gate transport configured only from `ResolvedTrustedProvider`.
 
-- [ ] **Step 1: Write red tests for secret routing and streaming limits**
+- [x] **Step 1: Write red tests for secret routing and streaming limits**
 
 Assert repository-controlled env names never reach fetch. Use a `ReadableStream` whose chunks cross `MAX_PROVIDER_RESPONSE_BYTES`; assert `cancel()` is called as soon as the limit is crossed and `arrayBuffer()` is never invoked.
 
@@ -415,7 +417,7 @@ pnpm exec vitest run --config vitest.workspace.ts adapters/gate-llm-judge/test/t
 
 Expected: fail because Judge still consumes inline config and buffers the full response.
 
-- [ ] **Step 2: Resolve Judge providers at CLI assembly**
+- [x] **Step 2: Resolve Judge providers at CLI assembly**
 
 ```ts
 const trusted = registry.resolve({
@@ -426,11 +428,11 @@ const trusted = registry.resolve({
 
 Construct the adapter from the trusted endpoint/env/allowlist and include `policy_digest` in Evidence metadata.
 
-- [ ] **Step 3: Replace `arrayBuffer()` with bounded streaming**
+- [x] **Step 3: Replace `arrayBuffer()` with bounded streaming**
 
 Implement `readBoundedBody(response.body, MAX_PROVIDER_RESPONSE_BYTES)` using `getReader()`, cumulative byte length, immediate reader cancellation on overflow, and a single concatenation only after EOF within budget.
 
-- [ ] **Step 4: Run Judge and security suites**
+- [x] **Step 4: Run Judge and security suites**
 
 Run the Step 1 command plus:
 
@@ -440,7 +442,7 @@ pnpm test:security
 
 Expected: pass.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add packages/cli/src/project-gates.ts adapters/gate-llm-judge/src/transport.ts adapters/gate-llm-judge/src/provider.ts adapters/gate-llm-judge/test/transport.test.ts packages/cli/test/project-gates.test.ts tests/security/llm-judge-boundary.test.ts
@@ -461,7 +463,7 @@ git commit -m "fix(security): isolate judge credentials and bound responses"
 - Consumes: `OperationDagNode`, Ledger append/replay primitives.
 - Produces: `DagNodeResult.status = "plan_superseded"`, `DagRunOutcome.status = "replan_required"`, durable `LedgerDagCheckpointStore`.
 
-- [ ] **Step 1: Write red supersession and crash-replay tests**
+- [x] **Step 1: Write red supersession and crash-replay tests**
 
 Use this result contract:
 
@@ -475,15 +477,15 @@ Use this result contract:
 
 Assert the design checkpoint commits once, engine returns `replan_required`, and a second run with the final DAG replays the prefix without rerunning Capture/Impact/Design.
 
-- [ ] **Step 2: Extend public result/outcome unions**
+- [x] **Step 2: Extend public result/outcome unions**
 
 Add the exact `plan_superseded` and `replan_required` discriminants; validate declared outputs before committing the checkpoint.
 
-- [ ] **Step 3: Implement the Ledger checkpoint store**
+- [x] **Step 3: Implement the Ledger checkpoint store**
 
 Persist append-only checkpoint events by operation id. `truncate()` must append invalidation facts rather than delete historical Ledger entries; `load()` projects the latest valid prefix.
 
-- [ ] **Step 4: Run workflow tests**
+- [x] **Step 4: Run workflow tests**
 
 ```bash
 pnpm exec vitest run --config vitest.workspace.ts packages/runtime/test/workflow/dag-engine.test.ts packages/runtime/test/workflow/ledger-dag-checkpoint-store.test.ts
@@ -491,7 +493,7 @@ pnpm exec vitest run --config vitest.workspace.ts packages/runtime/test/workflow
 
 Expected: pass.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add packages/runtime/src/workflow packages/runtime/test/workflow packages/runtime/src/index.ts
@@ -514,7 +516,7 @@ git commit -m "feat(runtime): resume capability dag across plan supersession"
 - Consumes: `WorkflowDagEngine`, final/provisional `CapabilityPlanRecord`, existing phase contributions.
 - Produces: `createCapabilityDagRuntime(deps)` and kernel/module `DagRunnerRegistry`.
 
-- [ ] **Step 1: Write the Protocol 1.1 routing red test**
+- [x] **Step 1: Write the Protocol 1.1 routing red test**
 
 For each Profile, compare observed node calls to the accepted plan's `operation_dag.nodes`. Assert inactive nodes have zero calls, a missing plan blocks, provisional Standard cannot enter Plan, and a drifted plan digest invalidates from the first affected checkpoint.
 
@@ -526,23 +528,23 @@ pnpm exec vitest run --config vitest.workspace.ts packages/runtime/test/orchestr
 
 Expected: fail because production still routes through profile heuristics.
 
-- [ ] **Step 2: Build runner adapters around existing phase functions**
+- [x] **Step 2: Build runner adapters around existing phase functions**
 
 Expose a registry with kernel keys `capture`, `capability_decision`, `plan`, `context`, `execute`, `verify`, `snapshot` and module keys matching Capability ids. Each runner returns only declared binding digests or a typed pause/block.
 
-- [ ] **Step 3: Import the Capture bootstrap checkpoint**
+- [x] **Step 3: Import the Capture bootstrap checkpoint**
 
 After Capture acceptance, compile the plan and append a capture checkpoint bound to the RequirementBaseline digest. Bootstrap must stop before impact/design/plan.
 
-- [ ] **Step 4: Switch Protocol 1.1 operations to the DAG runtime**
+- [x] **Step 4: Switch Protocol 1.1 operations to the DAG runtime**
 
 Select by presence of an accepted Protocol 1.1 profile/plan, never by a profile-name phase branch. Keep `resolveProfileModules()` only behind the Protocol 1.0 compatibility path.
 
-- [ ] **Step 5: Make Design finalization atomic**
+- [x] **Step 5: Make Design finalization atomic**
 
 Commit accepted DesignSet, final CapabilityPlan, operation-scope bindings and design checkpoint in one Ledger transaction. Return `plan_superseded`, reload the final plan and resume at Plan.
 
-- [ ] **Step 6: Run routing, orchestration and fault suites**
+- [x] **Step 6: Run routing, orchestration and fault suites**
 
 ```bash
 pnpm exec vitest run --config vitest.workspace.ts packages/runtime/test/orchestration/capability-plan-routing.test.ts packages/runtime/test/orchestration/orchestrator.test.ts tests/fault
@@ -550,7 +552,7 @@ pnpm exec vitest run --config vitest.workspace.ts packages/runtime/test/orchestr
 
 Expected: pass.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add packages/runtime/src/orchestration packages/runtime/test/orchestration tests/fault
@@ -571,7 +573,7 @@ git commit -m "feat(runtime): execute protocol 1.1 from capability plans"
 - Consumes: `TaskTddContract`, `TddController`, `issueTddPhaseGrant()`, isolated workspace/gate/executor ports.
 - Produces: `StrictTddExecutionPort.runTask(input): Promise<StrictTddTaskOutcome>` and accepted TDD cycle/evidence records.
 
-- [ ] **Step 1: Write the production-write lock red test**
+- [x] **Step 1: Write the production-write lock red test**
 
 Assert the implementation executor is never called before accepted RedEvidence, test-authoring cannot write production paths, Red must hit a target Assertion and FailureOracle, and Green must reuse patch/gate/selectors/framework/environment digests.
 
@@ -583,7 +585,7 @@ pnpm exec vitest run --config vitest.workspace.ts packages/runtime/test/tdd/exec
 
 Expected: fail because `strict_tdd` is still unwired.
 
-- [ ] **Step 2: Define the phase execution port**
+- [x] **Step 2: Define the phase execution port**
 
 ```ts
 export interface StrictTddExecutionPort {
@@ -597,19 +599,19 @@ export interface StrictTddExecutionPort {
 
 The implementation must use separate grants for baseline, test authoring, red verification, implementation and refactor; no grant widening.
 
-- [ ] **Step 3: Persist Baseline/Red/Green evidence and cycle records**
+- [x] **Step 3: Persist Baseline/Red/Green evidence and cycle records**
 
 Only structured gate results accepted by the existing controller become Evidence. Crash/retry increments attempt ordinal and preserves prior immutable attempts.
 
-- [ ] **Step 4: Route execute nodes by task applicability**
+- [x] **Step 4: Route execute nodes by task applicability**
 
 Required Task uses the strict runner; `controlled_not_applicable` requires accepted DesignSet/test-strategy binding and uses normal explicit execution; inactive capability yields `not_enabled_by_profile` without TDD artifacts.
 
-- [ ] **Step 5: Enforce TaskVerdict**
+- [x] **Step 5: Enforce TaskVerdict**
 
 When strict TDD applies, missing or mismatched Baseline/Red/Green evidence returns `tdd_incomplete_or_invalid` and blocks Snapshot.
 
-- [ ] **Step 6: Run all TDD and orchestration suites**
+- [x] **Step 6: Run all TDD and orchestration suites**
 
 ```bash
 pnpm exec vitest run --config vitest.workspace.ts packages/runtime/test/tdd packages/core/test/schema/tdd.test.ts packages/runtime/test/orchestration/strict-tdd-routing.test.ts packages/runtime/test/orchestration/orchestrator.test.ts
@@ -617,7 +619,7 @@ pnpm exec vitest run --config vitest.workspace.ts packages/runtime/test/tdd pack
 
 Expected: pass.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add packages/runtime/src/tdd packages/runtime/src/orchestration packages/runtime/src/evaluation packages/runtime/test/tdd packages/runtime/test/orchestration
@@ -641,11 +643,11 @@ git commit -m "feat(runtime): enforce provable tdd during execution"
 - Consumes: deterministic RCA, Finding/Evidence bundle, CapabilityPlan `feedback_analysis` binding.
 - Produces: core `FeedbackAnalysisPort`, `FeedbackAnalysisCoordinator.analyzeFinding()`, persisted advisory record and review disposition.
 
-- [ ] **Step 1: Move the port contract without a package cycle**
+- [x] **Step 1: Move the port contract without a package cycle**
 
 Define `FeedbackAnalysisPort`, result union, `shouldInvokeFeedbackAnalysis()`, output validation and `candidateDisposition()` in core; keep `packages/eval` compatibility re-exports for one major.
 
-- [ ] **Step 2: Write the invocation-boundary red test**
+- [x] **Step 2: Write the invocation-boundary red test**
 
 Assert deterministic RCA yields zero model calls; unclassified RCA yields exactly one call; cited low-risk/high-confidence candidates reach Router; high-risk or low-confidence candidates require human review; a model candidate never overwrites deterministic RCA or chooses target layer.
 
@@ -657,15 +659,15 @@ pnpm exec vitest run --config vitest.workspace.ts packages/runtime/test/finding/
 
 Expected: fail because no production call point exists.
 
-- [ ] **Step 3: Implement the coordinator and model-backed adapter**
+- [x] **Step 3: Implement the coordinator and model-backed adapter**
 
 Bind each call to independent prompt, budget, conversation, run id, result artifact and Evidence. For pre-Snapshot Findings call before Snapshot; for `advanced_audit` Findings call before the next Capture accepts a change seed. Deduplicate by Finding digest plus binding digest.
 
-- [ ] **Step 4: Enforce profile/binding failure modes**
+- [x] **Step 4: Enforce profile/binding failure modes**
 
 Standard/Governed required binding missing or failed returns recoverable block. Lite without optional binding keeps deterministic RCA and performs zero model calls.
 
-- [ ] **Step 5: Run feedback, model and orchestration tests**
+- [x] **Step 5: Run feedback, model and orchestration tests**
 
 ```bash
 pnpm exec vitest run --config vitest.workspace.ts packages/eval/test packages/runtime/test/finding packages/runtime/test/model packages/runtime/test/orchestration/feedback-analysis-wiring.test.ts
@@ -673,7 +675,7 @@ pnpm exec vitest run --config vitest.workspace.ts packages/eval/test packages/ru
 
 Expected: pass.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add packages/core/src/feedback packages/core/src/index.ts packages/eval/src/feedback packages/runtime/src/finding packages/runtime/src/model packages/runtime/src/orchestration/capability-dag-runners.ts packages/cli/src/managed-pipeline-ports.ts packages/runtime/test/finding packages/runtime/test/orchestration/feedback-analysis-wiring.test.ts
@@ -693,7 +695,7 @@ git commit -m "feat(feedback): route cited analysis before change seeds"
 - Consumes: per-platform commit/workflow/command/exit-status artifacts.
 - Produces: `evaluateCiPlatformEvidence(input) -> "passed" | "failed" | "not_verified"` and AC25 report row.
 
-- [ ] **Step 1: Write red evidence-set tests**
+- [x] **Step 1: Write red evidence-set tests**
 
 Use literal fixtures for all-three-pass, one-failed, one-missing and commit-drift cases. Only the first returns `passed`; missing/drift returns `not_verified`.
 
@@ -705,7 +707,7 @@ pnpm exec vitest run --config vitest.workspace.ts tests/release/ci-platform-evid
 
 Expected: fail because AC25 currently checks only local suites plus workflow existence.
 
-- [ ] **Step 2: Implement the evidence evaluator and writer**
+- [x] **Step 2: Implement the evidence evaluator and writer**
 
 Each platform artifact contains:
 
@@ -723,11 +725,11 @@ Each platform artifact contains:
 
 The generator verifies schema, exact current commit, unique required platforms and digest before setting AC25.
 
-- [ ] **Step 3: Restore the three-platform matrix and aggregate artifacts**
+- [x] **Step 3: Restore the three-platform matrix and aggregate artifacts**
 
 Use `ubuntu-latest`, `macos-latest`, `windows-latest`; upload each evidence file and download all three in the release job before report generation.
 
-- [ ] **Step 4: Run release evidence tests locally**
+- [x] **Step 4: Run release evidence tests locally**
 
 ```bash
 pnpm exec vitest run --config vitest.workspace.ts tests/release/ci-platform-evidence.test.ts
@@ -736,7 +738,7 @@ node scripts/generate-acceptance-report.mjs
 
 Expected locally: AC25 is `not_verified`, and the generator exits non-zero for release acceptance without CI artifacts.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add scripts/write-ci-platform-evidence.mjs scripts/generate-acceptance-report.mjs .github/workflows/ci.yml tests/release/ci-platform-evidence.test.ts docs/m1-acceptance-report.md
@@ -760,7 +762,7 @@ git commit -m "fix(release): require real cross-platform evidence"
 - Consumes: Git CLI and standalone scanner.
 - Produces: hermetic temp Git repositories and `scanStandaloneRepository(input): string[]` with exact immutable-history exceptions.
 
-- [ ] **Step 1: Reproduce clean-environment failures**
+- [x] **Step 1: Reproduce clean-environment failures**
 
 Run affected tests with temporary global Git configuration disabled:
 
@@ -772,7 +774,7 @@ node scripts/check-standalone.mjs
 
 Expected: Git identity failures and two standalone brand findings before the fix.
 
-- [ ] **Step 2: Make every repository fixture self-contained**
+- [x] **Step 2: Make every repository fixture self-contained**
 
 Immediately after `git init`, run local configuration:
 
@@ -784,7 +786,7 @@ git(root, "config", "core.autocrlf", "false");
 
 Do not mutate global Git config.
 
-- [ ] **Step 3: Remove former-product branding from tracked content and classify immutable history**
+- [x] **Step 3: Remove former-product branding from tracked content and classify immutable history**
 
 Delete the obsolete evolution document and replace its filename references with product-neutral descriptions. Keep the full-history scan, but replace the monolithic `git log -p` check with commit/path/blob-level findings. `standalone-history-exceptions.json` may suppress only the exact pre-remediation commit, path and blob digest for the migration document; an unknown commit, path or digest with the same brand must still fail. This preserves immutable Git history without turning a broad substring exception into a bypass.
 
@@ -820,13 +822,13 @@ export function scanStandaloneRepository(input: {
 }): string[];
 ```
 
-- [ ] **Step 4: Run clean-environment and standalone checks**
+- [x] **Step 4: Run clean-environment and standalone checks**
 
 Run the Step 1 commands.
 
 Expected: pass.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add tests/e2e/helpers.ts packages/runtime/test/bootstrap/helpers.ts adapters/vcs-git/test/helpers.ts docs/ docs/superpowers/plans/2026-08-17-dashboard-approvals-and-dsh-output-implementation-plan.md scripts/check-standalone.mjs scripts/standalone-scan.mjs scripts/standalone-history-exceptions.json tests/release/standalone-history-scan.test.ts
@@ -846,7 +848,7 @@ git commit -m "fix(ci): make git fixtures hermetic and standalone"
 - Consumes: packaged CLI, trusted Provider Registry, explicit Agent execution binding, approval API, Ledger/Evidence readers.
 - Produces: one completed Snapshot and evidence manifest per Lite/Standard/Governed profile.
 
-- [ ] **Step 1: Write the local fake-provider/fake-agent E2E red test**
+- [x] **Step 1: Write the local fake-provider/fake-agent E2E red test**
 
 For each profile, assert terminal `completed`, final Snapshot, expected DAG nodes, explicit execution Run, profile-appropriate approvals/evaluation/TDD evidence, and clean worktree. Reject `aborted` or missing Snapshot evidence.
 
@@ -858,17 +860,17 @@ pnpm exec vitest run --config vitest.workspace.ts tests/e2e/three-profile-real-l
 
 Expected: fail because current dogfood intentionally has no executor and aborts blocked operations.
 
-- [ ] **Step 2: Build the full-loop driver**
+- [x] **Step 2: Build the full-loop driver**
 
 Use a real packaged CLI process, a local trusted fake Provider, an explicit deterministic command Agent, mechanical Gates and the shared approval service. Approval decisions follow risk policy; the driver must not auto-approve every object.
 
-- [ ] **Step 3: Run the hermetic three-profile E2E**
+- [x] **Step 3: Run the hermetic three-profile E2E**
 
 Run the Step 1 command.
 
 Expected: pass for all three profiles.
 
-- [ ] **Step 4: Run real DeepSeek dogfood**
+- [ ] **Step 4: Run real DeepSeek dogfood — not_verified（当前环境未配置 `DEEPSEEK_API_KEY`）**
 
 ```bash
 DEEPSEEK_API_KEY="${DEEPSEEK_API_KEY}" node scripts/dogfood-three-profile-loop.mjs .reports/acceptance/three-profile-dogfood.json
@@ -876,11 +878,11 @@ DEEPSEEK_API_KEY="${DEEPSEEK_API_KEY}" node scripts/dogfood-three-profile-loop.m
 
 Expected: three completed snapshots. The script must exit 2 without a key and must never print or persist the key.
 
-- [ ] **Step 5: Record redacted evidence and update acceptance generation**
+- [x] **Step 5: Record redacted evidence and update acceptance generation**
 
 The Markdown evidence lists operation/snapshot/evidence ids and digests, Provider/model identity, approval objects, Gate/Evaluation/TDD status and residual risk; no prompt body, response body or secret value.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add scripts/dogfood-real-provider.mjs scripts/dogfood-three-profile-loop.mjs tests/e2e/three-profile-real-loop.test.ts docs/evidence/full-remediation-three-profile-dogfood.md scripts/generate-acceptance-report.mjs
@@ -906,7 +908,7 @@ git commit -m "test(e2e): prove three profile vertical loops"
 - Consumes: stable runner/port/checkpoint interfaces from Tasks 6–9.
 - Produces: thin runtime facades that delegate to one owner per state transition.
 
-- [ ] **Step 1: Add characterization tests at public facades**
+- [x] **Step 1: Add characterization tests at public facades**
 
 Record the same command outcomes, Ledger event sequence, checkpoint ids, approval decisions and snapshots before extraction; do not mock private functions.
 
@@ -918,19 +920,19 @@ pnpm exec vitest run --config vitest.workspace.ts packages/runtime/test/orchestr
 
 Expected: pass against the pre-extraction behavior; these tests guard equivalence.
 
-- [ ] **Step 2: Extract approval and resume ownership**
+- [x] **Step 2: Extract approval and resume ownership**
 
 Move approval request/decision and resume/input bridge functions behind exported service interfaces. Leave all Ledger mutations in one owner; facades only translate arguments/results.
 
-- [ ] **Step 3: Extract execution/TDD and verify/evaluate ownership**
+- [x] **Step 3: Extract execution/TDD and verify/evaluate ownership**
 
 Move runner bodies without changing discriminated outcomes or event order. `kernel-coordinator.ts` retains DAG facade and assembly only.
 
-- [ ] **Step 4: Extract snapshot/recovery and CLI configuration assembly**
+- [x] **Step 4: Extract snapshot/recovery and CLI configuration assembly**
 
 Keep snapshot transaction and recovery reconciliation together; split CLI configuration from command application service.
 
-- [ ] **Step 5: Run full characterization and architecture checks**
+- [x] **Step 5: Run full characterization and architecture checks**
 
 ```bash
 pnpm exec vitest run --config vitest.workspace.ts packages/runtime/test/orchestration packages/cli/test
@@ -940,7 +942,7 @@ pnpm typecheck
 
 Expected: pass with identical public outcomes and no duplicated state transition implementation.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add packages/runtime/src/orchestration packages/runtime/test/orchestration packages/cli/src/runtime packages/cli/src/runtime-service.ts packages/cli/test/runtime-service-facade.test.ts
@@ -961,7 +963,7 @@ git commit -m "refactor: split orchestration and cli runtime facades"
 - Consumes: committed test outputs, CI platform artifacts, dogfood Ledger/Evidence and current Git state.
 - Produces: requirement-by-requirement completion matrix with no self-attested pass rows.
 
-- [ ] **Step 1: Run the complete local gate set**
+- [ ] **Step 1: Run the complete local gate set — partial（受控代码全绿；AC25 与用户自有未跟踪 `teach/` 例外见完成证据）**
 
 ```bash
 pnpm format:check
@@ -980,15 +982,15 @@ node scripts/check-standalone.mjs
 
 Expected: every command exits 0. Acceptance generation remains `not_verified` locally until same-commit CI artifacts exist.
 
-- [ ] **Step 2: Audit every Spec completion item against authoritative evidence**
+- [x] **Step 2: Audit every Spec completion item against authoritative evidence**
 
 For Spec §13 items 1–9, record command/artifact ids, exact digest/commit, result and residual risk. A missing or indirect row is `not_verified`, never passed.
 
-- [ ] **Step 3: Update plan and architecture status language**
+- [x] **Step 3: Update plan and architecture status language**
 
 Mark only evidence-proven checkboxes complete. README and graph model describe Provider references, DAG authority, strict TDD and Feedback routing as implemented only after their matching evidence rows pass.
 
-- [ ] **Step 4: Verify clean tracked worktree and same-commit CI**
+- [ ] **Step 4: Verify clean tracked worktree and same-commit CI — not_verified（需文档提交后的三平台 CI）**
 
 ```bash
 git status --short
@@ -997,7 +999,7 @@ gh run list --commit "$(git rev-parse HEAD)" --workflow CI --limit 1
 
 Expected: no tracked changes after the documentation commit; CI Verify succeeds on Ubuntu/macOS/Windows, performance and release gates succeed for the same commit.
 
-- [ ] **Step 5: Commit completion evidence**
+- [x] **Step 5: Commit completion evidence**
 
 ```bash
 git add README.md docs/graph-driven-harness-model.md docs/superpowers/plans docs/evidence/full-review-remediation-completion.md

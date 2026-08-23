@@ -11,9 +11,9 @@ credentials, prompt bodies and response bodies are deliberately excluded.
 
 | Profile | Workflow Operation | Final Snapshot | Snapshot digest | Final CapabilityPlan digest | Model calls | Gate | Evaluation | TDD | Worktree |
 |---|---|---|---|---|---:|---|---|---|---|
-| Lite | `workflow_01M0Q681MBV8G0Y8WKRDTJS0RS` | `snapshot_b0d4d9186d814fc2` | `21c58be0b93466c03a8a91c81d74b7c606d90b91983aaf1c6a489e752ac2dcc3` | `b51220d23c85fe07fe9a0a794ef9d76310589097912982bb68b06c36cb000ec2` | 0 | passed | not enabled | not enabled | clean |
-| Standard | `workflow_01M0Q689NG1KZX4AWW1XGT8E8V` | `snapshot_fcdc7893d42271a1` | `d1403605a62c4f896de3b94ba5ddc4c11f9b53cc8b296440896efedb07086fe2` | `463914c831d29e8c4429f59f1e415f0cb44d65d167500a3e65815a37ed169b24` | 9 | passed | passed | controlled not applicable | clean |
-| Governed | `workflow_01M0Q68PP99YMJGG57AZ402798` | `snapshot_fcdc7893d42271a1` | `037fb7c636b23c1d3d26f05f00cf8a662642449da1ca00d84d4fbaf0c5565365` | `456b5c888f09d553daf5a1448e335f9564ceff9eedf96e9b93ceb261c5d63156` | 10 | passed | passed | controlled not applicable | clean |
+| Lite | `workflow_01M0QBT3RPCS2ME97SR9DN8ZZB` | `snapshot_b0d4d9186d814fc2` | `4c880abbb69b7b10a42e9c06fcd5934f1f9acf6a2c6eeab36d7bd06c6865b5e0` | `335bebb000bcd96c88384488a65421bab1a73949fb479a91bd004f0d66766c8f` | 0 | passed | not enabled | not enabled | clean |
+| Standard | `workflow_01M0QBTCCE2RD9KWZSA7993VFD` | `snapshot_fcdc7893d42271a1` | `193a586775044dc7763242314dfb941f62d24043a9b77db3154b638512825f07` | `61ae8b75dbed4335cb6824b37a9861a618e6420fbcf6121200c9aca3f2ead914` | 9 | passed | passed | controlled not applicable | clean |
+| Governed | `workflow_01M0QBTSBFC15F13RKP98KJGHT` | `snapshot_fcdc7893d42271a1` | `619f13c4e96fd2da8ced411d10dd244685bc95d279334d34f66e645169004197` | `73247fa537c419e13e2be472d6d57de1d453b99852fb1d584a2c8c218c013273` | 10 | passed | passed | tdd proven（2 cycles） | clean |
 
 Approval decisions followed the Profile policy one object at a time:
 
@@ -22,12 +22,15 @@ Approval decisions followed the Profile policy one object at a time:
 - Governed: `CapturePrdProposal`, `ImpactSet`, `DesignSet`,
   `ExecutionAuthorizationSpec`.
 
-Standard and Governed compiled accepted `test_strategy` assets into immutable
-TaskTddContracts. The operation intentionally changes no product behavior, so
-each strategy carries the approved `non_executable_projection` exemption and
-the final TaskVerdict reports `controlled_not_applicable`; no Red/Green
-Evidence is claimed. A required TDD contract remains production-write locked
-unless a `StrictTddExecutionPort` is configured.
+Standard compiled accepted `test_strategy` assets into immutable
+TaskTddContracts, but its fixture is deliberately `non_executable_projection`;
+the final TaskVerdict therefore reports `controlled_not_applicable` and no
+Red/Green Evidence is claimed. Governed uses a required executable strategy
+through the packaged public CLI seam and a host-owned isolated-workspace
+`StrictTddExecutionPort`. It completed two cycles and persisted the same-chain
+`baseline_test_result`, `red_test_result` and `green_test_result` Evidence
+before Gate, Evaluation, TaskVerdict and Snapshot completion. The production
+write grant was unavailable until accepted Red Evidence existed.
 
 The reproducible machine report is
 `.reports/acceptance/three-profile-dogfood.json` (ignored by Git). The public

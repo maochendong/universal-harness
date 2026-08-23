@@ -2,6 +2,8 @@
 
 本文完整解释 Universal Harness 如何用 Node、Edge、Event、Profile-aware Capability DAG 与受管模型 Adapter 驱动一次可审计的软件迭代。代码中的 Schema、关系兼容矩阵、传播策略、Capability registry 和领域 Validator 是唯一权威来源；本文只提供中英双语的人类可读投影，不参与 Runtime 决策或 Ledger 写入。
 
+实现状态（2026-08-23）：CapabilityPlan 已成为 Protocol 1.1 的生产路由权威，strict TDD 已通过 packaged CLI 的 Governed 纵向闭环产生 Baseline/Red/Green 同链 Evidence，FeedbackAnalysis 已接入 Verify/Evaluate/Audit 后、Change Seed 路由前的生产 runner。Lite / Standard / Governed 的 hermetic 三档闭环均完成；这证明本模型的仓库内接线，但不替代发布证据。M1 当前 27/28，AC25 仍等待同 commit Ubuntu/macOS/Windows CI 工件；本轮真实 DeepSeek 调用因未配置密钥为 `not_verified`。证据矩阵见 [全量评审修复完成证据](evidence/full-review-remediation-completion.md)。
+
 ## 0. 一张图理解完整 Harness 驱动模型
 
 ![Universal Harness Graph-native 驱动模型完整版](assets/graph-driven-model-full.svg)
@@ -147,6 +149,8 @@ Standard 默认把 `Impact`、`Design` 和 `Evaluate` 纳入活动图。需求�
 Governed 在 Standard 图上强制所有适用 Task 形成可证明的 `Baseline → Red → Green → Refactor` 链，并增加 Advanced Audit、严格 Provider/Reviewer 身份、预算、网络、留存和批准策略。Ledger 必须保存 Phase Grant、canonical test patch、成对 Red/Green Evidence、Evaluation、TaskVerdict 与审计结果；人工批准不可免除，Policy 还可以要求 Proposal/Review 使用不同身份、职责分离或双人规则。
 
 无论采用哪一档，Profile 都不能改变四条底线：**模型只提议，Graph 只物化 accepted 工程事实，Ledger 只追加不覆盖，Evidence 才能证明完成**。
+
+三档图不是目标态自述。打包 CLI 的可复现 dogfood 已证明 Lite、Standard、Governed 都由各自 final CapabilityPlan 物化对应 DAG 并到达 completed Snapshot；Governed 完成 2 个 strict TDD cycle，Evidence 类型包含 `baseline_test_result`、`red_test_result`、`green_test_result`。Standard 的测试策略使用已批准 `non_executable_projection` exemption，因此明确投影为 `controlled_not_applicable`，不会用空的 TDD 工件伪造“已证明”。完整 Operation、Snapshot 和 digest 见 [三档 dogfood 证据](evidence/full-remediation-three-profile-dogfood.md)。
 
 ## 1. Node：Harness 当前知道什么
 
