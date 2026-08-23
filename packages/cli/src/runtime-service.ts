@@ -13,7 +13,6 @@ import {
   WorkflowError,
   FileLiveSpool,
   ObservationPublisher,
-  abortIteration,
   createGenericInterpreter,
   createRuntimeService,
   driveOpenOperation,
@@ -47,19 +46,13 @@ import type { SemanticSeedProvider } from "@universal-harness-internal/plugin-sd
 import { materializeLedger, pageEdges, pageNodes } from "@universal-harness-internal/graph";
 import {
   contentDigest,
-  appendProfileDecisionRecord,
-  appendProjectProfileRecord,
-  createProfileDecisionRecord,
-  createProjectProfileRecord,
   readLatestProjectProfile,
   readProfileDecisionRecords,
-  readManagedManifest,
   resolveIterationProfile,
   resolveProfileSelection,
   ulid,
   ProfileSelectionError,
   ProjectLayoutError,
-  DEFAULT_PROFILE_POLICY_DIGEST,
   type EdgeRecord,
   type NodeRecord,
   type ObservationEvent,
@@ -102,6 +95,13 @@ import {
   readProjectRuntimeConfig,
   type ProjectRuntimeConfig,
 } from "./project-runtime-config.js";
+import {
+  baselineDigestForProject,
+  createRuntimeConfigurationService,
+  projectIdForProject,
+} from "./runtime/configuration-service.js";
+import { createCliApprovalService } from "./runtime/approval-service.js";
+import { createCliResumeService } from "./runtime/resume-service.js";
 
 /**
  * Default runtime wiring for the CLI (design 11.1/11.2, plan Task 23): every
@@ -232,19 +232,6 @@ export function createEvalPackagePort(now: () => string): EvaluationPort {
 
 function gitHead(projectRoot: string): string {
   return execFileSync("git", ["rev-parse", "HEAD"], { cwd: projectRoot, encoding: "utf8" }).trim();
-}
-
-function projectIdForProject(projectRoot: string): string {
-  return `project_${readManagedManifest(projectRoot).name}`;
-}
-
-/** HEAD-bound baseline digest; an unborn or unreadable HEAD degrades to a stable constant. */
-function baselineDigestForProject(projectRoot: string): string {
-  try {
-    return contentDigest({ repository_head: gitHead(projectRoot) });
-  } catch {
-    return contentDigest({ repository_head: "unborn" });
-  }
 }
 
 /**
@@ -456,6 +443,8 @@ export function createOrchestratedRuntimeService(
   const prompter =
     options.prompter ?? (options.io.isInteractive ? createReadlinePrompter(options.io) : undefined);
   const actor = options.decisionActor ?? "human:local";
+  const clock = options.now ?? (() => new Date().toISOString());
+  const configuration = createRuntimeConfigurationService({ actor, clock });
 
   const orchestratorDeps = (projectRoot: string): OrchestratorDependencies => {
     let runtimeConfig;
@@ -585,6 +574,11 @@ export function createOrchestratedRuntimeService(
       decisionActor: actor,
     };
   };
+  const approvalRuntime = createCliApprovalService({
+    dependencies: orchestratorDeps,
+    defaultActor: actor,
+  });
+  const resumeRuntime = createCliResumeService({ dependencies: orchestratorDeps });
 
   const guard = async (
     command: string,
@@ -612,8 +606,6 @@ export function createOrchestratedRuntimeService(
       throw error;
     }
   };
-
-  const clock = options.now ?? (() => new Date().toISOString());
 
   /**
    * Protocol 1.1 profile selection (slim-profiles design 10): explicit flag,
@@ -665,10 +657,11 @@ export function createOrchestratedRuntimeService(
     }
   };
 
-  const projectIdFor = (projectRoot: string): string => projectIdForProject(projectRoot);
+  const projectIdFor = (projectRoot: string): string => configuration.projectId(projectRoot);
 
   /** HEAD-bound baseline digest; an unborn or unreadable HEAD degrades to a stable constant. */
-  const baselineDigestFor = (projectRoot: string): string => baselineDigestForProject(projectRoot);
+  const baselineDigestFor = (projectRoot: string): string =>
+    configuration.baselineDigest(projectRoot);
 
   /**
    * T20 slice 1 capture routing: when the committed runtime config declares a
@@ -779,72 +772,8 @@ export function createOrchestratedRuntimeService(
     }
   };
 
-  /** Persist the initial profile baseline and its decision (append-only). */
-  const persistInitialProfile = (
-    projectRoot: string,
-    profileId: ProfileId,
-  ): ProjectProfileRecord => {
-    const projectId = projectIdFor(projectRoot);
-    const record = createProjectProfileRecord({
-      project_id: projectId,
-      revision: 1,
-      profile_id: profileId,
-      policy_digest: DEFAULT_PROFILE_POLICY_DIGEST,
-      actor,
-      effective_from: clock(),
-    });
-    appendProjectProfileRecord(projectRoot, record);
-    appendProfileDecisionRecord(
-      projectRoot,
-      createProfileDecisionRecord({
-        decision_kind: "project_profile_change",
-        project_id: projectId,
-        actor,
-        idempotency_key: `profile-select:${projectId}:revision:1`,
-        current_profile_id: profileId,
-        decided_profile_id: profileId,
-        policy_digest: DEFAULT_PROFILE_POLICY_DIGEST,
-        decided_at: clock(),
-      }),
-    );
-    return record;
-  };
-
-  /**
-   * An explicit project profile change appends a new revision bound to the
-   * previous one; historical revisions and decisions stay untouched, so the
-   * change only ever affects future operations (design 10.4).
-   */
-  const changeProjectProfile = (
-    projectRoot: string,
-    latest: ProjectProfileRecord,
-    profileId: ProfileId,
-  ): ProjectProfileRecord => {
-    const record = createProjectProfileRecord({
-      project_id: latest.project_id,
-      revision: latest.revision + 1,
-      profile_id: profileId,
-      policy_digest: latest.policy_digest,
-      actor,
-      effective_from: clock(),
-      supersedes_digest: latest.record_digest,
-    });
-    appendProjectProfileRecord(projectRoot, record);
-    appendProfileDecisionRecord(
-      projectRoot,
-      createProfileDecisionRecord({
-        decision_kind: "project_profile_change",
-        project_id: latest.project_id,
-        actor,
-        idempotency_key: `profile-change:${latest.project_id}:revision:${String(latest.revision + 1)}`,
-        current_profile_id: latest.profile_id,
-        decided_profile_id: profileId,
-        policy_digest: latest.policy_digest,
-        decided_at: clock(),
-      }),
-    );
-    return record;
-  };
+  const persistInitialProfile = configuration.persistInitialProfile;
+  const changeProjectProfile = configuration.changeProjectProfile;
 
   const profileResultExtra = (profile: ProjectProfileRecord): Record<string, unknown> => ({
     profile_id: profile.profile_id,
@@ -901,21 +830,18 @@ export function createOrchestratedRuntimeService(
         if (!selection.ok) return selection.result;
         persistInitialProfile(request.projectRoot, selection.profileId);
       }
-      const outcome = await resumeIteration(
-        orchestratorDeps(request.projectRoot),
-        request.workflowOperationId,
-        {
-          intent: "",
-          intentShape: "pack-converted",
-          ...(request.answers === undefined ? {} : { answers: request.answers }),
-        },
-      );
+      const outcome = await resumeRuntime.resume({
+        projectRoot: request.projectRoot,
+        workflowOperationId: request.workflowOperationId,
+        ...(request.answers === undefined ? {} : { answers: request.answers }),
+      });
       return outcomeToResult("resume", outcome);
     });
 
   const abortImpl = async (request: AbortRequest): Promise<CommandResult> =>
     guard("abort", async () => {
-      const aborted = await abortIteration(orchestratorDeps(request.projectRoot), {
+      const aborted = await resumeRuntime.abort({
+        projectRoot: request.projectRoot,
         workflowOperationId: request.workflowOperationId,
         actor: request.actor ?? actor,
       });
@@ -1278,7 +1204,8 @@ export function createOrchestratedRuntimeService(
 
     approve: async (request: ApproveRequest): Promise<CommandResult> =>
       guard("approve", async () => {
-        const resolved = await resolveApproval(orchestratorDeps(request.projectRoot), {
+        const resolved = await approvalRuntime.resolve({
+          projectRoot: request.projectRoot,
           requestId: request.requestId,
           decision: request.decision,
           actor: request.actor ?? actor,

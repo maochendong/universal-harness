@@ -14,7 +14,6 @@ import {
   findPrdProposalByDigest,
   harnessRootFor,
   readAcceptedPrdRecords,
-  readCommittedOperations,
   readManagedManifest,
   resolveHarnessPath,
   sha256Hex,
@@ -49,7 +48,6 @@ import {
   type DiffSummary,
 } from "@universal-harness-internal/plugin-sdk";
 import { observeAgentBudget } from "@universal-harness-internal/plugin-sdk";
-import { ApprovalService, type ApprovalIdKind } from "../approval/service.js";
 import {
   artifactContentForNode,
   artifactPathForNode,
@@ -58,21 +56,7 @@ import {
   type RecordContext,
 } from "../bootstrap/records.js";
 import { scanWorktree } from "../bootstrap/scanner.js";
-import {
-  approvalDecisionArtifact,
-  readApprovalDecisions,
-  readApprovalRequests,
-  type ApprovalDecision,
-  type ApprovalDecisionRecord,
-  type ApprovalRequestRecord,
-  type ApprovalRisk,
-} from "../approval/request.js";
-import {
-  approvalRequiredOutcome,
-  promptForApprovalDecision,
-  resumeCommandFor,
-  type ApprovalRequiredOutcome,
-} from "../approval/interaction.js";
+import { resumeCommandFor, type ApprovalRequiredOutcome } from "../approval/interaction.js";
 import {
   compileContextBundle,
   type CompiledContextBundle,
@@ -174,9 +158,16 @@ import {
   type WorkflowDependencies,
   type WorkflowIdKind,
 } from "../workflow/operation.js";
-import { type AbortReason, type RecoverableBlockReason } from "../workflow/state-machine.js";
+import { type RecoverableBlockReason } from "../workflow/state-machine.js";
 import { type WorkingState } from "../workflow/working-state.js";
 import { phaseLifecycleEvents } from "./lifecycle-events.js";
+import { ensureApproval, rejectOperation } from "./approval-runtime.js";
+export {
+  approvalDigestOf,
+  approvalService,
+  ensureApproval,
+  rejectOperation,
+} from "./approval-runtime.js";
 import { createCapabilityDagRuntime } from "./capability-dag-runtime.js";
 import { createCapabilityDagRunnerRegistry } from "./capability-dag-runners.js";
 import { LedgerDagCheckpointStore } from "../workflow/ledger-dag-checkpoint-store.js";
@@ -193,6 +184,18 @@ import {
   type ExecutionBinding,
   type OrchestrationExecutor,
 } from "./execution-binding.js";
+import {
+  classifyRunFailure,
+  orderExecutionTasks,
+  resolveExecutionBinding,
+} from "./execution-runtime.js";
+import { verificationBindingsEqual, type VerifyPhaseArtifact } from "./verification-runtime.js";
+import { finalizeSnapshotLedger } from "./snapshot-runtime.js";
+export {
+  classifyRunFailure,
+  orderExecutionTasks,
+  resolveExecutionBinding,
+} from "./execution-runtime.js";
 import { OrchestrationError } from "./pipeline-types.js";
 import type {
   ClarificationOffer,
@@ -233,18 +236,6 @@ export function workflowDeps(deps: OrchestratorDependencies): WorkflowDependenci
     ...(deps.hooks === undefined ? {} : { hooks: deps.hooks }),
     ...(deps.lock === undefined ? {} : { lock: deps.lock }),
   };
-}
-export function approvalService(deps: OrchestratorDependencies): ApprovalService {
-  return new ApprovalService({
-    projectRoot: deps.projectRoot,
-    readBaseline: deps.readBaseline,
-    ...(deps.now === undefined ? {} : { now: deps.now }),
-    ...(deps.newId === undefined
-      ? {}
-      : { newId: (kind: ApprovalIdKind) => (deps.newId as (kind: string) => string)(kind) }),
-    ...(deps.hooks === undefined ? {} : { hooks: deps.hooks }),
-    ...(deps.lock === undefined ? {} : { lock: deps.lock }),
-  });
 }
 export function harnessRoot(deps: OrchestratorDependencies): string {
   return harnessRootFor(deps.projectRoot);
@@ -294,21 +285,7 @@ export function createDirectExecutor(): OrchestrationExecutor {
       undeclared_writes: [],
     });
 }
-export function executionBindingFor(deps: OrchestratorDependencies): ExecutionBinding {
-  if (deps.execution !== undefined) return deps.execution;
-  if (deps.execute !== undefined) {
-    return {
-      kind: "agent",
-      name: "legacy-unproven-agent",
-      deterministic: false,
-      execute: deps.execute,
-    };
-  }
-  throw new OrchestrationError(
-    "configuration",
-    "executor_required: implementation work requires an explicit agent or deterministic workflow execution binding",
-  );
-}
+export const executionBindingFor = resolveExecutionBinding;
 /**
  * Default verify phase: the universal ledger-integrity gate replays and
  * materializes the authoritative ledger through the Tool Registry and checks
@@ -924,128 +901,6 @@ export async function submitCaptureAnswers(
   }
   return outcome;
 }
-type ApprovalStep =
-  | { readonly status: "approved"; readonly approvalDigest: string }
-  | { readonly status: "rejected" }
-  | { readonly status: "required"; readonly required: ApprovalRequiredOutcome };
-export function approvalDigestOf(record: ApprovalDecisionRecord): string {
-  return sha256Hex(approvalDecisionArtifact(record).content);
-}
-/**
- * Resolve one approval point without ever duplicating a pending request: an
- * existing request for the same object and digest is reused (resume only
- * re-blocks the operation), a terminal approve decision is replayed into its
- * digest, and only a genuinely new object mints a new request.
- */
-export async function ensureApproval(
-  ctx: PipelineContext,
-  spec: {
-    readonly objectId: string;
-    readonly objectType: string;
-    readonly objectDigest: string;
-    readonly risk: ApprovalRisk;
-    readonly reason: string;
-    readonly resumePhase: OrchestrationPhase;
-  },
-): Promise<ApprovalStep> {
-  const { deps } = ctx;
-  const service = approvalService(deps);
-  const operations = readCommittedOperations(harnessRoot(deps));
-  const requests = readApprovalRequests(
-    harnessRoot(deps),
-    operations,
-    ctx.workflowOperationId,
-  ).filter(
-    (request) => request.object_id === spec.objectId && request.object_digest === spec.objectDigest,
-  );
-  const decisions = readApprovalDecisions(harnessRoot(deps), operations, ctx.workflowOperationId);
-
-  const blockAndReport = async (request: ApprovalRequestRecord): Promise<ApprovalStep> => {
-    const current = ctx.engine.getOperation(ctx.workflowOperationId);
-    if (current !== undefined && current.state !== "blocked") {
-      await ctx.engine.block(ctx.workflowOperationId, {
-        reason: "awaiting_approval",
-        detail: `approval request ${request.request_id} awaiting a decision`,
-        proposal: {
-          phase: spec.resumePhase,
-          set_next_action: resumeCommandFor(ctx.workflowOperationId),
-        },
-      });
-    }
-    refreshWorkingState(ctx);
-    return { status: "required", required: approvalRequiredOutcome(request) };
-  };
-
-  const resolveInteractive = async (request: ApprovalRequestRecord): Promise<ApprovalStep> => {
-    const prompter = deps.prompter;
-    if (prompter === undefined) return blockAndReport(request);
-    const decision: ApprovalDecision = await promptForApprovalDecision(request, prompter);
-    if (decision === "defer") return blockAndReport(request);
-    const record = await service.resolveDecision({
-      requestId: request.request_id,
-      decision,
-      objectDigest: request.object_digest,
-      actor: deps.decisionActor ?? "human:interactive",
-    });
-    refreshWorkingState(ctx);
-    if (decision === "reject") return { status: "rejected" };
-    return { status: "approved", approvalDigest: approvalDigestOf(record) };
-  };
-
-  const existing = requests.at(-1);
-  if (existing !== undefined) {
-    const terminal = decisions.find(
-      (decision) => decision.request_id === existing.request_id && decision.decision !== "defer",
-    );
-    if (terminal !== undefined) {
-      if (terminal.decision === "reject") return { status: "rejected" };
-      return { status: "approved", approvalDigest: approvalDigestOf(terminal) };
-    }
-    return resolveInteractive(existing);
-  }
-
-  const input = {
-    workflowOperationId: ctx.workflowOperationId,
-    objectId: spec.objectId,
-    objectType: spec.objectType,
-    objectDigest: spec.objectDigest,
-    baselineDigest: ctx.baselineDigest,
-    policyDigest: ctx.workingState.policy_digest,
-    impactPath: [],
-    risk: spec.risk,
-    reason: spec.reason,
-    resumePhase: spec.resumePhase,
-    proposedBy: "orchestrator",
-  };
-  if (deps.prompter === undefined) {
-    const required = await service.requestApproval(input);
-    refreshWorkingState(ctx);
-    return { status: "required", required };
-  }
-  const awaited = await service.requestApprovalInteractively(
-    input,
-    deps.prompter,
-    deps.decisionActor ?? "human:interactive",
-  );
-  refreshWorkingState(ctx);
-  if (awaited.status === "deferred") return { status: "required", required: awaited.required };
-  if (awaited.decision.decision === "reject") return { status: "rejected" };
-  return { status: "approved", approvalDigest: approvalDigestOf(awaited.decision) };
-}
-/** Abort the operation after an explicit rejection; the audit history stays. */
-export async function rejectOperation(
-  ctx: PipelineContext,
-  detail: string,
-): Promise<OrchestrationOutcome> {
-  await ctx.engine.abort(ctx.workflowOperationId, { reason: "user_cancellation", detail });
-  return {
-    status: "aborted",
-    workflowOperationId: ctx.workflowOperationId,
-    iterationId: ctx.iterationId,
-    reason: "user_cancellation",
-    detail,
-  };
-}
 export function loadFrozenImpactSet(ctx: PipelineContext): NodeRecord | undefined {
   const graph = materializeProjectGraph(ctx.deps.projectRoot);
   try {
@@ -1529,25 +1384,6 @@ function loadOpenRunId(ctx: PipelineContext, taskId: string): string | undefined
   }
   return undefined;
 }
-interface VerifyPhaseArtifact {
-  readonly record_kind: "orchestration_verify_result";
-  readonly iteration_id: string;
-  readonly bindings: {
-    readonly artifact_digests: readonly string[];
-    readonly code_digests: readonly string[];
-    readonly context_bundle_digest?: string;
-    readonly evaluation_case_digests: readonly string[];
-    readonly policy_digest: string;
-  };
-  readonly results: readonly {
-    readonly gate_id: string;
-    readonly passed: boolean;
-    readonly evidence_id: string;
-    readonly summary: string;
-  }[];
-  readonly findings: readonly { readonly id: string; readonly summary: string }[];
-  readonly completed_allowed: boolean;
-}
 function verifyArtifactPath(
   iterationId: string,
   bindings: VerifyPhaseArtifact["bindings"],
@@ -1569,22 +1405,11 @@ function loadVerifyArtifact(
       deps,
       `artifacts/verify/${iterationId}/${name}`,
     );
-    if (artifact !== undefined && bindingsEqual(artifact.bindings, bindings)) return artifact;
+    if (artifact !== undefined && verificationBindingsEqual(artifact.bindings, bindings)) {
+      return artifact;
+    }
   }
   return undefined;
-}
-function bindingsEqual(
-  left: VerifyPhaseArtifact["bindings"],
-  right: VerifyPhaseArtifact["bindings"],
-): boolean {
-  return (
-    JSON.stringify(left.artifact_digests) === JSON.stringify(right.artifact_digests) &&
-    JSON.stringify(left.code_digests) === JSON.stringify(right.code_digests) &&
-    left.context_bundle_digest === right.context_bundle_digest &&
-    JSON.stringify(left.evaluation_case_digests) ===
-      JSON.stringify(right.evaluation_case_digests) &&
-    left.policy_digest === right.policy_digest
-  );
 }
 /**
  * Task-level quality record (comparative design direction 5, card T5): one
@@ -2449,41 +2274,7 @@ async function planProposalSpecificationsFor(
     graph.close();
   }
 }
-/**
- * Topological order over plan task specifications (Kahn, smallest ready id
- * first for determinism). `validatePlanProposal` already rejected cycles, so
- * every task is always orderable.
- */
-export function orderedPlanTasks(
-  tasks: readonly TaskSpecification[],
-): readonly TaskSpecification[] {
-  const byTaskId = new Map(tasks.map((task) => [task.id, task]));
-  const indegree = new Map<string, number>(tasks.map((task) => [task.id, 0]));
-  const dependents = new Map<string, string[]>();
-  for (const task of tasks) {
-    for (const dependency of task.dependencies) {
-      if (!byTaskId.has(dependency)) continue;
-      indegree.set(task.id, (indegree.get(task.id) ?? 0) + 1);
-      dependents.set(dependency, [...(dependents.get(dependency) ?? []), task.id]);
-    }
-  }
-  const ready = tasks.map((task) => task.id).filter((id) => (indegree.get(id) ?? 0) === 0);
-  ready.sort(byId);
-  const ordered: TaskSpecification[] = [];
-  while (ready.length > 0) {
-    const next = ready.shift() as string;
-    ordered.push(byTaskId.get(next) as TaskSpecification);
-    for (const dependent of (dependents.get(next) ?? []).sort(byId)) {
-      const remaining = (indegree.get(dependent) ?? 0) - 1;
-      indegree.set(dependent, remaining);
-      if (remaining === 0) {
-        const insertAt = ready.findIndex((id) => id > dependent);
-        ready.splice(insertAt === -1 ? ready.length : insertAt, 0, dependent);
-      }
-    }
-  }
-  return ordered;
-}
+export const orderedPlanTasks = orderExecutionTasks;
 /**
  * IMPLEMENTS edges wiring each planned task to the requirements it delivers
  * (card T2/T3): the graph-native traceability link `traceability_gap` and
@@ -3549,24 +3340,6 @@ async function commitTaskVerdict(ctx: PipelineContext, verdict: TaskVerdictRecor
     await commitArtifacts(deps, ctx.workflowOperationId, currentAttemptId(ctx), artifacts, edges);
   }
 }
-function mapRunFailure(
-  result: AgentRunResult,
-):
-  | { readonly reason: RecoverableBlockReason; readonly resumePhase: OrchestrationPhase }
-  | { readonly abort: AbortReason } {
-  switch (result.outcome) {
-    case "correct_block":
-      return { abort: "policy_violation" };
-    case "partial":
-      return { reason: "budget_ceiling", resumePhase: "execute" };
-    case "clarification_required":
-      return { reason: "missing_input", resumePhase: "capture" };
-    case "handoff":
-      return { reason: "missing_input", resumePhase: "execute" };
-    default:
-      return { reason: "transient_environment_failure", resumePhase: "execute" };
-  }
-}
 async function phaseExecute(ctx: PipelineContext): Promise<PhaseStep> {
   const { deps } = ctx;
   const plan = ctx.plan ?? loadPlan(ctx);
@@ -3907,7 +3680,7 @@ async function phaseExecute(ctx: PipelineContext): Promise<PhaseStep> {
 
     if (!(result.outcome === "handoff" && result.completion_claimed)) {
       await ctx.modules.evaluate?.evaluateTaskRun(ctx, task.id, { runId: activeRunId, result });
-      const failure = mapRunFailure(result);
+      const failure = classifyRunFailure(result);
       if ("abort" in failure) {
         await ctx.engine.abort(ctx.workflowOperationId, {
           reason: failure.abort,
@@ -5287,19 +5060,17 @@ async function driveCapabilityPipeline(
   }
   if (terminal !== undefined) {
     if (terminal.status !== "completed") return terminal;
-    let ledgerCommit = terminal.ledgerCommit;
-    if (ctx.deps.vcs !== undefined) {
-      const committed = await ctx.deps.vcs.commit(ctx.deps.projectRoot, {
-        message: `harness: finalize capability dag ${ctx.iterationId}`,
-        paths: [".harness"],
-        identity: HARNESS_COMMIT_IDENTITY,
-      });
-      if (committed.ok) ledgerCommit = committed.value;
-    }
+    const finalized = await finalizeSnapshotLedger({
+      project_root: ctx.deps.projectRoot,
+      iteration_id: ctx.iterationId,
+      ...(ctx.deps.vcs === undefined ? {} : { vcs: ctx.deps.vcs }),
+      read_baseline: ctx.deps.readBaseline,
+      prior_ledger_commit: terminal.ledgerCommit,
+    });
     return {
       ...terminal,
-      ledgerCommit,
-      repositoryHead: ctx.deps.readBaseline(),
+      ledgerCommit: finalized.ledger_commit,
+      repositoryHead: finalized.repository_head,
     };
   }
   if (result.status === "completed") {

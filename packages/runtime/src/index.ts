@@ -1037,6 +1037,25 @@ export {
   type DesignContributionOptions,
 } from "./orchestration/contributors/design-contributor.js";
 export {
+  createApprovalRuntime,
+  type ApprovalRuntime,
+  type ApprovalStep,
+} from "./orchestration/approval-runtime.js";
+export {
+  classifyRunFailure,
+  orderExecutionTasks,
+  resolveExecutionBinding,
+  type RunFailureDisposition,
+} from "./orchestration/execution-runtime.js";
+export {
+  verificationBindingsEqual,
+  type VerifyPhaseArtifact,
+} from "./orchestration/verification-runtime.js";
+export {
+  finalizeSnapshotLedger,
+  type SnapshotLedgerFinalization,
+} from "./orchestration/snapshot-runtime.js";
+export {
   moduleContributionsForCapabilityPlan,
   moduleContributionsForProfile,
   projectProfileModuleStatus,
