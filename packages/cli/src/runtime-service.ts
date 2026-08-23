@@ -251,6 +251,7 @@ export function managedCaptureSeamForProject(
   projectRoot: string,
   runtimeConfig: ProjectRuntimeConfig,
   options: {
+    readonly now?: () => string;
     readonly fetch?: typeof fetch;
     readonly environment?: Readonly<Record<string, string | undefined>>;
     readonly providerRegistry?: TrustedProviderRegistry;
@@ -290,6 +291,7 @@ export function managedCaptureSeamForProject(
       policy: defaultCaptureRiskPolicy(profile.project_id, profile.profile_id),
       rubric: DEFAULT_CAPTURE_REVIEW_RUBRIC,
       readBaseline: () => gitHead(projectRoot),
+      ...(options.now === undefined ? {} : { now: options.now }),
       readApprovalDecision: (requestId, decisionId) =>
         readBridgedCaptureApprovalDecision(projectRoot, requestId, decisionId),
       ...(options.fetch === undefined ? {} : { fetch: options.fetch }),
@@ -496,6 +498,7 @@ export function createOrchestratedRuntimeService(
             );
           };
     const captureSeam = managedCaptureSeamForProject(projectRoot, runtimeConfig, {
+      ...(options.now === undefined ? {} : { now: options.now }),
       ...(options.providerRegistry === undefined
         ? {}
         : { providerRegistry: options.providerRegistry }),

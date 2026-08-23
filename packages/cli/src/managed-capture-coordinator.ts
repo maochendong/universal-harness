@@ -118,6 +118,8 @@ export interface ManagedCaptureCoordinatorDeps {
   readonly rubric: PrdReviewRubric;
   /** Returns the current ledger baseline commit the accepted transaction builds on. */
   readonly readBaseline: () => string;
+  /** Host clock used by the accepted transaction so replay stays deterministic. */
+  readonly now?: () => string;
   readonly readApprovalDecision?: (
     requestId: string,
     decisionId: string,
@@ -622,6 +624,7 @@ function createDeterministicLiteCaptureCoordinator(
     projectRoot: deps.projectRoot,
     readBaseline: deps.readBaseline,
     policy_digest: deps.profile.policy_digest,
+    ...(deps.now === undefined ? {} : { now: deps.now }),
   });
   return {
     coordinator: createPrdCaptureCoordinator({
@@ -776,6 +779,7 @@ export function createManagedCaptureCoordinator(
     projectRoot: deps.projectRoot,
     readBaseline: deps.readBaseline,
     policy_digest: deps.profile.policy_digest,
+    ...(deps.now === undefined ? {} : { now: deps.now }),
   });
 
   return {
