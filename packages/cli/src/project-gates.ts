@@ -76,7 +76,7 @@ function trustedJudgeProvider(
         });
   } catch (error) {
     if (error instanceof TrustedProviderError) {
-      throw new Error(`Judge trusted provider resolution failed: ${error.code}`);
+      throw new Error(`Judge trusted provider resolution failed: ${error.code}`, { cause: error });
     }
     throw error;
   }

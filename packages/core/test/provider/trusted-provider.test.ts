@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import { TrustedProviderError, createTrustedProviderRegistry } from "../../src/index.js";
+import { createTrustedProviderRegistry } from "../../src/index.js";
+import type { TrustedProviderError } from "../../src/index.js";
 
 const provider = {
   provider_ref: "deepseek",

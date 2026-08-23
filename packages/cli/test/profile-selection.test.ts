@@ -14,6 +14,8 @@ import { join } from "node:path";
 
 import { afterEach, describe, expect, it } from "vitest";
 
+import { createDirectExecutor } from "@universal-harness-internal/runtime";
+
 import { EXIT_CODES, createOrchestratedRuntimeService, runCli, type CliIo } from "../src/index.js";
 
 /**
@@ -79,6 +81,14 @@ function parseResult(captured: Captured): Record<string, unknown> {
   return JSON.parse(captured.stdout()) as Record<string, unknown>;
 }
 
+function runtimeWithExecutor(cwd: string, captured: Captured) {
+  return createOrchestratedRuntimeService({
+    cwd,
+    io: captured.io,
+    execute: createDirectExecutor(),
+  });
+}
+
 describe("profile selection on new/adopt", () => {
   it("returns input_required for new without --profile in non-interactive mode", async () => {
     const parent = makeTempDir("harness-cli-profile-new-");
@@ -131,7 +141,7 @@ describe("profile selection on new/adopt", () => {
       const captured = captureIo();
       const exitCode = await runCli(
         ["new", "demo-app", "--intent", "build a demo", "--profile", "lite", "--json"],
-        { io: captured.io, cwd: parent },
+        { io: captured.io, cwd: parent, runtime: runtimeWithExecutor(parent, captured) },
       );
       expect(exitCode).toBe(EXIT_CODES.approvalRequired);
       const result = parseResult(captured);
@@ -167,6 +177,7 @@ describe("profile selection on new/adopt", () => {
       selectProfile: () => Promise.resolve("lite"),
       // The baseline approval still pauses; this test only pins the profile choice.
       prompter: { prompt: () => Promise.resolve(null) },
+      execute: createDirectExecutor(),
     });
     const exitCode = await runCli(["new", "demo-app", "--intent", "build a demo", "--json"], {
       io: captured.io,
@@ -209,7 +220,7 @@ describe("profile selection on new/adopt", () => {
           String(stagedData["staging_operation_id"]),
           "--json",
         ],
-        { io: approved.io, cwd: "/" },
+        { io: approved.io, cwd: "/", runtime: runtimeWithExecutor("/", approved) },
       );
       expect(approvedExit).toBe(EXIT_CODES.approvalRequired);
       const approvedData = parseResult(approved)["data"] as Record<string, unknown>;
@@ -234,7 +245,7 @@ describe("profile selection on iterate/resume", () => {
     const created = captureIo();
     const exitCode = await runCli(
       ["new", "legacy-app", "--intent", "build a demo", "--profile", "lite", "--json"],
-      { io: created.io, cwd: parent },
+      { io: created.io, cwd: parent, runtime: runtimeWithExecutor(parent, created) },
     );
     expect(exitCode).toBe(EXIT_CODES.approvalRequired);
     const projectRoot = join(parent, "legacy-app");
@@ -282,6 +293,7 @@ describe("profile selection on iterate/resume", () => {
       const exitCode = await runCli(["iterate", "next change", "--profile", "lite", "--json"], {
         io: migrated.io,
         cwd: projectRoot,
+        runtime: runtimeWithExecutor(projectRoot, migrated),
       });
       // The pipeline itself is free to pause for the baseline approval; the
       // profile migration must already be persisted by then.
@@ -300,6 +312,7 @@ describe("profile selection on iterate/resume", () => {
       const followUpExit = await runCli(["iterate", "another change", "--json"], {
         io: followUp.io,
         cwd: projectRoot,
+        runtime: runtimeWithExecutor(projectRoot, followUp),
       });
       expect(followUpExit).toBe(EXIT_CODES.approvalRequired);
       expect((parseResult(followUp)["data"] as Record<string, unknown>)["profile_revision"]).toBe(

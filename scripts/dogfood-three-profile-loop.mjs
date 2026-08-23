@@ -447,7 +447,7 @@ async function fakeFetch(_input, init) {
   const body = JSON.parse(String(init?.body ?? "{}"));
   const prompt = extractPrompt(body);
   const output = fakeOutput(prompt.schema, prompt.items);
-  return new Response(
+  return new globalThis.Response(
     JSON.stringify({
       choices: [{ message: { content: JSON.stringify(output) } }],
       usage: { prompt_tokens: 10, completion_tokens: 10, total_tokens: 20 },

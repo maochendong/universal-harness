@@ -176,7 +176,8 @@ export function createTrustedProviderRegistry(
           `trusted provider ${input.provider_ref} is not allowed for ${input.consumer}`,
         );
       }
-      const { allowed_consumers: _allowedConsumers, ...resolved } = provider;
+      const { allowed_consumers: allowedConsumers, ...resolved } = provider;
+      void allowedConsumers;
       return resolved;
     },
     matchLegacy(input: {
@@ -203,8 +204,9 @@ export function createTrustedProviderRegistry(
           "legacy inline provider policy does not uniquely match host trust",
         );
       }
-      const { allowed_consumers: _allowedConsumers, ...resolved } =
+      const { allowed_consumers: allowedConsumers, ...resolved } =
         matches[0] as StoredTrustedProvider;
+      void allowedConsumers;
       return resolved;
     },
   });

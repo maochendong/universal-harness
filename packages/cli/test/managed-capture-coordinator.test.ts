@@ -140,11 +140,13 @@ describe("createManagedCaptureCoordinator", () => {
     expect(readCaptureModelProviderBindings(root)).toEqual([]);
   });
 
-  it("returns undefined when a lite project declares no model_providers", () => {
+  it("uses the deterministic coordinator when a lite project declares no model_providers", () => {
     const root = projectWithConfig({ runtime_config_version: 2, gates: [] });
-    expect(
-      createManagedCaptureCoordinator(depsFor(root, { profile: makeProfile("lite") })),
-    ).toBeUndefined();
+    const managed = createManagedCaptureCoordinator(
+      depsFor(root, { profile: makeProfile("lite") }),
+    );
+    expect(managed).toBeDefined();
+    expect(managed?.binding_committed).toBe(false);
     expect(readCaptureModelProviderBindings(root)).toEqual([]);
   });
 

@@ -5,7 +5,9 @@ import { join } from "node:path";
 
 import { afterEach, describe, expect, it } from "vitest";
 
-import { EXIT_CODES, runCli, type CliIo } from "../src/index.js";
+import { createDirectExecutor } from "@universal-harness-internal/runtime";
+
+import { EXIT_CODES, createOrchestratedRuntimeService, runCli, type CliIo } from "../src/index.js";
 
 /**
  * Thin contract tests for the Task 9 bootstrap wiring: the `new` and `adopt`
@@ -70,14 +72,21 @@ afterEach(() => {
 });
 
 describe("harness new route", () => {
-  it("bootstraps the project and pauses at the mandatory baseline approval", async () => {
+  it("bootstraps the project and pauses at the required execution approval", async () => {
     const parent = makeTempDir("harness-cli-new-");
     const captured = captureIo();
+    const runtime = createOrchestratedRuntimeService({
+      cwd: parent,
+      io: captured.io,
+      execute: createDirectExecutor(),
+      onPhaseProgress: (event) => captured.io.writeStderr(`${JSON.stringify(event)}\n`),
+    });
     const exitCode = await runCli(
       ["new", "demo-app", "--intent", "build a demo", "--profile", "lite", "--json"],
       {
         io: captured.io,
         cwd: parent,
+        runtime,
       },
     );
     expect(exitCode).toBe(EXIT_CODES.approvalRequired);
@@ -100,7 +109,7 @@ describe("harness new route", () => {
     const result = JSON.parse(captured.stdout()) as Record<string, unknown>;
     expect(result["status"]).toBe("approval_required");
     const data = result["data"] as Record<string, unknown>;
-    expect(data["object_type"]).toBe("RequirementBaseline");
+    expect(data["object_type"]).toBe("ExecutionAuthorizationSpec");
     expect(typeof data["request_id"]).toBe("string");
     expect(typeof data["workflow_operation_id"]).toBe("string");
     expect(typeof data["resume_command"]).toBe("string");

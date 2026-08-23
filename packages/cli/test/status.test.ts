@@ -4,8 +4,13 @@ import { join } from "node:path";
 
 import { afterEach, describe, expect, it } from "vitest";
 
-import { EXIT_CODES, runCli, type CliIo } from "../src/index.js";
-import { FileLiveSpool, ObservationPublisher } from "@universal-harness-internal/runtime";
+import {
+  FileLiveSpool,
+  ObservationPublisher,
+  createDirectExecutor,
+} from "@universal-harness-internal/runtime";
+
+import { EXIT_CODES, createOrchestratedRuntimeService, runCli, type CliIo } from "../src/index.js";
 
 interface CapturedIo {
   readonly io: CliIo;
@@ -79,6 +84,11 @@ describe("harness status rendering", () => {
       {
         io: bootstrap.io,
         cwd: parent,
+        runtime: createOrchestratedRuntimeService({
+          cwd: parent,
+          io: bootstrap.io,
+          execute: createDirectExecutor(),
+        }),
       },
     );
     const projectRoot = join(parent, "status-demo");

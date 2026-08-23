@@ -7,6 +7,7 @@ import { createGitVcsAdapter } from "@universal-harness-internal/adapter-vcs-git
 
 import {
   createGenericInterpreter,
+  createDirectExecutor,
   createNewProject,
   resolveApproval,
   resumeIteration,
@@ -43,6 +44,7 @@ function makeDeps(
     newId,
     vcs: createGitVcsAdapter(),
     interpret: createGenericInterpreter(),
+    execute: createDirectExecutor(),
     ...overrides,
   };
 }
