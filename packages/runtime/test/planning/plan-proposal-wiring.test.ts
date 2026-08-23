@@ -5,6 +5,7 @@ import { materializeLedger, pageNodes } from "@universal-harness-internal/graph"
 
 import {
   OrchestrationError,
+  createDirectExecutor,
   createGenericInterpreter,
   createInMemoryPlanProposalPort,
   createNewProject,
@@ -42,6 +43,7 @@ function makeDeps(
     newId,
     vcs: createGitVcsAdapter(),
     interpret: createGenericInterpreter(),
+    execute: createDirectExecutor(),
     ...overrides,
   };
 }

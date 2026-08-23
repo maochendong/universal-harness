@@ -51,7 +51,7 @@ describe("node new E2E", { timeout: 90000 }, () => {
     const driven = await drivePastApprovals(result, session);
     expect(driven.result.json["status"]).toBe("ok");
     // Lite is kernel-only (plan T9): no ImpactSet approval exists.
-    expect(driven.approved).toEqual(["RequirementBaseline", "ExecutionAuthorizationSpec"]);
+    expect(driven.approved).toEqual(["ExecutionAuthorizationSpec"]);
 
     // The project takes on real stack content; the loop is content-agnostic.
     cpSync(spec.fixtureDirectory, projectRoot, { recursive: true });

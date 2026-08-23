@@ -2,8 +2,8 @@
  * Executable example: `harness new` full vertical loop (docs/getting-started.md).
  *
  * Runs the real CLI public API against a temporary Git repository: create a
- * managed project, approve the two mandatory approval points
- * (RequirementBaseline, ImpactSet), and land a completed Iteration Snapshot.
+ * managed project, approve the execution authorization after deterministic
+ * Lite Capture, and land a completed Iteration Snapshot.
  *
  * Run from the repository root after `pnpm build`:
  *
@@ -30,12 +30,13 @@ try {
     cwd: parent,
     runtime: makeRuntime(parent, { execute }),
   });
-  expect(first.json.status === "approval_required", "new should pause for the baseline approval");
+  expect(first.json.status === "approval_required", "new should pause for execution authorization");
 
   const projectRoot = join(parent, "example-app");
   const session = { cwd: projectRoot, runtime: makeRuntime(projectRoot, { execute }) };
   const { result, approved } = await drivePastApprovals(first, session);
-  expect(approved.includes("RequirementBaseline"), "baseline approval recorded");
+  expect(approved.includes("ExecutionAuthorizationSpec"), "execution authorization recorded");
+  expect(!approved.includes("RequirementBaseline"), "lite auto-accepts its low-risk baseline");
   // Lite is kernel-only (plan T9): no module object is ever approved.
   expect(!approved.includes("ImpactSet"), "lite records no impact set approval");
   expect(typeof result.json.data.snapshot_id === "string", "completed loop lands a snapshot");

@@ -16,8 +16,9 @@ import {
 
 /**
  * Generic `harness adopt` E2E (plan Task 23): scan an existing repository,
- * approve the staged baseline out of band, then run the requested iteration
- * through the same phase orchestrator to a completed Snapshot.
+ * approve the staged adoption out of band, then run the requested iteration
+ * through deterministic Lite Capture and the execution authorization to a
+ * completed Snapshot.
  */
 afterEach(cleanupE2eRoots);
 
@@ -54,7 +55,8 @@ describe("generic adopt E2E", { timeout: 60000 }, () => {
     expect(git(repo, "rev-parse", "HEAD").trim()).toBe(headBefore);
 
     // The non-interactive approval commits the baseline and runs the first
-    // iteration until the mandatory requirement-baseline approval.
+    // iteration until the mandatory execution authorization. Deterministic
+    // Lite Capture auto-accepts its low-risk RequirementBaseline.
     result = await runJson(
       [
         "adopt",
@@ -70,14 +72,7 @@ describe("generic adopt E2E", { timeout: 60000 }, () => {
     );
     expect(result.exitCode).toBe(EXIT_CODES.approvalRequired);
     data = result.json["data"] as Record<string, unknown>;
-    expect(data["object_type"]).toBe("RequirementBaseline");
-
-    result = await approveAndResume(result, session);
-    expect(result.json["status"]).toBe("approval_required");
-    // Lite is kernel-only (plan T9): no ImpactSet approval exists.
-    expect((result.json["data"] as Record<string, unknown>)["object_type"]).toBe(
-      "ExecutionAuthorizationSpec",
-    );
+    expect(data["object_type"]).toBe("ExecutionAuthorizationSpec");
 
     result = await approveAndResume(result, session);
     expect(result.json["status"]).toBe("ok");

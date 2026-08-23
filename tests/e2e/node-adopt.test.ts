@@ -44,8 +44,9 @@ describe("node adopt E2E", { timeout: 90000 }, () => {
     // session over the same repository must share the sequence.
     const newId = sequentialIds();
     const loop = await runAdoptLoop(spec, repo, newId);
-    // Lite is kernel-only (plan T9): no ImpactSet approval exists.
-    expect(loop.approved).toEqual(["RequirementBaseline", "ExecutionAuthorizationSpec"]);
+    // Deterministic Lite Capture auto-accepts its low-risk PRD; only execution
+    // authorization remains a mandatory human decision.
+    expect(loop.approved).toEqual(["ExecutionAuthorizationSpec"]);
 
     await assertCompleteLoopArtifacts(repo, loop.session, loop.harness, {
       intentFragment: spec.adoptIntent,

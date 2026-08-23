@@ -87,6 +87,7 @@ describe("capture state vocabulary", () => {
       [
         "approval_brief_provider_required",
         "capture_budget_exhausted",
+        "managed_model_failure",
         "review_blocked",
         "review_provider_required",
         "risk_policy_denied",

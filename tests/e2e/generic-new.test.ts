@@ -16,9 +16,8 @@ import {
 
 /**
  * Generic `harness new` E2E (plan Task 23): one entry command bootstraps the
- * project and drives the full closed loop, pausing only at the mandatory
- * baseline, impact and execution-authorization approvals, and lands a
- * completed Snapshot.
+ * project and drives the full closed loop, pausing at the mandatory execution
+ * authorization after deterministic Lite Capture, and lands a Snapshot.
  */
 afterEach(cleanupE2eRoots);
 
@@ -37,19 +36,13 @@ describe("generic new E2E", { timeout: 60000 }, () => {
     );
     expect(result.exitCode).toBe(EXIT_CODES.approvalRequired);
     let data = result.json["data"] as Record<string, unknown>;
-    expect(data["object_type"]).toBe("RequirementBaseline");
+    expect(data["object_type"]).toBe("ExecutionAuthorizationSpec");
     const projectRoot = join(parent, "demo-app");
     expect(existsSync(join(projectRoot, ".harness", "manifest.yaml"))).toBe(true);
 
     // From here on the project root is the cwd, like a real user session.
     const harness = makeHarness(projectRoot, newId);
     const session = { cwd: projectRoot, runtime: harness.runtime };
-
-    result = await approveAndResume(result, session);
-    expect(result.json["status"]).toBe("approval_required");
-    data = result.json["data"] as Record<string, unknown>;
-    // Lite is kernel-only (plan T9): no ImpactSet approval exists.
-    expect(data["object_type"]).toBe("ExecutionAuthorizationSpec");
 
     result = await approveAndResume(result, session);
     expect(result.json["status"]).toBe("ok");

@@ -412,12 +412,13 @@ export async function assertCompleteLoopArtifacts(
       0,
     );
   }
-  // Approval authority: the requirement baseline plus the execution
-  // authorization (agent-bound loops); never a module object in Lite.
+  // Approval authority: deterministic low-risk Lite Capture auto-accepts the
+  // requirement baseline, while execution remains explicitly authorized;
+  // never a module object in Lite.
   expect(artifactFiles(projectRoot, "artifacts/approval-requests").length).toBeGreaterThanOrEqual(
-    2,
+    1,
   );
-  expect(artifactFiles(projectRoot, "artifacts/approvals").length).toBeGreaterThanOrEqual(2);
+  expect(artifactFiles(projectRoot, "artifacts/approvals").length).toBeGreaterThanOrEqual(1);
   // Final Snapshot: completed, evidence-bearing and bound to a real commit of
   // the project history (HEAD itself may be one later bookkeeping commit).
   expect(artifactFiles(projectRoot, "artifacts/snapshots").length).toBeGreaterThan(0);

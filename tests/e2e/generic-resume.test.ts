@@ -51,30 +51,22 @@ describe("generic resume E2E", { timeout: 90000 }, () => {
     const harness = makeHarness(projectRoot, newId);
     const session: Session = { cwd: projectRoot, runtime: harness.runtime };
 
-    const baselineRequest = field(result, "request_id");
+    const authorizationRequest = field(result, "request_id");
     const workflowOperationId = field(result, "workflow_operation_id");
+    expect(field(result, "object_type")).toBe("ExecutionAuthorizationSpec");
 
     // Resume without a decision: the same pending request comes back, and no
     // duplicate request is minted.
     result = await runJson(["resume", workflowOperationId], session);
     expect(result.exitCode).toBe(EXIT_CODES.approvalRequired);
-    expect(field(result, "request_id")).toBe(baselineRequest);
+    expect(field(result, "request_id")).toBe(authorizationRequest);
     const requestsDirectory = join(projectRoot, ".harness", "artifacts", "approval-requests");
     expect(readdirSync(requestsDirectory)).toHaveLength(1);
-
-    // Approve the baseline; the next drive pauses at the execution
-    // authorization (Lite is kernel-only, plan T9: no impact approval).
-    await approve(session, baselineRequest);
-    result = await runJson(["resume", workflowOperationId], session);
-    expect(result.exitCode).toBe(EXIT_CODES.approvalRequired);
-    const authorizationRequest = field(result, "request_id");
-    expect(authorizationRequest).not.toBe(baselineRequest);
-    expect(field(result, "object_type")).toBe("ExecutionAuthorizationSpec");
 
     // A repeated resume still reports the same authorization request.
     result = await runJson(["resume", workflowOperationId], session);
     expect(field(result, "request_id")).toBe(authorizationRequest);
-    expect(readdirSync(requestsDirectory)).toHaveLength(2);
+    expect(readdirSync(requestsDirectory)).toHaveLength(1);
 
     // Only the explicit execution authorization lets the Agent run.
     await approve(session, authorizationRequest);
@@ -82,9 +74,9 @@ describe("generic resume E2E", { timeout: 90000 }, () => {
     expect(result.json["status"]).toBe("ok");
     expect(typeof field(result, "snapshot_id")).toBe("string");
 
-    // No duplicated authority or side effects: exactly two requests, one
+    // No duplicated authority or side effects: exactly one request, one
     // executor call, one run, one snapshot.
-    expect(readdirSync(requestsDirectory)).toHaveLength(2);
+    expect(readdirSync(requestsDirectory)).toHaveLength(1);
     expect(harness.executorCalls).toHaveLength(1);
     expect(readdirSync(join(projectRoot, ".harness", "artifacts", "runs"))).toHaveLength(1);
     expect(readdirSync(join(projectRoot, ".harness", "artifacts", "snapshots"))).toHaveLength(1);
