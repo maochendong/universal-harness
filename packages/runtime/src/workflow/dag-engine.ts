@@ -49,6 +49,14 @@ export class DagEngineError extends Error {
 
 export type DagRunOutcome =
   | {
+      readonly status: "replan_required";
+      readonly operation_id: string;
+      readonly node_id: string;
+      readonly next_plan_digest: string;
+      readonly executed_nodes: readonly string[];
+      readonly replayed_nodes: readonly string[];
+    }
+  | {
       readonly status: "completed";
       readonly operation_id: string;
       /** Nodes whose runners executed during this run, in execution order. */
@@ -189,7 +197,7 @@ export class WorkflowDagEngine {
     // Fail closed on structurally invalid plans before any runner executes.
     validateOperationDag(request.nodes);
     const ordered = topologicalOrder(request.nodes);
-    const journal = [...this.config.store.load(request.operation_id)];
+    const journal = [...(await this.config.store.load(request.operation_id))];
 
     // Replay the journal against the current DAG: the first node whose
     // checkpoint entry no longer matches (identity, wiring or resolved
@@ -236,7 +244,7 @@ export class WorkflowDagEngine {
       this.emit({ type: "node_replayed", node_id: node.node_id });
     }
     if (journalIndex < journal.length) {
-      this.config.store.truncate(request.operation_id, journalIndex);
+      await this.config.store.truncate(request.operation_id, journalIndex);
     }
 
     const executedNodes: string[] = [];
@@ -292,6 +300,15 @@ export class WorkflowDagEngine {
           detail: result.detail,
         };
       }
+      if (
+        result.status === "plan_superseded" &&
+        (!node.checkpoint || !/^[a-f0-9]{64}$/u.test(result.next_plan_digest))
+      ) {
+        throw new DagEngineError(
+          "runner_output_mismatch",
+          `runner for ${node.node_id} returned a non-durable or malformed superseding plan`,
+        );
+      }
       const outputs = new Map<BindingKind, string>();
       for (const binding of result.produces ?? []) {
         if (!node.produces.includes(binding.kind)) {
@@ -328,9 +345,19 @@ export class WorkflowDagEngine {
           output_digests: canonicalDigests(outputs),
           checkpoint_id: checkpointId,
         };
-        this.config.store.append(request.operation_id, entry);
+        await this.config.store.append(request.operation_id, entry);
         journalIndex += 1;
         this.emit({ type: "node_committed", node_id: node.node_id, checkpoint_id: checkpointId });
+      }
+      if (result.status === "plan_superseded") {
+        return {
+          status: "replan_required",
+          operation_id: request.operation_id,
+          node_id: node.node_id,
+          next_plan_digest: result.next_plan_digest,
+          executed_nodes: executedNodes,
+          replayed_nodes: replayedNodes,
+        };
       }
     }
     return {

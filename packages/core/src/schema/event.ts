@@ -18,6 +18,7 @@ export const EVENT_TYPES = [
   "AfterToolCall",
   "ApprovalRequired",
   "CheckpointCommitted",
+  "CheckpointInvalidated",
   "GateCompleted",
   "EvaluationCompleted",
   "FindingCreated",

@@ -39,6 +39,7 @@
         { "const": "AfterToolCall", "type": "string" },
         { "const": "ApprovalRequired", "type": "string" },
         { "const": "CheckpointCommitted", "type": "string" },
+        { "const": "CheckpointInvalidated", "type": "string" },
         { "const": "GateCompleted", "type": "string" },
         { "const": "EvaluationCompleted", "type": "string" },
         { "const": "FindingCreated", "type": "string" },

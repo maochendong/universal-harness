@@ -184,6 +184,11 @@ export {
   type WorkflowDagEngineConfig,
 } from "./workflow/dag-engine.js";
 export {
+  LedgerDagCheckpointStore,
+  LedgerDagCheckpointStoreError,
+  type LedgerDagCheckpointStoreOptions,
+} from "./workflow/ledger-dag-checkpoint-store.js";
+export {
   captureRequirements,
   type AcceptanceCriterionInput,
   type CaptureContext,

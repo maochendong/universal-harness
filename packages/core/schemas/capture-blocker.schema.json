@@ -38,7 +38,8 @@
         { "const": "capture_budget_exhausted", "type": "string" },
         { "const": "review_blocked", "type": "string" },
         { "const": "risk_policy_denied", "type": "string" },
-        { "const": "approval_brief_provider_required", "type": "string" }
+        { "const": "approval_brief_provider_required", "type": "string" },
+        { "const": "managed_model_failure", "type": "string" }
       ]
     },
     "resume_state": {
@@ -61,6 +62,20 @@
       ]
     },
     "detail": { "minLength": 1, "type": "string" },
+    "failure_schema_version": { "const": "managed-model-failure.v1", "type": "string" },
+    "failure_code": {
+      "anyOf": [
+        { "const": "provider_required", "type": "string" },
+        { "const": "provider_unavailable", "type": "string" },
+        { "const": "timeout", "type": "string" },
+        { "const": "budget_exhausted", "type": "string" },
+        { "const": "invalid_output", "type": "string" },
+        { "const": "independence_violation", "type": "string" },
+        { "const": "version_mismatch", "type": "string" },
+        { "const": "policy_denied", "type": "string" },
+        { "const": "uncertain", "type": "string" }
+      ]
+    },
     "record_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" }
   }
 }

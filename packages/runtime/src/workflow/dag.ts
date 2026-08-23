@@ -29,6 +29,11 @@ export interface DagApprovalNotice {
  */
 export type DagNodeResult =
   | { readonly status: "committed"; readonly produces?: readonly DagProducedBinding[] }
+  | {
+      readonly status: "plan_superseded";
+      readonly next_plan_digest: string;
+      readonly produces: readonly DagProducedBinding[];
+    }
   | { readonly status: "awaiting_approval"; readonly approval: DagApprovalNotice }
   | { readonly status: "blocked"; readonly reason: string; readonly detail: string };
 
@@ -78,9 +83,9 @@ export interface DagCheckpointEntry {
  * (used when invalidation rewinds the journal to the last valid prefix).
  */
 export interface DagCheckpointStore {
-  load(operationId: string): readonly DagCheckpointEntry[];
-  append(operationId: string, entry: DagCheckpointEntry): void;
-  truncate(operationId: string, keep: number): void;
+  load(operationId: string): readonly DagCheckpointEntry[] | Promise<readonly DagCheckpointEntry[]>;
+  append(operationId: string, entry: DagCheckpointEntry): void | Promise<void>;
+  truncate(operationId: string, keep: number): void | Promise<void>;
 }
 
 /** Volatile store for tests and embedders without a ledger. */

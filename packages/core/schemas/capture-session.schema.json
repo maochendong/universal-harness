@@ -69,7 +69,8 @@
         { "const": "capture_budget_exhausted", "type": "string" },
         { "const": "review_blocked", "type": "string" },
         { "const": "risk_policy_denied", "type": "string" },
-        { "const": "approval_brief_provider_required", "type": "string" }
+        { "const": "approval_brief_provider_required", "type": "string" },
+        { "const": "managed_model_failure", "type": "string" }
       ]
     },
     "intent_text": { "minLength": 1, "type": "string" },

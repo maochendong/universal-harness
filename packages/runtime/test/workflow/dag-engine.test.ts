@@ -138,6 +138,60 @@ function run(
 }
 
 describe("workflow DAG engine", () => {
+  it("commits a superseding design checkpoint and resumes the valid prefix under the final plan", async () => {
+    const store = new InMemoryDagCheckpointStore();
+    const kernel = kernelRunners();
+    const modules = moduleRunners([
+      "impact_analysis",
+      "design_governance",
+      "independent_evaluation",
+    ]);
+    modules.registry.design_governance = (context) => ({
+      status: "plan_superseded",
+      next_plan_digest: "b".repeat(64),
+      produces: context.node.produces.map((kind) => ({ kind, digest: "c".repeat(64) })),
+    });
+    const firstEngine = new WorkflowDagEngine({
+      store,
+      runners: { kernel: kernel.registry, modules: modules.registry },
+    });
+
+    const superseded = await run(firstEngine, STANDARD_NODES, "op_replan", "a".repeat(64));
+    expect(superseded).toMatchObject({
+      status: "replan_required",
+      node_id: "design",
+      next_plan_digest: "b".repeat(64),
+    });
+    expect(store.load("op_replan").map((entry) => entry.node_id)).toEqual([
+      "capture",
+      "capability_decision",
+      "impact",
+      "design",
+    ]);
+
+    const finalKernel = kernelRunners();
+    const finalModules = moduleRunners([
+      "impact_analysis",
+      "design_governance",
+      "independent_evaluation",
+    ]);
+    const finalEngine = new WorkflowDagEngine({
+      store,
+      runners: { kernel: finalKernel.registry, modules: finalModules.registry },
+    });
+    const completed = await run(finalEngine, STANDARD_NODES, "op_replan", "b".repeat(64));
+    expect(completed).toMatchObject({
+      status: "completed",
+      replayed_nodes: ["capture", "capability_decision", "impact", "design"],
+      executed_nodes: ["plan", "context", "execute", "verify", "evaluate", "snapshot"],
+    });
+    for (const nodeId of ["capture", "capability_decision"]) {
+      expect(finalKernel.spies.get(nodeId)?.contexts).toEqual([]);
+    }
+    expect(finalModules.spies.get("impact_analysis")?.contexts).toEqual([]);
+    expect(finalModules.spies.get("design_governance")?.contexts).toEqual([]);
+  });
+
   it("executes the lite kernel DAG in dependency order with one checkpoint per node", async () => {
     const { engine, store, kernelSpies, events } = makeEngine(LITE_NODES);
     const outcome = await run(engine, LITE_NODES);
