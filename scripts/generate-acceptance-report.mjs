@@ -22,8 +22,11 @@ import { existsSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { evaluateCiPlatformEvidence } from "./write-ci-platform-evidence.mjs";
+
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const reportsDirectory = join(repositoryRoot, ".reports", "acceptance");
+const ciPlatformEvidenceDirectory = join(repositoryRoot, ".reports", "ci-platform");
 const designPath = join(
   repositoryRoot,
   "docs",
@@ -50,7 +53,7 @@ const baselineDirectory = join(
 
 const REQUIRED_SUITES = ["main", "security", "fault", "performance"];
 const CRITERION_COUNT = 28;
-const STATUS_PRECEDENCE = ["failed", "blocked", "passed", "not_run"];
+const STATUS_PRECEDENCE = ["failed", "blocked", "passed", "not_verified", "not_run"];
 
 function fail(message) {
   console.error(`acceptance report: ${message}`);
@@ -136,13 +139,34 @@ const allSuitesGreen = [...suiteReports.values()].every(
   (report) => (report.files_failed ?? 0) === 0,
 );
 
-const ciWorkflow = join(repositoryRoot, ".github", "workflows", "ci.yml");
+const requiredCiPlatforms = ["ubuntu-latest", "macos-latest", "windows-latest"];
+const currentCommit = execFileSync("git", ["rev-parse", "HEAD"], {
+  cwd: repositoryRoot,
+  encoding: "utf8",
+}).trim();
+const ciArtifacts = existsSync(ciPlatformEvidenceDirectory)
+  ? readdirSync(ciPlatformEvidenceDirectory)
+      .filter((entry) => entry.endsWith(".json"))
+      .sort()
+      .map((entry) => JSON.parse(readFileSync(join(ciPlatformEvidenceDirectory, entry), "utf8")))
+  : [];
+const ciEvidence = evaluateCiPlatformEvidence({
+  current_commit: currentCommit,
+  required_platforms: requiredCiPlatforms,
+  artifacts: ciArtifacts,
+});
 merged.set("AC-25", {
-  status: allSuitesGreen && existsSync(ciWorkflow) ? "passed" : "failed",
-  evidence: [".github/workflows/ci.yml"],
-  detail: allSuitesGreen
-    ? "every required suite is green; the same verify pipeline runs on ubuntu, macOS and Windows via the CI matrix"
-    : "at least one required suite reported failed files",
+  status: ciEvidence.status,
+  evidence: [
+    ".github/workflows/ci.yml",
+    ...requiredCiPlatforms.map((platform) => `.reports/ci-platform/${platform}.json`),
+  ],
+  detail:
+    ciEvidence.status === "passed"
+      ? `same-commit pnpm verify Evidence passed on ${requiredCiPlatforms.join(", ")}`
+      : ciEvidence.status === "failed"
+        ? `same-commit CI Evidence records failed platform(s): ${ciEvidence.failed_platforms.join(", ")}`
+        : `cross-platform CI Evidence not verified; missing=${ciEvidence.missing_platforms.join(",") || "none"}, drifted=${ciEvidence.drifted_platforms.join(",") || "none"}, invalid=${String(ciEvidence.invalid_artifacts)}`,
 });
 
 const scan = spawnSync(
@@ -218,7 +242,7 @@ const head = execFileSync("git", ["rev-parse", "--short", "HEAD"], {
   encoding: "utf8",
 }).trim();
 
-const counts = { passed: 0, failed: 0, blocked: 0, not_run: 0 };
+const counts = { passed: 0, failed: 0, blocked: 0, not_verified: 0, not_run: 0 };
 for (const id of criterionIds) counts[merged.get(id).status] += 1;
 
 const lines = [];
@@ -231,7 +255,7 @@ lines.push("");
 lines.push(`- 生成基线 commit：\`${head}\``);
 lines.push(`- 输入套件：${[...suiteReports.keys()].join(", ")}（\`.reports/acceptance/*.json\`）`);
 lines.push(
-  `- 汇总：${String(counts.passed)}/${String(CRITERION_COUNT)} 通过；failed ${String(counts.failed)}，blocked ${String(counts.blocked)}，not_run ${String(counts.not_run)}`,
+  `- 汇总：${String(counts.passed)}/${String(CRITERION_COUNT)} 通过；failed ${String(counts.failed)}，blocked ${String(counts.blocked)}，not_verified ${String(counts.not_verified)}，not_run ${String(counts.not_run)}`,
 );
 lines.push("");
 lines.push("## 验收标准追溯");
@@ -274,7 +298,7 @@ if (counts.passed === CRITERION_COUNT) {
   );
 } else {
   lines.push(
-    `存在未通过的验收标准（failed ${String(counts.failed)}，blocked ${String(counts.blocked)}，not_run ${String(counts.not_run)}）；M1 发布被阻止。`,
+    `存在未通过的验收标准（failed ${String(counts.failed)}，blocked ${String(counts.blocked)}，not_verified ${String(counts.not_verified)}，not_run ${String(counts.not_run)}）；M1 发布被阻止。`,
   );
 }
 lines.push("");
