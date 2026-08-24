@@ -1,0 +1,278 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Provider 连通矩阵 · Universal Harness Teach 2.0</title>
+    <link rel="stylesheet" href="../assets/style.css" />
+    <script src="../assets/quiz.js" defer></script>
+  </head>
+  <body>
+    <nav class="site-nav">
+      <div class="site-nav-inner">
+        <a class="nav-brand" href="../index.html">Teach 2.0</a>
+        <div class="nav-links">
+          <a href="glossary.html">术语表</a><a href="architecture-map.html">架构地图</a
+          ><a href="verification-playbook.html">验证手册</a>
+        </div>
+      </div>
+    </nav>
+    <main class="page-shell">
+      <header class="reference-hero animate-in">
+        <p class="eyebrow">Reference · source_commit 05871fc</p>
+        <h1>模型 Port / Provider 连通矩阵</h1>
+        <p class="reference-subtitle">
+          状态快照日期 2026-08-24。代码链路与外部调用证据分别判定，避免一句“已接入”掩盖不同成熟度。
+        </p>
+        <div class="lesson-meta">
+          <span class="status-pill status-connected">已连通：当前生产消费 + 当前仓库证据</span
+          ><span class="status-pill status-partial">部分连通：链路存在但外部证据不足</span
+          ><span class="status-pill status-disconnected">未连通：无生产消费点</span>
+        </div>
+      </header>
+
+      <section class="lesson-section animate-in">
+        <div>
+          <h2>Scope 与失败模式</h2>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Slot / Purpose</th>
+                  <th>Binding scope</th>
+                  <th>Standard / Governed</th>
+                  <th>失败模式</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>`grounded_synthesis:project_discovery`</td>
+                  <td>Capture</td>
+                  <td>required</td>
+                  <td>block</td>
+                </tr>
+                <tr>
+                  <td>`grounded_synthesis:approval_brief`（Capture）</td>
+                  <td>Capture</td>
+                  <td>required</td>
+                  <td>block</td>
+                </tr>
+                <tr>
+                  <td>`impact_advisory`</td>
+                  <td>Operation</td>
+                  <td>required</td>
+                  <td>block</td>
+                </tr>
+                <tr>
+                  <td>`design_review`</td>
+                  <td>Operation</td>
+                  <td>required</td>
+                  <td>block</td>
+                </tr>
+                <tr>
+                  <td>`plan_proposal`</td>
+                  <td>Operation</td>
+                  <td>required</td>
+                  <td>block</td>
+                </tr>
+                <tr>
+                  <td>`feedback_analysis`</td>
+                  <td>Operation</td>
+                  <td>required</td>
+                  <td>block</td>
+                </tr>
+                <tr>
+                  <td>`grounded_synthesis:context_enrichment`</td>
+                  <td>Operation</td>
+                  <td>required</td>
+                  <td>block</td>
+                </tr>
+                <tr>
+                  <td>`grounded_synthesis:iteration_narrative`</td>
+                  <td>Operation</td>
+                  <td>required</td>
+                  <td>projection_finding</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="callout callout-info">
+            <div class="callout-icon">i</div>
+            <div>
+              <strong>额外 Prompt Port</strong>
+              <p>
+                `prd_proposal`、`prd_review` 与 `design_proposal` 也走 Managed Runner，但它们不是
+                `MODEL_SLOT_IDS` 的三项新增值。矩阵因此同时记录正式 Binding slot 和实际 resolver
+                key。
+              </p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="lesson-section animate-in">
+        <div>
+          <h2>生产链与证据状态</h2>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>能力组</th>
+                  <th>Adapter / 装配</th>
+                  <th>生产消费者</th>
+                  <th>当前仓库</th>
+                  <th>当前外部</th>
+                  <th>历史真实调用</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>PRD proposal / review</td>
+                  <td>`capture-adapters.ts` / `managed-capture-coordinator.ts`</td>
+                  <td>Capture Coordinator 七阶段 handler</td>
+                  <td><span class="status-pill status-connected">已连通</span></td>
+                  <td><span class="status-pill status-partial">部分连通</span></td>
+                  <td>T24 多轮 consumed / fail closed</td>
+                </tr>
+                <tr>
+                  <td>Project discovery / approval brief</td>
+                  <td>Grounded Synthesis adapter / Capture binding</td>
+                  <td>Capture-scope Coordinator</td>
+                  <td><span class="status-pill status-connected">已连通</span></td>
+                  <td><span class="status-pill status-partial">部分连通</span></td>
+                  <td>有历史链路证据，当前未复验</td>
+                </tr>
+                <tr>
+                  <td>Impact advisory</td>
+                  <td>`impact-advisory-adapter.ts` / pipeline ports</td>
+                  <td>Impact contributor</td>
+                  <td><span class="status-pill status-connected">已连通</span></td>
+                  <td><span class="status-pill status-partial">部分连通</span></td>
+                  <td>T20–T22 到达 merge / validator</td>
+                </tr>
+                <tr>
+                  <td>Design proposal / review</td>
+                  <td>`design-adapters.ts` / pipeline ports</td>
+                  <td>Design contributor</td>
+                  <td><span class="status-pill status-connected">已连通</span></td>
+                  <td><span class="status-pill status-partial">部分连通</span></td>
+                  <td>T22 proposal consumed，review 实质裁决</td>
+                </tr>
+                <tr>
+                  <td>Plan proposal</td>
+                  <td>`plan-adapters.ts` / pipeline ports</td>
+                  <td>Plan phase compiler 前置候选</td>
+                  <td><span class="status-pill status-connected">已连通</span></td>
+                  <td><span class="status-pill status-partial">部分连通</span></td>
+                  <td>缺当前真实端点闭环</td>
+                </tr>
+                <tr>
+                  <td>Feedback analysis</td>
+                  <td>`feedback-analysis-adapter.ts` / pipeline ports</td>
+                  <td>Verify + Evaluate + Audit runner wrapper</td>
+                  <td><span class="status-pill status-connected">已连通</span></td>
+                  <td><span class="status-pill status-partial">部分连通</span></td>
+                  <td>无当前真实 Provider 证据</td>
+                </tr>
+                <tr>
+                  <td>Context enrichment</td>
+                  <td>Grounded Synthesis adapter / pipeline ports</td>
+                  <td>Context phase</td>
+                  <td><span class="status-pill status-connected">已连通</span></td>
+                  <td><span class="status-pill status-partial">部分连通</span></td>
+                  <td>T20 曾 `citation_invalid`，正确 fail closed</td>
+                </tr>
+                <tr>
+                  <td>Iteration narrative</td>
+                  <td>Grounded Synthesis adapter / pipeline ports</td>
+                  <td>Snapshot 后置 Narrative</td>
+                  <td><span class="status-pill status-connected">已连通</span></td>
+                  <td><span class="status-pill status-partial">部分连通</span></td>
+                  <td>当前提交未做真实复验</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <section class="lesson-section animate-in">
+        <div>
+          <h2>证据冲突登记</h2>
+          <div class="pattern-cards">
+            <article class="pattern-card" style="border-top: 3px solid var(--color-error)">
+              <h3>过期状态表</h3>
+              <p>
+                `docs/model-invocation-architecture.md` 仍写 FeedbackAnalysis 未开始；当前
+                `managed-pipeline-ports.ts`、`capability-dag-runners.ts` 和接线测试显示已连接。
+              </p>
+            </article>
+            <article class="pattern-card" style="border-top: 3px solid var(--color-warning)">
+              <h3>历史真实证据</h3>
+              <p>
+                T20–T24 证明较早版本触达真实 DeepSeek 端点并按契约 fail closed；不能升级为 `05871fc`
+                的当前复验。
+              </p>
+            </article>
+            <article class="pattern-card" style="border-top: 3px solid var(--color-info)">
+              <h3>Hermetic dogfood</h3>
+              <p>
+                三档 packaged CLI 在 host-owned fake Provider 下 completed，证明生产 DAG 与 Binding
+                接线，但不证明公网端点状态。
+              </p>
+            </article>
+            <article class="pattern-card" style="border-top: 3px solid var(--color-success)">
+              <h3>安全结论</h3>
+              <p>
+                可以声明仓库内模型链路已生产接线；真实外部 Provider
+                对当前提交仍为部分连通，必须单独补证。
+              </p>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section class="lesson-section animate-in">
+        <div>
+          <h2>解除“部分连通”的最小动作</h2>
+          <div class="step-cards">
+            <div class="step-card">
+              <div class="step-num">1</div>
+              <div class="step-body">
+                <strong>固定当前 source commit</strong>
+                <p>不要在调用过程中继续变更代码；所有记录绑定同一个提交。</p>
+              </div>
+            </div>
+            <div class="step-card">
+              <div class="step-num">2</div>
+              <div class="step-body">
+                <strong>由受信 host 注入凭据</strong>
+                <p>凭据只存在环境中；提交的证据不得包含 key、Prompt 原文或原始响应。</p>
+              </div>
+            </div>
+            <div class="step-card">
+              <div class="step-num">3</div>
+              <div class="step-body">
+                <strong>复跑真实 Provider driver</strong>
+                <p>
+                  覆盖至少一个 required Profile，并保留 invocation id、slot/purpose、digest 与 typed
+                  result。
+                </p>
+              </div>
+            </div>
+            <div class="step-card">
+              <div class="step-num">4</div>
+              <div class="step-body">
+                <strong>更新范围化证据</strong>
+                <p>
+                  逐 slot 写明 consumed、validated、failed 或 blocked；不能把正确 fail closed
+                  伪装成领域完成。
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+  </body>
+</html>

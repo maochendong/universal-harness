@@ -1,0 +1,536 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      name="description"
+      content="区分模型 Port、Provider Binding、生产消费点与外部真实证据。"
+    />
+    <title>0004 · 模型端口与 Provider 连通性</title>
+    <link rel="stylesheet" href="../assets/style.css" />
+    <script src="../assets/quiz.js" defer></script>
+    <script src="../assets/source-lab.js" defer></script>
+  </head>
+  <body data-lesson-id="0004">
+    <nav class="lesson-nav" aria-label="课程导航">
+      <div
+        class="page-progress"
+        role="progressbar"
+        aria-label="阅读进度"
+        aria-valuemin="0"
+        aria-valuemax="100"
+      ></div>
+      <div class="lesson-nav-inner">
+        <a class="nav-brand" href="../index.html">Universal Harness · Teach 2.0</a>
+        <div class="lesson-links">
+          <a href="0003-需求设计计划与TDD追踪链.html">上一课</a>
+          <a href="../reference/provider-connectivity-matrix.html">连通矩阵</a>
+          <a href="../index.html">课程地图</a>
+        </div>
+      </div>
+    </nav>
+
+    <main class="lesson-main">
+      <header class="lesson-hero animate-in">
+        <p class="eyebrow">Lesson 0004 · Production truth</p>
+        <h1>接口存在，不等于模型真的走过生产链</h1>
+        <p class="lesson-subtitle">
+          本课把“模型已接入”拆成可检查的七站链路。你会亲手裁决一处文档落后于源码的真实冲突。
+        </p>
+        <div class="lesson-meta">
+          <span class="lesson-badge">核心概念：连通性分层</span>
+          <span class="lesson-badge">基线：05871fc</span>
+          <span class="lesson-badge status-partial">外部 Provider：部分连通</span>
+        </div>
+      </header>
+
+      <section class="screen animate-in" id="meaning">
+        <div>
+          <p class="screen-kicker">01 · The claim</p>
+          <h2 class="screen-heading">先把“已接入”拆开</h2>
+          <p class="screen-intro">
+            像一条通电线路：墙上装了插座，不代表电厂、线路、保险丝和设备都已工作。模型能力同样需要逐站检查。
+          </p>
+
+          <div class="pattern-cards">
+            <article class="pattern-card" style="border-top: 3px solid var(--color-actor-1)">
+              <h3>Port</h3>
+              <p>
+                领域允许模型提供哪类候选结果。它只是<span
+                  class="term"
+                  data-definition="Port 是模块公开的能力边界，类似标准插座；它说明可以怎样连接，却不证明已经接上电源。"
+                  >端口</span
+                >契约。
+              </p>
+            </article>
+            <article class="pattern-card" style="border-top: 3px solid var(--color-actor-2)">
+              <h3>Binding</h3>
+              <p>将 slot、purpose、Provider、Prompt、Schema 和预算钉在同一份可摘要配置中。</p>
+            </article>
+            <article class="pattern-card" style="border-top: 3px solid var(--color-actor-3)">
+              <h3>Production consumer</h3>
+              <p>真正的 DAG 节点或 Coordinator 调用 Adapter，而不是测试直接调用组件。</p>
+            </article>
+            <article class="pattern-card" style="border-top: 3px solid var(--color-actor-4)">
+              <h3>External evidence</h3>
+              <p>当前提交在真实端点与凭据环境中运行，并留下脱敏、可归属的证据。</p>
+            </article>
+          </div>
+
+          <div class="callout callout-warning">
+            <div class="callout-icon">⚠</div>
+            <div>
+              <strong>本课判定纪律</strong>
+              <p>
+                仓库内生产接线可以是“已连通”，而当前提交的真实外部调用仍是“部分连通”。两个维度不能压成一句“都完成了”。
+              </p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="screen animate-in" id="slots">
+        <div>
+          <p class="screen-kicker">02 · Vocabulary</p>
+          <h2 class="screen-heading">五个正式 Slot，不等于只有五种 Prompt</h2>
+          <p class="screen-intro">
+            正式 Capability Binding 使用五个 Model Slot；Grounded Synthesis 再按四种 purpose
+            分流。Capture 和 Design Proposal 还有各自的 Prompt Port，因此连通矩阵必须同时看
+            slot、purpose 与实际 resolver key。
+          </p>
+
+          <div class="translation-block">
+            <div class="translation-code">
+              <span class="translation-label">REAL SOURCE</span>
+              <pre><code>export const MODEL_SLOT_IDS = [
+  "impact_advisory",
+  "design_review",
+  "plan_proposal",
+  "feedback_analysis",
+  "grounded_synthesis",
+] as const;</code></pre>
+              <span class="source-ref">packages/core/src/schema/profile.ts:55–61 · 05871fc</span>
+            </div>
+            <div class="translation-english">
+              <span class="translation-label">为什么这样写</span>
+              <div class="translation-lines">
+                <p class="tl">这里是 Binding 能使用的封闭词表。</p>
+                <p class="tl">前四项服务具体领域判断，但都只能返回候选。</p>
+                <p class="tl">最后一项复用同一个 Port，再通过 purpose 区分四种只读提炼。</p>
+                <p class="tl">
+                  `as const` 让未知 slot 在类型和校验边界失败，而不是静默接受拼写错误。
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div class="badge-list">
+            <div class="badge-item">
+              <code class="badge-code">Capture scope</code
+              ><span class="badge-desc"
+                >`project_discovery`、Capture 阶段 `approval_brief` 在 CapabilityPlan
+                之前绑定。</span
+              >
+            </div>
+            <div class="badge-item">
+              <code class="badge-code">Operation scope</code
+              ><span class="badge-desc"
+                >Impact、Design Review、Plan、Feedback、Context 与 Narrative 随 CapabilityPlan
+                绑定。</span
+              >
+            </div>
+            <div class="badge-item">
+              <code class="badge-code">No overlap</code
+              ><span class="badge-desc"
+                >同一个 slot/purpose 不能同时被两个 scope 持有；重叠会 fail closed。</span
+              >
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="screen animate-in" id="flow">
+        <div>
+          <p class="screen-kicker">03 · Call lineage</p>
+          <h2 class="screen-heading">跟一次模型调用走过七站</h2>
+          <p class="screen-intro">
+            点击下一步。注意模型的原始输出并不会直接成为 Graph 事实；它必须依次通过 Runner
+            状态机、Schema 与领域 Validator，再由生产消费者决定如何使用。
+          </p>
+
+          <div
+            class="flow-animation"
+            data-steps='[
+          {"highlight":"binding","label":"CapabilityPlan 或 Capture record 钉住 slot、purpose 与全部 digest"},
+          {"from":"binding","to":"resolver","label":"Provider Resolver 按槽位解析 host-owned Provider","packet":true},
+          {"from":"resolver","to":"adapter","label":"领域 Adapter 编译受控输入与 Prompt","packet":true},
+          {"from":"adapter","to":"runner","label":"Managed Runner 记录 planned → started → completed","packet":true},
+          {"from":"runner","to":"provider","label":"Provider 只返回文本或 typed failure","packet":true},
+          {"from":"provider","to":"validator","label":"Schema、引用与领域规则逐层校验","packet":true},
+          {"from":"validator","to":"consumer","label":"只有 validated result 才能被领域消费者使用","packet":true}
+        ]'
+          >
+            <div class="flow-actors">
+              <div class="flow-actor" id="flow-binding">
+                <div class="flow-actor-icon">B</div>
+                <strong>Binding</strong><small>scope + digest</small>
+              </div>
+              <div class="flow-actor" id="flow-resolver">
+                <div class="flow-actor-icon">R</div>
+                <strong>Resolver</strong><small>slot coverage</small>
+              </div>
+              <div class="flow-actor" id="flow-adapter">
+                <div class="flow-actor-icon">A</div>
+                <strong>Adapter</strong><small>domain input</small>
+              </div>
+              <div class="flow-actor" id="flow-runner">
+                <div class="flow-actor-icon">M</div>
+                <strong>Runner</strong><small>state machine</small>
+              </div>
+              <div class="flow-actor" id="flow-provider">
+                <div class="flow-actor-icon">P</div>
+                <strong>Provider</strong><small>external call</small>
+              </div>
+              <div class="flow-actor" id="flow-validator">
+                <div class="flow-actor-icon">V</div>
+                <strong>Validator</strong><small>fail closed</small>
+              </div>
+              <div class="flow-actor" id="flow-consumer">
+                <div class="flow-actor-icon">C</div>
+                <strong>Consumer</strong><small>DAG node</small>
+              </div>
+            </div>
+            <div class="flow-packet" aria-hidden="true"></div>
+            <div class="flow-step-label">点击“下一步”开始追踪。</div>
+            <div class="flow-controls">
+              <button class="btn flow-next-btn" type="button">下一步</button>
+              <button class="btn secondary flow-reset-btn" type="button">重置</button>
+              <span class="flow-progress"></span>
+            </div>
+          </div>
+
+          <div class="translation-block">
+            <div class="translation-code">
+              <span class="translation-label">REAL SOURCE</span>
+              <pre><code>const designProposal = resolver.resolve(DESIGN_PROPOSAL_PROMPT_PORT_ID);
+const designReview = resolver.resolve(DESIGN_REVIEW_PROMPT_PORT_ID);
+const impactAdvisory = resolver.resolve(IMPACT_ADVISORY_PROMPT_PORT_ID);
+const planProposal = resolver.resolve(PLAN_PROPOSAL_PROMPT_PORT_ID);
+const contextEnrichment = resolver.resolve("context_enrichment");
+const iterationNarrative = resolver.resolve("iteration_narrative");
+const feedbackAnalysis = resolver.resolve("feedback_analysis");</code></pre>
+              <span class="source-ref"
+                >packages/cli/src/managed-pipeline-ports.ts:229–235 · 05871fc</span
+              >
+            </div>
+            <div class="translation-english">
+              <span class="translation-label">逐行翻译</span>
+              <div class="translation-lines">
+                <p class="tl">
+                  Design Proposal 与独立 Design Review 分别解析，避免同一个模型角色自提自审。
+                </p>
+                <p class="tl">Impact 与 Plan 各有独立候选端口，不能写回确定性结果。</p>
+                <p class="tl">
+                  Context 与 Narrative 共用 Grounded Synthesis 类型，但 purpose 和失败模式不同。
+                </p>
+                <p class="tl">
+                  FeedbackAnalysis 现在也由同一生产装配解析；旧状态文档没有跟上这一步。
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="screen animate-in" id="matrix">
+        <div>
+          <p class="screen-kicker">04 · Connectivity matrix</p>
+          <h2 class="screen-heading">当前事实：代码已接线，外部证据未齐</h2>
+          <p class="screen-intro">
+            下面的状态快照绑定 `05871fc`。历史真实 Provider dogfood 能证明路径曾经走通或正确 fail
+            closed，但不能自动证明当前提交已复验。
+          </p>
+
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>能力组</th>
+                  <th>当前代码链路</th>
+                  <th>外部 Provider 证据</th>
+                  <th>判定依据</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>Capture proposal/review、Discovery、Approval brief</td>
+                  <td><span class="status-pill status-connected">已连通</span></td>
+                  <td><span class="status-pill status-partial">部分连通</span></td>
+                  <td>Coordinator 已消费；有历史真实调用；当前提交未复验。</td>
+                </tr>
+                <tr>
+                  <td>Impact advisory、Design proposal/review</td>
+                  <td><span class="status-pill status-connected">已连通</span></td>
+                  <td><span class="status-pill status-partial">部分连通</span></td>
+                  <td>Adapter、装配、领域校验存在；历史调用到达 fail-closed 边界。</td>
+                </tr>
+                <tr>
+                  <td>Plan proposal</td>
+                  <td><span class="status-pill status-connected">已连通</span></td>
+                  <td><span class="status-pill status-partial">部分连通</span></td>
+                  <td>生产装配与测试完成；缺当前真实端点证据。</td>
+                </tr>
+                <tr>
+                  <td>Feedback analysis</td>
+                  <td><span class="status-pill status-connected">已连通</span></td>
+                  <td><span class="status-pill status-partial">部分连通</span></td>
+                  <td>Verify/Evaluate/Audit runner 已包装生产消费者；状态文档已过期。</td>
+                </tr>
+                <tr>
+                  <td>Context enrichment、Iteration narrative</td>
+                  <td><span class="status-pill status-connected">已连通</span></td>
+                  <td><span class="status-pill status-partial">部分连通</span></td>
+                  <td>生产装配完成；历史 context 调用含 citation_invalid；当前提交未复验。</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <div class="callout callout-error">
+            <div class="callout-icon">↯</div>
+            <div>
+              <strong>真实冲突</strong>
+              <p>
+                `docs/model-invocation-architecture.md` 的状态表仍写 `feedback_analysis
+                生产接线：未开始`；更新的架构状态、`capability-dag-runners.ts`、接线测试和完成证据表明它已经接入。裁决应使用更新且更接近运行时的证据，并同时修正文档。
+              </p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="screen animate-in" id="chat">
+        <div>
+          <p class="screen-kicker">05 · Who has authority?</p>
+          <h2 class="screen-heading">听听各组件怎样拒绝“模型说了算”</h2>
+          <p class="screen-intro">
+            这段对话把权力边界人格化。模型能提议；Binding、Runner、Validator
+            和领域消费者共同决定它能否产生影响。
+          </p>
+
+          <div class="chat-window" id="chat-provider-boundary">
+            <div class="chat-messages">
+              <div class="chat-message" data-msg="0" style="display: none">
+                <div class="chat-avatar" style="background: var(--color-actor-1)">S</div>
+                <div class="chat-bubble">
+                  <span class="chat-sender" style="color: var(--color-actor-1)">Model Slot</span>
+                  <p>我需要一个 Impact 候选，但我不持有端点或密钥。</p>
+                </div>
+              </div>
+              <div class="chat-message" data-msg="1" data-sender="right" style="display: none">
+                <div class="chat-avatar" style="background: var(--color-actor-2)">B</div>
+                <div class="chat-bubble">
+                  <span class="chat-sender" style="color: var(--color-actor-2)">Binding</span>
+                  <p>我钉住 Provider、Prompt、Schema、预算和失败模式；digest 漂移就停止。</p>
+                </div>
+              </div>
+              <div class="chat-message" data-msg="2" style="display: none">
+                <div class="chat-avatar" style="background: var(--color-actor-3)">R</div>
+                <div class="chat-bubble">
+                  <span class="chat-sender" style="color: var(--color-actor-3)"
+                    >Managed Runner</span
+                  >
+                  <p>我只接受编译产物，并记录 planned 到 consumed 的状态链。</p>
+                </div>
+              </div>
+              <div class="chat-message" data-msg="3" data-sender="right" style="display: none">
+                <div class="chat-avatar" style="background: var(--color-actor-4)">P</div>
+                <div class="chat-bubble">
+                  <span class="chat-sender" style="color: var(--color-actor-4)">Provider</span>
+                  <p>我只返回文本或 typed failure；我没有写 Graph 的权限。</p>
+                </div>
+              </div>
+              <div class="chat-message" data-msg="4" style="display: none">
+                <div class="chat-avatar" style="background: var(--color-actor-5)">V</div>
+                <div class="chat-bubble">
+                  <span class="chat-sender" style="color: var(--color-actor-5)">Validator</span>
+                  <p>Schema 合法还不够；引用、覆盖和领域不变量也必须通过。</p>
+                </div>
+              </div>
+              <div class="chat-message" data-msg="5" data-sender="right" style="display: none">
+                <div class="chat-avatar" style="background: var(--color-accent)">H</div>
+                <div class="chat-bubble">
+                  <span class="chat-sender" style="color: var(--color-accent)">Harness</span>
+                  <p>
+                    候选可以 consumed；权威事实仍由确定性编译、Policy、Approval 和 Ledger 决定。
+                  </p>
+                </div>
+              </div>
+            </div>
+            <div class="chat-typing" style="display: none">
+              <div class="chat-avatar" style="background: var(--color-text-muted)">…</div>
+              <div class="chat-typing-dots">
+                <span class="typing-dot"></span><span class="typing-dot"></span
+                ><span class="typing-dot"></span>
+              </div>
+            </div>
+            <div class="chat-controls">
+              <button class="btn chat-next-btn" type="button">下一条</button
+              ><button class="btn chat-all-btn" type="button">播放全部</button
+              ><button class="btn secondary chat-reset-btn" type="button">重播</button
+              ><span class="chat-progress"></span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="screen animate-in" id="lab">
+        <div>
+          <p class="screen-kicker">06 · Verify and decide</p>
+          <h2 class="screen-heading">用当前测试裁决仓库内接线</h2>
+          <p class="screen-intro">
+            这组测试覆盖 Runner、Provider Registry、CLI 装配和 FeedbackAnalysis
+            生产包装。它能证明仓库内链路，但不能访问你的真实外部 Provider。
+          </p>
+
+          <div class="source-lab" data-lab-id="0004-provider-connectivity">
+            <h3>可复跑验证命令</h3>
+            <div class="command-box">
+              <code data-command
+                >pnpm exec vitest run packages/runtime/test/model/managed-runner.test.ts
+                packages/runtime/test/model/provider-registry.test.ts
+                packages/cli/test/managed-pipeline-ports.test.ts
+                packages/runtime/test/orchestration/feedback-analysis-wiring.test.ts</code
+              ><button type="button" data-copy-command>复制命令</button>
+            </div>
+            <p class="lab-baseline">
+              <strong>生成时基线：</strong>`05871fc`，4 个文件，31/31 tests passed。
+            </p>
+            <div class="lab-actions">
+              <button type="button" data-mark-lab>我已在终端复跑</button>
+            </div>
+            <p class="lab-status"></p>
+          </div>
+
+          <div class="quiz-container" id="quiz-0004">
+            <div
+              class="quiz-question-block"
+              data-correct="b"
+              data-explanation-right="对。旧文档是待修投影；当前源码、生产消费点与接线测试更接近运行事实，但外部证据仍需单独限定。"
+              data-explanation-wrong="这个选择把旧投影或历史证据提升成了当前运行事实。先按证据时效和作用域分层。"
+            >
+              <h3 class="quiz-question">
+                旧状态表说 FeedbackAnalysis 未接线，但当前 runner 和测试显示已消费。你应怎样写结论？
+              </h3>
+              <div class="quiz-options">
+                <button class="quiz-option" data-value="a" onclick="selectOption(this)">
+                  <span class="quiz-option-radio"></span><span>按旧文档判定仍未连通</span>
+                </button>
+                <button class="quiz-option" data-value="b" onclick="selectOption(this)">
+                  <span class="quiz-option-radio"></span><span>按当前链路判定已连通</span>
+                </button>
+                <button class="quiz-option" data-value="c" onclick="selectOption(this)">
+                  <span class="quiz-option-radio"></span><span>按历史调用判定可发布</span>
+                </button>
+              </div>
+              <div class="quiz-feedback"></div>
+            </div>
+            <div
+              class="quiz-question-block"
+              data-correct="c"
+              data-explanation-right="对。Standard/Governed 的 required blocking slot 缺少覆盖时必须 typed block，不能静默走 legacy。"
+              data-explanation-wrong="Required binding 的目的就是消灭静默降级；继续执行会让 CapabilityPlan 的能力声称失真。"
+            >
+              <h3 class="quiz-question">
+                Standard 的 required blocking slot 没有 Provider coverage，正确行为是什么？
+              </h3>
+              <div class="quiz-options">
+                <button class="quiz-option" data-value="a" onclick="selectOption(this)">
+                  <span class="quiz-option-radio"></span><span>静默回退默认旧调用路径</span>
+                </button>
+                <button class="quiz-option" data-value="b" onclick="selectOption(this)">
+                  <span class="quiz-option-radio"></span><span>生成空白结果继续执行流</span>
+                </button>
+                <button class="quiz-option" data-value="c" onclick="selectOption(this)">
+                  <span class="quiz-option-radio"></span><span>以缺失绑定阻塞当前流程</span>
+                </button>
+              </div>
+              <div class="quiz-feedback"></div>
+            </div>
+            <div
+              class="quiz-question-block"
+              data-correct="b"
+              data-explanation-right="对。历史 dogfood 能证明那一版本确实触达真实端点，以及失败语义曾经工作；当前 commit 仍要重新绑定证据。"
+              data-explanation-wrong="证据必须绑定作用域和提交。历史真实调用既不能证明当前已复验，也不能证明模型的领域输出总是正确。"
+            >
+              <h3 class="quiz-question">
+                `t20-real-provider-dogfood.md` 对当前 `05871fc` 最强能证明什么？
+              </h3>
+              <div class="quiz-options">
+                <button class="quiz-option" data-value="a" onclick="selectOption(this)">
+                  <span class="quiz-option-radio"></span><span>当前提交外部已经复验</span>
+                </button>
+                <button class="quiz-option" data-value="b" onclick="selectOption(this)">
+                  <span class="quiz-option-radio"></span><span>历史版本曾经真实调用</span>
+                </button>
+                <button class="quiz-option" data-value="c" onclick="selectOption(this)">
+                  <span class="quiz-option-radio"></span><span>全部模型结果都能接受</span>
+                </button>
+              </div>
+              <div class="quiz-feedback"></div>
+            </div>
+            <div class="quiz-actions">
+              <button class="quiz-check-btn" type="button" onclick="checkQuiz('quiz-0004')">
+                查看反馈</button
+              ><button class="quiz-reset-btn" type="button" onclick="resetQuiz('quiz-0004')">
+                重新思考
+              </button>
+            </div>
+          </div>
+
+          <div class="decision-exercise" data-decision="provider-verdict">
+            <span class="decision-label">决策练习</span>
+            <h3>你会批准“所有模型 Port 已生产可用”这句话吗？</h3>
+            <p>
+              请写出你的结论，并至少覆盖：仓库内接线、当前真实
+              Provider、跨平台发布、过期文档四个维度。
+            </p>
+            <textarea
+              aria-label="写下你的 Provider 连通性判断"
+              placeholder="我的结论是……；证据范围是……；仍未验证的是……"
+            ></textarea>
+            <div class="button-row">
+              <button class="btn secondary" type="button" data-show-rubric>对照判定要点</button>
+            </div>
+            <div
+              class="decision-rubric"
+              hidden
+              data-rubric="建议结论：不批准不带范围的总括句。可以声明五个正式 slot 的仓库内生产链路已接线且当前测试通过；真实外部 Provider 在当前提交上仍未复验，因此外部维度为部分连通；M1 AC25 仍阻塞跨平台发布；旧 FeedbackAnalysis 状态表应修正但不能反向覆盖新证据。"
+            ></div>
+          </div>
+
+          <div class="completion-box">
+            <h3>本课真正完成的证据</h3>
+            <p>
+              任选一个 slot，指出
+              Port、Binding、Adapter、Runner、Provider、Validator、生产消费点和现有证据，并给出带作用域的连通状态。把答案发给你的教学
+              Agent；仅点击下面按钮不会生成学习记录。
+            </p>
+            <div class="button-row">
+              <button class="btn secondary" type="button" data-mark-reviewed>标记本课已复习</button
+              ><a class="btn" href="../reference/provider-connectivity-matrix.html"
+                >打开完整连通矩阵</a
+              >
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <nav class="lesson-footer" aria-label="课间导航">
+        <a href="0003-需求设计计划与TDD追踪链.html">← 0003 · TDD 追踪链</a>
+        <a href="../index.html">返回课程地图 →</a>
+      </nav>
+    </main>
+  </body>
+</html>

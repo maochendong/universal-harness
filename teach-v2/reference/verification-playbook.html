@@ -1,0 +1,210 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>验证手册 · Universal Harness Teach 2.0</title>
+    <link rel="stylesheet" href="../assets/style.css" />
+    <script src="../assets/quiz.js" defer></script>
+    <script src="../assets/source-lab.js" defer></script>
+  </head>
+  <body>
+    <nav class="site-nav">
+      <div class="site-nav-inner">
+        <a class="nav-brand" href="../index.html">Teach 2.0</a>
+        <div class="nav-links">
+          <a href="glossary.html">术语表</a><a href="architecture-map.html">架构地图</a
+          ><a href="provider-connectivity-matrix.html">连通矩阵</a>
+        </div>
+      </div>
+    </nav>
+    <main class="page-shell">
+      <header class="reference-hero animate-in">
+        <p class="eyebrow">Reference · Evidence first</p>
+        <h1>从一句声称到可放行结论</h1>
+        <p class="reference-subtitle">
+          验证不是“找到一个绿色测试”。它是把声称拆成作用域，再用当前源码、调用链、测试、Ledger
+          和发布证据逐层收敛。
+        </p>
+      </header>
+
+      <section class="lesson-section animate-in">
+        <div>
+          <h2>六步验证法</h2>
+          <div class="step-cards">
+            <div class="step-card">
+              <div class="step-num">1</div>
+              <div class="step-body">
+                <strong>改写声称</strong>
+                <p>
+                  把“功能完成”改写为可判定句：哪项能力、哪个 Profile、哪条生产路径、哪个
+                  commit、哪个环境。
+                </p>
+              </div>
+            </div>
+            <div class="step-card">
+              <div class="step-num">2</div>
+              <div class="step-body">
+                <strong>找到权威定义</strong>
+                <p>读取 Schema、Registry、Compiler 或 Validator；文档用于定位，不替代代码裁决。</p>
+              </div>
+            </div>
+            <div class="step-card">
+              <div class="step-num">3</div>
+              <div class="step-body">
+                <strong>追生产消费者</strong>
+                <p>
+                  从 CLI/Dashboard 入口追到 Coordinator、Runner 和守卫；孤立单测不能证明生产接线。
+                </p>
+              </div>
+            </div>
+            <div class="step-card">
+              <div class="step-num">4</div>
+              <div class="step-body">
+                <strong>复跑最小测试</strong>
+                <p>
+                  先用紧贴不变量的 targeted test 缩短反馈，再按风险决定是否运行 E2E、fault 或
+                  release。
+                </p>
+              </div>
+            </div>
+            <div class="step-card">
+              <div class="step-num">5</div>
+              <div class="step-body">
+                <strong>核对权威证据</strong>
+                <p>
+                  检查 Ledger、Snapshot、Evidence digest、source commit、平台和
+                  Provider；不要把日志或 projection 冒充事实。
+                </p>
+              </div>
+            </div>
+            <div class="step-card">
+              <div class="step-num">6</div>
+              <div class="step-body">
+                <strong>写范围化结论</strong>
+                <p>明确 passed、partial、not_verified 与 blocker，并指出证据不能证明什么。</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="lesson-section animate-in">
+        <div>
+          <h2>证据梯子</h2>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>证据</th>
+                  <th>能证明什么</th>
+                  <th>不能单独证明什么</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>设计文档 / README</td>
+                  <td>目标、术语、声称和预期边界</td>
+                  <td>当前实现、生产接线或运行通过</td>
+                </tr>
+                <tr>
+                  <td>类型 / Schema / Registry</td>
+                  <td>契约存在、词表封闭、不变量可表达</td>
+                  <td>真实入口已经消费</td>
+                </tr>
+                <tr>
+                  <td>单元 / 属性测试</td>
+                  <td>组件行为和 fail-closed 边界</td>
+                  <td>打包 CLI、外部 Provider 或发布环境</td>
+                </tr>
+                <tr>
+                  <td>生产接线测试 / E2E</td>
+                  <td>入口、Coordinator、Runner 与守卫形成闭环</td>
+                  <td>未覆盖的平台或真实外部依赖</td>
+                </tr>
+                <tr>
+                  <td>Ledger / Snapshot / Evidence</td>
+                  <td>指定 Operation 在指定 commit 上留下权威完成链</td>
+                  <td>其他 commit、Profile 或平台</td>
+                </tr>
+                <tr>
+                  <td>同 commit 发布矩阵</td>
+                  <td>目标平台工件与发布门禁通过</td>
+                  <td>未来版本或未纳入矩阵的环境</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <section class="lesson-section animate-in">
+        <div>
+          <h2>首批四课的最小验证命令</h2>
+          <div class="source-lab" data-lab-id="reference-four-lessons">
+            <h3>架构文档与注册表一致性</h3>
+            <div class="command-box">
+              <code id="cmd-arch" data-command
+                >pnpm exec vitest run tests/e2e/graph-model-documentation.test.ts</code
+              ><button data-copy-command data-command-target="cmd-arch">复制</button>
+            </div>
+            <h3 style="margin-top: 1.5rem">CapabilityPlan 编译与路由</h3>
+            <div class="command-box">
+              <code id="cmd-cap" data-command
+                >pnpm exec vitest run packages/core/test/capability/compiler.test.ts
+                packages/runtime/test/orchestration/capability-plan-routing.test.ts</code
+              ><button data-copy-command data-command-target="cmd-cap">复制</button>
+            </div>
+            <h3 style="margin-top: 1.5rem">Assertion 与 Strict TDD 路由</h3>
+            <div class="command-box">
+              <code id="cmd-tdd" data-command
+                >pnpm exec vitest run packages/core/test/plan/assertions.test.ts
+                packages/runtime/test/planning/default-planner-assertions.test.ts
+                packages/runtime/test/orchestration/strict-tdd-routing.test.ts</code
+              ><button data-copy-command data-command-target="cmd-tdd">复制</button>
+            </div>
+            <h3 style="margin-top: 1.5rem">Managed Provider 与生产消费</h3>
+            <div class="command-box">
+              <code id="cmd-provider" data-command
+                >pnpm exec vitest run packages/runtime/test/model/managed-runner.test.ts
+                packages/runtime/test/model/provider-registry.test.ts
+                packages/cli/test/managed-pipeline-ports.test.ts
+                packages/runtime/test/orchestration/feedback-analysis-wiring.test.ts</code
+              ><button data-copy-command data-command-target="cmd-provider">复制</button>
+            </div>
+            <p class="lab-baseline">`05871fc` 生成基线：7/7、31/31、13/13、31/31 全部通过。</p>
+            <div class="lab-actions"><button data-mark-lab>我已复跑所需命令</button></div>
+            <p class="lab-status"></p>
+          </div>
+        </div>
+      </section>
+
+      <section class="lesson-section animate-in">
+        <div>
+          <h2>推荐结论模板</h2>
+          <div class="translation-block">
+            <div class="translation-code">
+              <span class="translation-label">VERDICT</span>
+              <pre><code>结论：{passed | partial | not_verified | blocked}
+对象：{能力 / Profile / Operation}
+基线：{source_commit / ledger_commit}
+证据：{源码符号、命令、Evidence/Snapshot}
+限制：{平台、Provider、未覆盖路径}
+下一步：{解除 blocker 的最小动作}</code></pre>
+            </div>
+            <div class="translation-english">
+              <span class="translation-label">检查重点</span>
+              <div class="translation-lines">
+                <p class="tl">结论词必须与证据强度匹配。</p>
+                <p class="tl">对象和基线防止把局部结果外推。</p>
+                <p class="tl">证据要能由下一位评审者复跑。</p>
+                <p class="tl">限制不是附注，而是结论的一部分。</p>
+                <p class="tl">下一步必须直接解除已知 blocker。</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+  </body>
+</html>

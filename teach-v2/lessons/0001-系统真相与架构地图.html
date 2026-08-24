@@ -1,0 +1,611 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      name="description"
+      content="Universal Harness 课程 2.0 第 1 课：用职责域、Capability DAG、三层存储和证据层级建立系统真相地图。"
+    />
+    <title>0001 · 系统真相与架构地图 | Universal Harness 课程 2.0</title>
+    <link rel="stylesheet" href="../assets/style.css" />
+    <script src="../assets/quiz.js" defer></script>
+    <script src="../assets/source-lab.js" defer></script>
+  </head>
+  <body data-lesson-id="0001">
+    <a class="skip-link" href="#lesson-main">跳到课程正文</a>
+
+    <header class="topbar lesson-topbar" aria-label="课程导航">
+      <div class="topbar-inner">
+        <a class="brand course-home" href="../index.html">Universal Harness · 课程 2.0</a>
+        <nav class="nav-links" aria-label="课程进度">
+          <a href="../index.html">课程地图</a>
+          <a href="../reference/glossary.html">术语表</a>
+          <span aria-current="page">01 / 04</span>
+        </nav>
+      </div>
+    </header>
+
+    <main id="lesson-main" class="lesson-main lesson-shell">
+      <section
+        class="lesson-section lesson-screen lesson-hero hero-screen"
+        id="screen-1"
+        aria-labelledby="lesson-title"
+      >
+        <div class="eyebrow">第 1 课 · 全局模型 · 约 25 分钟</div>
+        <h1 id="lesson-title">系统真相与架构地图</h1>
+        <p class="lead lede">
+          你不需要先记住 28 类
+          <span
+            class="term"
+            data-definition="Node 是一条类型化工程事实，例如 Requirement、Task 或 Evidence。"
+            >Node</span
+          >
+          或每个包的名字。这节短课只练一个能力：<strong
+            >当文档、界面和代码各说了一句话时，知道该去哪里裁决。</strong
+          >
+        </p>
+
+        <div class="hero-panel mission-card">
+          <div>
+            <span class="card-kicker">本课的可见胜利</span>
+            <p>
+              课后你能默画出「五职责域 →
+              <span
+                class="term"
+                data-definition="Capability DAG 是本次 Operation 真正启用的能力节点与它们的依赖关系。"
+                >Capability DAG</span
+              >
+              →
+              <span
+                class="term"
+                data-definition="三层存储指权威 Ledger、可重建 SQLite 投影和可删除 Live Spool 观察。"
+                >三层存储</span
+              >」，并为一项「已实现」声称选择恰当证据。
+            </p>
+          </div>
+          <ol class="success-list">
+            <li>区分目标设计与当前实现</li>
+            <li>区分权威事实与可重建观察</li>
+            <li>为结论写出证据范围</li>
+          </ol>
+        </div>
+
+        <aside class="source-note" aria-label="本课主要资料">
+          <strong>建议先打开的主源：</strong>
+          <a href="../../docs/graph-driven-harness-model.md">《Harness Graph-native 驱动模型》</a
+          >，尤其是第 0 节的总图与状态声明。
+        </aside>
+
+        <p class="teacher-note">如果任何术语不清楚，直接问我：「用一个当前仓库的例子解释它」。</p>
+      </section>
+
+      <section class="lesson-section lesson-screen" id="screen-2" aria-labelledby="domains-title">
+        <div class="screen-count">02 · 先认出五个负责人</div>
+        <h2 id="domains-title">五职责域：系统不是流程图，而是一组责任边界</h2>
+        <p>
+          把 Harness
+          想成一场有严格交接单的接力赛。每一棒都有一个负责域，下一棒不能仅凭「上一棒说完了」就起跑。
+        </p>
+
+        <div
+          class="flow-animation"
+          data-steps='[{"from":"truth-context","to":"intent-design","label":"定位这次工作属于谁"},{"from":"intent-design","to":"impact-govern","label":"把变化变成 Change Seed"},{"from":"impact-govern","to":"execute-verify","label":"交付已批准的 Plan + Context"},{"from":"execute-verify","to":"feedback-fix","label":"把失败变成 Finding"},{"from":"feedback-fix","to":"impact-govern","label":"触发新 ImpactSet"}]'
+          aria-label="五职责域交接动画"
+        >
+          <span class="flow-packet" aria-hidden="true"></span>
+          <div class="flow-actors flow-stage">
+            <article class="flow-actor" id="truth-context">
+              <span class="actor-index">①</span>
+              <h3>权威上下文</h3>
+              <p>Project · Repository · Iteration</p>
+              <small>回答「属于哪里」</small>
+            </article>
+            <article class="flow-actor" id="intent-design">
+              <span class="actor-index">②</span>
+              <h3>意图与设计</h3>
+              <p>Requirement · DesignSet · CodeArtifact</p>
+              <small>回答「为什么改」</small>
+            </article>
+            <article class="flow-actor" id="impact-govern">
+              <span class="actor-index">③</span>
+              <h3>影响与治理</h3>
+              <p>ImpactSet · Plan · Policy · Approval</p>
+              <small>回答「波及谁、谁能批」</small>
+            </article>
+            <article class="flow-actor" id="execute-verify">
+              <span class="actor-index">④</span>
+              <h3>执行与验证</h3>
+              <p>Run · Test · Gate · Evidence</p>
+              <small>回答「真的完成了吗」</small>
+            </article>
+            <article class="flow-actor" id="feedback-fix">
+              <span class="actor-index">⑤</span>
+              <h3>反馈修复</h3>
+              <p>Finding · RCA · Improvement<wbr />Candidate</p>
+              <small>回答「失败该回到哪」</small>
+            </article>
+          </div>
+          <div class="flow-controls">
+            <button class="primary-button flow-next-btn" type="button">播放下一次交接</button>
+            <button class="secondary-button flow-reset-btn" type="button">重置</button>
+            <span class="flow-step-label" aria-live="polite">准备好后，从「权威上下文」出发。</span>
+          </div>
+          <div class="flow-progress" aria-hidden="true"></div>
+        </div>
+
+        <div class="cards dual-track">
+          <article class="pattern-card track-card target-track">
+            <span class="status-pill status-badge status-target">目标设计</span>
+            <p>
+              Node 表达工程事实，<span
+                class="term"
+                data-definition="Edge 是两条 Node 之间的类型化关系，并可携带方向、状态与置信度。"
+                >Edge</span
+              >
+              约束它们如何相关，<span
+                class="term"
+                data-definition="Event 记录状态变化；只有已提交的 Lifecycle Event 才是权威治理事实。"
+                >Event</span
+              >
+              证明状态真的发生过变化。
+            </p>
+          </article>
+          <article class="pattern-card track-card current-track">
+            <span class="status-pill status-badge status-connected">当前实现 · 已连通</span>
+            <p>
+              <code>node.ts</code>、<code>edge.ts</code>、<code>event.ts</code> 定义 Schema；文档
+              E2E 会对照源码导出的类型，防止人类总图静默漂移。
+            </p>
+            <p class="source-links">
+              <a href="../../packages/core/src/schema/node.ts">node.ts:15</a>
+              <a href="../../packages/core/src/schema/edge.ts">edge.ts:14</a>
+              <a href="../../packages/core/src/schema/event.ts">event.ts:12</a>
+            </p>
+          </article>
+        </div>
+      </section>
+
+      <section class="lesson-section lesson-screen" id="screen-3" aria-labelledby="dag-title">
+        <div class="screen-count">03 · 再看这次真正会跑什么</div>
+        <h2 id="dag-title">CapabilityPlan：总地图不等于本次路线</h2>
+        <p>
+          路网图上有很多站，但你手上的车票只允许乘坐某些线路。<dfn
+            title="由 Profile、风险、Policy 与 Provider 确定性编译出的本次能力计划"
+            >CapabilityPlan</dfn
+          >
+          就是这次 Operation 的车票；<dfn title="只包含本次活动能力节点和依赖的有向无环图"
+            >Operation DAG</dfn
+          >
+          是由这张车票生成的实际路线。
+        </p>
+
+        <div
+          class="arch-diagram architecture-map"
+          role="img"
+          aria-label="Profile 编译为 CapabilityPlan 和实际 Operation DAG"
+        >
+          <div class="component-row architecture-input">
+            <span class="component-chip">ProjectProfile</span>
+            <span class="component-chip">Risk</span>
+            <span class="component-chip">Policy</span>
+            <span class="component-chip">Provider</span>
+          </div>
+          <div class="map-arrow" aria-hidden="true">↓ 确定性编译</div>
+          <div class="architecture-layer architecture-decision">
+            final CapabilityPlan<br /><small>活动能力 · 依赖闭包 · Provider binding</small>
+          </div>
+          <div class="map-arrow" aria-hidden="true">↓ 只物化活动节点</div>
+          <div class="component-row dag-lanes">
+            <span class="component-chip dag-node always">Capture →</span>
+            <span class="component-chip dag-node optional">[Impact] →</span>
+            <span class="component-chip dag-node optional">[Design] →</span>
+            <span class="component-chip dag-node always">Plan →</span>
+            <span class="component-chip dag-node always">Context →</span>
+            <span class="component-chip dag-node always">Execute →</span>
+            <span class="component-chip dag-node always">Verify →</span>
+            <span class="component-chip dag-node optional">[Evaluate] →</span>
+            <span class="component-chip dag-node always">Snapshot</span>
+          </div>
+        </div>
+
+        <div class="table-wrap comparison-table">
+          <table aria-label="目标设计与当前实现对照">
+            <thead>
+              <tr>
+                <th>问题</th>
+                <th>目标设计</th>
+                <th>当前可验证实现</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>未启用能力怎么办？</td>
+                <td>零 Port、零工件、零 Event、零 Approval</td>
+                <td><code>buildOperationDag()</code> 仅对 active set 添加模块节点。</td>
+              </tr>
+              <tr>
+                <td>临时计划能进 Plan 吗？</td>
+                <td>不能，需要 final 且 binding 未漂移</td>
+                <td>运行时返回 <code>capability_plan_not_final</code> 阻断。</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <p class="evidence-line">
+          核对入口：<a href="../../packages/core/src/capability/compiler.ts">compiler.ts:410</a> →
+          <a href="../../packages/core/src/capability/dag.ts">dag.ts:66</a> →
+          <a href="../../packages/runtime/src/orchestration/capability-dag-runtime.ts"
+            >capability-dag-runtime.ts:38</a
+          >。
+        </p>
+      </section>
+
+      <section class="lesson-section lesson-screen" id="screen-4" aria-labelledby="truth-title">
+        <div class="screen-count">04 · 找对事实的住址</div>
+        <h2 id="truth-title">三层存储：同时看到，不等于同等可信</h2>
+        <div class="truth-stack">
+          <article class="pattern-card truth-layer authority-layer">
+            <span class="layer-rank">1</span>
+            <div>
+              <h3>
+                <span
+                  class="term"
+                  data-definition="Git-native Ledger 是 append-only、可验证与可重放的唯一权威事实源。"
+                  >Git-native Ledger</span
+                >
+              </h3>
+              <p>
+                <strong>唯一权威来源。</strong>append-only、可验证、可重放；批准、失效、Evidence 和
+                Snapshot 的完成事实在这里裁决。
+              </p>
+            </div>
+          </article>
+          <article class="pattern-card truth-layer projection-layer">
+            <span class="layer-rank">2</span>
+            <div>
+              <h3>
+                <span
+                  class="term"
+                  data-definition="SQLite Projection 是从 Ledger 物化出的查询缓存，可删除并确定性重建。"
+                  >SQLite Projection</span
+                >
+              </h3>
+              <p>
+                <strong>可确定性重建的查询缓存。</strong>它让查询更快，但损坏时应从 Ledger
+                重建，不能倒过来修改权威历史。
+              </p>
+            </div>
+          </article>
+          <article class="pattern-card truth-layer observation-layer">
+            <span class="layer-rank">3</span>
+            <div>
+              <h3>
+                <span
+                  class="term"
+                  data-definition="Live Spool 保存可删除的实时运行观察，用于交互体验而非完成裁决。"
+                  >Live Spool</span
+                >
+              </h3>
+              <p>
+                <strong>可删除的实时观察。</strong
+                >heartbeat、输出摘要与当前相位帮你看「此刻」，但不能升级为「已完成」。
+              </p>
+            </div>
+          </article>
+        </div>
+
+        <aside class="callout callout-info aha-callout">
+          <span class="aha-label">Aha</span>
+          <p>
+            Dashboard
+            可以在同一页合并三层读取，但这是<strong>展示上的汇合</strong>，不是<strong>权威上的平级</strong>。
+          </p>
+        </aside>
+
+        <h3 class="subsection-title">真实源码 ↔ 中文翻译</h3>
+        <p>
+          存储层告诉你「什么是事实」；Edge 规则还要告诉你「事实如何传播」。下面 10
+          行从当前仓库原样复制。
+        </p>
+
+        <div class="code-translation">
+          <div class="translation-code code-pane">
+            <div class="translation-label pane-label">
+              TypeScript ·
+              <a href="../../packages/graph/src/impact/propagation.ts">propagation.ts:29–38</a>
+            </div>
+            <pre><code>export const PROPAGATION_RULES: readonly PropagationRule[] = [
+  { type: "REFUTES", direction: "forward", defaultRisk: "high", allowsInference: false },
+  { type: "VIOLATES", direction: "forward", defaultRisk: "high", allowsInference: false },
+  { type: "BLOCKS", direction: "forward", defaultRisk: "high", allowsInference: false },
+  { type: "VERIFIES", direction: "both", defaultRisk: "medium", allowsInference: true },
+  { type: "ADDRESSES", direction: "inverse", defaultRisk: "medium", allowsInference: true },
+  { type: "SHAPES", direction: "forward", defaultRisk: "medium", allowsInference: true },
+  // SPECIFIES binds a contract to its subject in both directions; inferred
+  // edges never propagate (designset lifecycle design 8.1).
+  { type: "SPECIFIES", direction: "both", defaultRisk: "high", allowsInference: false },</code></pre>
+          </div>
+          <div class="translation-english translation-pane">
+            <div class="translation-label pane-label">读成中文</div>
+            <ol>
+              <li>每种可传播关系都在表里明确登记，不由模型自由猜测。</li>
+              <li>
+                <code>REFUTES</code>、<code>VIOLATES</code>、<code>BLOCKS</code>
+                只向前传，且默认高风险、拒绝推理边。
+              </li>
+              <li>
+                <code>VERIFIES</code> 可以双向检查；<code>ADDRESSES</code>
+                要逆向回溯；方向是代码中的政策，不是提示词的建议。
+              </li>
+              <li>
+                <code>SPECIFIES</code>
+                双向、高风险，但禁止推理边传播：高风险计算不代表允许低置信关系越权。
+              </li>
+            </ol>
+          </div>
+        </div>
+      </section>
+
+      <section class="lesson-section lesson-screen" id="screen-5" aria-labelledby="evidence-title">
+        <div class="screen-count">05 · 把「看起来完成」改写成可复查结论</div>
+        <h2 id="evidence-title">证据层级：结论必须带范围</h2>
+        <div class="evidence-grid evidence-ladder" aria-label="从弱到强的实现证据梯子">
+          <article class="status-card evidence-rung rung-1">
+            <span>1</span>
+            <h3>文档自述</h3>
+            <p>它可以描述目标，但可能过时。</p>
+          </article>
+          <article class="status-card evidence-rung rung-2">
+            <span>2</span>
+            <h3>Schema 与实现</h3>
+            <p>证明对象和逻辑存在，不必然进入生产调用。</p>
+          </article>
+          <article class="status-card evidence-rung rung-3">
+            <span>3</span>
+            <h3>生产调用链 + 测试</h3>
+            <p>证明组装与 fail-closed 边界在指定基线可复跑。</p>
+          </article>
+          <article class="status-card evidence-rung rung-4">
+            <span>4</span>
+            <h3>Ledger / Git / 外部证据</h3>
+            <p>在明确 commit 和环境上证明真实结果；仍不可外推到未测范围。</p>
+          </article>
+        </div>
+
+        <div class="source-lab" data-lab-id="lesson-0001-graph-truth">
+          <div class="lab-heading">
+            <div>
+              <span class="lab-kicker">源码实验 · 可复跑</span>
+              <h3>文档总图与当前 Schema 是否一致？</h3>
+            </div>
+            <span class="lab-status" aria-live="polite">尚未由你标记</span>
+          </div>
+          <p>在仓库根目录运行：</p>
+          <div class="lab-command command-row">
+            <code data-command
+              >pnpm exec vitest run tests/e2e/graph-model-documentation.test.ts</code
+            >
+            <button type="button" data-copy-command>复制命令</button>
+          </div>
+          <div class="lab-baseline baseline-result">
+            <strong>当前课程基线：<code>05871fc</code></strong>
+            <span>Test Files 1 passed · Tests 7 passed (7)</span>
+          </div>
+          <p class="lab-caveat">
+            这证明的是：在 <code>05871fc</code> 上，总图文本、类型列表和三层存储边界的 E2E
+            约束通过。它<strong>不单独证明</strong>跨平台发布或真实 Provider 调用已完成。
+          </p>
+          <button type="button" class="lab-complete-btn" data-mark-lab>
+            我已实际运行并核对输出
+          </button>
+        </div>
+
+        <div class="quiz-container" id="lesson-0001-quiz" aria-labelledby="quiz-title">
+          <div class="quiz-heading">
+            <span class="quiz-kicker">即时测验 · 3 题</span>
+            <h3 id="quiz-title">别背定义，现场做裁决</h3>
+          </div>
+
+          <fieldset
+            class="quiz-question-block"
+            data-correct="option-b"
+            data-explanation-right="正确。实时状态只证明「正在发生」；权威 Snapshot 缺席时不能宣布完成。"
+            data-explanation-wrong="再看三层存储：你选的是实时观察或查询投影，都不能代替 Ledger Snapshot。"
+          >
+            <legend>
+              1. Dashboard 显示 Run 正在执行，但 Ledger 还没有 Snapshot。你该怎么给出状态？
+            </legend>
+            <div class="quiz-options">
+              <button
+                type="button"
+                class="quiz-option"
+                data-value="option-a"
+                onclick="selectOption(this)"
+              >
+                采信实时面板，直接宣布完成
+              </button>
+              <button
+                type="button"
+                class="quiz-option"
+                data-value="option-b"
+                onclick="selectOption(this)"
+              >
+                记录正在运行，等待权威快照
+              </button>
+              <button
+                type="button"
+                class="quiz-option"
+                data-value="option-c"
+                onclick="selectOption(this)"
+              >
+                重建查询缓存，然后宣布完成
+              </button>
+            </div>
+            <p class="quiz-feedback" aria-live="polite"></p>
+          </fieldset>
+
+          <fieldset
+            class="quiz-question-block"
+            data-correct="option-b"
+            data-explanation-right="正确。SQLite 是可删除、可从 Ledger 确定性重建的查询缓存。"
+            data-explanation-wrong="你正在让投影或实时观察覆盖权威历史，这会颠倒单向的物化关系。"
+          >
+            <legend>2. SQLite 投影损坏，Git-native Ledger 验证正常。正确处置是什么？</legend>
+            <div class="quiz-options">
+              <button
+                type="button"
+                class="quiz-option"
+                data-value="option-a"
+                onclick="selectOption(this)"
+              >
+                修改缓存记录，把它当作新事实
+              </button>
+              <button
+                type="button"
+                class="quiz-option"
+                data-value="option-b"
+                onclick="selectOption(this)"
+              >
+                删除损坏投影，从权威账本重建
+              </button>
+              <button
+                type="button"
+                class="quiz-option"
+                data-value="option-c"
+                onclick="selectOption(this)"
+              >
+                保留损坏投影，用实时事件覆盖
+              </button>
+            </div>
+            <p class="quiz-feedback" aria-live="polite"></p>
+          </fieldset>
+
+          <fieldset
+            class="quiz-question-block"
+            data-correct="option-b"
+            data-explanation-right="正确。Schema 和单测只能证明实现存在；连通结论还需要生产消费点与对应证据。"
+            data-explanation-wrong="结论外推过度。文档、Schema 和单测都不能单独证明生产接线或发布完成。"
+          >
+            <legend>3. 文档声称某能力已连通，你只找到 Schema 和单元测试。应怎么写结论？</legend>
+            <div class="quiz-options">
+              <button
+                type="button"
+                class="quiz-option"
+                data-value="option-a"
+                onclick="selectOption(this)"
+              >
+                只引用架构文档，标记完全已连通
+              </button>
+              <button
+                type="button"
+                class="quiz-option"
+                data-value="option-b"
+                onclick="selectOption(this)"
+              >
+                继续追生产链，并限定当前范围
+              </button>
+              <button
+                type="button"
+                class="quiz-option"
+                data-value="option-c"
+                onclick="selectOption(this)"
+              >
+                只运行单元测试，标记发布已完成
+              </button>
+            </div>
+            <p class="quiz-feedback" aria-live="polite"></p>
+          </fieldset>
+
+          <div class="quiz-actions">
+            <button type="button" class="primary-button" onclick="checkQuiz('lesson-0001-quiz')">
+              检查答案
+            </button>
+            <button type="button" class="secondary-button" onclick="resetQuiz('lesson-0001-quiz')">
+              重新作答
+            </button>
+          </div>
+          <p class="quiz-summary" aria-live="polite"></p>
+        </div>
+      </section>
+
+      <section
+        class="lesson-section lesson-screen closing-screen"
+        id="screen-6"
+        aria-labelledby="decision-title"
+      >
+        <div class="screen-count">06 · 最后一次不看答案的判断</div>
+        <h2 id="decision-title">决策练习：这能宣布「已完成」吗？</h2>
+
+        <div class="decision-exercise decision-scenario">
+          <span class="scenario-label">现场情境</span>
+          <p>
+            一名 Agent 说「迭代完成」；Dashboard 中 Live Spool 显示
+            <code>OperationCompleted</code>；SQLite 也有一行 snapshot 投影。但 Git-native Ledger
+            没有 Snapshot transaction，对应 Gate Evidence 也找不到。
+          </p>
+          <label for="decision-answer"><strong>先写下你的判断、证据和下一步：</strong></label>
+          <textarea
+            id="decision-answer"
+            placeholder="例：我不会宣布完成，因为……；下一步我会……"
+          ></textarea>
+          <button type="button" class="primary-button" data-show-rubric>
+            写完了，对照判分标准
+          </button>
+          <div
+            class="decision-rubric"
+            hidden
+            data-rubric="可接受结论：不能宣布完成。Live Spool 只是实时观察，SQLite 只是已漂移的可重建投影；缺少 Ledger Snapshot transaction 与 Gate Evidence。先调查为何未提交权威 transaction 或是否需要 resume，然后从 Ledger 重建投影，不得修改 SQLite 冒充完成事实。"
+          ></div>
+        </div>
+
+        <div class="cards decision-prompts">
+          <article class="card">
+            <span>01</span>
+            <h3>你的结论</h3>
+            <p>只允许选：已连通、部分连通、未连通、或运行中但未完成。</p>
+          </article>
+          <article class="card">
+            <span>02</span>
+            <h3>你的证据</h3>
+            <p>写出哪些是观察、哪些是投影、缺少哪项权威事实。</p>
+          </article>
+          <article class="card">
+            <span>03</span>
+            <h3>你的下一步</h3>
+            <p>说明是继续等待、进入恢复，还是将投影视为漂移后重建。</p>
+          </article>
+        </div>
+
+        <div class="exit-ticket">
+          <h3>离开本课前，试着不往上滚动</h3>
+          <ul>
+            <li>五个职责域是什么？</li>
+            <li>CapabilityPlan 与全量架构地图有何不同？</li>
+            <li>为什么 SQLite 与 Live Spool 都不能宣布完成？</li>
+          </ul>
+          <p>
+            能用自己的话回答，才表示你开始建立了长期记忆。如果答不出，可以请我给你一个不同的现实情境，而不是立刻重读。
+          </p>
+          <div class="button-row">
+            <button class="secondary-button" type="button" data-mark-reviewed>
+              标记本课已复习
+            </button>
+          </div>
+        </div>
+
+        <nav class="lesson-pagination" aria-label="上下课导航">
+          <a class="nav-link previous" href="../index.html">
+            <span>← 返回</span>
+            <strong>课程地图</strong>
+          </a>
+          <a class="nav-link next" href="0002-Profile与CapabilityPlan.html">
+            <span>下一课 →</span>
+            <strong>Profile 与 CapabilityPlan</strong>
+          </a>
+        </nav>
+      </section>
+    </main>
+  </body>
+</html>

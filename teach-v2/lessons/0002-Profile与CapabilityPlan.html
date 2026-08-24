@@ -1,0 +1,620 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      name="description"
+      content="Universal Harness 课程 2.0 第 2 课：追踪 ProfileDecision 如何编译为可执行的 CapabilityPlan 与 Operation DAG。"
+    />
+    <title>0002 · Profile 与 CapabilityPlan — Universal Harness 课程 2.0</title>
+    <link rel="stylesheet" href="../assets/style.css" />
+    <script src="../assets/quiz.js" defer></script>
+    <script src="../assets/source-lab.js" defer></script>
+  </head>
+  <body class="lesson-page" data-lesson-id="0002">
+    <a class="skip-link" href="#start">跳到课程内容</a>
+    <header class="topbar" aria-label="课程导航">
+      <div class="topbar-inner">
+        <a class="brand" href="../index.html">Universal Harness · 课程 2.0</a>
+        <nav class="nav-links" aria-label="课程进度">
+          <a href="../index.html">课程地图</a>
+          <a href="../reference/glossary.html">术语表</a>
+          <span aria-current="page">02 / 04</span>
+        </nav>
+        <span
+          class="page-progress"
+          role="progressbar"
+          aria-label="本课阅读进度"
+          aria-valuemin="0"
+          aria-valuemax="100"
+          aria-valuenow="0"
+        ></span>
+      </div>
+    </header>
+    <main class="lesson-main lesson-shell">
+      <section
+        class="lesson-screen lesson-section lesson-hero hero-screen"
+        id="start"
+        aria-labelledby="lesson-title"
+      >
+        <nav class="breadcrumb" aria-label="面包屑导航">
+          <a href="../index.html">课程地图</a>
+          <span aria-hidden="true">/</span>
+          <span>第 2 课</span>
+        </nav>
+
+        <div class="lesson-meta">
+          <span class="badge">全局模型</span>
+          <span class="badge time">约 20 分钟</span>
+          <span class="status-chip status-pill status-connected">已连通 · 仓库内链路</span>
+        </div>
+        <p class="eyebrow">LESSON 0002 · ONE CONCEPT</p>
+        <h1 id="lesson-title">
+          <span
+            class="term"
+            data-definition="Profile：协议注册的能力档位；它提供编译默认值，不是一套独立流程。"
+            >Profile</span
+          >
+          不是流水线，而是一张运行图的编译输入
+        </h1>
+        <p class="lead">
+          你要获得的能力只有一个：给定 Profile、风险、<span
+            class="term"
+            data-definition="Policy：系统必须遵守的确定性约束，可要求或禁止某项能力。"
+            >Policy</span
+          >
+          与
+          <span class="term" data-definition="Provider：为运行提供特定基础设施或模型能力的实现。"
+            >Provider</span
+          >，预测哪些节点会存在，以及运行会在哪里被阻断。
+        </p>
+
+        <div class="comparison-grid pattern-cards" aria-label="双轨呈现">
+          <article class="comparison-card pattern-card target-track">
+            <p class="card-kicker">目标设计</p>
+            <h2>一个 Kernel，按需编译能力</h2>
+            <p>
+              Lite、Standard、Governed 不分叉成三套代码；它们通过能力解析、依赖闭包和 Provider
+              闭包生成不同的
+              <abbr
+                class="term"
+                data-definition="DAG：有向无环图；节点按依赖顺序执行，不形成循环。"
+                title="有向无环图；节点按依赖顺序执行"
+                >DAG</abbr
+              >。
+            </p>
+          </article>
+          <article class="comparison-card pattern-card current-track">
+            <p class="card-kicker">当前真实实现</p>
+            <h2>编译、物化、路由均有测试</h2>
+            <p>
+              <code>05871fc</code> 上，Capability 编译与 runtime 路由的指定测试为
+              <strong>31/31</strong>。这证明仓库内链路，不等于声称某个外部 Provider 环境已可用。
+            </p>
+          </article>
+        </div>
+
+        <aside class="callout callout-info aha">
+          <p class="callout-label">AHA</p>
+          <p>
+            Profile
+            像舞台剧本的版本：它不亲自演出，而是决定哪些角色上场、谁必须等谁，以及开演前必须检查哪些设备。
+          </p>
+        </aside>
+      </section>
+
+      <section class="lesson-screen lesson-section" id="compile-flow" aria-labelledby="flow-title">
+        <p class="screen-number screen-kicker">01 · 数据流</p>
+        <h2 id="flow-title">从决策到运行：一次可回放的编译</h2>
+        <p class="screen-intro">
+          点击“下一步”，跟着真实产物向右移动。注意：<abbr
+            class="term"
+            data-definition="Capture-scope Binding：与 ProfileDecision 绑定、仅供 Capture 阶段使用的 Provider 选择记录。"
+            title="Capture 阶段使用、与 ProfileDecision 绑定的模型 Provider 选择"
+            >Capture-scope Binding</abbr
+          >
+          会传入编译器做作用域重叠检查，不会在 CapabilityPlan 里被重复绑定。
+        </p>
+
+        <div
+          class="flow-animation"
+          data-steps='[
+        {"highlight":"flow-actor-profile","label":"ProfileDecision 固定档位选择与决策摘要"},
+        {"highlight":"flow-actor-profile","label":"Capture scope Provider Binding 随决策进入作用域检查"},
+        {"highlight":"flow-actor-facts","label":"已接受 PRD、风险、Policy 与 baseline 形成确定输入","packet":true,"from":"actor-profile","to":"actor-facts"},
+        {"highlight":"flow-actor-compiler","label":"compileCapabilityPlan 解析五项能力","packet":true,"from":"actor-facts","to":"actor-compiler"},
+        {"highlight":"flow-actor-compiler","label":"dependency closure 自动拉入活动能力的前置依赖"},
+        {"highlight":"flow-actor-revision","label":"产生 provisional 或 final CapabilityPlan 修订","packet":true,"from":"actor-compiler","to":"actor-revision"},
+        {"highlight":"flow-actor-dag","label":"buildOperationDag 只物化活动能力的节点","packet":true,"from":"actor-revision","to":"actor-dag"},
+        {"highlight":"flow-actor-runtime","label":"runtime 校验 final 后才把 Operation DAG 交给执行引擎","packet":true,"from":"actor-dag","to":"actor-runtime"}
+      ]'
+        >
+          <div class="flow-actors" aria-label="CapabilityPlan 编译数据流">
+            <div class="flow-actor" id="flow-actor-profile">
+              <div class="flow-actor-icon">P</div>
+              <span>ProfileDecision<br /><small>+ Capture Binding</small></span>
+            </div>
+            <div class="flow-actor" id="flow-actor-facts">
+              <div class="flow-actor-icon">F</div>
+              <span>Accepted Facts<br /><small>PRD · Risk · Policy</small></span>
+            </div>
+            <div class="flow-actor" id="flow-actor-compiler">
+              <div class="flow-actor-icon">C</div>
+              <span>Compiler<br /><small>Resolve + Closure</small></span>
+            </div>
+            <div class="flow-actor" id="flow-actor-revision">
+              <div class="flow-actor-icon">R</div>
+              <span>Revision<br /><small>Provisional / Final</small></span>
+            </div>
+            <div class="flow-actor" id="flow-actor-dag">
+              <div class="flow-actor-icon">D</div>
+              <span>Operation DAG<br /><small>Active nodes only</small></span>
+            </div>
+            <div class="flow-actor" id="flow-actor-runtime">
+              <div class="flow-actor-icon">K</div>
+              <span>Runtime<br /><small>Final guard</small></span>
+            </div>
+          </div>
+          <div class="flow-packet" id="flow-packet" aria-hidden="true"></div>
+          <div class="flow-step-label" id="flow-label" aria-live="polite">点击“下一步”开始追踪</div>
+          <div class="flow-controls">
+            <button class="btn flow-next-btn" type="button">下一步</button>
+            <button class="btn secondary flow-reset-btn" type="button">重置</button>
+            <span class="flow-progress" aria-live="polite"></span>
+          </div>
+        </div>
+
+        <aside class="callout callout-info key">
+          <p class="callout-label">关键区分</p>
+          <p>
+            <strong>ProfileDefinition</strong> 是协议注册表；<strong>ProfileDecision</strong>
+            是这个项目的选择；<strong>CapabilityPlan</strong> 是针对某次 operation
+            、由当时事实编译出的可审计运行图。
+          </p>
+        </aside>
+      </section>
+
+      <section class="lesson-screen lesson-section" id="profiles" aria-labelledby="profiles-title">
+        <p class="screen-number screen-kicker">02 · 能力物化</p>
+        <h2 id="profiles-title">三档 Profile，同一根 Kernel 脊柱</h2>
+        <p class="screen-intro">
+          用下方的原生折叠面板比较图形。“条件”不是“随机”：它必须由
+          Policy、风险或用户激活的确定输入来解析。
+        </p>
+
+        <aside class="callout callout-info">
+          <p class="callout-label">读图约定</p>
+          <p>
+            Lite 展示完整默认脊柱；Standard 与 Governed 只突出档位增加的能力节点。完整 Kernel 仍包含
+            <code>capture → capability_decision → plan → context → execute → verify → snapshot</code
+            >。
+          </p>
+        </aside>
+
+        <div class="profile-accordion architecture-stack">
+          <details class="card">
+            <summary>
+              <span class="profile-name">Lite</span
+              ><span class="profile-summary">5 项均为 conditional</span>
+            </summary>
+            <div class="dag-strip component-row" aria-label="Lite 默认 DAG">
+              <span class="dag-node component-chip kernel">Capture</span
+              ><span class="dag-arrow">→</span>
+              <span class="dag-node component-chip kernel">Decision</span
+              ><span class="dag-arrow">→</span>
+              <span class="dag-node component-chip kernel">Plan</span
+              ><span class="dag-arrow">→</span>
+              <span class="dag-node component-chip kernel">Context</span
+              ><span class="dag-arrow">→</span>
+              <span class="dag-node component-chip kernel">Execute</span
+              ><span class="dag-arrow">→</span>
+              <span class="dag-node component-chip kernel">Verify</span
+              ><span class="dag-arrow">→</span>
+              <span class="dag-node component-chip kernel">Snapshot</span>
+            </div>
+            <p>
+              默认只有 Kernel 脊柱。若激活 <code>strict_tdd</code>，依赖闭包会连带激活
+              <code>design_governance</code> 和 <code>impact_analysis</code>。
+            </p>
+          </details>
+          <details class="card" open>
+            <summary>
+              <span class="profile-name">Standard</span
+              ><span class="profile-summary">Impact / Design / Evaluate 必需</span>
+            </summary>
+            <div class="dag-strip component-row" aria-label="Standard 最终 DAG 的能力差异摘录">
+              <span class="dag-node component-chip kernel">Capture</span
+              ><span class="dag-arrow">→</span>
+              <span class="dag-node component-chip module">Impact</span
+              ><span class="dag-arrow">→</span>
+              <span class="dag-node component-chip module">Design</span
+              ><span class="dag-arrow">→</span>
+              <span class="dag-node component-chip kernel">Plan</span
+              ><span class="dag-arrow">→</span>
+              <span class="dag-node component-chip kernel accent">Execute + TDD</span
+              ><span class="dag-arrow">→</span>
+              <span class="dag-node component-chip module">Evaluate</span
+              ><span class="dag-arrow">→</span>
+              <span class="dag-node component-chip kernel">Snapshot</span>
+            </div>
+            <p>
+              <code>strict_tdd</code> 是唯一法定 deferred 点：默认在 provisional 等待已接受的
+              DesignSet，然后在 final 修订中绑定测试策略。上图表示未被 Policy 禁止时的最终图。
+            </p>
+          </details>
+          <details class="card">
+            <summary>
+              <span class="profile-name">Governed</span
+              ><span class="profile-summary">5 项能力均必需</span>
+            </summary>
+            <div class="dag-strip component-row" aria-label="Governed DAG 的能力差异摘录">
+              <span class="dag-node component-chip module">Impact</span
+              ><span class="dag-arrow">→</span>
+              <span class="dag-node component-chip module">Design</span
+              ><span class="dag-arrow">→</span>
+              <span class="dag-node component-chip kernel accent">Execute + TDD</span
+              ><span class="dag-arrow">→</span>
+              <span class="dag-node component-chip module">Evaluate</span
+              ><span class="dag-arrow">→</span>
+              <span class="dag-node component-chip kernel">Snapshot</span
+              ><span class="dag-arrow">→</span>
+              <span class="dag-node component-chip module">Audit</span>
+            </div>
+            <p>
+              全部模块物化。<code>strict_tdd</code> 还要求
+              <code>isolated_workspace_provider</code> 和
+              <code>structured_gate_provider</code>；缺任何一个都在编译时 fail closed。
+            </p>
+          </details>
+        </div>
+
+        <div class="source-map-grid reference-grid" aria-label="关键源码地图">
+          <a
+            class="source-map-card reference-card"
+            href="../../packages/core/src/profile/definitions.ts#L43"
+          >
+            <span class="source-file">definitions.ts:43–65</span>
+            <strong>三档 Profile 定义</strong>
+          </a>
+          <a
+            class="source-map-card reference-card"
+            href="../../packages/core/src/capability/registry.ts#L48"
+          >
+            <span class="source-file">registry.ts:48–99</span>
+            <strong>模块依赖与 Provider 声明</strong>
+          </a>
+          <a
+            class="source-map-card reference-card"
+            href="../../packages/core/src/capability/dag.ts#L70"
+          >
+            <span class="source-file">dag.ts:70–127</span>
+            <strong>活动能力到 Operation DAG</strong>
+          </a>
+        </div>
+      </section>
+
+      <section
+        class="lesson-screen lesson-section"
+        id="standard-boundary"
+        aria-labelledby="boundary-title"
+      >
+        <p class="screen-number screen-kicker">03 · STANDARD 两阶段边界</p>
+        <h2 id="boundary-title">Deferred 表示“还不能决定”，不表示“可以先跑”</h2>
+        <div
+          class="revision-timeline pattern-cards"
+          aria-label="Standard CapabilityPlan 两阶段时间线"
+        >
+          <article class="timeline-card pattern-card provisional">
+            <span class="timeline-step">REVISION 1</span>
+            <h3>Provisional</h3>
+            <p><code>strict_tdd = deferred</code><br /><code>source = awaiting_design_set</code></p>
+            <span class="status-chip status-pill status-partial">不授予 Plan 执行权</span>
+          </article>
+          <div class="timeline-bridge" aria-hidden="true">
+            已接受 DesignSet<br />→ test_strategy_digest →
+          </div>
+          <article class="timeline-card pattern-card final">
+            <span class="timeline-step">REVISION 2</span>
+            <h3>Final</h3>
+            <p>
+              <code>strict_tdd = active</code><br /><code>source = design_set_finalization</code>
+            </p>
+            <span class="status-chip status-pill status-connected">可进入 Plan</span>
+          </article>
+        </div>
+        <p class="fine-print">
+          上述是 Standard 默认路径。若 Policy 明确禁止这项 conditional 能力，它可最终解析为
+          inactive；这不改变“provisional 不能进入 Plan”的守卫。
+        </p>
+
+        <div class="translation-heading">
+          <div>
+            <p class="card-kicker">真实源码 · 原样 9 行</p>
+            <h3>Final guard 把意图变成执行边界</h3>
+          </div>
+          <a
+            class="source-link source-ref"
+            href="../../packages/core/src/capability/compiler.ts#L611"
+            >packages/core/src/capability/compiler.ts:611–619</a
+          >
+        </div>
+        <div class="translation-block animate-in">
+          <div class="translation-code">
+            <span class="translation-label">CODE</span>
+            <pre><code>export function assertCapabilityPlanFinal(plan: CapabilityPlanRecord): void {
+  const deferred = plan.capabilities.filter((entry) =&gt; entry.resolution === "deferred");
+  if (plan.compilation_stage !== "final" || deferred.length &gt; 0) {
+    throw new CapabilityCompileError(
+      "plan_not_final",
+      `capability plan revision ${plan.revision} is ${plan.compilation_stage}; only a final plan may enter plan`,
+    );
+  }
+}</code></pre>
+          </div>
+          <div class="translation-english">
+            <span class="translation-label">中文翻译</span>
+            <div class="translation-lines">
+              <p class="tl">这个函数只做一件事：判断这张运行图是否有权进入 Plan。</p>
+              <p class="tl">它先找出仍未解析的能力；“暂时不知道”不能被当成“默认关闭”。</p>
+              <p class="tl">只要修订还不是 final，或者仍有 deferred，条件就失败。</p>
+              <p class="tl">失败不降级，而是抛出类型化的 <code>plan_not_final</code>。</p>
+              <p class="tl">结果：暂定决策可以被记录和完善，但不能偷渡成执行授权。</p>
+            </div>
+          </div>
+        </div>
+
+        <aside class="callout callout-warning warn">
+          <p class="callout-label">双层守卫</p>
+          <p>
+            编译器会拒绝没有 provisional 血缘、没有已接受 DesignSet、输入漂移或缺 Provider 的 final
+            修订；<code>capability-dag-runtime.ts:76–100</code> 又在 Plan runner 前调用这个 final
+            guard。
+          </p>
+        </aside>
+      </section>
+
+      <section class="lesson-screen lesson-section" id="source-lab" aria-labelledby="lab-title">
+        <p class="screen-number screen-kicker">04 · 源码实验</p>
+        <h2 id="lab-title">用一条可复跑命令验证编译与路由</h2>
+        <p class="screen-intro">
+          这个实验同时覆盖 dependency closure、Standard 两阶段解析、Provider closure、DAG 物化和
+          runtime final guard。先自己预测结果，再运行。
+        </p>
+
+        <div class="source-lab" data-lab-id="lesson-0002-capability-plan">
+          <div class="lab-head">
+            <div>
+              <p class="card-kicker">REPEATABLE CHECK</p>
+              <h3>Capability compiler + routing</h3>
+            </div>
+            <span class="lab-status" aria-live="polite">尚未标记</span>
+          </div>
+          <pre
+            class="command-block lab-command"
+          ><code data-command>pnpm exec vitest run packages/core/test/capability/compiler.test.ts packages/runtime/test/orchestration/capability-plan-routing.test.ts</code></pre>
+          <div class="lab-actions">
+            <button class="btn secondary" type="button" data-copy-command>复制命令</button>
+            <button class="btn" type="button" data-mark-lab>我已复跑并核对</button>
+          </div>
+          <div class="evidence-result lab-baseline">
+            <span class="status-chip status-pill status-connected">当前基线</span>
+            <p>
+              <strong><code>05871fc</code> · 2 test files passed · 31/31 tests passed</strong>
+            </p>
+            <p>本课创建时实测；未来提交需重跑，不应把这个数字当成永久事实。</p>
+          </div>
+        </div>
+
+        <div class="decision-exercise">
+          <p class="card-kicker">决策练习 · 先回答再展开</p>
+          <h3>Standard 现在能进入 Plan 吗？</h3>
+          <p>
+            已有 provisional CapabilityPlan，DesignSet 也已接受；但
+            <code>structured_gate_provider</code> 未提供。团队想先用 provisional 进入 Plan，之后再补
+            Provider。请说出第一个阻断点和不能绕过的第二个阻断点。
+          </p>
+          <textarea
+            aria-label="写下你的架构判定"
+            placeholder="先写：结论 → 第一个阻断点 → 第二个阻断点 → 正确下一步"
+          ></textarea>
+          <div class="button-row">
+            <button class="btn secondary" type="button" data-show-rubric>写完了，对照判定</button>
+          </div>
+          <div
+            class="decision-answer decision-rubric"
+            data-rubric="不能。正常 finalization 会把 strict_tdd 解析为 active，Provider closure 首先因缺 structured_gate_provider 拒绝编译，类型为 missing_provider。即使团队尝试跳过 finalization，runtime 在 Plan runner 前还会将 provisional 阻断为 capability_plan_not_final。正确动作是先配齐 Provider，再编译一个绑定 DesignSet 且 supersede provisional 的 final 修订。"
+            aria-live="polite"
+            hidden
+          ></div>
+        </div>
+      </section>
+
+      <section class="lesson-screen lesson-section" id="quiz" aria-labelledby="quiz-title">
+        <p class="screen-number screen-kicker">05 · 检索练习</p>
+        <h2 id="quiz-title">不看上文，做三次架构判断</h2>
+        <p class="screen-intro">这些题测的不是文件名记忆，而是你能否预测新场景中的图和失败边界。</p>
+
+        <div class="quiz-container" id="quiz-lesson-0002">
+          <div
+            class="quiz-question-block"
+            data-correct="option-b"
+            data-explanation-right="正确。provisional 本身不授予 Plan 权限；Standard 必须用符合血缘与 DesignSet 绑定的 final 修订取代它。"
+            data-explanation-wrong="再看 final guard：系统不会把 deferred 当作 inactive，也不会自动降级 Profile。"
+          >
+            <h3 class="quiz-question">
+              1. Standard 的 provisional 修订仍有 deferred，但团队希望开始 Plan。系统应该怎样处理？
+            </h3>
+            <div class="quiz-options">
+              <button
+                class="quiz-option"
+                type="button"
+                data-value="option-a"
+                onclick="selectOption(this)"
+              >
+                <span class="quiz-option-radio" aria-hidden="true"></span
+                ><span>跳过 TDD 子图，继续执行后续节点</span>
+              </button>
+              <button
+                class="quiz-option"
+                type="button"
+                data-value="option-b"
+                onclick="selectOption(this)"
+              >
+                <span class="quiz-option-radio" aria-hidden="true"></span
+                ><span>在 Plan 入口阻断，先完成最终修订</span>
+              </button>
+              <button
+                class="quiz-option"
+                type="button"
+                data-value="option-c"
+                onclick="selectOption(this)"
+              >
+                <span class="quiz-option-radio" aria-hidden="true"></span
+                ><span>按 Lite 配置降级，并继续当前运行</span>
+              </button>
+            </div>
+            <div class="quiz-feedback" aria-live="polite"></div>
+          </div>
+
+          <div
+            class="quiz-question-block"
+            data-correct="option-a"
+            data-explanation-right="正确。strict_tdd 依赖 design_governance，后者又依赖 impact_analysis；闭包会把两者一起拉入。"
+            data-explanation-wrong="查看模块依赖，而不是只看 Lite 的默认图。conditional 能力被合法激活后，仍必须满足依赖闭包。"
+          >
+            <h3 class="quiz-question">
+              2. Lite 通过合法风险激活启用 strict_tdd，并且所需 Provider 齐全。哪个图变化正确？
+            </h3>
+            <div class="quiz-options">
+              <button
+                class="quiz-option"
+                type="button"
+                data-value="option-a"
+                onclick="selectOption(this)"
+              >
+                <span class="quiz-option-radio" aria-hidden="true"></span
+                ><span>激活 Design 与 Impact，再物化 TDD 子图</span>
+              </button>
+              <button
+                class="quiz-option"
+                type="button"
+                data-value="option-b"
+                onclick="selectOption(this)"
+              >
+                <span class="quiz-option-radio" aria-hidden="true"></span
+                ><span>只激活 TDD，其他能力仍保持原状</span>
+              </button>
+              <button
+                class="quiz-option"
+                type="button"
+                data-value="option-c"
+                onclick="selectOption(this)"
+              >
+                <span class="quiz-option-radio" aria-hidden="true"></span
+                ><span>拒绝编译，因为 Lite 永远不允许 TDD</span>
+              </button>
+            </div>
+            <div class="quiz-feedback" aria-live="polite"></div>
+          </div>
+
+          <div
+            class="quiz-question-block"
+            data-correct="option-c"
+            data-explanation-right="正确。Standard final 必须是 provisional 的单次 superseding 修订；只有 DesignSet 不能证明两次决策没有漂移。"
+            data-explanation-wrong="这里检查的不只是 DesignSet 是否存在，还要检查 final 是否继承同一 operation、ProfileDecision、requirement、risk、policy 和 baseline。"
+          >
+            <h3 class="quiz-question">
+              3. Standard 有已接受 DesignSet，但 final 请求没有指向 provisional 修订。哪个结果符合
+              fail-closed？
+            </h3>
+            <div class="quiz-options">
+              <button
+                class="quiz-option"
+                type="button"
+                data-value="option-a"
+                onclick="selectOption(this)"
+              >
+                <span class="quiz-option-radio" aria-hidden="true"></span
+                ><span>直接最终化：已有设计与测试策略摘要</span>
+              </button>
+              <button
+                class="quiz-option"
+                type="button"
+                data-value="option-b"
+                onclick="selectOption(this)"
+              >
+                <span class="quiz-option-radio" aria-hidden="true"></span
+                ><span>回退临时态：等待 Provider 自动补齐</span>
+              </button>
+              <button
+                class="quiz-option"
+                type="button"
+                data-value="option-c"
+                onclick="selectOption(this)"
+              >
+                <span class="quiz-option-radio" aria-hidden="true"></span
+                ><span>拒绝最终化：缺少被取代的临时修订</span>
+              </button>
+            </div>
+            <div class="quiz-feedback" aria-live="polite"></div>
+          </div>
+
+          <div class="quiz-actions">
+            <button
+              class="quiz-check-btn btn"
+              type="button"
+              onclick="checkQuiz('quiz-lesson-0002')"
+            >
+              检查答案
+            </button>
+            <button
+              class="quiz-reset-btn btn secondary"
+              type="button"
+              onclick="resetQuiz('quiz-lesson-0002')"
+            >
+              重新作答
+            </button>
+          </div>
+        </div>
+
+        <div class="completion-check completion-box">
+          <p class="card-kicker">完成标准</p>
+          <h3>你能用一份 CapabilityPlan JSON 回答四个问题</h3>
+          <ol>
+            <li>每项能力是 active、inactive 还是 deferred，根据来自哪里？</li>
+            <li>依赖闭包额外拉入了什么？</li>
+            <li>哪些 Operation DAG 节点实际存在？</li>
+            <li>它现在是否有权进入 Plan，证据是什么？</li>
+          </ol>
+          <div class="button-row">
+            <button class="btn secondary" type="button" data-mark-reviewed>标记本课已复习</button>
+          </div>
+        </div>
+
+        <div class="primary-source next-lesson">
+          <p class="card-kicker">主要资料 · PRIMARY SOURCE</p>
+          <a href="../../packages/core/src/capability/compiler.ts#L410">
+            <strong>Capability Compiler 实现</strong>
+            <span>packages/core/src/capability/compiler.ts:410–619</span>
+          </a>
+          <p>
+            延伸阅读：<a href="../reference/architecture-map.html">Architecture Map</a> ·
+            <a href="../reference/glossary.html">Glossary</a>。任何一步不清楚，直接请教学 Agent
+            用你手上的 CapabilityPlan 逐字段追踪。
+          </p>
+        </div>
+
+        <nav class="lesson-footer lesson-pagination" aria-label="课程导航">
+          <a class="nav-link btn secondary previous" href="0001-系统真相与架构地图.html"
+            >← 上一课：系统真相</a
+          >
+          <a class="nav-link btn secondary home" href="../index.html">返回课程地图</a>
+          <a class="nav-link btn next" href="0003-需求设计计划与TDD追踪链.html"
+            >下一课：TDD 追踪链 →</a
+          >
+        </nav>
+      </section>
+    </main>
+  </body>
+</html>

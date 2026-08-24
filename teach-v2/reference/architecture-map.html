@@ -1,0 +1,265 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>架构地图 · Universal Harness Teach 2.0</title>
+    <link rel="stylesheet" href="../assets/style.css" />
+    <script src="../assets/quiz.js" defer></script>
+  </head>
+  <body>
+    <nav class="site-nav">
+      <div class="site-nav-inner">
+        <a class="nav-brand" href="../index.html">Teach 2.0</a>
+        <div class="nav-links">
+          <a href="glossary.html">术语表</a><a href="verification-playbook.html">验证手册</a
+          ><a href="provider-connectivity-matrix.html">连通矩阵</a>
+        </div>
+      </div>
+    </nav>
+    <main class="page-shell">
+      <header class="reference-hero animate-in">
+        <p class="eyebrow">Reference · 05871fc</p>
+        <h1>一张地图定位所有事实</h1>
+        <p class="reference-subtitle">
+          从输入决策、动态 DAG、工程对象、事件流到三层存储。点击组件查看它的权力边界。
+        </p>
+      </header>
+
+      <section class="lesson-section animate-in">
+        <div>
+          <h2>从决策到运行</h2>
+          <div class="arch-diagram">
+            <div class="arch-zone">
+              <strong class="arch-zone-label">① 决策输入</strong>
+              <div class="arch-components">
+                <button
+                  class="arch-component"
+                  data-desc="项目默认治理档位；只是一项编译输入。"
+                  onclick="showArchDesc(this)"
+                >
+                  ProjectProfile</button
+                ><button
+                  class="arch-component"
+                  data-desc="由 accepted PRD 与上下文产生，决定是否升级能力。"
+                  onclick="showArchDesc(this)"
+                >
+                  Risk</button
+                ><button
+                  class="arch-component"
+                  data-desc="收窄审批、Provider、Gate、预算和失败模式。"
+                  onclick="showArchDesc(this)"
+                >
+                  Policy</button
+                ><button
+                  class="arch-component"
+                  data-desc="由 host 注册并绑定；项目配置只引用，不持有密钥。"
+                  onclick="showArchDesc(this)"
+                >
+                  Provider
+                </button>
+              </div>
+            </div>
+            <div class="flow-arrow">↓</div>
+            <div class="arch-zone">
+              <strong class="arch-zone-label">② final CapabilityPlan</strong>
+              <div class="arch-components">
+                <button
+                  class="arch-component"
+                  data-desc="固定 Kernel 主干始终存在。"
+                  onclick="showArchDesc(this)"
+                >
+                  Kernel</button
+                ><button
+                  class="arch-component"
+                  data-desc="只有 active Module 才向 Operation DAG 贡献节点。"
+                  onclick="showArchDesc(this)"
+                >
+                  Active Modules</button
+                ><button
+                  class="arch-component"
+                  data-desc="Capture scope 与 Operation scope 互不重叠。"
+                  onclick="showArchDesc(this)"
+                >
+                  Model Bindings</button
+                ><button
+                  class="arch-component"
+                  data-desc="provisional 或仍含 deferred 的计划不能进入 Plan。"
+                  onclick="showArchDesc(this)"
+                >
+                  Final Guard
+                </button>
+              </div>
+            </div>
+            <div class="flow-arrow">↓</div>
+            <div class="arch-zone">
+              <strong class="arch-zone-label">③ Capability-aware 纵向闭环</strong>
+              <div class="arch-components">
+                <button
+                  class="arch-component"
+                  data-desc="Intent 经过澄清、Review、Risk 和 Approval 成为 accepted PRD。"
+                  onclick="showArchDesc(this)"
+                >
+                  Capture</button
+                ><button
+                  class="arch-component"
+                  data-desc="活动时运行确定性传播、模型增补、校验与批准。"
+                  onclick="showArchDesc(this)"
+                >
+                  Impact</button
+                ><button
+                  class="arch-component"
+                  data-desc="活动时形成 DesignSet、独立 Review 与人工批准。"
+                  onclick="showArchDesc(this)"
+                >
+                  Design</button
+                ><button
+                  class="arch-component"
+                  data-desc="canonical Assertion 先编译，模型只能建议 Task 分组。"
+                  onclick="showArchDesc(this)"
+                >
+                  Plan</button
+                ><button
+                  class="arch-component"
+                  data-desc="为每个 Task 选择最小、fresh、受预算约束的来源。"
+                  onclick="showArchDesc(this)"
+                >
+                  Context</button
+                ><button
+                  class="arch-component"
+                  data-desc="直接、Agent 或人工执行；strict TDD 是内部子图。"
+                  onclick="showArchDesc(this)"
+                >
+                  Execute</button
+                ><button
+                  class="arch-component"
+                  data-desc="Gate、Evidence、TaskVerdict 与可选 Evaluation 决定完成。"
+                  onclick="showArchDesc(this)"
+                >
+                  Verify</button
+                ><button
+                  class="arch-component"
+                  data-desc="完成后提交权威 Snapshot；Narrative 只是后置投影。"
+                  onclick="showArchDesc(this)"
+                >
+                  Snapshot
+                </button>
+              </div>
+            </div>
+            <div class="arch-description">点击任一组件查看它能决定什么。</div>
+          </div>
+        </div>
+      </section>
+
+      <section class="lesson-section animate-in">
+        <div>
+          <h2>五个职责域</h2>
+          <div class="flow-steps">
+            <div class="flow-step">
+              <div class="flow-step-num">1</div>
+              <strong>权威上下文</strong>
+              <p>Project · Repository · Iteration</p>
+            </div>
+            <div class="flow-arrow">→</div>
+            <div class="flow-step">
+              <div class="flow-step-num">2</div>
+              <strong>意图与设计</strong>
+              <p>Intent · Requirement · DesignSet · CodeArtifact</p>
+            </div>
+            <div class="flow-arrow">→</div>
+            <div class="flow-step">
+              <div class="flow-step-num">3</div>
+              <strong>影响与治理</strong>
+              <p>ImpactSet · Plan · Policy · Approval · Context</p>
+            </div>
+            <div class="flow-arrow">→</div>
+            <div class="flow-step">
+              <div class="flow-step-num">4</div>
+              <strong>执行与验证</strong>
+              <p>Run · Gate · Test · Evidence · Evaluation</p>
+            </div>
+            <div class="flow-arrow">→</div>
+            <div class="flow-step">
+              <div class="flow-step-num">5</div>
+              <strong>反馈修复</strong>
+              <p>Finding · RCA · ImprovementCandidate</p>
+            </div>
+          </div>
+          <div class="callout">
+            <div class="callout-icon">↺</div>
+            <div>
+              <strong>反馈不是旁路修补</strong>
+              <p>
+                Finding 先经过确定性 RCA，必要时接受模型语义候选，再由 Router 把 Change Seed
+                送回最早拥有修改权的上游层。
+              </p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="lesson-section animate-in">
+        <div>
+          <h2>三层存储永不越级</h2>
+          <div class="pattern-cards">
+            <article class="pattern-card" style="border-top: 3px solid var(--color-success)">
+              <h3>Git-native Ledger</h3>
+              <p>
+                <strong>决定完成真相。</strong> 保存 Node、Edge、Lifecycle
+                Event、Approval、Evidence、Capability 与 Snapshot。
+              </p>
+            </article>
+            <article class="pattern-card" style="border-top: 3px solid var(--color-info)">
+              <h3>SQLite Projection</h3>
+              <p>
+                <strong>只加速查询。</strong> 删除后应能从 Ledger
+                确定性重建；缓存状态不能批准或完成任务。
+              </p>
+            </article>
+            <article class="pattern-card" style="border-top: 3px solid var(--color-warning)">
+              <h3>Live Spool</h3>
+              <p>
+                <strong>只展示现在。</strong> 保存 heartbeat、phase、output summary 与 approval
+                waiting；丢失不改变恢复和审计。
+              </p>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section class="lesson-section animate-in">
+        <div>
+          <h2>源码裁决入口</h2>
+          <div class="file-tree">
+            <div class="ft-folder">
+              <span class="ft-name">packages/core/src/schema/</span
+              ><span class="ft-desc"
+                >Node、Edge、Event、Profile、Capability 与 Model Binding 词表</span
+              >
+            </div>
+            <div class="ft-folder">
+              <span class="ft-name">packages/core/src/capability/</span
+              ><span class="ft-desc"
+                >Module registry、依赖闭包、CapabilityPlan 与 Operation DAG 编译</span
+              >
+            </div>
+            <div class="ft-folder">
+              <span class="ft-name">packages/runtime/src/orchestration/</span
+              ><span class="ft-desc"
+                >生产 Coordinator、Capability DAG runner 与 fail-closed 守卫</span
+              >
+            </div>
+            <div class="ft-folder">
+              <span class="ft-name">packages/graph/src/</span
+              ><span class="ft-desc">物化、Impact 传播、双图读口与完整性</span>
+            </div>
+            <div class="ft-folder">
+              <span class="ft-name">docs/evidence/</span
+              ><span class="ft-desc">带 commit 与范围的 dogfood、修复和残余风险证据</span>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+  </body>
+</html>

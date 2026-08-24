@@ -1,0 +1,241 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>术语表 · Universal Harness Teach 2.0</title>
+    <link rel="stylesheet" href="../assets/style.css" />
+    <script src="../assets/quiz.js" defer></script>
+  </head>
+  <body>
+    <nav class="site-nav">
+      <div class="site-nav-inner">
+        <a class="nav-brand" href="../index.html">Teach 2.0</a>
+        <div class="nav-links">
+          <a href="architecture-map.html">架构地图</a
+          ><a href="verification-playbook.html">验证手册</a
+          ><a href="provider-connectivity-matrix.html">连通矩阵</a>
+        </div>
+      </div>
+    </nav>
+    <main class="page-shell">
+      <header class="reference-hero animate-in">
+        <p class="eyebrow">Reference · Print friendly</p>
+        <h1>术语表</h1>
+        <p class="reference-subtitle">
+          课程使用的稳定词汇。定义强调“它拥有什么权力”以及“它不能替代什么”，便于源码评审与验收沟通。
+        </p>
+      </header>
+
+      <section class="lesson-section animate-in">
+        <div>
+          <h2>架构与能力</h2>
+          <div class="pattern-cards">
+            <article class="pattern-card">
+              <h3>ProjectProfile</h3>
+              <p>
+                项目治理档位：Lite、Standard 或 Governed。它是 Capability Compiler
+                的输入，不是一条独立硬编码流水线。
+              </p>
+            </article>
+            <article class="pattern-card">
+              <h3>CapabilityPlan</h3>
+              <p>
+                将 Profile、Risk、Policy、Provider
+                与依赖闭包编译成的权威能力决议，包含活动模块、绑定和 Operation DAG。
+              </p>
+            </article>
+            <article class="pattern-card">
+              <h3>Operation DAG</h3>
+              <p>
+                一次工作流实际执行的有向无环图。未启用模块不产生节点、绑定、Checkpoint 或空结果。
+              </p>
+            </article>
+            <article class="pattern-card">
+              <h3>Kernel</h3>
+              <p>
+                所有 Profile 共享的确定性主干，例如 Capture、Plan、Context、Execute、Verify 与
+                Snapshot。
+              </p>
+            </article>
+            <article class="pattern-card">
+              <h3>Module</h3>
+              <p>
+                由 CapabilityPlan 条件物化的治理能力，例如 Impact、Design、Evaluation、Strict TDD 与
+                Audit。
+              </p>
+            </article>
+            <article class="pattern-card">
+              <h3>Port</h3>
+              <p>
+                模块公开的类型化能力边界。Port 存在只证明“允许连接”，不证明生产代码已连接 Provider
+                或消费者。
+              </p>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section class="lesson-section animate-in">
+        <div>
+          <h2>事实、图与存储</h2>
+          <div class="pattern-cards">
+            <article class="pattern-card">
+              <h3>Node</h3>
+              <p>Graph 中的类型化工程对象，例如 Requirement、Task、Evidence 或 Snapshot。</p>
+            </article>
+            <article class="pattern-card">
+              <h3>Edge</h3>
+              <p>两个 Node 之间的类型化关系。合法端点不代表 Impact Engine 会自动传播。</p>
+            </article>
+            <article class="pattern-card">
+              <h3>Artifact Graph</h3>
+              <p>长期工程知识视图，关注意图、需求、设计、组件、代码和测试怎样关联。</p>
+            </article>
+            <article class="pattern-card">
+              <h3>Execution Graph</h3>
+              <p>运行治理视图，关注 Plan、Task、Context、Run、Gate、Evidence 与恢复记录。</p>
+            </article>
+            <article class="pattern-card">
+              <h3>Ledger</h3>
+              <p>
+                Git-native、append-only 的权威记录。Lifecycle Event、Node、Edge、Approval 与
+                Evidence 由它决定完成真相。
+              </p>
+            </article>
+            <article class="pattern-card">
+              <h3>Projection</h3>
+              <p>
+                从 Ledger 可重建的读侧表示，例如 SQLite、Markdown 或 Dashboard
+                View；投影不能反向升级为事实。
+              </p>
+            </article>
+            <article class="pattern-card">
+              <h3>Live Spool</h3>
+              <p>保存心跳、相位和输出摘要等 Observation Event 的可删除实时层，不参与完成裁决。</p>
+            </article>
+            <article class="pattern-card">
+              <h3>Digest</h3>
+              <p>
+                canonical 内容的稳定摘要。Approval、Context、Evidence 或 Binding 的输入漂移会改变
+                digest 并触发失效。
+              </p>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section class="lesson-section animate-in">
+        <div>
+          <h2>需求、执行与完成</h2>
+          <div class="pattern-cards">
+            <article class="pattern-card">
+              <h3>Criterion</h3>
+              <p>一条原子验收准则。每个 accepted Criterion 恰好编译出一个 canonical Assertion。</p>
+            </article>
+            <article class="pattern-card">
+              <h3>Test seed</h3>
+              <p>由 Criterion 稳定派生的测试图节点，为后续 Assertion 与 Evidence 提供追踪锚点。</p>
+            </article>
+            <article class="pattern-card">
+              <h3>Assertion</h3>
+              <p>Harness 确定性编译的可判定验收义务；模型可以分组，不能创造、合并或删除它。</p>
+            </article>
+            <article class="pattern-card">
+              <h3>TaskTddContract</h3>
+              <p>
+                Task 的不可变 TDD 合同，绑定 Assertion、Test、Design strategy、Plan 与
+                CapabilityPlan digest。
+              </p>
+            </article>
+            <article class="pattern-card">
+              <h3>Evidence</h3>
+              <p>
+                带来源、类型、绑定和 freshness 的结果记录。Agent 自述、日志片段或旧 commit
+                测试不能自动成为当前 Evidence。
+              </p>
+            </article>
+            <article class="pattern-card">
+              <h3>TaskVerdict</h3>
+              <p>
+                逐 Assertion 消费有效 Evidence 后的任务裁决。Provider Run 成功不等于 TaskVerdict
+                通过。
+              </p>
+            </article>
+            <article class="pattern-card">
+              <h3>Snapshot</h3>
+              <p>
+                Iteration 完成后的权威锚点，记录 source commit、ledger
+                commit、Gate、Evaluation、Verdict 与遗留风险。
+              </p>
+            </article>
+            <article class="pattern-card">
+              <h3>Fail closed</h3>
+              <p>
+                输入、绑定或证据不完整时停止并返回 typed blocker，而不是猜测、降级或制造空壳成功。
+              </p>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section class="lesson-section animate-in">
+        <div>
+          <h2>模型治理与状态</h2>
+          <div class="pattern-cards">
+            <article class="pattern-card">
+              <h3>Model Slot</h3>
+              <p>
+                Capability Binding 使用的五个固定槽位：Impact、Design
+                Review、Plan、Feedback、Grounded Synthesis。
+              </p>
+            </article>
+            <article class="pattern-card">
+              <h3>Purpose</h3>
+              <p>
+                Grounded Synthesis 的固定用途：Discovery、Context Enrichment、Approval
+                Brief、Iteration Narrative。
+              </p>
+            </article>
+            <article class="pattern-card">
+              <h3>Provider Binding</h3>
+              <p>
+                将 slot/purpose 与
+                Provider、Prompt、Schema、预算和失败模式绑定的可摘要记录；凭据材料不进入 digest。
+              </p>
+            </article>
+            <article class="pattern-card">
+              <h3>Managed Runner</h3>
+              <p>
+                统一模型调用状态机，只接受编译 Prompt 与 Binding，记录 planned 到 consumed/failed
+                的全过程。
+              </p>
+            </article>
+            <article class="pattern-card">
+              <h3>已连通</h3>
+              <p>
+                当前生产消费点存在，并有当前提交上的自动化或 Ledger
+                证据；仍需注明是仓库内还是外部环境。
+              </p>
+            </article>
+            <article class="pattern-card">
+              <h3>部分连通</h3>
+              <p>接口或生产路径存在，但外部 Provider、完整闭环或发布环境证据尚不完整。</p>
+            </article>
+            <article class="pattern-card">
+              <h3>未连通</h3>
+              <p>只有目标设计、类型或孤立组件，当前生产调用链没有消费者。</p>
+            </article>
+            <article class="pattern-card">
+              <h3>Evidence scope</h3>
+              <p>
+                证据适用的 commit、平台、Provider、Profile、命令和时间范围。脱离 scope
+                的“通过”不能外推。
+              </p>
+            </article>
+          </div>
+        </div>
+      </section>
+    </main>
+  </body>
+</html>
