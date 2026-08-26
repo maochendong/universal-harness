@@ -76,6 +76,196 @@
         </div>
       </section>
 
+      <section class="lesson-section animate-in" id="relation-types">
+        <div>
+          <h2>Relation Type 的业务语言</h2>
+          <p class="section-intro">
+            下面统一按
+            <code>source → target</code>
+            阅读。关系名不是近义词标签；每一种都保留独立的端点类型、审计问题和传播语义。
+          </p>
+          <div class="table-wrap">
+            <table aria-label="关系类型业务语言映射">
+              <thead>
+                <tr>
+                  <th>关系</th>
+                  <th>业务语言</th>
+                  <th>主要审计问题</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><code>DERIVES_FROM</code></td>
+                  <td>当前工件由目标工件推导或演化而来。</td>
+                  <td>它的来源依据是什么？</td>
+                </tr>
+                <tr>
+                  <td><code>SUPERSEDES</code></td>
+                  <td>当前修订正式取代目标的旧精确版本。</td>
+                  <td>哪个旧版本已不再有效？</td>
+                </tr>
+                <tr>
+                  <td><code>GENERATED_BY</code></td>
+                  <td>当前记录或工件由目标 Run、编译器或过程生成。</td>
+                  <td>是谁、在哪次运行中产生它？</td>
+                </tr>
+                <tr>
+                  <td><code>RESUMES</code></td>
+                  <td>当前 Operation 接续目标中断运行的合法前缀。</td>
+                  <td>恢复自哪次运行、可复用到哪里？</td>
+                </tr>
+                <tr>
+                  <td><code>DECOMPOSES_TO</code></td>
+                  <td>上层目标或需求拆解为目标中的下层可执行项。</td>
+                  <td>上层义务被拆成了什么？</td>
+                </tr>
+                <tr>
+                  <td><code>ADDRESSES</code></td>
+                  <td>当前工件或工作回应目标需求、问题或 Finding。</td>
+                  <td>它声称解决哪个问题？</td>
+                </tr>
+                <tr>
+                  <td><code>CONSTRAINED_BY</code></td>
+                  <td>当前对象的合法形状或行为受目标约束。</td>
+                  <td>哪些边界限制了它？</td>
+                </tr>
+                <tr>
+                  <td><code>GOVERNED_BY</code></td>
+                  <td>当前对象的生命周期由目标 Policy 或治理规则控制。</td>
+                  <td>谁拥有治理权？</td>
+                </tr>
+                <tr>
+                  <td><code>SHAPES</code></td>
+                  <td>当前事实影响目标方案的形状，但不表示完整兑现。</td>
+                  <td>什么输入改变了设计取舍？</td>
+                </tr>
+                <tr>
+                  <td><code>REALIZES</code></td>
+                  <td>当前代码工件落地目标设计组件。</td>
+                  <td>设计结构由哪个实现载体承载？</td>
+                </tr>
+                <tr>
+                  <td><code>IMPLEMENTS</code></td>
+                  <td>当前任务落实目标需求、决策或设计义务。</td>
+                  <td>哪项工作负责兑现承诺？</td>
+                </tr>
+                <tr>
+                  <td><code>VERIFIES</code></td>
+                  <td>当前 Test 或 Evidence 检验目标 Assertion/对象。</td>
+                  <td>什么证据检查了这个声称？</td>
+                </tr>
+                <tr>
+                  <td><code>EVALUATES</code></td>
+                  <td>当前 Evaluation 按规则裁判目标工件或运行。</td>
+                  <td>谁按什么准则给出质量判断？</td>
+                </tr>
+                <tr>
+                  <td><code>EXECUTES</code></td>
+                  <td>当前 Run 实际执行目标 Task、Plan 或命令。</td>
+                  <td>哪个运行承担了执行？</td>
+                </tr>
+                <tr>
+                  <td><code>INVOKES</code></td>
+                  <td>当前调用者触发目标 Port、Provider 或 Tool。</td>
+                  <td>生产调用从哪里真正发生？</td>
+                </tr>
+                <tr>
+                  <td><code>PRODUCES</code></td>
+                  <td>当前动作或运行产出目标工件、记录或 Evidence。</td>
+                  <td>这个结果由哪次动作产生？</td>
+                </tr>
+                <tr>
+                  <td><code>SUPPORTS</code></td>
+                  <td>当前 Evidence 增强目标声称的可信度。</td>
+                  <td>哪些证据支持结论？</td>
+                </tr>
+                <tr>
+                  <td><code>REFUTES</code></td>
+                  <td>当前 Evidence 直接否定目标声称。</td>
+                  <td>什么证据证明结论不成立？</td>
+                </tr>
+                <tr>
+                  <td><code>VIOLATES</code></td>
+                  <td>当前对象违反目标 Policy、合同或不变量。</td>
+                  <td>具体破坏了哪条规则？</td>
+                </tr>
+                <tr>
+                  <td><code>CONTAINS</code></td>
+                  <td>当前容器在该版本中包含目标子对象。</td>
+                  <td>对象属于哪个集合或边界？</td>
+                </tr>
+                <tr>
+                  <td><code>SPECIFIES</code></td>
+                  <td>当前合同或设计精确定义目标对象的要求。</td>
+                  <td>目标应满足的精确规范在哪里？</td>
+                </tr>
+                <tr>
+                  <td><code>DEPENDS_ON</code></td>
+                  <td>当前对象要成立或执行，必须先有目标对象。</td>
+                  <td>缺少什么前置条件就不能继续？</td>
+                </tr>
+                <tr>
+                  <td><code>USES_CONTEXT</code></td>
+                  <td>当前 Task/Run 在目标 ContextBundle 的精确版本上执行。</td>
+                  <td>执行时绑定了哪份上下文？</td>
+                </tr>
+                <tr>
+                  <td><code>CAPTURES</code></td>
+                  <td>当前记录收录目标输入事实或外部观察。</td>
+                  <td>哪份记录固定了这项输入？</td>
+                </tr>
+                <tr>
+                  <td><code>BLOCKS</code></td>
+                  <td>当前 blocker 阻止目标对象继续推进。</td>
+                  <td>什么条件正在阻塞谁？</td>
+                </tr>
+                <tr>
+                  <td><code>REQUESTS_APPROVAL_FOR</code></td>
+                  <td>当前 ApprovalRequest 请求放行目标对象的精确版本。</td>
+                  <td>正在申请批准什么？</td>
+                </tr>
+                <tr>
+                  <td><code>RESOLVES</code></td>
+                  <td>当前批准决定处理并结束目标 ApprovalRequest。</td>
+                  <td>哪个请求已被闭合，结果是什么？</td>
+                </tr>
+                <tr>
+                  <td><code>APPROVES</code></td>
+                  <td>当前 Approval 明确放行目标对象的精确版本。</td>
+                  <td>哪个对象 digest 获得授权？</td>
+                </tr>
+                <tr>
+                  <td><code>DIAGNOSED_BY</code></td>
+                  <td>当前 Finding 或失败由目标 RCA/诊断解释。</td>
+                  <td>根因分析在哪里？</td>
+                </tr>
+                <tr>
+                  <td><code>PROPOSES_CHANGE_TO</code></td>
+                  <td>当前 ImprovementCandidate 提议修改目标对象。</td>
+                  <td>建议改什么，而非已经改了什么？</td>
+                </tr>
+                <tr>
+                  <td><code>TRIGGERS</code></td>
+                  <td>当前事件按规则触发目标动作、流程或重新分析。</td>
+                  <td>哪个确定事件启动了下一步？</td>
+                </tr>
+                <tr>
+                  <td><code>MAY_IMPACT</code></td>
+                  <td>当前 ChangeSeed 可能波及目标组件、文件或要求。</td>
+                  <td>候选影响范围包含谁？</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <p class="evidence-boundary">
+            <strong>两组易混关系：</strong><code>REALIZES</code> 回答设计组件由哪个代码工件承载，
+            <code>IMPLEMENTS</code> 回答哪项任务兑现义务；<code>RESOLVES</code>
+            回答请求生命周期是否结束，
+            <code>APPROVES</code> 回答哪个对象版本获得授权。上层可以分组，底层不可合并。
+          </p>
+        </div>
+      </section>
+
       <section class="lesson-section animate-in">
         <div>
           <h2>事实、图与存储</h2>
@@ -220,7 +410,10 @@
             </article>
             <article class="pattern-card">
               <h3>部分连通</h3>
-              <p>接口或生产路径存在，但外部 Provider、完整闭环或发布环境证据尚不完整。</p>
+              <p>
+                至少一部分链路有实现或历史真实证据，但当前提交的外部
+                Provider、完整闭环或发布环境证据尚不完整；必须注明具体维度，不能理解为“代码接了一半”。
+              </p>
             </article>
             <article class="pattern-card">
               <h3>未连通</h3>

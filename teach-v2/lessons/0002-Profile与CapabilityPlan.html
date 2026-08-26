@@ -49,17 +49,17 @@
           <span class="badge time">约 20 分钟</span>
           <span class="status-chip status-pill status-connected">已连通 · 仓库内链路</span>
         </div>
-        <p class="eyebrow">LESSON 0002 · ONE CONCEPT</p>
+        <p class="eyebrow">LESSON 0002 · COMPILER CONTRACT</p>
         <h1 id="lesson-title">
           <span
             class="term"
             data-definition="Profile：协议注册的能力档位；它提供编译默认值，不是一套独立流程。"
             >Profile</span
           >
-          不是流水线，而是一张运行图的编译输入
+          如何被编译成可执行的 CapabilityPlan
         </h1>
         <p class="lead">
-          你要获得的能力只有一个：给定 Profile、风险、<span
+          本课从编译器设计而不是 Profile 使用方式出发：给定 Profile、风险、<span
             class="term"
             data-definition="Policy：系统必须遵守的确定性约束，可要求或禁止某项能力。"
             >Policy</span
@@ -67,8 +67,31 @@
           与
           <span class="term" data-definition="Provider：为运行提供特定基础设施或模型能力的实现。"
             >Provider</span
-          >，预测哪些节点会存在，以及运行会在哪里被阻断。
+          >，追踪能力解析、依赖闭包、Provider 闭包、修订状态和 runtime guard 如何共同决定可执行面。
         </p>
+
+        <div class="design-question">
+          <span class="design-question-label">本课设计命题</span>
+          <p>
+            如何在编译期决定“哪些能力有权存在”，并确保 provisional 决策、缺失 Provider
+            或摘要漂移无法偷渡到 Plan 阶段？
+          </p>
+        </div>
+
+        <div class="invariant-grid" aria-label="CapabilityPlan 核心不变量">
+          <article class="invariant-card">
+            <strong>确定输入</strong>
+            <p>Profile、Risk、Policy、baseline 与 Provider 都以摘要绑定到修订。</p>
+          </article>
+          <article class="invariant-card">
+            <strong>闭包完整</strong>
+            <p>active capability 必须带齐依赖和 required Provider，否则编译失败。</p>
+          </article>
+          <article class="invariant-card">
+            <strong>Final 才授权</strong>
+            <p>仍有 deferred 的 provisional 只能记录决策，不能进入 Plan runner。</p>
+          </article>
+        </div>
 
         <div class="comparison-grid pattern-cards" aria-label="双轨呈现">
           <article class="comparison-card pattern-card target-track">
@@ -96,17 +119,17 @@
         </div>
 
         <aside class="callout callout-info aha">
-          <p class="callout-label">AHA</p>
+          <p class="callout-label">架构审查结论</p>
           <p>
-            Profile
-            像舞台剧本的版本：它不亲自演出，而是决定哪些角色上场、谁必须等谁，以及开演前必须检查哪些设备。
+            ProfileDefinition 是协议默认值，ProfileDecision 是项目选择，CapabilityPlan 才是
+            operation-scoped 编译产物；三者不能共享一个“配置”概念，否则无法表达修订与授权边界。
           </p>
         </aside>
       </section>
 
       <section class="lesson-screen lesson-section" id="compile-flow" aria-labelledby="flow-title">
         <p class="screen-number screen-kicker">01 · 数据流</p>
-        <h2 id="flow-title">从决策到运行：一次可回放的编译</h2>
+        <h2 id="flow-title">生产调用链：从决策输入到 Runtime 路由</h2>
         <p class="screen-intro">
           点击“下一步”，跟着真实产物向右移动。注意：<abbr
             class="term"
@@ -177,7 +200,7 @@
 
       <section class="lesson-screen lesson-section" id="profiles" aria-labelledby="profiles-title">
         <p class="screen-number screen-kicker">02 · 能力物化</p>
-        <h2 id="profiles-title">三档 Profile，同一根 Kernel 脊柱</h2>
+        <h2 id="profiles-title">ProfileDefinition 只改变能力解析，不复制 Kernel</h2>
         <p class="screen-intro">
           用下方的原生折叠面板比较图形。“条件”不是“随机”：它必须由
           Policy、风险或用户激活的确定输入来解析。
@@ -270,27 +293,40 @@
         </div>
 
         <div class="source-map-grid reference-grid" aria-label="关键源码地图">
-          <a
-            class="source-map-card reference-card"
-            href="../../packages/core/src/profile/definitions.ts#L43"
-          >
-            <span class="source-file">definitions.ts:43–65</span>
-            <strong>三档 Profile 定义</strong>
-          </a>
-          <a
-            class="source-map-card reference-card"
-            href="../../packages/core/src/capability/registry.ts#L48"
-          >
-            <span class="source-file">registry.ts:48–99</span>
-            <strong>模块依赖与 Provider 声明</strong>
-          </a>
-          <a
-            class="source-map-card reference-card"
-            href="../../packages/core/src/capability/dag.ts#L70"
-          >
-            <span class="source-file">dag.ts:70–127</span>
-            <strong>活动能力到 Operation DAG</strong>
-          </a>
+          <article class="source-map-card reference-card">
+            <span class="source-file">协议默认值</span>
+            <strong
+              ><a href="../../packages/core/src/profile/definitions.ts#L43"
+                >definitions.ts:43–65</a
+              ></strong
+            >
+            <p>
+              编译器读取 Lite/Standard/Governed 的 capability resolution 默认值；输出不是
+              DAG，也不授予执行权。审查重点是档位差异是否只表现为数据。
+            </p>
+          </article>
+          <article class="source-map-card reference-card">
+            <span class="source-file">依赖与基础设施声明</span>
+            <strong
+              ><a href="../../packages/core/src/capability/registry.ts#L48"
+                >registry.ts:48–99</a
+              ></strong
+            >
+            <p>
+              dependency closure 与 Provider closure 读取模块注册表；缺 required Provider
+              时必须阻断。该文件证明约束已声明，不证明当前环境已提供实现。
+            </p>
+          </article>
+          <article class="source-map-card reference-card">
+            <span class="source-file">运行图物化</span>
+            <strong
+              ><a href="../../packages/core/src/capability/dag.ts#L66">dag.ts:66–127</a></strong
+            >
+            <p>
+              compiler 将 active set 交给 builder；输出 OperationDagNode 列表供 runtime
+              消费。inactive 能力必须零节点、零 Binding、零 checkpoint。
+            </p>
+          </article>
         </div>
       </section>
 
@@ -328,21 +364,41 @@
           inactive；这不改变“provisional 不能进入 Plan”的守卫。
         </p>
 
-        <div class="translation-heading">
-          <div>
-            <p class="card-kicker">真实源码 · 原样 9 行</p>
-            <h3>Final guard 把意图变成执行边界</h3>
+        <div class="source-dossier">
+          <span class="source-dossier-label">核心源码 1 · 编译期 Final guard</span>
+          <div class="source-context-grid">
+            <article class="source-context-card" data-kind="caller">
+              <strong>调用者</strong>
+              <p>编译完成后的校验与 runtime Plan wrapper 都调用该函数。</p>
+            </article>
+            <article class="source-context-card" data-kind="output">
+              <strong>输出</strong>
+              <p>成功无返回值；失败抛出类型化 <code>CapabilityCompileError</code>。</p>
+            </article>
+            <article class="source-context-card" data-kind="guard">
+              <strong>不变量</strong>
+              <p><code>compilation_stage=final</code> 且 deferred 数量为零，两个条件缺一不可。</p>
+            </article>
+            <article class="source-context-card" data-kind="authority">
+              <strong>证据边界</strong>
+              <p>证明守卫实现存在；是否在生产链调用还要继续读 runtime wrapper。</p>
+            </article>
           </div>
-          <a
-            class="source-link source-ref"
-            href="../../packages/core/src/capability/compiler.ts#L611"
-            >packages/core/src/capability/compiler.ts:611–619</a
-          >
-        </div>
-        <div class="translation-block animate-in">
-          <div class="translation-code">
-            <span class="translation-label">CODE</span>
-            <pre><code>export function assertCapabilityPlanFinal(plan: CapabilityPlanRecord): void {
+          <div class="translation-heading">
+            <div>
+              <p class="card-kicker">真实源码 · 原样 9 行</p>
+              <h3>Final guard 把意图变成执行边界</h3>
+            </div>
+            <a
+              class="source-link source-ref"
+              href="../../packages/core/src/capability/compiler.ts#L611"
+              >packages/core/src/capability/compiler.ts:611–619</a
+            >
+          </div>
+          <div class="translation-block animate-in">
+            <div class="translation-code">
+              <span class="translation-label">CODE</span>
+              <pre><code>export function assertCapabilityPlanFinal(plan: CapabilityPlanRecord): void {
   const deferred = plan.capabilities.filter((entry) =&gt; entry.resolution === "deferred");
   if (plan.compilation_stage !== "final" || deferred.length &gt; 0) {
     throw new CapabilityCompileError(
@@ -351,15 +407,16 @@
     );
   }
 }</code></pre>
-          </div>
-          <div class="translation-english">
-            <span class="translation-label">中文翻译</span>
-            <div class="translation-lines">
-              <p class="tl">这个函数只做一件事：判断这张运行图是否有权进入 Plan。</p>
-              <p class="tl">它先找出仍未解析的能力；“暂时不知道”不能被当成“默认关闭”。</p>
-              <p class="tl">只要修订还不是 final，或者仍有 deferred，条件就失败。</p>
-              <p class="tl">失败不降级，而是抛出类型化的 <code>plan_not_final</code>。</p>
-              <p class="tl">结果：暂定决策可以被记录和完善，但不能偷渡成执行授权。</p>
+            </div>
+            <div class="translation-english">
+              <span class="translation-label">中文翻译</span>
+              <div class="translation-lines">
+                <p class="tl">这个函数只做一件事：判断这张运行图是否有权进入 Plan。</p>
+                <p class="tl">它先找出仍未解析的能力；“暂时不知道”不能被当成“默认关闭”。</p>
+                <p class="tl">只要修订还不是 final，或者仍有 deferred，条件就失败。</p>
+                <p class="tl">失败不降级，而是抛出类型化的 <code>plan_not_final</code>。</p>
+                <p class="tl">结果：暂定决策可以被记录和完善，但不能偷渡成执行授权。</p>
+              </div>
             </div>
           </div>
         </div>
@@ -372,6 +429,69 @@
             guard。
           </p>
         </aside>
+
+        <div class="source-dossier">
+          <span class="source-dossier-label">核心源码 2 · Runtime 二次授权检查</span>
+          <div class="source-context-grid">
+            <article class="source-context-card" data-kind="caller">
+              <strong>调用者与输入</strong>
+              <p>
+                <code>WorkflowDagEngine</code> 即将执行 Plan 节点时调用包装后的
+                runner，并闭包捕获当前 CapabilityPlan。
+              </p>
+            </article>
+            <article class="source-context-card" data-kind="output">
+              <strong>下游</strong>
+              <p>
+                final 时委托真实 <code>planRunner(context)</code>；否则返回标准 blocked outcome。
+              </p>
+            </article>
+            <article class="source-context-card" data-kind="guard">
+              <strong>失败语义</strong>
+              <p>异常不会退回 legacy 路径，而被翻译为 <code>capability_plan_not_final</code>。</p>
+            </article>
+            <article class="source-context-card" data-kind="authority">
+              <strong>不能推断</strong>
+              <p>守卫通过只授权进入 Plan；它不证明节点完成或 Snapshot 已提交。</p>
+            </article>
+          </div>
+          <div class="code-translation">
+            <figure class="code-panel">
+              <figcaption>
+                原样源码 ·
+                <a href="../../packages/runtime/src/orchestration/capability-dag-runtime.ts#L76"
+                  >packages/runtime/src/orchestration/capability-dag-runtime.ts:76–90</a
+                >
+              </figcaption>
+              <pre><code>      const planRunner = dependencies.runners.kernel["plan"];
+      const guardedRunners: DagRunnerRegistry = {
+        ...dependencies.runners,
+        kernel: {
+          ...dependencies.runners.kernel,
+          plan: (context) =&gt; {
+            try {
+              assertCapabilityPlanFinal(plan);
+            } catch {
+              return {
+                status: "blocked",
+                reason: "capability_plan_not_final",
+                detail: "a provisional or deferred CapabilityPlan cannot enter Plan",
+              };
+            }</code></pre>
+            </figure>
+            <aside class="translation-panel translation-english">
+              <span class="translation-label">逻辑块讲解</span>
+              <ol>
+                <li>先保存原始 Plan runner，避免覆盖依赖注册。</li>
+                <li>只包装 Kernel 的 <code>plan</code> 槽位，其他 runner 保持原状。</li>
+                <li>每次真正调用 Plan 前重新校验，防止调用者绕开编译阶段。</li>
+                <li>
+                  所有 final-check 失败被收敛成稳定的 blocked reason，供 DAG engine 和证据层消费。
+                </li>
+              </ol>
+            </aside>
+          </div>
+        </div>
       </section>
 
       <section class="lesson-screen lesson-section" id="source-lab" aria-labelledby="lab-title">
@@ -598,6 +718,13 @@
             <strong>Capability Compiler 实现</strong>
             <span>packages/core/src/capability/compiler.ts:410–619</span>
           </a>
+          <p>
+            这里是本课编译链的主入口：调用者提交 Profile、风险、Policy、baseline、Provider
+            与修订阶段；函数输出带输入摘要、能力解析、DAG、invalidation graph 和 Binding 的
+            CapabilityPlan。阅读时重点检查 dependency/provider closure、provisional→final
+            supersession 与类型化错误；文件存在本身不证明 Runtime 已消费，因此还要与上面的
+            <code>createCapabilityDagRuntime()</code> 对读。
+          </p>
           <p>
             延伸阅读：<a href="../reference/architecture-map.html">Architecture Map</a> ·
             <a href="../reference/glossary.html">Glossary</a>。任何一步不清楚，直接请教学 Agent

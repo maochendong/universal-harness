@@ -411,6 +411,12 @@ h3 {
   color: var(--color-warning);
 }
 
+.status-target {
+  border-color: rgba(212, 75, 43, 0.32);
+  background: var(--color-accent-light);
+  color: var(--color-accent);
+}
+
 .status-disconnected,
 .status-blocked,
 .status-error {
@@ -775,6 +781,178 @@ h3 {
   color: #a6adc8;
   font-family: var(--font-mono);
   font-size: 0.7rem;
+}
+
+.design-question {
+  position: relative;
+  margin: var(--space-8) 0;
+  border: 1px solid var(--color-border);
+  border-left: 5px solid var(--color-accent);
+  border-radius: var(--radius-lg);
+  padding: var(--space-6);
+  background: linear-gradient(135deg, rgba(253, 238, 233, 0.88), rgba(255, 253, 250, 0.94));
+  box-shadow: var(--shadow-md);
+}
+
+.design-question-label,
+.source-dossier-label,
+.trace-ledger-label {
+  display: block;
+  margin-bottom: var(--space-2);
+  color: var(--color-accent);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.design-question h2,
+.design-question h3 {
+  max-width: 28ch;
+}
+
+.design-question p:last-child {
+  margin-bottom: 0;
+}
+
+.invariant-grid,
+.source-context-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: var(--space-4);
+  margin: var(--space-8) 0;
+}
+
+.invariant-card,
+.source-context-card {
+  min-width: 0;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-5);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-sm);
+}
+
+.invariant-card {
+  border-top: 4px solid var(--color-info);
+}
+
+.invariant-card h3,
+.source-context-card h4 {
+  margin-bottom: var(--space-2);
+}
+
+.invariant-card p,
+.source-context-card p {
+  margin: 0;
+  color: var(--color-text-secondary);
+  font-size: var(--text-sm);
+}
+
+.source-dossier {
+  position: relative;
+  left: 50%;
+  width: min(1120px, calc(100vw - 2rem));
+  margin: var(--space-10) 0;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  padding: var(--space-6);
+  background: rgba(255, 253, 250, 0.9);
+  box-shadow: var(--shadow-lg);
+  transform: translateX(-50%);
+}
+
+.source-dossier > header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-4);
+  margin-bottom: var(--space-5);
+}
+
+.source-dossier h3 {
+  max-width: 38ch;
+}
+
+.source-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+}
+
+.source-meta span,
+.source-meta a {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-full);
+  padding: var(--space-1) var(--space-3);
+  background: var(--color-bg-warm);
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  text-decoration: none;
+}
+
+.source-context-card[data-kind="guard"] {
+  border-color: rgba(201, 59, 59, 0.35);
+  background: var(--color-error-light);
+}
+
+.source-context-card[data-kind="authority"] {
+  border-color: rgba(42, 123, 155, 0.35);
+  background: var(--color-info-light);
+}
+
+.trace-ledger {
+  display: grid;
+  gap: var(--space-3);
+  margin: var(--space-8) 0;
+  border-left: 3px solid var(--color-accent-muted);
+  padding-left: var(--space-6);
+}
+
+.trace-item {
+  position: relative;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-4) var(--space-5);
+  background: var(--color-surface);
+}
+
+.trace-item::before {
+  content: "";
+  position: absolute;
+  top: 1.35rem;
+  left: calc(-1 * var(--space-6) - 8px);
+  width: 13px;
+  height: 13px;
+  border: 3px solid var(--color-bg);
+  border-radius: 50%;
+  background: var(--color-accent);
+}
+
+.trace-item strong {
+  display: block;
+  margin-bottom: var(--space-1);
+}
+
+.trace-item p {
+  margin: 0;
+  color: var(--color-text-secondary);
+  font-size: var(--text-sm);
+}
+
+.evidence-boundary {
+  margin: var(--space-6) 0;
+  border: 1px dashed var(--color-info);
+  border-radius: var(--radius-md);
+  padding: var(--space-5);
+  background: var(--color-info-light);
+}
+
+.evidence-boundary strong {
+  color: var(--color-info);
 }
 
 .code-keyword {
@@ -1433,6 +1611,12 @@ tr:last-child td {
     min-height: auto;
     break-inside: avoid;
     padding: 12mm 0;
+  }
+
+  .source-dossier {
+    left: auto;
+    width: auto;
+    transform: none;
   }
 
   .animate-in {

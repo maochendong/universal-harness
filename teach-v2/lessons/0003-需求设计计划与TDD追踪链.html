@@ -33,18 +33,41 @@
         aria-labelledby="lesson-title"
       >
         <div class="screen-inner">
-          <p class="eyebrow">第 3 课 · 追踪主线</p>
-          <h1 id="lesson-title">一条需求，什么时候才算真正兑现？</h1>
+          <p class="eyebrow">第 3 课 · TRACEABILITY CONTRACT</p>
+          <h1 id="lesson-title">验收身份如何穿过设计、计划与 Strict TDD</h1>
           <p class="lede">
-            答案不是“代码写完了”，也不是“测试绿了”。你要能沿着
+            本课从可证明性设计出发。核心问题不是“代码写完了吗”，而是如何沿着
             <abbr
               class="term"
               title="血缘：一条事实从何而来、经过哪些绑定、最终被谁消费的可追踪关系"
               data-definition="一条事实从何而来、经过哪些绑定、最终被谁消费的可追踪关系"
               >血缘</abbr
             >
-            回到原子验收标准，证明它没有在设计、计划或 TDD 执行中被换掉。
+            回到原子验收标准，证明业务义务没有在设计、计划或 TDD 执行中被换掉。
           </p>
+
+          <div class="design-question">
+            <span class="design-question-label">本课设计命题</span>
+            <p>
+              如何为每条 Criterion 生成稳定且可旋转的 Assertion 身份，并让 Planner、TaskTddContract
+              与 TDD Evidence 只能传递这份身份，不能重新解释验收语义？
+            </p>
+          </div>
+
+          <div class="invariant-grid" aria-label="追踪链核心不变量">
+            <article class="invariant-card">
+              <strong>身份可重算</strong>
+              <p>Assertion id 只由 Criterion id 与 semantic digest 生成。</p>
+            </article>
+            <article class="invariant-card">
+              <strong>覆盖恰一次</strong>
+              <p>每条 accepted Criterion 恰有一个 criterion Assertion 和一个 Task owner。</p>
+            </article>
+            <article class="invariant-card">
+              <strong>证据同源</strong>
+              <p>Red、Green、Verdict 必须绑定同一合同、测试补丁和目标 Assertion。</p>
+            </article>
+          </div>
 
           <div class="tangible-win hero-panel" role="note">
             <strong>本课的唯一胜利</strong>
@@ -63,12 +86,15 @@
           </div>
 
           <aside class="callout callout-aha">
-            <span class="callout-label">Aha</span>
-            <p>这更像一次包裹交接：每一站都要扫描同一张运单。包裹到了，但运单断了，仍不能签收。</p>
+            <span class="callout-label">架构审查结论</span>
+            <p>
+              每一层可以增加执行信息，但不能改变 Criterion
+              的语义身份；任一层无法证明血缘时，最早的确定性边界必须 fail closed。
+            </p>
           </aside>
 
           <a class="continue-link btn" href="#lineage"
-            >沿着运单走一遍 <span aria-hidden="true">↓</span></a
+            >沿生产调用链审查绑定 <span aria-hidden="true">↓</span></a
           >
         </div>
       </section>
@@ -76,7 +102,7 @@
       <section class="lesson-section lesson-screen" id="lineage" aria-labelledby="lineage-title">
         <div class="screen-inner wide">
           <p class="eyebrow">Screen 2 · 交互追踪链</p>
-          <h2 id="lineage-title">点击“下一步”，看责任怎样向下传递</h2>
+          <h2 id="lineage-title">生产调用链：每一层增加什么绑定</h2>
           <p>
             这里不把
             <abbr
@@ -156,7 +182,7 @@
       <section class="lesson-section lesson-screen" id="source" aria-labelledby="source-title">
         <div class="screen-inner">
           <p class="eyebrow">Screen 3 · Code ↔ 中文</p>
-          <h2 id="source-title">Assertion 不由 Planner 自由发明</h2>
+          <h2 id="source-title">Assertion Compiler 拥有身份公式，Planner 只拥有分配权</h2>
           <p>
             <abbr
               class="term"
@@ -168,15 +194,40 @@
             TypeScript 语法，而是“每条 Criterion 都通过同一公式获得身份”。
           </p>
 
-          <div class="code-translation">
-            <figure class="code-panel">
-              <figcaption>
-                真实源码 ·
-                <a href="../../packages/core/src/plan/assertions.ts#L58"
-                  >packages/core/src/plan/assertions.ts:58–66</a
-                >
-              </figcaption>
-              <pre><code>  return criteria.map((criterion) =&gt; {
+          <div class="source-dossier">
+            <span class="source-dossier-label">核心源码 1 · Criterion → Assertion 编译</span>
+            <div class="source-context-grid">
+              <article class="source-context-card" data-kind="caller">
+                <strong>调用者与输入</strong>
+                <p>
+                  Plan 准备阶段提交 accepted criteria，以及 DesignSet 可选的 primary strategy 映射。
+                </p>
+              </article>
+              <article class="source-context-card" data-kind="output">
+                <strong>输出与消费者</strong>
+                <p>
+                  每条 Criterion 生成一个 descriptor，随后由 coverage validator 与 Planner
+                  分配逻辑消费。
+                </p>
+              </article>
+              <article class="source-context-card" data-kind="guard">
+                <strong>身份不变量</strong>
+                <p>id 只依赖 Criterion id + semantic digest；无关 Criterion 插入不会旋转旧身份。</p>
+              </article>
+              <article class="source-context-card" data-kind="authority">
+                <strong>证据边界</strong>
+                <p>证明身份生成规则；不证明 descriptor 已被唯一 Task 持有或 TDD 已运行。</p>
+              </article>
+            </div>
+            <div class="code-translation">
+              <figure class="code-panel">
+                <figcaption>
+                  真实源码 ·
+                  <a href="../../packages/core/src/plan/assertions.ts#L58"
+                    >packages/core/src/plan/assertions.ts:58–66</a
+                  >
+                </figcaption>
+                <pre><code>  return criteria.map((criterion) =&gt; {
     const strategy =
       options?.primary_strategies?.[`${criterion.criterion_id}#${criterion.test_node_id}`];
     return {
@@ -185,25 +236,26 @@
         criterion_semantic_digest: criterion.criterion_semantic_digest,
       }),
       assertion_kind: "criterion_assertion",</code></pre>
-            </figure>
+              </figure>
 
-            <aside class="translation-panel translation-english" aria-label="源码的逐段中文翻译">
-              <span class="translation-label">这段代码在说</span>
-              <ol>
-                <li>
-                  <code>criteria.map</code>：输入有几条原子
-                  Criterion，就逐条编译，不把两条悄悄合并。
-                </li>
-                <li>
-                  <code>primary_strategies</code>：如果设计治理已给 Criterion/Test
-                  对指定主策略，把它带上；没有就不伪造。
-                </li>
-                <li>
-                  <code>criterionAssertionId</code>：身份只由 Criterion id 与语义 digest
-                  按固定公式生成。
-                </li>
-              </ol>
-            </aside>
+              <aside class="translation-panel translation-english" aria-label="源码的逐段中文翻译">
+                <span class="translation-label">这段代码在说</span>
+                <ol>
+                  <li>
+                    <code>criteria.map</code>：输入有几条原子
+                    Criterion，就逐条编译，不把两条悄悄合并。
+                  </li>
+                  <li>
+                    <code>primary_strategies</code>：如果设计治理已给 Criterion/Test
+                    对指定主策略，把它带上；没有就不伪造。
+                  </li>
+                  <li>
+                    <code>criterionAssertionId</code>：身份只由 Criterion id 与语义 digest
+                    按固定公式生成。
+                  </li>
+                </ol>
+              </aside>
+            </div>
           </div>
 
           <aside class="callout callout-aha">
@@ -214,20 +266,130 @@
             </p>
           </aside>
 
-          <div class="source-links" aria-label="本课主要源码">
-            <strong>继续读主源</strong>
-            <a href="../../packages/runtime/src/planning/execution-plan.ts#L258"
-              >ExecutionPlan 编译入口 · execution-plan.ts:258</a
-            >
-            <a href="../../packages/runtime/src/orchestration/kernel-coordinator.ts#L2430"
-              >TaskTddContract 血缘 · kernel-coordinator.ts:2430</a
-            >
-            <a href="../../packages/runtime/src/tdd/controller.ts#L13"
-              >TDD 证据状态机 · controller.ts:13</a
-            >
-            <a href="../../packages/runtime/src/tdd/execution-runner.ts#L200"
-              >Red 解锁生产写入 · execution-runner.ts:200</a
-            >
+          <div class="source-map-grid reference-grid" aria-label="本课生产链源码地图">
+            <article class="source-map-card reference-card">
+              <strong
+                ><a href="../../packages/runtime/src/planning/execution-plan.ts#L258"
+                  >execution-plan.ts:258</a
+                ></strong
+              >
+              <p>
+                Planner 接收 canonical descriptors 并编译 ExecutionPlan；输出 Task
+                分配。审查点是它只能分配既有 Assertion，不能生成 Criterion 身份。
+              </p>
+            </article>
+            <article class="source-map-card reference-card">
+              <strong
+                ><a href="../../packages/runtime/src/orchestration/kernel-coordinator.ts#L2430"
+                  >kernel-coordinator.ts:2430</a
+                ></strong
+              >
+              <p>
+                Kernel 从 Plan、accepted PRD、DesignSet 与 final CapabilityPlan 编译
+                TaskTddContract；任何 lineage 缺失返回 <code>binding_drift</code>。
+              </p>
+            </article>
+            <article class="source-map-card reference-card">
+              <strong
+                ><a href="../../packages/runtime/src/tdd/controller.ts#L13"
+                  >controller.ts:13</a
+                ></strong
+              >
+              <p>
+                状态机只接受 Baseline→Red→Green→Refactor
+                的合法迁移；证明阶段顺序受控，不单独证明测试语义命中目标。
+              </p>
+            </article>
+            <article class="source-map-card reference-card">
+              <strong
+                ><a href="../../packages/runtime/src/tdd/execution-runner.ts#L200"
+                  >execution-runner.ts:200</a
+                ></strong
+              >
+              <p>
+                Runner 消费 immutable contract；只有 accepted Red digest 才解锁 production write
+                grant。输出是结构化 Evidence，不是自由文本完成声明。
+              </p>
+            </article>
+          </div>
+
+          <div class="source-dossier">
+            <span class="source-dossier-label">核心源码 2 · TaskTddContract 编译入口</span>
+            <div class="source-context-grid">
+              <article class="source-context-card" data-kind="caller">
+                <strong>调用者与输入</strong>
+                <p>
+                  Kernel Coordinator 在 strict_tdd 子图存在时调用；输入来自 final
+                  CapabilityPlan、Plan、accepted PRD 与 DesignSet。
+                </p>
+              </article>
+              <article class="source-context-card" data-kind="output">
+                <strong>输出与下游</strong>
+                <p>为每个 Task 持久化 immutable contract，供 StrictTddExecutionPort 执行。</p>
+              </article>
+              <article class="source-context-card" data-kind="guard">
+                <strong>失败语义</strong>
+                <p>
+                  子图未激活直接返回；子图激活却缺任一 accepted input 时抛
+                  <code>binding_drift</code>。
+                </p>
+              </article>
+              <article class="source-context-card" data-kind="authority">
+                <strong>不能推断</strong>
+                <p>合同编译成功只证明输入血缘闭合；Red/Green 和 Verdict 仍需后续 Evidence。</p>
+              </article>
+            </div>
+            <div class="code-translation">
+              <figure class="code-panel">
+                <figcaption>
+                  原样源码 ·
+                  <a href="../../packages/runtime/src/orchestration/kernel-coordinator.ts#L2430"
+                    >packages/runtime/src/orchestration/kernel-coordinator.ts:2430–2454</a
+                  >
+                </figcaption>
+                <pre><code>/**
+ * Compile the accepted DesignSet test strategy into one immutable contract
+ * per Task. The planner never invents TDD applicability: every field below
+ * is traced through Task Assertion -&gt; accepted Test seed -&gt; Criterion -&gt;
+ * Requirement -&gt; primary accepted test_strategy asset.
+ */
+async function compileTaskTddContracts(ctx: PipelineContext): Promise&lt;void&gt; {
+  const capabilityPlan = ctx.capabilityPlan;
+  if (
+    capabilityPlan === undefined ||
+    !capabilityPlan.operation_dag.nodes.some(
+      (node) =&gt; node.node_id === "execute" &amp;&amp; node.subgraph === "strict_tdd",
+    )
+  ) {
+    return;
+  }
+  const plan = ctx.plan ?? loadPlan(ctx);
+  const designSet = ctx.designSet ?? loadAcceptedDesignSet(ctx);
+  const acceptedPrd = acceptedPrdForOperation(ctx);
+  if (plan === undefined || designSet === undefined || acceptedPrd === undefined) {
+    throw new OrchestrationError(
+      "binding_drift",
+      "strict_tdd contract compilation requires accepted PRD, DesignSet and final Plan",
+    );
+  }</code></pre>
+              </figure>
+              <aside class="translation-panel translation-english">
+                <span class="translation-label">逻辑块讲解</span>
+                <ol>
+                  <li>注释先声明 authority boundary：Planner 不拥有 TDD applicability。</li>
+                  <li>
+                    第一段检查运行图是否真的含 strict_tdd 子图，避免为 inactive 能力生成残留合同。
+                  </li>
+                  <li>
+                    Plan、DesignSet、PRD 可以从 context 或权威读取路径取得，但语义必须是
+                    accepted/final。
+                  </li>
+                  <li>
+                    任一输入缺失都归一化为 <code>binding_drift</code>，禁止猜测策略或继续执行。
+                  </li>
+                </ol>
+              </aside>
+            </div>
           </div>
         </div>
       </section>

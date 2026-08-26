@@ -29,6 +29,11 @@
           ><span class="status-pill status-partial">部分连通：链路存在但外部证据不足</span
           ><span class="status-pill status-disconnected">未连通：无生产消费点</span>
         </div>
+        <p class="evidence-boundary">
+          <strong>本矩阵中的“当前外部部分连通”：</strong>仓库内生产链与历史真实调用均有证据，但
+          <code>05871fc</code> 在当前凭据环境没有重新调用真实
+          Provider。它既不是“生产代码只接了一半”，也不是“从未连通过”。
+        </p>
       </header>
 
       <section class="lesson-section animate-in">
