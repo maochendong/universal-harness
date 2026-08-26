@@ -3,473 +3,259 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta
-      name="description"
-      content="Universal Harness 第 1 课：从 Schema、Capability DAG 与存储权威边界审查系统架构。"
-    />
-    <title>0001 · 系统真相与架构地图 | Universal Harness 课程 2.0</title>
+    <meta name="description" content="第 1 课：建立 Universal Harness 的全局技术架构。" />
+    <title>0001 · 系统真相与架构地图</title>
     <link rel="stylesheet" href="../assets/style.css" />
     <script src="../assets/quiz.js" defer></script>
     <script src="../assets/source-lab.js" defer></script>
   </head>
-  <body class="lesson-page" data-lesson-id="0001">
-    <a class="skip-link" href="#lesson-main">跳到课程正文</a>
-    <header class="topbar lesson-topbar" aria-label="课程导航">
+  <body class="lesson-page traditional-lesson" data-lesson-id="0001">
+    <a class="skip-link" href="#start">跳到课程内容</a>
+    <header class="topbar">
       <div class="topbar-inner">
-        <a class="brand course-home" href="../index.html">Universal Harness · 课程 2.0</a>
-        <nav class="nav-links" aria-label="课程进度">
+        <a class="brand" href="../index.html">Universal Harness · Teach 2.0</a>
+        <nav class="nav-links">
           <a href="../index.html">课程地图</a
-          ><a href="../reference/architecture-map.html">架构地图</a
-          ><span aria-current="page">01 / 04</span>
+          ><a href="../reference/architecture-map.html">架构参考</a><span>01 / 04</span>
         </nav>
+        <span class="page-progress" role="progressbar" aria-label="本课阅读进度"></span>
       </div>
     </header>
 
-    <main id="lesson-main" class="lesson-main lesson-shell">
-      <section
-        class="lesson-section lesson-screen lesson-hero hero-screen"
-        aria-labelledby="lesson-title"
-      >
-        <p class="eyebrow">第 1 课 · 架构审查视角 · 约 30 分钟</p>
-        <h1 id="lesson-title">系统真相：Schema、运行图与权威存储</h1>
-        <p class="lead lede">
-          本课不从 CLI 功能清单出发，而从三个架构问题出发：系统允许表达什么事实、一次 Operation
-          实际物化哪些能力、多个存储副本冲突时谁有裁决权。
+    <main class="lesson-main lesson-shell">
+      <section class="lesson-section lesson-hero" id="start">
+        <nav class="breadcrumb">
+          <a href="../index.html">课程地图</a><span>/</span><span>第 1 课</span>
+        </nav>
+        <div class="lesson-meta">
+          <span class="badge">全局总览</span><span class="badge time">约 15 分钟</span
+          ><span class="status-pill status-connected">仓库内架构已验证</span>
+        </div>
+        <p class="eyebrow">LESSON 0001 · GLOBAL MODEL</p>
+        <h1>先看懂整台机器：系统真相与架构地图</h1>
+        <p class="lead">
+          本课不钻某个函数。先回答三个根问题：系统为什么存在、一次迭代怎样流动、谁有资格宣布“完成”。后面所有源码细节都必须能放回这张地图。
         </p>
-        <div class="design-question">
-          <span class="design-question-label">本课设计命题</span>
-          <p>
-            如何让“系统支持某种能力”成为一个可由类型、编译产物和权威记录共同验证的命题，而不是文档中的愿景？
-          </p>
+
+        <div class="orientation-strip" aria-label="全局课程路径">
+          <div class="orientation-track">
+            <span class="orientation-node current">全局系统</span
+            ><span class="orientation-arrow">→</span>
+            <span class="orientation-node">编译运行图</span><span class="orientation-arrow">→</span>
+            <span class="orientation-node">验收追踪</span><span class="orientation-arrow">→</span>
+            <span class="orientation-node">模型连通</span><span class="orientation-arrow">→</span>
+            <span class="orientation-node">治理与发布</span>
+          </div>
         </div>
-        <div class="invariant-grid" aria-label="本课核心不变量">
-          <article class="invariant-card">
-            <strong>词表封闭</strong>
-            <p>Node、Edge、Event 的类型由 Schema 枚举；调用者不能用自由文本扩展业务语义。</p>
-          </article>
-          <article class="invariant-card">
-            <strong>能力零残留</strong>
-            <p>未激活模块不得产生节点、Binding、Checkpoint 或可调用入口。</p>
-          </article>
-          <article class="invariant-card">
-            <strong>权威单向</strong>
-            <p>Ledger 可以物化 Projection 和观察层；后两者不能反向改写权威历史。</p>
-          </article>
+
+        <div class="lesson-win">
+          <strong>本课唯一胜利</strong>你能不看页面，画出“事实与意图 → 编译 → 执行 → 裁决 →
+          Ledger”的主链，并正确解释 Kernel 与 Module 的区别。
         </div>
-        <div class="cards dual-track">
-          <article class="pattern-card target-track">
-            <span class="status-pill status-target">目标设计</span>
+      </section>
+
+      <section class="lesson-section" id="purpose">
+        <p class="screen-kicker">01 · SYSTEM PURPOSE</p>
+        <h2>它不是“让 Agent 写代码”，而是“让迭代可审计”</h2>
+        <p class="section-intro">
+          普通 Agent Loop 关心下一步做什么；Universal Harness
+          还要回答：为什么允许做、依据是什么、失败如何阻断、完成由什么证据证明。
+        </p>
+        <div class="definition-grid">
+          <article class="definition-card">
+            <h3>Kernel</h3>
             <p>
-              Graph 是工程事实模型，CapabilityPlan 是本次运行授权，Ledger 是完成裁决的唯一权威。
+              所有 Profile 都共享的固定生命周期脊柱：Capture → Capability Decision → Plan → Context
+              → Execute → Verify → Snapshot。它控制流程秩序和完成边界。
             </p>
+          </article>
+          <article class="definition-card">
+            <h3>Module</h3>
+            <p>
+              按 CapabilityPlan 激活的可选子图，例如
+              Impact、Design、Evaluate、Audit。未激活时，运行图里根本不应出现对应节点。
+            </p>
+          </article>
+          <article class="definition-card">
+            <h3>CapabilityPlan</h3>
+            <p>
+              根据 Profile、风险、Policy 与 Provider 事实编译出的 operation-scoped
+              运行图。它不是偏好配置，而是本次迭代的能力授权。
+            </p>
+          </article>
+          <article class="definition-card">
+            <h3>Evidence 与 Ledger</h3>
+            <p>
+              Evidence 证明某个声称；Snapshot 汇总完成状态；Git-native Ledger
+              才是权威事实。Dashboard 与数据库只是投影。
+            </p>
+          </article>
+        </div>
+        <aside class="callout callout-info">
+          <p class="callout-label">设计不变量</p>
+          <p>
+            Profile 改变的是被激活的子图，不是复制出另一套 Kernel。因此 Lite、Standard、Governed
+            必须共享相同的生命周期语义。
+          </p>
+        </aside>
+      </section>
+
+      <section class="lesson-section" id="main-chain">
+        <p class="screen-kicker">02 · THE MAIN CHAIN</p>
+        <h2>一次迭代从意图变成可提交事实</h2>
+        <div class="throughline" aria-label="迭代主链">
+          <article class="throughline-node">
+            <strong>1. 事实与意图</strong><br /><small
+              >Requirement · Risk · Policy · Provider</small
+            >
+          </article>
+          <article class="throughline-node">
+            <strong>2. 编译</strong><br /><small>ProfileDecision → CapabilityPlan</small>
+          </article>
+          <article class="throughline-node">
+            <strong>3. 受控执行</strong><br /><small>Kernel + activated Modules</small>
+          </article>
+          <article class="throughline-node">
+            <strong>4. 裁决</strong><br /><small>Verify · Evaluate · Verdict</small>
+          </article>
+          <article class="throughline-node">
+            <strong>5. 提交</strong><br /><small>Snapshot → Ledger</small>
+          </article>
+        </div>
+        <div class="lesson-recap">
+          <div>
+            <strong>模型的地位</strong>模型可提出 PRD、Design、Plan 或分析候选；它不直接写入事实层。
+          </div>
+          <div>
+            <strong>确定性层的地位</strong>Schema、Compiler、Validator、Policy 与 Evidence
+            决定候选能否继续。
+          </div>
+          <div>
+            <strong>投影层的地位</strong>SQLite、Markdown、Dashboard、Live Spool
+            帮助查询和观察，但不能反向定义真相。
+          </div>
+        </div>
+
+        <div class="prediction-card">
+          <strong>先做一次架构预测：</strong>如果 Dashboard 显示任务成功，但 Ledger 中没有通过的
+          Verdict 和已提交 Snapshot，你会把哪一边当成事实？为什么？
+        </div>
+
+        <aside class="callout callout-warning">
+          <p class="callout-label">答案</p>
+          <p>
+            以 Ledger 为准。Dashboard 是可重建的投影；它可以延迟、过期或来自未提交状态。完成必须回到
+            Evidence、Verdict 与 Snapshot 的权威链。
+          </p>
+        </aside>
+      </section>
+
+      <section class="lesson-section" id="dual-track">
+        <p class="screen-kicker">03 · TARGET VS CURRENT</p>
+        <h2>目标设计和当前事实要同时看，但不能混写</h2>
+        <div class="comparison-grid pattern-cards">
+          <article class="pattern-card target-track">
+            <p class="card-kicker">目标设计</p>
+            <h3>全链路由契约和证据闭环</h3>
+            <p>每个能力都应从声明、Binding、运行消费者一直追到生产 Evidence 和发布环境证明。</p>
           </article>
           <article class="pattern-card current-track">
-            <span class="status-pill status-connected">当前实现 · 仓库内已连通</span>
+            <p class="card-kicker">当前实现</p>
+            <h3>仓库内主链已成形</h3>
             <p>
-              Schema、DAG builder、runtime guard 与文档一致性测试均存在；结论绑定源码基线
-              <code>05871fc</code>，不外推到外部 Provider 或发布环境。
+              核心编译、DAG、严格 TDD 和模型装配有代码与测试；当前外部 Provider
+              和跨平台闭环仍需单独复验。
             </p>
           </article>
         </div>
-      </section>
-
-      <section class="lesson-section lesson-screen" id="model" aria-labelledby="model-title">
-        <p class="screen-kicker">01 · 类型系统就是业务边界</p>
-        <h2 id="model-title">Graph 不是任意关系图：Edge 本身也是受治理的事实</h2>
         <p>
-          Node 表达工程对象；Edge 不只是两个 id
-          的连线，还携带关系类型、生命周期状态、来源、血缘、置信度和内容摘要。因此关系可以被提议、接受、拒绝和取代，也能参与审计与漂移检查。
-        </p>
-        <div class="source-dossier">
-          <span class="source-dossier-label">核心源码 1 · Edge 持久化契约</span>
-          <div class="source-context-grid">
-            <article class="source-context-card" data-kind="caller">
-              <strong>调用者与输入</strong>
-              <p>Graph 写入、反序列化与验证边界提交一个候选 Edge record。</p>
-            </article>
-            <article class="source-context-card" data-kind="output">
-              <strong>输出与消费者</strong>
-              <p>通过 Schema 的 <code>EdgeRecord</code> 才能进入图存储、传播和治理逻辑。</p>
-            </article>
-            <article class="source-context-card" data-kind="guard">
-              <strong>守卫与失败语义</strong>
-              <p>未知关系/状态、越界 confidence 或缺失 provenance 均在结构边界拒绝。</p>
-            </article>
-            <article class="source-context-card" data-kind="authority">
-              <strong>证据边界</strong>
-              <p>证明持久化形状受约束；不证明某条具体 Edge 已被接受或已进入生产数据。</p>
-            </article>
-          </div>
-          <div class="code-translation">
-            <figure class="code-panel">
-              <figcaption>
-                原样源码 ·
-                <a href="../../packages/core/src/schema/edge.ts#L49"
-                  >packages/core/src/schema/edge.ts:49–63</a
-                >
-              </figcaption>
-              <pre><code>export const EDGE_STATUSES = ["proposed", "accepted", "rejected", "superseded"] as const;
-
-export const EdgeSchema = strictObject({
-  ...persistedRecordProperties("edge"),
-  id: IdentifierSchema,
-  type: enumerated(RELATION_TYPES),
-  source_id: IdentifierSchema,
-  target_id: IdentifierSchema,
-  status: enumerated(EDGE_STATUSES),
-  source: SourceSchema,
-  provenance: ProvenanceSchema,
-  confidence: Type.Number({ minimum: 0, maximum: 1 }),
-  digest: DigestSchema,
-  extensions: Type.Optional(ExtensionsSchema),
-});</code></pre>
-            </figure>
-            <aside class="translation-panel translation-english" aria-label="EdgeSchema 逐段讲解">
-              <span class="translation-label">逐段读法</span>
-              <ol>
-                <li><code>EDGE_STATUSES</code> 把关系生命周期收敛成四种法定状态。</li>
-                <li><code>strictObject</code> 禁止调用者塞入未声明字段，避免旁路业务契约。</li>
-                <li>
-                  <code>type/source_id/target_id</code> 固定关系语义与方向；方向不能靠展示层猜。
-                </li>
-                <li>
-                  <code>source + provenance + digest</code> 让关系可归属、可重放、可检查漂移。
-                </li>
-                <li><code>confidence</code> 只接受 0–1；它表达证据强度，不授予接受状态。</li>
-              </ol>
-            </aside>
-          </div>
-        </div>
-        <div class="trace-ledger">
-          <span class="trace-ledger-label">关系类型怎样读成业务语义</span>
-          <div class="trace-item">
-            <code>REALIZES</code>：代码工件落地一个设计组件，连接“结构定义”与“实现载体”。
-          </div>
-          <div class="trace-item">
-            <code>IMPLEMENTS</code>：执行任务兑现需求、决策或设计义务，连接“工作”与“承诺”。
-          </div>
-          <div class="trace-item">
-            <code>RESOLVES</code>：批准决定结束批准请求，表达请求生命周期已经闭合。
-          </div>
-          <div class="trace-item">
-            <code>APPROVES</code>：批准记录放行某对象的精确版本，表达被授权对象及摘要。
-          </div>
-        </div>
-        <p class="evidence-boundary">
-          <strong>为什么不能合并：</strong><code>REALIZES</code> 与 <code>IMPLEMENTS</code> 的
-          source kind、审计问题和影响传播方向不同；<code>RESOLVES</code> 闭合请求，<code
-            >APPROVES</code
-          >
-          授权对象版本。合并会丢失“处理了哪个流程”与“放行了哪个对象”的独立证据。
-          <a href="../reference/glossary.html#relation-types"
-            >查看全部 32 种 Relation Type 的业务语言 →</a
-          >
+          因此“当前外部部分连通”不是说接口只有一半。它表示：仓库内生产装配和消费者存在，但当前提交缺少真实外部调用的同强度证据。第
+          4 课会沿这条链精确拆开。
         </p>
       </section>
 
-      <section class="lesson-section lesson-screen" id="dag" aria-labelledby="dag-title">
-        <p class="screen-kicker">02 · 编译产物决定可调用面</p>
-        <h2 id="dag-title">CapabilityPlan 不是配置快照，而是一次 Operation 的运行授权</h2>
-        <p>
-          全量架构只说明系统可能拥有什么。编译器先解析 active capability set，再由
-          <code>buildOperationDag()</code> 物化当前 Operation 的节点和数据依赖。
-        </p>
-        <div
-          class="flow-animation"
-          data-steps='[{"from":"flow-facts","to":"flow-plan","label":"Profile、Risk、Policy、Provider 编译为 final CapabilityPlan","detail":"输入摘要和能力解析被钉在同一修订上。"},{"from":"flow-plan","to":"flow-dag","label":"active set 物化 Operation DAG","detail":"inactive module 不留下可调用节点。"},{"from":"flow-dag","to":"flow-runtime","label":"runtime 校验 plan 与 operation binding","detail":"不匹配或 provisional 均 fail closed。"}]'
-          aria-label="CapabilityPlan 到 Runtime 调用链"
-        >
-          <div class="flow-actors">
-            <article class="flow-actor" id="flow-facts">
-              <strong>Accepted facts</strong><small>Profile · Risk · Policy</small>
-            </article>
-            <article class="flow-actor" id="flow-plan">
-              <strong>CapabilityPlan</strong><small>resolution + digest</small>
-            </article>
-            <article class="flow-actor" id="flow-dag">
-              <strong>Operation DAG</strong><small>active nodes only</small>
-            </article>
-            <article class="flow-actor" id="flow-runtime">
-              <strong>Runtime</strong><small>binding + final guard</small>
-            </article>
-          </div>
-          <span class="flow-packet" aria-hidden="true"></span>
-          <div class="flow-step-label" aria-live="polite">点击“下一步”追踪编译产物。</div>
-          <div class="flow-controls">
-            <button class="primary-button flow-next-btn" type="button">下一步</button
-            ><button class="secondary-button flow-reset-btn" type="button">重置</button
-            ><span class="flow-progress" aria-live="polite"></span>
-          </div>
-        </div>
-        <div class="source-dossier">
-          <span class="source-dossier-label">核心源码 2 · 活动能力物化</span>
-          <div class="source-context-grid">
-            <article class="source-context-card" data-kind="caller">
-              <strong>调用者</strong>
-              <p>Capability compiler 将解析后的 active set 交给 DAG builder。</p>
-            </article>
-            <article class="source-context-card" data-kind="output">
-              <strong>产物</strong>
-              <p>返回有顺序依赖、消费 Binding 与产出 Binding 的节点数组。</p>
-            </article>
-            <article class="source-context-card" data-kind="guard">
-              <strong>关键不变量</strong>
-              <p>Impact/Design 只有 active 时存在；Plan 的依赖和输入随之同步扩展。</p>
-            </article>
-            <article class="source-context-card" data-kind="authority">
-              <strong>不能推断</strong>
-              <p>能构图不等于节点已运行；运行事实仍要看 journal、Event 与 Ledger Evidence。</p>
-            </article>
-          </div>
-          <div class="code-translation">
-            <figure class="code-panel">
-              <figcaption>
-                原样源码 ·
-                <a href="../../packages/core/src/capability/dag.ts#L66"
-                  >packages/core/src/capability/dag.ts:66–86</a
-                >
-              </figcaption>
-              <pre><code>/**
- * The fixed DAG for a set of active capabilities. Inactive modules contribute
- * no node, no bindings and no checkpoint — nothing exists to invoke.
- */
-export function buildOperationDag(active: ReadonlySet&lt;CapabilityId&gt;): OperationDagNode[] {
-  const nodes: OperationDagNode[] = [
-    kernelNode("capture", [], [], ["requirement_baseline"]),
-    kernelNode("capability_decision", ["capture"], ["requirement_baseline"], []),
-  ];
-  if (active.has("impact_analysis")) {
-    nodes.push(moduleNode("impact_analysis", "impact", ["capability_decision"]));
-  }
-  if (active.has("design_governance")) {
-    nodes.push(moduleNode("design_governance", "design", ["impact"]));
-  }
-  const planDependsOn = ["capability_decision"];
-  const planConsumes: BindingKind[] = ["requirement_baseline"];
-  if (active.has("impact_analysis")) {
-    planDependsOn.push("impact");
-    planConsumes.push("impact_set");
-  }</code></pre>
-            </figure>
-            <aside class="translation-panel translation-english" aria-label="DAG builder 逐段讲解">
-              <span class="translation-label">逻辑块讲解</span>
-              <ol>
-                <li>函数签名只接收 active set，输出因此可确定性重建。</li>
-                <li>Capture 与 capability_decision 是固定 Kernel 脊柱。</li>
-                <li>条件分支同时决定模块节点是否存在，未激活能力没有“空壳 Port”。</li>
-                <li>
-                  Impact 激活时，Plan 既新增执行依赖，也新增 <code>impact_set</code> 数据依赖。
-                </li>
-                <li>控制依赖与数据依赖一起变化，避免“顺序到了但输入并不存在”。</li>
-              </ol>
-            </aside>
-          </div>
-        </div>
-      </section>
-
-      <section
-        class="lesson-section lesson-screen"
-        id="authority"
-        aria-labelledby="authority-title"
-      >
-        <p class="screen-kicker">03 · 权威与策略不可混为一层</p>
-        <h2 id="authority-title">Ledger 裁决事实；传播规则裁决影响如何扩散</h2>
-        <div class="truth-stack">
-          <article class="pattern-card truth-layer authority-layer">
-            <span class="layer-rank">1</span>
+      <section class="lesson-section" id="check">
+        <p class="screen-kicker">04 · CHECK AND RETRIEVE</p>
+        <h2>先验证架构文档没有脱离源码模型</h2>
+        <div class="source-lab" data-lab-id="lesson-0001-graph-model">
+          <div class="lab-head">
             <div>
-              <h3>Git-native Ledger</h3>
-              <p>append-only、可验证、可重放；批准、Evidence 与 Snapshot 的权威来源。</p>
+              <p class="card-kicker">REPEATABLE CHECK</p>
+              <h3>Graph model documentation contract</h3>
             </div>
-          </article>
-          <article class="pattern-card truth-layer projection-layer">
-            <span class="layer-rank">2</span>
-            <div>
-              <h3>SQLite Projection</h3>
-              <p>从 Ledger 物化的查询缓存；漂移时删除并确定性重建。</p>
-            </div>
-          </article>
-          <article class="pattern-card truth-layer observation-layer">
-            <span class="layer-rank">3</span>
-            <div>
-              <h3>Live Spool</h3>
-              <p>heartbeat、阶段与输出摘要等可删除运行观察；不授予“已完成”。</p>
-            </div>
-          </article>
-        </div>
-        <div class="source-dossier">
-          <span class="source-dossier-label">核心源码 3 · 影响传播策略表</span>
-          <div class="source-context-grid">
-            <article class="source-context-card" data-kind="caller">
-              <strong>调用者</strong>
-              <p>Impact traversal 读取 Edge type，再查询该类型的传播政策。</p>
-            </article>
-            <article class="source-context-card" data-kind="output">
-              <strong>产物</strong>
-              <p>返回方向、默认风险与是否允许 inferred edge 继续传播。</p>
-            </article>
-            <article class="source-context-card" data-kind="guard">
-              <strong>守卫</strong>
-              <p>高风险否定关系拒绝推理传播；政策写在代码表中，不交给模型临场决定。</p>
-            </article>
-            <article class="source-context-card" data-kind="authority">
-              <strong>不能推断</strong>
-              <p>规则只定义传播语义；某次 ImpactSet 是否接受仍需运行与 Ledger 证据。</p>
-            </article>
+            <span class="lab-status">尚未标记</span>
           </div>
-          <div class="code-translation">
-            <figure class="code-panel">
-              <figcaption>
-                原样源码 ·
-                <a href="../../packages/graph/src/impact/propagation.ts#L29"
-                  >packages/graph/src/impact/propagation.ts:29–38</a
-                >
-              </figcaption>
-              <pre><code>export const PROPAGATION_RULES: readonly PropagationRule[] = [
-  { type: "REFUTES", direction: "forward", defaultRisk: "high", allowsInference: false },
-  { type: "VIOLATES", direction: "forward", defaultRisk: "high", allowsInference: false },
-  { type: "BLOCKS", direction: "forward", defaultRisk: "high", allowsInference: false },
-  { type: "VERIFIES", direction: "both", defaultRisk: "medium", allowsInference: true },
-  { type: "ADDRESSES", direction: "inverse", defaultRisk: "medium", allowsInference: true },
-  { type: "SHAPES", direction: "forward", defaultRisk: "medium", allowsInference: true },
-  // SPECIFIES binds a contract to its subject in both directions; inferred
-  // edges never propagate (designset lifecycle design 8.1).
-  { type: "SPECIFIES", direction: "both", defaultRisk: "high", allowsInference: false },</code></pre>
-            </figure>
-            <aside class="translation-panel translation-english">
-              <span class="translation-label">逻辑块讲解</span>
-              <ol>
-                <li>每种可传播关系必须显式登记，未知关系不会获得默认扩散权。</li>
-                <li>否定与阻断只向 source→target 传播，且拒绝低置信推理边。</li>
-                <li>
-                  <code>VERIFIES</code> 双向可查，<code>ADDRESSES</code>
-                  逆向回溯，反映不同审计问题。
-                </li>
-                <li>
-                  <code>SPECIFIES</code> 可双向定位契约与对象，但不允许 inferred edge
-                  扩大高风险影响。
-                </li>
-              </ol>
-            </aside>
+          <pre
+            class="command-block lab-command"
+          ><code data-command>pnpm exec vitest run tests/e2e/graph-model-documentation.test.ts</code></pre>
+          <div class="lab-actions">
+            <button class="btn secondary" type="button" data-copy-command>复制命令</button
+            ><button class="btn" type="button" data-mark-lab>我已复跑并核对</button>
           </div>
-        </div>
-      </section>
-
-      <section class="lesson-section lesson-screen" id="verify" aria-labelledby="verify-title">
-        <p class="screen-kicker">04 · 验证与架构决策</p>
-        <h2 id="verify-title">验证“模型文档没有漂移”，而不是验证整个系统已上线</h2>
-        <div class="source-lab" data-lab-id="lesson-0001-graph-truth">
-          <div class="lab-heading">
-            <div>
-              <span class="lab-kicker">SOURCE LAB</span>
-              <h3>Schema 与架构文档一致性</h3>
-            </div>
-            <span class="lab-status" aria-live="polite"></span>
-          </div>
-          <div class="lab-command command-row">
-            <code data-command
-              >pnpm exec vitest run tests/e2e/graph-model-documentation.test.ts</code
-            ><button type="button" data-copy-command>复制命令</button>
-          </div>
-          <p class="lab-baseline">
-            <strong>课程基线：</strong><code>05871fc</code> · 1 file · 7/7 tests passed。
-          </p>
           <p class="evidence-boundary">
-            该测试证明类型列表、总图和三层存储说明受自动约束；不证明一次 Operation
-            已执行，也不证明外部 Provider 可用。
+            <strong>证据边界：</strong>通过只说明架构文档要求的图模型契约与当前仓库一致；不证明外部
+            Provider、部署环境或一次真实迭代已完成。
           </p>
-          <button type="button" data-mark-lab>我已实际运行并核对</button>
         </div>
-        <div class="quiz-container" id="quiz-0001">
-          <div class="quiz-heading">
-            <span class="quiz-kicker">即时测验 · 3 题</span>
-            <h3>从现象定位裁决层</h3>
-          </div>
+
+        <div class="quiz-container" data-quiz>
+          <h3>即时判断</h3>
           <div
             class="quiz-question-block"
             data-correct="b"
-            data-explanation-right="正确。EdgeSchema 约束关系记录，但 accepted 状态仍需权威写入证据。"
-            data-explanation-wrong="Schema 存在不等于某条关系已经被接受。"
+            data-explanation-right="正确。Profile 编译不同子图，Kernel 生命周期保持一致。"
+            data-explanation-wrong="再区分固定控制脊柱与按需物化模块。"
           >
-            <h3 class="quiz-question">
-              Schema 接受一条 <code>IMPLEMENTS</code> Edge，最强能证明什么？
-            </h3>
-            <div class="quiz-options">
-              <button class="quiz-option" data-value="a" onclick="selectOption(this)">
-                任务已经兑现需求</button
-              ><button class="quiz-option" data-value="b" onclick="selectOption(this)">
-                记录形状符合契约</button
-              ><button class="quiz-option" data-value="c" onclick="selectOption(this)">
-                Snapshot 已经提交
-              </button>
-            </div>
-            <p class="quiz-feedback"></p>
+            <p><strong>1. Profile 变化时，最准确的设计描述是？</strong></p>
+            <button class="quiz-option" type="button" data-value="a">复制一套新的生命周期</button>
+            <button class="quiz-option" type="button" data-value="b">编译一张不同的子图形</button>
+            <span class="quiz-feedback"></span>
           </div>
           <div
             class="quiz-question-block"
-            data-correct="c"
-            data-explanation-right="正确。inactive 模块必须零节点、零 Binding、零 checkpoint。"
-            data-explanation-wrong="目标不变量是零残留，而不是保留空壳等待调用。"
+            data-correct="a"
+            data-explanation-right="正确。投影可重建，Ledger 才是权威事实。"
+            data-explanation-wrong="界面显示属于观察面，不能覆盖权威提交。"
           >
-            <h3 class="quiz-question">Capability 未激活时，DAG builder 应怎样处理？</h3>
-            <div class="quiz-options">
-              <button class="quiz-option" data-value="a" onclick="selectOption(this)">
-                保留节点但跳过执行</button
-              ><button class="quiz-option" data-value="b" onclick="selectOption(this)">
-                注册 Port 但返回空结果</button
-              ><button class="quiz-option" data-value="c" onclick="selectOption(this)">
-                完全不物化该节点
-              </button>
-            </div>
-            <p class="quiz-feedback"></p>
-          </div>
-          <div
-            class="quiz-question-block"
-            data-correct="b"
-            data-explanation-right="正确。Projection 是可重建副本，不能反向覆盖 Ledger。"
-            data-explanation-wrong="你把查询副本或实时观察提升成了权威事实。"
-          >
-            <h3 class="quiz-question">SQLite 与 Ledger 冲突，且 Ledger 验证通过。下一步是什么？</h3>
-            <div class="quiz-options">
-              <button class="quiz-option" data-value="a" onclick="selectOption(this)">
-                修改 Ledger 匹配 SQLite</button
-              ><button class="quiz-option" data-value="b" onclick="selectOption(this)">
-                从 Ledger 重建 Projection</button
-              ><button class="quiz-option" data-value="c" onclick="selectOption(this)">
-                用 Live Spool 覆盖两者
-              </button>
-            </div>
-            <p class="quiz-feedback"></p>
+            <p><strong>2. Dashboard 与 Ledger 冲突时，先信哪一个？</strong></p>
+            <button class="quiz-option" type="button" data-value="a">先信已提交的权威账本</button>
+            <button class="quiz-option" type="button" data-value="b">先信最新显示的界面层</button>
+            <span class="quiz-feedback"></span>
           </div>
           <div class="quiz-actions">
-            <button class="primary-button" type="button" onclick="checkQuiz('quiz-0001')">
-              检查答案</button
-            ><button class="secondary-button" type="button" onclick="resetQuiz('quiz-0001')">
-              重新作答
-            </button>
+            <button class="btn" type="button" data-quiz-check>检查答案</button
+            ><button class="btn secondary" type="button" data-quiz-reset>重置</button>
           </div>
         </div>
-        <div class="decision-exercise">
-          <span class="decision-label">设计审查练习</span>
-          <h3>
-            是否应该把 <code>RESOLVES</code> 与 <code>APPROVES</code> 合并为 <code>APPROVAL</code>？
-          </h3>
-          <p>请从 source/target 类型、生命周期、版本绑定、审计查询和影响传播五个角度写出判断。</p>
-          <textarea
-            aria-label="写下关系建模判断"
-            placeholder="我的结论是……；合并后丢失的信息是……；需要保持的不变量是……"
-          ></textarea>
-          <button type="button" data-show-rubric>对照判定要点</button>
-          <div
-            class="decision-rubric"
-            hidden
-            data-rubric="不应合并。RESOLVES 连接 ApprovalDecision→ApprovalRequest，回答请求是否闭合；APPROVES 连接 Approval→精确版本对象，回答什么 digest 获得授权。两者的端点类型、生命周期和审计查询不同；可在上层定义 approval family，但底层关系必须保留。"
-          ></div>
+
+        <div class="retrieval-card">
+          <strong>脱稿回忆</strong>
+          <p>
+            关闭本页，用五个框画出主链；然后各用一句话解释
+            Kernel、Module、CapabilityPlan、Evidence、Ledger。任何一个说不清，就只回看对应段落。
+          </p>
         </div>
-        <nav class="lesson-pagination" aria-label="上下课导航">
-          <a href="../index.html">← 返回课程地图</a
-          ><a href="0002-Profile与CapabilityPlan.html">下一课：Profile 与 CapabilityPlan →</a>
-        </nav>
+        <div class="primary-source-card">
+          <strong>权威入口</strong>
+          <p>
+            <a href="../../docs/graph-driven-harness-model.md"
+              >docs/graph-driven-harness-model.md</a
+            >
+            是本课首选阅读：先读第 0
+            节的系统主线和权威边界，不要一开始陷入完整关系枚举。遇到不清楚的责任边界，请直接向教学
+            Agent 提问“这个对象在主链的上游和下游是谁”。
+          </p>
+        </div>
+
+        <div class="lesson-recap">
+          <div><strong>固定</strong>Kernel 给所有 Profile 同一生命周期。</div>
+          <div><strong>可变</strong>CapabilityPlan 决定哪些 Module 被物化。</div>
+          <div><strong>权威</strong>Evidence、Verdict、Snapshot 最终进入 Ledger。</div>
+        </div>
+        <div class="lesson-footer">
+          <a class="btn secondary" href="../index.html">返回课程地图</a
+          ><a class="btn" href="0002-Profile与CapabilityPlan.html">下一课：编译运行图 →</a>
+        </div>
       </section>
     </main>
   </body>

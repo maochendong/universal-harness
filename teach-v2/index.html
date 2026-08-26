@@ -3,25 +3,21 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="description" content="Universal Harness 2.0 源码架构课程地图与学习状态。" />
-    <title>Universal Harness Teach 2.0</title>
+    <meta name="description" content="Universal Harness 2.0 技术设计与核心源码课程。" />
+    <title>Universal Harness · 技术设计与核心源码</title>
     <link rel="stylesheet" href="assets/style.css" />
     <script src="assets/quiz.js" defer></script>
   </head>
   <body>
     <nav class="site-nav" aria-label="课程导航">
-      <div
-        class="page-progress"
-        role="progressbar"
-        aria-label="页面阅读进度"
-        aria-valuemin="0"
-        aria-valuemax="100"
-      ></div>
+      <div class="page-progress" role="progressbar" aria-label="页面阅读进度"></div>
       <div class="site-nav-inner">
         <a class="nav-brand" href="index.html">Universal Harness · Teach 2.0</a>
         <div class="nav-links">
-          <a href="#course-map">课程地图</a><a href="#learning-state">学习状态</a
-          ><a href="reference/architecture-map.html">参考资料</a>
+          <a href="#main-line">全局主链</a>
+          <a href="#course-map">课程地图</a>
+          <a href="#learning-state">学习状态</a>
+          <a href="reference/architecture-map.html">参考资料</a>
         </div>
       </div>
     </nav>
@@ -30,115 +26,112 @@
       <header class="hero">
         <div class="hero-grid">
           <div class="animate-in">
-            <p class="eyebrow">Architecture first · Evidence always</p>
-            <h1 class="hero-title">从设计不变量追到核心源码与生产证据</h1>
+            <p class="eyebrow">TOP-DOWN · SOURCE-THROUGH · EVIDENCE-BOUNDED</p>
+            <h1 class="hero-title">先看完整系统，再穿透一条真实调用链</h1>
             <p class="hero-subtitle">
-              这门课程面向技术设计者和源码审阅者：先建立领域模型与 authority
-              boundary，再沿真实生产调用链审查 Profile、CapabilityPlan、TDD 与模型 Provider
-              的契约、守卫和证据范围。
+              这不是产品使用手册。课程从技术设计出发，先建立全局架构，再逐课追到领域契约、生产消费者、失败守卫与测试证据。
             </p>
             <div class="hero-actions">
               <a
                 class="primary-button"
                 data-next-recommendation
                 href="lessons/0001-系统真相与架构地图.html"
-                >开始 0001 · 系统真相与架构地图</a
-              ><a class="secondary-button" href="reference/verification-playbook.html"
-                >打开验证手册</a
+                >开始 0001 · 全局架构</a
               >
+              <a class="secondary-button" href="MISSION.md">查看完成标准</a>
             </div>
             <div class="lesson-meta">
-              <span class="lesson-badge">source_commit 05871fc</span
-              ><span class="lesson-badge">首批 4 / 全图 14</span
-              ><span class="lesson-badge status-warning">真实 Provider 当前未复验</span>
+              <span class="lesson-badge">源码基线 05871fc</span>
+              <span class="lesson-badge">首批 4 / 全图 14</span>
+              <span class="lesson-badge status-warning">外部 Provider 当前部分连通</span>
             </div>
           </div>
-          <aside class="hero-panel animate-in" aria-label="课程原则">
-            <p class="screen-kicker">How to read</p>
+          <aside class="hero-panel animate-in" aria-label="学习方法">
+            <p class="screen-kicker">每课固定路径</p>
             <div class="step-cards">
               <div class="step-card">
                 <div class="step-num">1</div>
                 <div class="step-body">
-                  <strong>先看架构</strong>
-                  <p>定位对象、责任与权威边界。</p>
+                  <strong>先定位</strong>
+                  <p>把局部问题放回全局主链。</p>
                 </div>
               </div>
               <div class="step-card">
                 <div class="step-num">2</div>
                 <div class="step-body">
-                  <strong>再走调用链</strong>
-                  <p>从入口追到生产消费者和守卫。</p>
+                  <strong>再穿透</strong>
+                  <p>先看调用链，再读最多两段源码。</p>
                 </div>
               </div>
               <div class="step-card">
                 <div class="step-num">3</div>
                 <div class="step-body">
-                  <strong>最后做裁决</strong>
-                  <p>复跑命令，写带范围的证据结论。</p>
+                  <strong>后裁决</strong>
+                  <p>用测试限定“究竟证明了什么”。</p>
                 </div>
               </div>
             </div>
             <div class="callout callout-info">
               <div class="callout-icon">i</div>
               <div>
-                <strong>进度不等于掌握</strong>
-                <p>首页只记录浏览与自报实验。学习记录必须由真实回答或练习证据产生。</p>
+                <strong>源码不会裸奔</strong>
+                <p>每个切片都解释调用者、输入输出、守卫、失败语义和证据边界。</p>
               </div>
             </div>
           </aside>
         </div>
       </header>
 
-      <section class="lesson-section" id="learning-state">
+      <section class="lesson-section" id="main-line">
         <div>
-          <p class="screen-kicker">Learning state</p>
-          <h2>课程地图也是证据仪表盘</h2>
-          <p class="section-intro">
-            状态保存在浏览器本地，只服务导航。清空浏览器数据不会损失学习成果，因为真正的掌握证据只写入
-            Git 中的 learning record。
-          </p>
-          <div class="status-grid">
-            <article class="status-card">
-              <p class="eyebrow">架构理解进度</p>
-              <h3 data-reviewed-count>0 / 4</h3>
-              <p>已标记复习的首批课程；不是掌握分数。</p>
+          <p class="screen-kicker">GLOBAL FIRST</p>
+          <h2>一条主链统领后续所有细节</h2>
+          <p class="section-intro">细节课不会另起炉灶。每一课都只放大下列主链中的一个接缝。</p>
+          <div class="throughline" aria-label="Universal Harness 全局主链">
+            <article class="throughline-node">
+              <strong>事实与意图</strong><br /><small>Requirement · Risk · Policy</small>
             </article>
-            <article class="status-card">
-              <p class="eyebrow">已浏览课程</p>
-              <h3 data-visited-count>0 / 4</h3>
-              <p>浏览器曾打开的核心课数量。</p>
+            <article class="throughline-node">
+              <strong>编译运行图</strong><br /><small>Profile → CapabilityPlan</small>
             </article>
-            <article class="status-card">
-              <p class="eyebrow">已确认学习记录</p>
-              <h3>0</h3>
-              <p>尚无真实回答或练习证据，因此不生成记录。</p>
+            <article class="throughline-node">
+              <strong>受控执行</strong><br /><small>Kernel + optional Modules</small>
             </article>
-            <article class="status-card">
-              <p class="eyebrow">下一节推荐</p>
-              <h3>
-                <a data-next-recommendation href="lessons/0001-系统真相与架构地图.html"
-                  >0001 · 系统真相与架构地图</a
-                >
-              </h3>
-              <p>优先选择首个尚未标记复习的核心课。</p>
+            <article class="throughline-node">
+              <strong>验证与裁决</strong><br /><small>Evidence → Verdict</small>
+            </article>
+            <article class="throughline-node">
+              <strong>权威提交</strong><br /><small>Snapshot → Ledger</small>
             </article>
           </div>
-
-          <div class="pattern-cards" style="margin-top: 2rem">
-            <article class="pattern-card" style="border-top: 3px solid var(--color-success)">
-              <h3>已验证的源码链路</h3>
-              <p>四组 targeted tests 在 `05871fc` 上分别为 7/7、31/31、13/13、31/31。</p>
-              <a href="reference/verification-playbook.html">查看命令与证据边界 →</a>
+          <div class="definition-grid">
+            <article class="definition-card">
+              <h3>Kernel 是什么</h3>
+              <p>
+                每次迭代都必须经过的固定控制脊柱：Capture、能力决策、Plan、Context、Execute、Verify、Snapshot。它保证所有
+                Profile 共享同一套生命周期语义。
+              </p>
             </article>
-            <article class="pattern-card" style="border-top: 3px solid var(--color-warning)">
-              <h3>尚未掌握的概念</h3>
-              <p>当前没有学习证据，四课的完成标准全部保持“未确认”，不会根据点击自动升级。</p>
-              <a href="MISSION.md">查看完成标准 →</a>
+            <article class="definition-card">
+              <h3>Module 是什么</h3>
+              <p>
+                按 CapabilityPlan 激活的可选子图，例如
+                Impact、Design、Evaluate、Audit。未激活时不应产生节点、Binding 或 checkpoint。
+              </p>
             </article>
-            <article class="pattern-card" style="border-top: 3px solid var(--color-info)">
-              <h3>Provider / Port 状态</h3>
-              <p>当前仓库生产链路已连通；当前提交的真实外部 Provider 证据仍为部分连通。</p>
-              <a href="reference/provider-connectivity-matrix.html">打开连通矩阵 →</a>
+            <article class="definition-card">
+              <h3>模型能做什么</h3>
+              <p>
+                模型或 Provider 只能提出结构化候选；确定性 Schema、Compiler、Validator 与 Evidence
+                决定候选能否进入事实层。
+              </p>
+            </article>
+            <article class="definition-card">
+              <h3>什么才是系统真相</h3>
+              <p>
+                Git-native Ledger 与已提交 Snapshot 是权威；SQLite、Markdown、Dashboard 和 Live
+                Spool 都是投影或观察面。
+              </p>
             </article>
           </div>
         </div>
@@ -146,13 +139,11 @@
 
       <section class="lesson-section" id="course-map">
         <div>
-          <p class="screen-kicker">Course map</p>
-          <h2>14 个问题，一次只解决一个</h2>
+          <p class="screen-kicker">COURSE MAP</p>
+          <h2>四条穿透链先建立共同语言</h2>
           <p class="section-intro">
-            首批四课已生成。第五课以后只有主题和先修关系，不预写内容；下一课会根据真实学习记录决定难度、源码入口与练习类型。
+            首批四课已生成；第五课以后只保留主题，等待真实学习证据决定深度。
           </p>
-
-          <h3 style="margin: 2rem 0 1rem">阶段一 · 全局模型与追踪主线</h3>
           <div class="course-grid">
             <article class="course-card">
               <span class="card-number">01</span>
@@ -164,7 +155,10 @@
                   >系统真相与架构地图</a
                 >
               </h3>
-              <p>审查 Edge Schema、Capability DAG、传播政策与三层存储权威。</p>
+              <p>
+                建立完整系统模型，理解 Kernel、Module、Evidence 与 Ledger
+                的责任边界；本课不钻源码细节。
+              </p>
               <footer>
                 <span class="status-pill" data-lesson-state="0001">未浏览</span
                 ><a href="lessons/0001-系统真相与架构地图.html">进入 →</a>
@@ -175,12 +169,12 @@
               <h3>
                 <a
                   data-next-for="0002"
-                  data-next-title="0002 · Profile 与 CapabilityPlan"
+                  data-next-title="0002 · Profile 到运行图"
                   href="lessons/0002-Profile与CapabilityPlan.html"
-                  >Profile 与 CapabilityPlan</a
+                  >Profile 到 CapabilityPlan</a
                 >
               </h3>
-              <p>追踪编译输入、依赖/Provider 闭包、final guard 与 Runtime 路由。</p>
+              <p>穿透 Profile → CapabilityPlan → Operation DAG → Runtime final guard。</p>
               <footer>
                 <span class="status-pill" data-lesson-state="0002">未浏览</span
                 ><a href="lessons/0002-Profile与CapabilityPlan.html">进入 →</a>
@@ -191,12 +185,12 @@
               <h3>
                 <a
                   data-next-for="0003"
-                  data-next-title="0003 · 需求到 TDD 追踪链"
+                  data-next-title="0003 · 验收条件到 TDD 裁决"
                   href="lessons/0003-需求设计计划与TDD追踪链.html"
-                  >需求、设计、计划与 TDD</a
+                  >验收条件到 TDD 裁决</a
                 >
               </h3>
-              <p>审查 Assertion 身份、唯一归属、TaskTddContract 与 Evidence 血缘。</p>
+              <p>穿透 Criterion → Assertion → TaskTddContract → TDD Evidence → Verdict。</p>
               <footer>
                 <span class="status-pill" data-lesson-state="0003">未浏览</span
                 ><a href="lessons/0003-需求设计计划与TDD追踪链.html">进入 →</a>
@@ -207,12 +201,12 @@
               <h3>
                 <a
                   data-next-for="0004"
-                  data-next-title="0004 · 模型端口与 Provider 连通性"
+                  data-next-title="0004 · Port 到 Provider 消费者"
                   href="lessons/0004-模型端口与Provider连通性.html"
-                  >模型端口与 Provider 连通性</a
+                  >Port 到 Provider 消费者</a
                 >
               </h3>
-              <p>审查 Binding Schema、CLI 装配、fail-closed、生产消费者与外部证据。</p>
+              <p>穿透 Port → Binding → Resolver/Adapter → Runner → Validator/Consumer。</p>
               <footer>
                 <span class="status-pill" data-lesson-state="0004">未浏览</span
                 ><a href="lessons/0004-模型端口与Provider连通性.html">进入 →</a>
@@ -220,108 +214,135 @@
             </article>
           </div>
 
-          <h3 style="margin: 3rem 0 1rem">阶段二 · 事实基础与治理边界</h3>
+          <h3>后续自适应路线</h3>
           <div class="course-grid">
             <article class="course-card future-card">
               <span class="card-number">05</span>
-              <h3>Git-native Ledger 与投影</h3>
-              <p>为什么 Ledger 是权威，而 SQLite 与 Live Spool 不是。</p>
-              <footer><span class="status-pill">自适应待生成</span></footer>
+              <h3>Ledger 与投影权威</h3>
+              <p>事实提交、Snapshot、SQLite 与 Live Spool 的边界。</p>
             </article>
             <article class="course-card future-card">
               <span class="card-number">06</span>
               <h3>双图与 Impact 传播</h3>
-              <p>变更如何沿确定性最短解释路径传播而不无限扩散。</p>
-              <footer><span class="status-pill">自适应待生成</span></footer>
+              <p>影响如何沿确定性路径传播并保持可解释。</p>
             </article>
             <article class="course-card future-card">
               <span class="card-number">07</span>
-              <h3>Context、Policy、Approval 与失效</h3>
-              <p>执行前怎样逐层收窄权限，digest 漂移如何级联失效。</p>
-              <footer><span class="status-pill">自适应待生成</span></footer>
+              <h3>Context、Policy 与 Approval</h3>
+              <p>执行权限如何逐层收窄，摘要漂移如何失效。</p>
             </article>
-          </div>
-
-          <h3 style="margin: 3rem 0 1rem">阶段三 · 执行真相与完成判定</h3>
-          <div class="course-grid">
             <article class="course-card future-card">
               <span class="card-number">08</span>
-              <h3>Agent Loop 与受限执行</h3>
-              <p>Task Envelope、CapabilityGrant、预算与终止条件由谁强制。</p>
-              <footer><span class="status-pill">自适应待生成</span></footer>
+              <h3>Agent Loop 与严格 TDD</h3>
+              <p>Task Envelope、CapabilityGrant 与 Red/Green/Refactor。</p>
             </article>
             <article class="course-card future-card">
               <span class="card-number">09</span>
-              <h3>外部动作、恢复与对账</h3>
-              <p>结果不确定时如何选择 retry、resume 与 reconcile。</p>
-              <footer><span class="status-pill">自适应待生成</span></footer>
+              <h3>恢复与对账</h3>
+              <p>副作用不确定时的 resume、retry 与 reconcile。</p>
             </article>
             <article class="course-card future-card">
               <span class="card-number">10</span>
-              <h3>Gate、Evaluation、Evidence 与 Verdict</h3>
-              <p>为什么 Run 成功不等于 Task 或 Iteration 完成。</p>
-              <footer><span class="status-pill">自适应待生成</span></footer>
+              <h3>完成判定</h3>
+              <p>Evidence、Verdict 与 Snapshot 如何共同证明完成。</p>
             </article>
             <article class="course-card future-card">
               <span class="card-number">11</span>
-              <h3>Finding、RCA 与变更回流</h3>
-              <p>失败怎样回到真正拥有修改权的上游层。</p>
-              <footer><span class="status-pill">自适应待生成</span></footer>
+              <h3>反馈与学习闭环</h3>
+              <p>反馈怎样被分析、验证并形成新事实。</p>
             </article>
-          </div>
-
-          <h3 style="margin: 3rem 0 1rem">阶段四 · 产品投影、生态与综合验收</h3>
-          <div class="course-grid">
             <article class="course-card future-card">
               <span class="card-number">12</span>
-              <h3>CLI、Dashboard 与实时事件</h3>
-              <p>两个入口怎样共享事实又不复制业务逻辑。</p>
-              <footer><span class="status-pill">自适应待生成</span></footer>
+              <h3>产品投影</h3>
+              <p>CLI、Dashboard 如何只读权威状态而不篡改事实。</p>
             </article>
             <article class="course-card future-card">
               <span class="card-number">13</span>
-              <h3>Plugin、Conformance 与发布证据</h3>
-              <p>第三方契约如何延伸，并在发布前保持可验证。</p>
-              <footer><span class="status-pill">自适应待生成</span></footer>
+              <h3>真实 Provider 发布证据</h3>
+              <p>从仓库内接线走到外部调用和跨平台验收。</p>
             </article>
             <article class="course-card future-card">
               <span class="card-number">14</span>
-              <h3>一次真实迭代的决策者验收</h3>
-              <p>独立产出带源码、测试、Ledger 与残余风险的放行结论。</p>
-              <footer><span class="status-pill">自适应待生成</span></footer>
+              <h3>综合架构审查</h3>
+              <p>独立完成一次从设计声称到证据裁决的穿透。</p>
             </article>
           </div>
         </div>
       </section>
 
-      <section class="lesson-section" id="references">
+      <section class="lesson-section" id="learning-state">
         <div>
-          <p class="screen-kicker">Compressed references</p>
-          <h2>课后真正会反复打开的四张速查</h2>
-          <div class="reference-grid" style="margin-top: 2rem">
-            <article class="reference-card">
-              <h3><a href="reference/glossary.html">术语表</a></h3>
-              <p>稳定词汇、权力边界和状态判定口径。</p>
+          <p class="screen-kicker">LEARNING STATE</p>
+          <h2>导航状态不是掌握证据</h2>
+          <div class="status-grid">
+            <article class="status-card">
+              <p class="eyebrow">已浏览</p>
+              <h3 data-visited-count>0 / 4</h3>
+              <p>只说明页面打开过。</p>
             </article>
-            <article class="reference-card">
-              <h3><a href="reference/architecture-map.html">架构地图</a></h3>
-              <p>从 Profile 输入到 Snapshot 与三层存储的一页总览。</p>
+            <article class="status-card">
+              <p class="eyebrow">自标复习</p>
+              <h3 data-reviewed-count>0 / 4</h3>
+              <p>只用于推荐下一课。</p>
             </article>
-            <article class="reference-card">
-              <h3><a href="reference/verification-playbook.html">验证手册</a></h3>
-              <p>六步验证法、证据梯子、命令与结论模板。</p>
+            <article class="status-card">
+              <p class="eyebrow">学习记录</p>
+              <h3>0</h3>
+              <p>尚无经回答证明的掌握记录。</p>
             </article>
-            <article class="reference-card">
-              <h3><a href="reference/provider-connectivity-matrix.html">Provider 连通矩阵</a></h3>
-              <p>按 slot、scope、消费者、当前证据和历史调用拆分状态。</p>
+            <article class="status-card">
+              <p class="eyebrow">下一节</p>
+              <h3>
+                <a data-next-recommendation href="lessons/0001-系统真相与架构地图.html"
+                  >0001 · 系统真相与架构地图</a
+                >
+              </h3>
+              <p>从首个未复习课程继续。</p>
+            </article>
+          </div>
+          <div class="pattern-cards">
+            <article class="pattern-card">
+              <h3>当前仓库内</h3>
+              <p>四条课程主链都有针对性测试；课程中的命令负责复跑相应声称。</p>
+              <a href="reference/verification-playbook.html">查看验证手册 →</a>
+            </article>
+            <article class="pattern-card">
+              <h3>当前外部</h3>
+              <p>
+                <strong>部分连通</strong>：生产装配链存在，但当前提交没有真实外部 Provider
+                的复验证据。
+              </p>
+              <a href="reference/provider-connectivity-matrix.html">查看连通矩阵 →</a>
+            </article>
+            <article class="pattern-card">
+              <h3>完整定义</h3>
+              <p>关系类型、术语和完整矩阵不塞进短课，统一放在参考资料。</p>
+              <a href="reference/glossary.html">打开术语表 →</a>
             </article>
           </div>
         </div>
       </section>
 
-      <footer class="site-footer">
-        <p>Teach 2.0 · 架构顺序，证据裁决。现有 `teach/` 1.x 未修改；学习成果等待真实练习证据。</p>
-      </footer>
+      <section class="lesson-section">
+        <div>
+          <p class="screen-kicker">REFERENCE</p>
+          <h2>需要查全量时，离开短课正文</h2>
+          <div class="reference-grid">
+            <a class="reference-card" href="reference/architecture-map.html"
+              ><strong>架构地图</strong><span>对象、边界与主链</span></a
+            >
+            <a class="reference-card" href="reference/glossary.html"
+              ><strong>术语表</strong><span>领域对象与关系业务语言</span></a
+            >
+            <a class="reference-card" href="reference/verification-playbook.html"
+              ><strong>验证手册</strong><span>命令、证据强度与结论模板</span></a
+            >
+            <a class="reference-card" href="reference/provider-connectivity-matrix.html"
+              ><strong>Provider 矩阵</strong><span>Port、消费者与外部证据</span></a
+            >
+          </div>
+        </div>
+      </section>
     </main>
   </body>
 </html>

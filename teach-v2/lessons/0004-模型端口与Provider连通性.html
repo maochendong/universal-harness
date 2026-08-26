@@ -5,127 +5,152 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta
       name="description"
-      content="Universal Harness 第 4 课：审查 Model Port、Provider Binding、生产装配与外部连通证据。"
+      content="第 4 课：从模型 Port 穿透到 Binding、Resolver、Runner、Validator 与生产消费者。"
     />
-    <title>0004 · 模型端口与 Provider 连通性 | Universal Harness 课程 2.0</title>
+    <title>0004 · 模型端口与 Provider 连通性</title>
     <link rel="stylesheet" href="../assets/style.css" />
     <script src="../assets/quiz.js" defer></script>
     <script src="../assets/source-lab.js" defer></script>
   </head>
-  <body class="lesson-page" data-lesson-id="0004">
-    <a class="skip-link" href="#lesson-main">跳到课程正文</a>
-    <header class="topbar lesson-topbar" aria-label="课程导航">
+  <body class="lesson-page traditional-lesson" data-lesson-id="0004">
+    <a class="skip-link" href="#start">跳到课程内容</a>
+    <header class="topbar">
       <div class="topbar-inner">
-        <a class="brand course-home" href="../index.html">Universal Harness · 课程 2.0</a>
-        <nav class="nav-links" aria-label="课程进度">
-          <a href="../index.html">课程地图</a
-          ><a href="../reference/provider-connectivity-matrix.html">连通矩阵</a
-          ><span aria-current="page">04 / 04</span>
+        <a class="brand" href="../index.html">Universal Harness · Teach 2.0</a>
+        <nav class="nav-links">
+          <a href="0003-需求设计计划与TDD追踪链.html">上一课</a
+          ><a href="../reference/provider-connectivity-matrix.html">连通矩阵</a><span>04 / 04</span>
         </nav>
+        <span class="page-progress" role="progressbar" aria-label="本课阅读进度"></span>
       </div>
     </header>
 
-    <main id="lesson-main" class="lesson-main lesson-shell">
-      <section
-        class="lesson-section lesson-screen lesson-hero hero-screen"
-        aria-labelledby="lesson-title"
-      >
-        <p class="eyebrow">第 4 课 · PORT / BINDING / RUNTIME · 约 35 分钟</p>
-        <h1 id="lesson-title">模型端口如何获得生产调用资格</h1>
-        <p class="lead lede">
-          本课审查从领域 Port 到外部 Provider
-          的完整责任链。目标不是学会“配置一个模型”，而是理解谁定义能力、谁钉住版本、谁装配实现、谁验证输出，以及什么证据才足以宣称连通。
+    <main class="lesson-main lesson-shell">
+      <section class="lesson-section lesson-hero" id="start">
+        <nav class="breadcrumb">
+          <a href="../index.html">课程地图</a><span>/</span><span>第 4 课</span>
+        </nav>
+        <div class="lesson-meta">
+          <span class="badge">模型链穿透</span><span class="badge time">约 18 分钟</span
+          ><span class="status-pill status-partial">外部当前部分连通</span>
+        </div>
+        <p class="eyebrow">LESSON 0004 · PORT → CONSUMER</p>
+        <h1>怎样证明一个模型 Provider 真的“连通”</h1>
+        <p class="lead">
+          有接口、有 Adapter、甚至测试全绿，都不等于当前外部 Provider 已经真实调用。技术判断必须把
+          Port 契约、精确 Binding、生产装配、运行消费者和外部 Evidence 分层检查。
         </p>
-        <div class="design-question">
-          <span class="design-question-label">本课设计命题</span>
-          <p>
-            如何允许模型生成受限候选，同时确保
-            Provider、Prompt、Schema、预算、失败模式和最终领域裁决都不能在调用途中静默漂移？
-          </p>
+        <div class="orientation-strip">
+          <div class="orientation-track">
+            <span class="orientation-node">全局系统</span><span class="orientation-arrow">→</span
+            ><span class="orientation-node">编译运行图</span><span class="orientation-arrow">→</span
+            ><span class="orientation-node">验收追踪</span><span class="orientation-arrow">→</span
+            ><span class="orientation-node current">模型连通</span
+            ><span class="orientation-arrow">→</span
+            ><span class="orientation-node">治理与发布</span>
+          </div>
         </div>
-        <div class="invariant-grid" aria-label="模型调用核心不变量">
-          <article class="invariant-card">
-            <strong>能力与实现分离</strong>
-            <p>Port 定义领域能力；Provider 只实现调用，不拥有 Graph 写入权或裁决权。</p>
-          </article>
-          <article class="invariant-card">
-            <strong>Binding 精确</strong>
-            <p>
-              slot、purpose、Provider、Prompt Contract 与 output Schema 必须以 digest 共同绑定。
-            </p>
-          </article>
-          <article class="invariant-card">
-            <strong>Required 不降级</strong>
-            <p>blocking slot 缺覆盖、Binding 漂移或校验失败时必须 typed block。</p>
-          </article>
+        <div class="lesson-win">
+          <strong>本课唯一胜利</strong>看到“Provider
+          已接入”时，你能沿五层链逐项找证据，并准确解释为什么当前仓库内是已连通、当前外部仍只能标记部分连通。
         </div>
-        <div class="cards dual-track">
-          <article class="pattern-card target-track">
-            <span class="status-pill status-target">目标设计</span>
-            <p>
-              CapabilityPlan 携带可审计 Binding，Managed Runner 执行精确版本，Validator
-              只将合格候选交给领域消费者。
-            </p>
-          </article>
-          <article class="pattern-card current-track">
-            <span class="status-pill status-partial">当前实现 · 双维度</span>
-            <p>
-              <strong>仓库内生产链已连通；当前外部 Provider 部分连通。</strong
-              >本页后续分别给出源码、测试和证据范围。
-            </p>
-          </article>
-        </div>
-        <p class="evidence-boundary">
-          <strong>“当前外部部分连通”是什么意思：</strong
-          >历史提交已有真实端点调用证据，所以不能判为“未连通”；但课程基线所在当前环境没有 DeepSeek
-          密钥，当前提交未重新产生真实 Provider
-          Evidence，所以也不能判为“已连通”。该状态只描述外部复验，不否定仓库内
-          Adapter、Runner、Validator 与生产消费者的接线。
-        </p>
       </section>
 
-      <section class="lesson-section lesson-screen" id="contract" aria-labelledby="contract-title">
-        <p class="screen-kicker">01 · 类型与版本契约</p>
-        <h2 id="contract-title">ModelProviderBinding 把一次调用所依赖的全部版本钉在一起</h2>
-        <p>
-          Slot 回答“需要哪类模型能力”，purpose 在复用 Port 时进一步区分业务用途。Binding
-          负责把抽象能力解析为一个可重放、可检查漂移的调用合同。
+      <section class="lesson-section" id="design">
+        <p class="screen-kicker">01 · DESIGN PROBLEM</p>
+        <h2>模型只能提议；确定性边界必须握住裁决权</h2>
+        <p class="section-intro">
+          同一个模型调用会受 Provider 身份、配置、Prompt contract、输出
+          Schema、预算和失败模式影响。如果只保存“用了哪个模型”，重放时无法证明得到的是同一种候选，也无法安全验证输出。
         </p>
-        <div class="source-dossier">
-          <span class="source-dossier-label">核心源码 1 · Binding Schema</span>
-          <div class="source-context-grid">
-            <article class="source-context-card" data-kind="caller">
-              <strong>调用者与输入</strong>
-              <p>
-                Capability compiler 依据 Profile、Provider registry 与 PromptContractRegistry 生成
-                Binding；字段不是人工拼装配置。
-              </p>
-            </article>
-            <article class="source-context-card" data-kind="output">
-              <strong>输出与消费者</strong>
-              <p>
-                <code>ModelProviderBinding</code> 持久化进 CapabilityPlan；runner 侧的调用 Binding
-                用这些身份与 digest 检查一致性。
-              </p>
-            </article>
-            <article class="source-context-card" data-kind="guard">
-              <strong>守卫</strong>
-              <p>未知 slot/purpose/failure mode、空 identity 和无效 digest 在 Schema 边界拒绝。</p>
-            </article>
-            <article class="source-context-card" data-kind="authority">
-              <strong>不能推断</strong>
-              <p>Binding 合法只证明合同完整；不证明 Provider 可达、输出合格或领域结果被接受。</p>
-            </article>
-          </div>
-          <div class="code-translation">
-            <figure class="code-panel">
-              <figcaption>
-                原样源码 ·
-                <a href="../../packages/core/src/schema/profile.ts#L85"
-                  >packages/core/src/schema/profile.ts:85–99</a
-                >
-              </figcaption>
-              <pre><code>export const ModelProviderBindingSchema = strictObject({
+        <div class="definition-grid">
+          <article class="definition-card">
+            <h3>Port</h3>
+            <p>
+              业务阶段所需的抽象能力，例如 design proposal 或 feedback
+              analysis。它说明“要什么”，不说明由谁提供。
+            </p>
+          </article>
+          <article class="definition-card">
+            <h3>Binding</h3>
+            <p>
+              把 Port 精确绑定到 Provider、配置摘要、Prompt contract、输出
+              Schema、预算和失败模式，是可审计的运行输入。
+            </p>
+          </article>
+          <article class="definition-card">
+            <h3>Resolver / Adapter / Runner</h3>
+            <p>
+              Resolver 根据 Binding 找 Provider；Adapter 翻译业务输入输出；managed runner 校验
+              Binding 漂移并执行调用。
+            </p>
+          </article>
+          <article class="definition-card">
+            <h3>Validator / Consumer</h3>
+            <p>
+              确定性 Validator 拒绝不合 Schema
+              的候选；真正的生产消费者把通过的候选交给后续协调器，而不是直接写成事实。
+            </p>
+          </article>
+        </div>
+      </section>
+
+      <section class="lesson-section" id="call-chain">
+        <p class="screen-kicker">02 · PRODUCTION CALL CHAIN</p>
+        <h2>“连通”至少要穿过五个接缝</h2>
+        <div class="throughline" aria-label="模型 Provider 生产调用链">
+          <article class="throughline-node">
+            <strong>Port</strong><br /><small>required business capability</small>
+          </article>
+          <article class="throughline-node">
+            <strong>Binding</strong><br /><small>provider + prompt + schema</small>
+          </article>
+          <article class="throughline-node">
+            <strong>Resolver / Adapter</strong><br /><small>production assembly</small>
+          </article>
+          <article class="throughline-node">
+            <strong>Runner / Validator</strong><br /><small>invoke + fail closed</small>
+          </article>
+          <article class="throughline-node">
+            <strong>Consumer / Evidence</strong><br /><small>accepted candidate + proof</small>
+          </article>
+        </div>
+        <p>
+          当前代码已经存在 CLI 生产装配、managed runner、Provider registry
+          与多个生产消费者；相应仓库内测试可复跑。但当前提交没有新的真实外部 DeepSeek
+          调用证据，因此不能把“仓库内链路已连通”外推为“当前外部环境已验证”。
+        </p>
+        <aside class="callout callout-warning">
+          <p class="callout-label">状态翻译</p>
+          <p>
+            <strong>当前仓库：已连通。</strong>接口、装配、runner、validator、consumer 与 targeted
+            tests
+            存在。<strong>当前外部：部分连通。</strong>历史真实调用存在，但当前提交/环境未复验真实
+            Provider，跨平台 AC25 也未完成。
+          </p>
+        </aside>
+      </section>
+
+      <section class="lesson-section" id="source-one">
+        <p class="screen-kicker">03 · SOURCE READING 1</p>
+        <h2>Binding 固定的是完整调用契约，不只是 Provider 名字</h2>
+        <article class="source-reading">
+          <header class="source-reading-header">
+            <p class="source-position">
+              调用链位置：CapabilityPlan / Profile data →
+              <strong>ModelProviderBindingSchema</strong> → Resolver
+            </p>
+            <h3>为什么读这段</h3>
+            <p>
+              它定义了可重放和防漂移所需的最小身份：Provider、配置、Prompt contract、输出
+              Schema、预算与失败模式必须一起固定。
+            </p>
+            <a href="../../packages/core/src/schema/profile.ts#L85"
+              >packages/core/src/schema/profile.ts · ModelProviderBindingSchema</a
+            >
+          </header>
+          <div class="source-reading-grid">
+            <pre><code>export const ModelProviderBindingSchema = strictObject({
   slot_id: enumerated(MODEL_SLOT_IDS),
   purpose: Type.Optional(enumerated(GROUNDED_SYNTHESIS_PURPOSES)),
   required: Type.Boolean(),
@@ -140,508 +165,180 @@
   budget_profile: Type.String({ minLength: 1 }),
   failure_mode: enumerated(MODEL_BINDING_FAILURE_MODES),
 });</code></pre>
-            </figure>
-            <aside class="translation-panel translation-english">
-              <span class="translation-label">逻辑块讲解</span>
-              <ol>
-                <li>
-                  <code>slot_id + purpose</code> 形成领域能力键；purpose 只在 Grounded Synthesis
-                  复用时出现。
-                </li>
-                <li>
-                  <code>required</code> 与
-                  <code>failure_mode</code> 决定缺失或失败能否继续，而不是由 Adapter 自行降级。
-                </li>
-                <li><code>provider_identity + config_digest</code> 钉住实现及非秘密配置版本。</li>
-                <li>
-                  Prompt 的 id、version、contract digest 与 output schema digest
-                  同时保存，区分人类可读版本和机器可验证内容。
-                </li>
-                <li>
-                  <code>budget_profile</code> 也是合同的一部分，防止同一逻辑调用在成本边界上漂移。
-                </li>
-              </ol>
-            </aside>
+            <div class="source-explanation">
+              <dl>
+                <dt>谁生产、谁消费</dt>
+                <dd>
+                  Compiler 从 PromptContractRegistry 与 Provider 配置解析 Binding；Resolver 和
+                  managed runner 在生产装配与调用时消费。
+                </dd>
+                <dt>前三组字段</dt>
+                <dd>
+                  <code>slot_id/purpose/required</code> 描述业务槽位；<code
+                    >provider_identity/config_digest</code
+                  >
+                  固定实现；Prompt contract 四字段固定提示协议身份。
+                </dd>
+                <dt>输出与失败策略</dt>
+                <dd>
+                  <code>output_schema_digest</code> 固定可接受结构，<code>budget_profile</code>
+                  限制资源，<code>failure_mode</code> 决定缺失或调用失败是否阻塞。
+                </dd>
+                <dt>证据边界</dt>
+                <dd>
+                  Schema 存在只证明 Binding 形状被定义；它不证明所有 required Port
+                  都已解析，也不证明 Provider 已被真实调用。
+                </dd>
+              </dl>
+            </div>
           </div>
+        </article>
+        <div class="prediction-card">
+          <strong>阅读源码 2 前先预测：</strong>如果 Profile 要求七个阻塞型模型槽位，Resolver
+          只解析出六个，生产装配应降级到 deterministic fallback，还是在 preflight 阶段整体失败？
         </div>
       </section>
 
-      <section class="lesson-section lesson-screen" id="assembly" aria-labelledby="assembly-title">
-        <p class="screen-kicker">02 · 生产装配与当前实现差异</p>
-        <h2 id="assembly-title">CLI Assembly 解析七个实际 Port key，并在 preflight 检查覆盖</h2>
-        <p>
-          正式 Capability Binding 有五个 slot，但生产装配还要区分 Design Proposal、Design
-          Review，以及 Grounded Synthesis 的不同 purpose。因此不能用“有五个 slot”推导“只有五次
-          resolver 调用”。
-        </p>
-        <div
-          class="flow-animation"
-          data-steps='[{"from":"flow-config","to":"flow-resolver","label":"Host config 与 Provider Registry 组装 resolver","detail":"密钥仍由 host environment 持有。"},{"from":"flow-resolver","to":"flow-adapter","label":"按 Port key 解析 Provider 并构造领域 Adapter","detail":"每个 Adapter 编译受控输入和 Prompt Contract。"},{"from":"flow-adapter","to":"flow-runner","label":"Managed Runner 检查 Binding/Prompt digest","detail":"漂移在外部请求前失败。"},{"from":"flow-runner","to":"flow-consumer","label":"Validated candidate 交给生产消费者","detail":"消费者仍可阻断或要求人工复核。"}]'
-          aria-label="模型生产调用链"
-        >
-          <div class="flow-actors">
-            <article class="flow-actor" id="flow-config">
-              <strong>Host config</strong><small>registry + environment</small>
-            </article>
-            <article class="flow-actor" id="flow-resolver">
-              <strong>Resolver</strong><small>slot coverage</small>
-            </article>
-            <article class="flow-actor" id="flow-adapter">
-              <strong>Adapter</strong><small>domain input</small>
-            </article>
-            <article class="flow-actor" id="flow-runner">
-              <strong>Managed Runner</strong><small>state + validation</small>
-            </article>
-            <article class="flow-actor" id="flow-consumer">
-              <strong>Consumer</strong><small>DAG / Coordinator</small>
-            </article>
-          </div>
-          <span class="flow-packet" aria-hidden="true"></span>
-          <div class="flow-step-label" aria-live="polite">点击“下一步”追踪生产装配。</div>
-          <div class="flow-controls">
-            <button class="primary-button flow-next-btn" type="button">下一步</button
-            ><button class="secondary-button flow-reset-btn" type="button">重置</button
-            ><span class="flow-progress" aria-live="polite"></span>
-          </div>
-        </div>
-
-        <div class="source-dossier">
-          <span class="source-dossier-label">核心源码 2 · Resolver 调用面</span>
-          <div class="source-context-grid">
-            <article class="source-context-card" data-kind="caller">
-              <strong>调用者与输入</strong>
-              <p>
-                <code>createManagedPipelinePorts()</code> 接收 profile、runtime config、host
-                environment、fetch 与 Provider registry。
-              </p>
-            </article>
-            <article class="source-context-card" data-kind="output">
-              <strong>输出与下游</strong>
-              <p>
-                每个 resolved Provider 被传给对应 Adapter；返回的
-                <code>ManagedPipelinePorts</code> 注入 Coordinator 和 DAG runner。
-              </p>
-            </article>
-            <article class="source-context-card" data-kind="guard">
-              <strong>设计约束</strong>
-              <p>
-                Proposal 与 Review 独立解析；Context、Narrative、Feedback 也保留独立
-                key，避免错误共享失败语义。
-              </p>
-            </article>
-            <article class="source-context-card" data-kind="authority">
-              <strong>证据边界</strong>
-              <p>
-                resolver 返回实现不等于已调用外部端点；调用记录与 Evidence 要在 Managed Runner
-                后确认。
-              </p>
-            </article>
-          </div>
-          <div class="code-translation">
-            <figure class="code-panel">
-              <figcaption>
-                原样源码 ·
-                <a href="../../packages/cli/src/managed-pipeline-ports.ts#L229"
-                  >packages/cli/src/managed-pipeline-ports.ts:229–235</a
-                >
-              </figcaption>
-              <pre><code>  const designProposal = resolver.resolve(DESIGN_PROPOSAL_PROMPT_PORT_ID);
-  const designReview = resolver.resolve(DESIGN_REVIEW_PROMPT_PORT_ID);
-  const impactAdvisory = resolver.resolve(IMPACT_ADVISORY_PROMPT_PORT_ID);
-  const planProposal = resolver.resolve(PLAN_PROPOSAL_PROMPT_PORT_ID);
-  const contextEnrichment = resolver.resolve("context_enrichment");
-  const iterationNarrative = resolver.resolve("iteration_narrative");
-  const feedbackAnalysis = resolver.resolve("feedback_analysis");</code></pre>
-            </figure>
-            <aside class="translation-panel translation-english">
-              <span class="translation-label">逐行讲解</span>
-              <ol>
-                <li>Design Proposal 与独立 Review 使用不同 Port key，防止自提自审成为隐式默认。</li>
-                <li>Impact 与 Plan 各自只产生领域候选，后续确定性校验仍拥有裁决权。</li>
-                <li>
-                  Context 与 Narrative 虽复用 Grounded Synthesis 类型，却因 purpose
-                  和失败模式不同而独立解析。
-                </li>
-                <li>FeedbackAnalysis 出现在同一生产装配函数中，证明它不再只是孤立 Adapter。</li>
-              </ol>
-            </aside>
-          </div>
-        </div>
-
-        <div class="cards dual-track">
-          <article class="pattern-card target-track">
-            <span class="status-pill status-target">目标链路</span>
-            <p>
-              CapabilityPlan 的精确 <code>model_provider_bindings</code> 应作为 invocation
-              的直接授权输入，一路传到 Managed Runner。
+      <section class="lesson-section" id="source-two">
+        <p class="screen-kicker">04 · SOURCE READING 2</p>
+        <h2>生产装配重新验证 required Provider closure</h2>
+        <article class="source-reading">
+          <header class="source-reading-header">
+            <p class="source-position">
+              调用链位置：required slot keys + Resolver results → <strong>coverage guard</strong> →
+              managed pipeline ports
             </p>
-          </article>
-          <article class="pattern-card current-track">
-            <span class="status-pill status-partial">当前差异 · 部分直接</span>
+            <h3>为什么读这段</h3>
             <p>
-              compiler 将 Binding 写入 CapabilityPlan；CLI assembly 又从同一 runtime config、host
-              registry 与 Prompt Registry 重新解析 Provider，Adapter 再构造 invocation binding。当前
-              <code>createManagedPipelinePorts()</code> 调用面没有直接接收 CapabilityPlan Binding
-              对象。
+              它把“required”从声明变成生产前置条件：任何必需槽位没有解析结果，整个 managed ports
+              装配都会失败。
             </p>
-          </article>
-        </div>
-        <p class="evidence-boundary">
-          <strong>如何理解这个差异：</strong>相同 registry 与 digest guard 降低了漂移风险，preflight
-          也会重查 required
-          coverage；但源码只能证明“两端使用同源配置并各自校验”，不能声称“同一个持久化 Binding
-          对象被直接传递到底”。这是实现血缘需要继续收紧的设计缺口，不等于所有生产 Port 未接线。
-        </p>
-      </section>
+            <a href="../../packages/cli/src/managed-pipeline-ports.ts#L249"
+              >packages/cli/src/managed-pipeline-ports.ts · required slot coverage</a
+            >
+          </header>
+          <div class="source-reading-grid">
+            <pre><code>const uncovered = requiredSlotKeys.filter((key) =&gt; resolvedByKey[key] === undefined);
+if (uncovered.length &gt; 0) {
+  throw new ManagedPipelinePortsError(deps.profile_id, uncovered);
+}</code></pre>
+            <div class="source-explanation">
+              <dl>
+                <dt>上游输入</dt>
+                <dd>
+                  <code>requiredSlotKeys</code> 来自 Profile 的必需模型槽位；<code
+                    >resolvedByKey</code
+                  >
+                  汇总 design、impact、plan、context、narrative、feedback 等 Resolver 结果。
+                </dd>
+                <dt>关键逻辑</dt>
+                <dd>
+                  筛出没有解析结果的 required key。只要有一个 uncovered，装配就抛出带 profile
+                  与缺口列表的类型化错误。
+                </dd>
+                <dt>失败语义</dt>
+                <dd>
+                  阻塞型槽位不会静默降级到 legacy/deterministic path，从而避免 CapabilityPlan
+                  声称模型存在、实际却走另一条路径。
+                </dd>
+                <dt>下游与证据边界</dt>
+                <dd>
+                  通过后才创建 adapters 并交给 pipeline consumers。这个 guard
+                  证明装配闭包完整，仍不等于网络、凭据和外部服务当前可用。
+                </dd>
+              </dl>
+            </div>
+          </div>
+        </article>
 
-      <section class="lesson-section lesson-screen" id="guards" aria-labelledby="guards-title">
-        <p class="screen-kicker">03 · Fail-closed 与生产消费者</p>
-        <h2 id="guards-title">连通必须同时证明“缺失时会停”和“结果确实被消费”</h2>
-        <div class="source-dossier">
-          <span class="source-dossier-label">核心源码 3 · Required coverage preflight</span>
-          <div class="source-context-grid">
-            <article class="source-context-card" data-kind="caller">
-              <strong>调用者</strong>
-              <p>
-                CLI 在返回 pipeline ports 前，对当前 Profile 的 required slot keys 执行覆盖检查。
-              </p>
-            </article>
-            <article class="source-context-card" data-kind="output">
-              <strong>输出</strong>
-              <p>全部覆盖时继续构造 Adapter；有缺口时抛 <code>ManagedPipelinePortsError</code>。</p>
-            </article>
-            <article class="source-context-card" data-kind="guard">
-              <strong>失败语义</strong>
-              <p>
-                Standard/Governed 的 required blocking slot 不得静默落回 deterministic/legacy path。
-              </p>
-            </article>
-            <article class="source-context-card" data-kind="authority">
-              <strong>不能推断</strong>
-              <p>覆盖只证明可解析 Provider，不证明网络可达、凭据有效或输出通过领域校验。</p>
-            </article>
-          </div>
-          <div class="code-translation">
-            <figure class="code-panel">
-              <figcaption>
-                原样源码 ·
-                <a href="../../packages/cli/src/managed-pipeline-ports.ts#L237"
-                  >packages/cli/src/managed-pipeline-ports.ts:237–251</a
-                >
-              </figcaption>
-              <pre><code>  // Provider closure is re-verified deterministically at preflight (design
-  // 11.2): a required blocking slot with no coverage must never degrade to
-  // the deterministic/legacy path.
-  const resolvedByKey: Readonly&lt;Record&lt;string, ResolvedManagedProvider | undefined&gt;&gt; = {
-    [DESIGN_PROPOSAL_PROMPT_PORT_ID]: designProposal,
-    [DESIGN_REVIEW_PROMPT_PORT_ID]: designReview,
-    [IMPACT_ADVISORY_PROMPT_PORT_ID]: impactAdvisory,
-    [PLAN_PROPOSAL_PROMPT_PORT_ID]: planProposal,
-    context_enrichment: contextEnrichment,
-    iteration_narrative: iterationNarrative,
-    feedback_analysis: feedbackAnalysis,
-  };
-  const uncovered = requiredSlotKeys.filter((key) =&gt; resolvedByKey[key] === undefined);
-  if (uncovered.length &gt; 0) {
-    throw new ManagedPipelinePortsError(deps.profile_id, uncovered);
-  }</code></pre>
-            </figure>
-            <aside class="translation-panel translation-english">
-              <span class="translation-label">逻辑块讲解</span>
-              <ol>
-                <li>先把所有实际 resolver key 映射到解析结果，检查范围与装配范围相同。</li>
-                <li>
-                  <code>requiredSlotKeys</code> 由 Profile 决定，因此 Lite 可保留合法 legacy
-                  path，受治理档位不可借用。
-                </li>
-                <li>
-                  <code>filter(undefined)</code> 计算精确缺口列表，错误可以说明哪些 Port 无覆盖。
-                </li>
-                <li>异常发生在返回 ports 之前，所以不存在“一半已装配”的可运行对象。</li>
-              </ol>
-            </aside>
-          </div>
-        </div>
-
-        <div class="source-dossier">
-          <span class="source-dossier-label">核心源码 4 · FeedbackAnalysis 生产消费点</span>
-          <div class="source-context-grid">
-            <article class="source-context-card" data-kind="caller">
-              <strong>调用者与输入</strong>
-              <p>
-                DAG registry 用 <code>withFeedbackAnalysis()</code> 包装 Verify/Evaluate/Audit
-                runner；输入是已提交节点结果派生的 Finding request。
-              </p>
-            </article>
-            <article class="source-context-card" data-kind="output">
-              <strong>输出与下游</strong>
-              <p>
-                Coordinator 返回
-                analyzed/blocked；可继续原节点结果，也可阻断后续路由或要求人工复核。
-              </p>
-            </article>
-            <article class="source-context-card" data-kind="guard">
-              <strong>顺序不变量</strong>
-              <p>底层 runner 未 committed 时不调用模型；模型 blocked 时外层节点也 blocked。</p>
-            </article>
-            <article class="source-context-card" data-kind="authority">
-              <strong>不能推断</strong>
-              <p>
-                该消费点证明生产接线；当前外部端点是否真实调用仍需 ModelInvocationRecord 与本提交
-                Evidence。
-              </p>
-            </article>
-          </div>
-          <div class="code-translation">
-            <figure class="code-panel">
-              <figcaption>
-                原样源码 ·
-                <a href="../../packages/runtime/src/orchestration/capability-dag-runners.ts#L43"
-                  >packages/runtime/src/orchestration/capability-dag-runners.ts:43–53</a
-                >
-              </figcaption>
-              <pre><code>  return async (context) =&gt; {
-    const result = await runner(context);
-    if (result.status !== "committed") return result;
-    for (const request of feedback.requests(context, result)) {
-      const outcome = await feedback.coordinator.analyzeFinding(request);
-      if (outcome.status === "blocked") {
-        return {
-          status: "blocked",
-          reason: "feedback_analysis_required",
-          detail: outcome.failure.summary,
-        };</code></pre>
-            </figure>
-            <aside class="translation-panel translation-english">
-              <span class="translation-label">逐段讲解</span>
-              <ol>
-                <li>先执行确定性 DAG runner，只有 committed result 才触发反馈分析。</li>
-                <li>
-                  <code>feedback.requests</code>
-                  把节点结果转换成领域请求，模型不直接读取任意上下文。
-                </li>
-                <li>Coordinator 拥有分析状态机与验证逻辑；Provider 只是内部依赖。</li>
-                <li>
-                  required 分析失败时，wrapper 把失败提升为节点
-                  blocked，防止“模型失败但流程照常成功”。
-                </li>
-              </ol>
-            </aside>
-          </div>
+        <div class="lesson-recap">
+          <div><strong>定义存在</strong>Port、Schema、Adapter 能被定位。</div>
+          <div><strong>仓库连通</strong>生产装配、消费者与测试形成闭环。</div>
+          <div><strong>外部验证</strong>当前提交真实调用、凭据环境和发布证据齐备。</div>
         </div>
       </section>
 
-      <section class="lesson-section lesson-screen" id="status" aria-labelledby="status-title">
-        <p class="screen-kicker">04 · 状态矩阵与证据边界</p>
-        <h2 id="status-title">一个“已接入”声称必须拆成四个问题</h2>
-        <div class="table-wrap">
-          <table aria-label="Provider 连通状态矩阵">
-            <thead>
-              <tr>
-                <th>审查维度</th>
-                <th>当前判定</th>
-                <th>证据</th>
-                <th>不能外推</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr>
-                <td>契约与 Adapter</td>
-                <td><span class="status-pill status-connected">已连通</span></td>
-                <td>Binding Schema、Prompt registry、领域 Adapter 与 validator 存在并有测试。</td>
-                <td>不证明进入生产消费者。</td>
-              </tr>
-              <tr>
-                <td>生产装配与消费</td>
-                <td><span class="status-pill status-connected">已连通</span></td>
-                <td>CLI resolver、preflight、DAG/Coordinator 消费点与接线测试。</td>
-                <td>不证明当前外部端点可达。</td>
-              </tr>
-              <tr>
-                <td>当前外部 Provider</td>
-                <td><span class="status-pill status-partial">部分连通</span></td>
-                <td>
-                  有历史真实调用；当前环境无 DeepSeek key，本提交记录为 <code>not_verified</code>。
-                </td>
-                <td>不允许声称当前提交已复验。</td>
-              </tr>
-              <tr>
-                <td>跨平台发布</td>
-                <td><span class="status-pill status-partial">部分连通</span></td>
-                <td>本地 release 门禁运行；AC25 缺同 commit 三平台聚合工件。</td>
-                <td>不允许声称 Protocol 1.1 已通过发布验收。</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-        <div class="source-dossier">
-          <span class="source-dossier-label">证据入口 · 当前结论从哪里来</span>
-          <div class="source-context-grid">
-            <article class="source-context-card" data-kind="authority">
-              <strong
-                ><a href="../../docs/evidence/full-review-remediation-completion.md"
-                  >full-review-remediation-completion.md</a
-                ></strong
-              >
-              <p>
-                记录当前实现测试、真实 Provider <code>not_verified</code> 与 AC25
-                发布阻塞；它是状态证据，不是运行时代码。
-              </p>
-            </article>
-            <article class="source-context-card" data-kind="caller">
-              <strong
-                ><a href="../../docs/evidence/t20-real-provider-dogfood.md"
-                  >t20-real-provider-dogfood.md</a
-                ></strong
-              >
-              <p>证明历史版本曾触达真实端点并留下失败语义；证据绑定旧提交，不能自动续期。</p>
-            </article>
-            <article class="source-context-card" data-kind="output">
-              <strong
-                ><a href="../../packages/runtime/src/model/managed-runner.ts#L227"
-                  >managed-runner.ts:227</a
-                ></strong
-              >
-              <p>
-                runner 在计划调用前比较 Binding 与 compiled Prompt digest；漂移抛
-                <code>binding_drift</code>，缺 Provider 返回 typed <code>provider_required</code>。
-              </p>
-            </article>
-            <article class="source-context-card" data-kind="guard">
-              <strong
-                ><a href="../../packages/cli/test/managed-pipeline-ports.test.ts"
-                  >managed-pipeline-ports.test.ts</a
-                ></strong
-              >
-              <p>
-                验证装配与 required coverage；测试使用受控替身，因此不能代替真实网络与凭据证据。
-              </p>
-            </article>
-          </div>
-        </div>
-      </section>
-
-      <section class="lesson-section lesson-screen" id="verify" aria-labelledby="verify-title">
-        <p class="screen-kicker">05 · 源码实验与设计裁决</p>
-        <h2 id="verify-title">分别验证 Runner、Registry、装配和生产消费</h2>
-        <div class="source-lab" data-lab-id="lesson-0004-provider-connectivity">
-          <div class="lab-heading">
+      <section class="lesson-section" id="verify">
+        <p class="screen-kicker">05 · VERIFY AND RETRIEVE</p>
+        <h2>复跑仓库内模型链，保持结论不过界</h2>
+        <div class="source-lab" data-lab-id="lesson-0004-provider-chain">
+          <div class="lab-head">
             <div>
-              <span class="lab-kicker">SOURCE LAB</span>
-              <h3>仓库内模型链路</h3>
+              <p class="card-kicker">REPEATABLE CHECK</p>
+              <h3>Managed runner + registry + production ports</h3>
             </div>
-            <span class="lab-status" aria-live="polite"></span>
+            <span class="lab-status">尚未标记</span>
           </div>
-          <div class="lab-command command-row">
-            <code data-command
-              >pnpm exec vitest run packages/runtime/test/model/managed-runner.test.ts
-              packages/runtime/test/model/provider-registry.test.ts
-              packages/cli/test/managed-pipeline-ports.test.ts
-              packages/runtime/test/orchestration/feedback-analysis-wiring.test.ts</code
-            ><button type="button" data-copy-command>复制命令</button>
+          <pre
+            class="command-block lab-command"
+          ><code data-command>pnpm exec vitest run packages/runtime/test/model/managed-runner.test.ts packages/runtime/test/model/provider-registry.test.ts packages/cli/test/managed-pipeline-ports.test.ts packages/runtime/test/orchestration/feedback-analysis-wiring.test.ts</code></pre>
+          <div class="lab-actions">
+            <button class="btn secondary" type="button" data-copy-command>复制命令</button
+            ><button class="btn" type="button" data-mark-lab>我已复跑并核对</button>
           </div>
-          <p class="lab-baseline">
-            <strong>课程基线：</strong><code>05871fc</code> · 4 files · 31/31 tests passed。
-          </p>
           <p class="evidence-boundary">
-            这些测试证明仓库内状态机、Provider trust registry、CLI 装配和 FeedbackAnalysis
-            消费点；测试不使用你的真实端点/凭据，因此外部状态仍须单独复验。
+            <strong>证据边界：</strong>通过证明当前仓库内的 Binding 校验、Provider registry、CLI
+            装配和 feedback consumer；不证明真实外部网络调用或发布环境。
           </p>
-          <button type="button" data-mark-lab>我已实际运行并核对</button>
         </div>
-        <div class="quiz-container" id="quiz-0004">
-          <div class="quiz-heading">
-            <span class="quiz-kicker">即时测验 · 3 题</span>
-            <h3>判断一条连通声明的证据范围</h3>
+
+        <div class="quiz-container" data-quiz>
+          <h3>即时判断</h3>
+          <div
+            class="quiz-question-block"
+            data-correct="a"
+            data-explanation-right="正确。Binding 必须锁定可重放的完整调用契约。"
+            data-explanation-wrong="只保存 Provider 名字无法检测 Prompt 或 Schema 漂移。"
+          >
+            <p><strong>1. Binding 为什么要包含多个 digest？</strong></p>
+            <button class="quiz-option" type="button" data-value="a">为了固定完整的调用契约</button
+            ><button class="quiz-option" type="button" data-value="b">为了方便界面显示更多值</button
+            ><span class="quiz-feedback"></span>
           </div>
           <div
             class="quiz-question-block"
             data-correct="b"
-            data-explanation-right="正确。当前外部部分连通描述的是历史曾通、当前未复验。"
-            data-explanation-wrong="需要把历史真实证据和当前提交真实复验拆开。"
+            data-explanation-right="正确。仓库内接线不能证明当前外部服务可达。"
+            data-explanation-wrong="测试使用受控环境，结论不能自动跨到真实凭据和网络。"
           >
-            <h3 class="quiz-question">为什么当前外部 Provider 不是“已连通”？</h3>
-            <div class="quiz-options">
-              <button class="quiz-option" data-value="a" onclick="selectOption(this)">
-                因为仓库没有 Adapter</button
-              ><button class="quiz-option" data-value="b" onclick="selectOption(this)">
-                因为当前提交未真实复验</button
-              ><button class="quiz-option" data-value="c" onclick="selectOption(this)">
-                因为历史从未调用端点
-              </button>
-            </div>
-            <p class="quiz-feedback"></p>
-          </div>
-          <div
-            class="quiz-question-block"
-            data-correct="c"
-            data-explanation-right="正确。required coverage 缺失必须在返回 ports 前抛错。"
-            data-explanation-wrong="受治理 Profile 不能静默走 legacy 或空结果。"
-          >
-            <h3 class="quiz-question">
-              Governed 的 required slot 没有 Provider，装配层应怎样处理？
-            </h3>
-            <div class="quiz-options">
-              <button class="quiz-option" data-value="a" onclick="selectOption(this)">
-                返回空结果继续</button
-              ><button class="quiz-option" data-value="b" onclick="selectOption(this)">
-                静默走 legacy</button
-              ><button class="quiz-option" data-value="c" onclick="selectOption(this)">
-                preflight 抛 typed error
-              </button>
-            </div>
-            <p class="quiz-feedback"></p>
-          </div>
-          <div
-            class="quiz-question-block"
-            data-correct="b"
-            data-explanation-right="正确。接线测试证明装配路径，但没有当前真实网络与凭据证据。"
-            data-explanation-wrong="你把受控测试替身外推成了真实外部调用。"
-          >
-            <h3 class="quiz-question">31/31 接线测试通过，最强能证明什么？</h3>
-            <div class="quiz-options">
-              <button class="quiz-option" data-value="a" onclick="selectOption(this)">
-                外部 Provider 当前可用</button
-              ><button class="quiz-option" data-value="b" onclick="selectOption(this)">
-                仓库内生产链可复跑</button
-              ><button class="quiz-option" data-value="c" onclick="selectOption(this)">
-                跨平台发布已验收
-              </button>
-            </div>
-            <p class="quiz-feedback"></p>
+            <p><strong>2. targeted tests 全绿能证明什么？</strong></p>
+            <button class="quiz-option" type="button" data-value="a">证明外部服务当前可调用</button
+            ><button class="quiz-option" type="button" data-value="b">证明仓库内链路符合契约</button
+            ><span class="quiz-feedback"></span>
           </div>
           <div class="quiz-actions">
-            <button class="primary-button" type="button" onclick="checkQuiz('quiz-0004')">
-              检查答案</button
-            ><button class="secondary-button" type="button" onclick="resetQuiz('quiz-0004')">
-              重新作答
-            </button>
+            <button class="btn" type="button" data-quiz-check>检查答案</button
+            ><button class="btn secondary" type="button" data-quiz-reset>重置</button>
           </div>
         </div>
-        <div class="decision-exercise">
-          <span class="decision-label">技术设计练习</span>
-          <h3>
-            是否要把 CapabilityPlan Binding 直接传入 <code>createManagedPipelinePorts()</code>？
-          </h3>
+
+        <div class="retrieval-card">
+          <strong>脱稿回忆</strong>
           <p>
-            比较“当前从同源配置重新解析”和“直接消费持久化 Binding”两种设计，至少讨论
-            authority、secret ownership、replay、drift、API 深度与测试成本。
+            写出 Port → Binding → Resolver/Adapter → Runner/Validator → Consumer/Evidence
+            五层。对每层各写一句“有它还不能证明什么”，最后给当前仓库内与当前外部分别定级。
           </p>
-          <textarea
-            aria-label="写下 Binding 传递设计判断"
-            placeholder="我选择……；必须保留的边界是……；迁移风险和验证方式是……"
-          ></textarea>
-          <button type="button" data-show-rubric>对照判定要点</button>
-          <div
-            class="decision-rubric"
-            hidden
-            data-rubric="可接受方向：让 runtime 显式消费 CapabilityPlan 中的非秘密 Binding 身份与 digest，同时由 host resolver 仅补齐密钥/transport 实现；随后在 Runner 前比较二者。这样加强 replay 与 authority 血缘，但必须避免把 secret 持久化进 Plan，并为 Capture scope、Lite legacy、supersession 和 registry version drift 增加迁移测试。也可以暂缓改造，但必须把当前“双端同源解析”明确标为证据边界，而不是声称对象直传。"
-          ></div>
         </div>
-        <nav class="lesson-pagination" aria-label="上下课导航">
-          <a href="0003-需求设计计划与TDD追踪链.html">← 上一课：TDD 追踪链</a
-          ><a href="../index.html">返回课程地图 →</a>
-        </nav>
+        <div class="primary-source-card">
+          <strong>继续精读</strong>
+          <p>
+            先从
+            <a href="../../packages/cli/src/managed-pipeline-ports.ts"
+              >packages/cli/src/managed-pipeline-ports.ts</a
+            >
+            看完整生产装配，再到
+            <a href="../../packages/runtime/src/model/managed-runner.ts"
+              >packages/runtime/src/model/managed-runner.ts</a
+            >
+            看 Binding drift 与 provider-required 守卫。完整 Port/消费者/外部证据对照在
+            <a href="../reference/provider-connectivity-matrix.html">Provider 连通矩阵</a>。向教学
+            Agent 提问“这个槽位最后由哪个生产消费者调用”。
+          </p>
+        </div>
+        <div class="lesson-footer">
+          <a class="btn secondary" href="0003-需求设计计划与TDD追踪链.html">← 上一课</a
+          ><a class="btn" href="../index.html">回到课程地图</a>
+        </div>
       </section>
     </main>
   </body>

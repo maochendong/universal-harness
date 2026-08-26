@@ -64,6 +64,28 @@
     });
   };
 
+  function initializeQuizzes() {
+    document.querySelectorAll(".quiz-option").forEach((option) => {
+      option.addEventListener("click", () => window.selectOption(option));
+    });
+    document.querySelectorAll("[data-quiz-check]").forEach((button, index) => {
+      button.addEventListener("click", () => {
+        const container = button.closest(".quiz-container");
+        if (!container) return;
+        if (!container.id) container.id = `quiz-auto-${index + 1}`;
+        window.checkQuiz(container.id);
+      });
+    });
+    document.querySelectorAll("[data-quiz-reset]").forEach((button, index) => {
+      button.addEventListener("click", () => {
+        const container = button.closest(".quiz-container");
+        if (!container) return;
+        if (!container.id) container.id = `quiz-auto-${index + 1}`;
+        window.resetQuiz(container.id);
+      });
+    });
+  }
+
   window.showArchDesc = function showArchDesc(component) {
     const diagram = component.closest(".arch-diagram, .architecture-stack");
     if (!diagram) return;
@@ -372,6 +394,7 @@
   }
 
   document.addEventListener("DOMContentLoaded", () => {
+    initializeQuizzes();
     initializeReveals();
     initializeFlows();
     initializeChats();

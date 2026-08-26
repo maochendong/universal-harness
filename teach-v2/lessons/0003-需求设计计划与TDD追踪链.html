@@ -5,355 +5,205 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta
       name="description"
-      content="Universal Harness 课程 2.0 第 3 课：从原子验收标准追踪到 TaskVerdict 与 Snapshot。"
+      content="第 3 课：从验收条件穿透到 Assertion、TaskTddContract、Evidence 与 Verdict。"
     />
-    <title>0003 · 需求、设计、计划与 TDD 追踪链</title>
+    <title>0003 · 验收条件到 TDD 裁决</title>
     <link rel="stylesheet" href="../assets/style.css" />
     <script src="../assets/quiz.js" defer></script>
     <script src="../assets/source-lab.js" defer></script>
   </head>
-  <body class="lesson-page" data-lesson-id="0003">
-    <a class="skip-link" href="#lesson-main">跳到课程内容</a>
-
-    <header class="topbar lesson-topbar" aria-label="课程导航">
+  <body class="lesson-page traditional-lesson" data-lesson-id="0003">
+    <a class="skip-link" href="#start">跳到课程内容</a>
+    <header class="topbar">
       <div class="topbar-inner">
-        <a class="brand course-home" href="../index.html">Universal Harness · 课程 2.0</a>
-        <nav class="nav-links" aria-label="课程进度">
-          <a href="../index.html">课程地图</a>
-          <a href="../reference/glossary.html">术语表</a>
-          <span aria-current="page">03 / 04</span>
+        <a class="brand" href="../index.html">Universal Harness · Teach 2.0</a>
+        <nav class="nav-links">
+          <a href="0002-Profile与CapabilityPlan.html">上一课</a
+          ><a href="../reference/glossary.html">术语表</a><span>03 / 04</span>
         </nav>
+        <span class="page-progress" role="progressbar" aria-label="本课阅读进度"></span>
       </div>
     </header>
 
-    <main id="lesson-main" class="lesson-main lesson-shell">
-      <section
-        class="lesson-section lesson-screen hero-screen"
-        id="win"
-        aria-labelledby="lesson-title"
-      >
-        <div class="screen-inner">
-          <p class="eyebrow">第 3 课 · TRACEABILITY CONTRACT</p>
-          <h1 id="lesson-title">验收身份如何穿过设计、计划与 Strict TDD</h1>
-          <p class="lede">
-            本课从可证明性设计出发。核心问题不是“代码写完了吗”，而是如何沿着
-            <abbr
-              class="term"
-              title="血缘：一条事实从何而来、经过哪些绑定、最终被谁消费的可追踪关系"
-              data-definition="一条事实从何而来、经过哪些绑定、最终被谁消费的可追踪关系"
-              >血缘</abbr
-            >
-            回到原子验收标准，证明业务义务没有在设计、计划或 TDD 执行中被换掉。
-          </p>
-
-          <div class="design-question">
-            <span class="design-question-label">本课设计命题</span>
-            <p>
-              如何为每条 Criterion 生成稳定且可旋转的 Assertion 身份，并让 Planner、TaskTddContract
-              与 TDD Evidence 只能传递这份身份，不能重新解释验收语义？
-            </p>
+    <main class="lesson-main lesson-shell">
+      <section class="lesson-section lesson-hero" id="start">
+        <nav class="breadcrumb">
+          <a href="../index.html">课程地图</a><span>/</span><span>第 3 课</span>
+        </nav>
+        <div class="lesson-meta">
+          <span class="badge">验收链穿透</span><span class="badge time">约 17 分钟</span
+          ><span class="status-pill status-connected">仓库内已连通</span>
+        </div>
+        <p class="eyebrow">LESSON 0003 · CRITERION → VERDICT</p>
+        <h1>一句验收条件，如何约束到最终 TaskVerdict</h1>
+        <p class="lead">
+          “需求里写过”不能证明任务完成。系统必须把每条已接受 Criterion 固定成稳定
+          Assertion，把它唯一分配给 Task，再用不可变 TDD contract 约束执行和证据。
+        </p>
+        <div class="orientation-strip">
+          <div class="orientation-track">
+            <span class="orientation-node">全局系统</span><span class="orientation-arrow">→</span
+            ><span class="orientation-node">编译运行图</span><span class="orientation-arrow">→</span
+            ><span class="orientation-node current">验收追踪</span
+            ><span class="orientation-arrow">→</span><span class="orientation-node">模型连通</span
+            ><span class="orientation-arrow">→</span
+            ><span class="orientation-node">治理与发布</span>
           </div>
-
-          <div class="invariant-grid" aria-label="追踪链核心不变量">
-            <article class="invariant-card">
-              <strong>身份可重算</strong>
-              <p>Assertion id 只由 Criterion id 与 semantic digest 生成。</p>
-            </article>
-            <article class="invariant-card">
-              <strong>覆盖恰一次</strong>
-              <p>每条 accepted Criterion 恰有一个 criterion Assertion 和一个 Task owner。</p>
-            </article>
-            <article class="invariant-card">
-              <strong>证据同源</strong>
-              <p>Red、Green、Verdict 必须绑定同一合同、测试补丁和目标 Assertion。</p>
-            </article>
-          </div>
-
-          <div class="tangible-win hero-panel" role="note">
-            <strong>本课的唯一胜利</strong>
-            <p>
-              选一条 Criterion，从源头追到 Verdict，并指出任一绑定断裂时系统最早在哪一层拒绝继续。
-            </p>
-          </div>
-
-          <div class="lineage-ribbon hero-panel" aria-label="本课完整追踪链">
-            <code>
-              PrdProposal → Requirement + atomic Criterion → Test seed → canonical Assertion →
-              DesignSet.test_strategy → final CapabilityPlan → PlanProposal → ExecutionPlan + Task →
-              TaskTddContract → Baseline → Red → Green → Refactor → Evidence → TaskVerdict →
-              Snapshot
-            </code>
-          </div>
-
-          <aside class="callout callout-aha">
-            <span class="callout-label">架构审查结论</span>
-            <p>
-              每一层可以增加执行信息，但不能改变 Criterion
-              的语义身份；任一层无法证明血缘时，最早的确定性边界必须 fail closed。
-            </p>
-          </aside>
-
-          <a class="continue-link btn" href="#lineage"
-            >沿生产调用链审查绑定 <span aria-hidden="true">↓</span></a
-          >
+        </div>
+        <div class="lesson-win">
+          <strong>本课唯一胜利</strong>你能从一个 Criterion 一路追到 TaskTddContract 和
+          Verdict，并指出“漏测、重复归属、执行时临时发明测试策略”分别在哪一层被阻断。
         </div>
       </section>
 
-      <section class="lesson-section lesson-screen" id="lineage" aria-labelledby="lineage-title">
-        <div class="screen-inner wide">
-          <p class="eyebrow">Screen 2 · 交互追踪链</p>
-          <h2 id="lineage-title">生产调用链：每一层增加什么绑定</h2>
-          <p>
-            这里不把
-            <abbr
-              class="term"
-              title="CapabilityPlan：把 Profile、风险、Policy 和 Provider 编译成本次运行能力图的最终计划"
-              data-definition="把 Profile、风险、Policy 和 Provider 编译成本次运行能力图的最终计划"
-              >CapabilityPlan</abbr
-            >
-            当成另一份需求。它只决定 strict TDD 这段子图是否应该出现；业务含义仍必须源自已接受的 PRD
-            与 DesignSet。
-          </p>
-
-          <div
-            class="flow-animation"
-            data-steps='[{"from":"flow-prd","to":"flow-design","label":"1 / 5 · 需求成为可验证义务","detail":"PrdProposal 接受后，Requirement 被拆成 atomic Criterion；每条 Criterion 建立 Test seed，再机械编译为 canonical Assertion。"},{"from":"flow-design","to":"flow-plan","label":"2 / 5 · 设计限制计划","detail":"DesignSet.test_strategy 指定主测试策略；final CapabilityPlan 决定 strict_tdd 是否激活。PlanProposal 只能分配既有 Assertion。"},{"from":"flow-plan","to":"flow-contract","label":"3 / 5 · Task 获得不可变合同","detail":"ExecutionPlan 中的每个 Task 带有 Assertion 归属。Kernel 沿 Test seed → Criterion → Requirement → primary test strategy 编译 TaskTddContract。"},{"from":"flow-contract","to":"flow-cycle","label":"4 / 5 · 证据必须按状态顺序形成","detail":"Baseline 先证明旧基线健康；Red 必须命中目标 Assertion；Green 复用同一测试补丁；Refactor 仍要重验。"},{"from":"flow-cycle","to":"flow-verdict","label":"5 / 5 · 证据才能推导完成","detail":"只有结构化、绑定未漂移的 Evidence 才进入 TaskVerdict；Task 可接受也不代表 Snapshot 必然可提交。"}]'
-            aria-label="从需求到 Snapshot 的交互数据流"
-          >
-            <div class="flow-actors">
-              <article class="flow-actor" id="flow-prd">
-                <span class="actor-index">01</span>
-                <h3>需求</h3>
-                <p>PrdProposal</p>
-                <p>Requirement · atomic Criterion</p>
-                <p>Test seed · canonical Assertion</p>
-              </article>
-              <article class="flow-actor" id="flow-design">
-                <span class="actor-index">02</span>
-                <h3>设计</h3>
-                <p>DesignSet.test_strategy</p>
-                <p>final CapabilityPlan</p>
-              </article>
-              <article class="flow-actor" id="flow-plan">
-                <span class="actor-index">03</span>
-                <h3>计划</h3>
-                <p>PlanProposal</p>
-                <p>ExecutionPlan · Task</p>
-              </article>
-              <article class="flow-actor" id="flow-contract">
-                <span class="actor-index">04</span>
-                <h3>合同</h3>
-                <p>TaskTddContract</p>
-              </article>
-              <article class="flow-actor" id="flow-cycle">
-                <span class="actor-index">05</span>
-                <h3>证据循环</h3>
-                <p>Baseline → Red → Green</p>
-                <p>Refactor → Evidence</p>
-              </article>
-              <article class="flow-actor" id="flow-verdict">
-                <span class="actor-index">06</span>
-                <h3>裁决</h3>
-                <p>TaskVerdict</p>
-                <p>Snapshot</p>
-              </article>
-            </div>
-            <div class="flow-packet" aria-hidden="true"></div>
-            <div class="flow-step-label" aria-live="polite">
-              准备好：从 PrdProposal 开始。每次前进时，问自己这一层新增了什么绑定。
-            </div>
-            <div class="flow-controls">
-              <button class="primary-button flow-next-btn" type="button">下一步</button>
-              <button class="secondary-button flow-reset-btn" type="button">重置</button>
-              <span class="flow-progress" aria-live="polite">0 / 5</span>
-            </div>
-          </div>
-
-          <aside class="callout callout-warning">
-            <span class="callout-label">别跳站</span>
+      <section class="lesson-section" id="design">
+        <p class="screen-kicker">01 · DESIGN PROBLEM</p>
+        <h2>为什么 Criterion 不能直接挂到测试结果上？</h2>
+        <p class="section-intro">
+          自然语言需求会改写，任务会拆分，测试实现也会替换。若只靠字符串或名字关联，无法稳定回答“这条验收条件由哪个任务负责、用什么策略验证、证据是否属于同一语义版本”。
+        </p>
+        <div class="definition-grid">
+          <article class="definition-card">
+            <h3>Criterion</h3>
+            <p>PRD 中已接受的验收语义，拥有稳定 id、semantic digest 与 Test node 绑定。</p>
+          </article>
+          <article class="definition-card">
+            <h3>Assertion</h3>
             <p>
-              “测试通过”只描述了 Green 附近的一个观测。如果 Assertion 没有 Task 归属，或 Red
-              不是结构化的目标失败，这个绿灯不能证明需求完成。
+              把验收语义物化成计划必须覆盖的可追踪声明；它保留 Criterion、Requirement、Test
+              与策略身份。
             </p>
-          </aside>
+          </article>
+          <article class="definition-card">
+            <h3>TaskTddContract</h3>
+            <p>
+              执行前编译出的不可变任务契约，规定哪些 assertion、测试策略和 TDD 阶段属于该 Task。
+            </p>
+          </article>
+          <article class="definition-card">
+            <h3>Evidence / Verdict</h3>
+            <p>
+              运行事实必须回指 contract 与 assertion；Verdict
+              只根据这条血缘裁决，不接受“测试绿了”的模糊声称。
+            </p>
+          </article>
         </div>
       </section>
 
-      <section class="lesson-section lesson-screen" id="source" aria-labelledby="source-title">
-        <div class="screen-inner">
-          <p class="eyebrow">Screen 3 · Code ↔ 中文</p>
-          <h2 id="source-title">Assertion Compiler 拥有身份公式，Planner 只拥有分配权</h2>
+      <section class="lesson-section" id="call-chain">
+        <p class="screen-kicker">02 · PRODUCTION CALL CHAIN</p>
+        <h2>验收语义经过两次编译，才进入执行</h2>
+        <div class="throughline" aria-label="验收条件到裁决调用链">
+          <article class="throughline-node">
+            <strong>Criterion</strong><br /><small>accepted semantic digest</small>
+          </article>
+          <article class="throughline-node">
+            <strong>Assertion</strong><br /><small>stable identity + coverage</small>
+          </article>
+          <article class="throughline-node">
+            <strong>TaskTddContract</strong><br /><small>unique owner + strategy</small>
+          </article>
+          <article class="throughline-node">
+            <strong>TDD Evidence</strong><br /><small>Red · Green · Refactor</small>
+          </article>
+          <article class="throughline-node">
+            <strong>TaskVerdict</strong><br /><small>passed or blocked</small>
+          </article>
+        </div>
+        <p>
+          第一次编译把已接受 Criterion 变为 Assertion；planner 必须让每个 Criterion Assertion
+          恰好有一个 owner。第二次编译把已接受 DesignSet 中的测试策略与 Plan 中的 Task 固定为
+          contract。执行层只能履行 contract，不能临时改变适用范围。
+        </p>
+        <aside class="callout callout-info">
+          <p class="callout-label">两条核心不变量</p>
           <p>
-            <abbr
-              class="term"
-              title="canonical（规范化）：由系统唯一规则生成，而不是让每个调用者自行决定"
-              data-definition="由系统唯一规则生成，而不是让每个调用者自行决定"
-              >规范化（canonical）</abbr
-            >
-            Assertion 是 Criterion 的可执行验收身份。下面 9 行是当前仓库原样摘录；它的重点不是
-            TypeScript 语法，而是“每条 Criterion 都通过同一公式获得身份”。
+            <strong>完整覆盖：</strong>每条已接受 Criterion 恰好产生一个
+            Assertion。<strong>唯一归属：</strong>每个 Criterion Assertion 恰好由一个 Task 拥有。
           </p>
+        </aside>
+      </section>
 
-          <div class="source-dossier">
-            <span class="source-dossier-label">核心源码 1 · Criterion → Assertion 编译</span>
-            <div class="source-context-grid">
-              <article class="source-context-card" data-kind="caller">
-                <strong>调用者与输入</strong>
-                <p>
-                  Plan 准备阶段提交 accepted criteria，以及 DesignSet 可选的 primary strategy 映射。
-                </p>
-              </article>
-              <article class="source-context-card" data-kind="output">
-                <strong>输出与消费者</strong>
-                <p>
-                  每条 Criterion 生成一个 descriptor，随后由 coverage validator 与 Planner
-                  分配逻辑消费。
-                </p>
-              </article>
-              <article class="source-context-card" data-kind="guard">
-                <strong>身份不变量</strong>
-                <p>id 只依赖 Criterion id + semantic digest；无关 Criterion 插入不会旋转旧身份。</p>
-              </article>
-              <article class="source-context-card" data-kind="authority">
-                <strong>证据边界</strong>
-                <p>证明身份生成规则；不证明 descriptor 已被唯一 Task 持有或 TDD 已运行。</p>
-              </article>
-            </div>
-            <div class="code-translation">
-              <figure class="code-panel">
-                <figcaption>
-                  真实源码 ·
-                  <a href="../../packages/core/src/plan/assertions.ts#L58"
-                    >packages/core/src/plan/assertions.ts:58–66</a
-                  >
-                </figcaption>
-                <pre><code>  return criteria.map((criterion) =&gt; {
-    const strategy =
-      options?.primary_strategies?.[`${criterion.criterion_id}#${criterion.test_node_id}`];
-    return {
-      assertion_id: criterionAssertionId({
-        criterion_id: criterion.criterion_id,
-        criterion_semantic_digest: criterion.criterion_semantic_digest,
-      }),
-      assertion_kind: "criterion_assertion",</code></pre>
-              </figure>
-
-              <aside class="translation-panel translation-english" aria-label="源码的逐段中文翻译">
-                <span class="translation-label">这段代码在说</span>
-                <ol>
-                  <li>
-                    <code>criteria.map</code>：输入有几条原子
-                    Criterion，就逐条编译，不把两条悄悄合并。
-                  </li>
-                  <li>
-                    <code>primary_strategies</code>：如果设计治理已给 Criterion/Test
-                    对指定主策略，把它带上；没有就不伪造。
-                  </li>
-                  <li>
-                    <code>criterionAssertionId</code>：身份只由 Criterion id 与语义 digest
-                    按固定公式生成。
-                  </li>
-                </ol>
-              </aside>
-            </div>
-          </div>
-
-          <aside class="callout callout-aha">
-            <span class="callout-label">Aha</span>
-            <p>
-              无关 Criterion 被插入时，旧 Assertion 的身份应保持稳定；某条 Criterion
-              语义变了，只旋转它对应的身份。这让审计者能分清“新增”与“偷换”。
+      <section class="lesson-section" id="source-one">
+        <p class="screen-kicker">03 · SOURCE READING 1</p>
+        <h2>Assertion identity 来自语义，而不是数组位置</h2>
+        <article class="source-reading">
+          <header class="source-reading-header">
+            <p class="source-position">
+              调用链位置：accepted criteria → <strong>materializeCriterionAssertions</strong> →
+              assertion descriptors
             </p>
-          </aside>
-
-          <div class="source-map-grid reference-grid" aria-label="本课生产链源码地图">
-            <article class="source-map-card reference-card">
-              <strong
-                ><a href="../../packages/runtime/src/planning/execution-plan.ts#L258"
-                  >execution-plan.ts:258</a
-                ></strong
-              >
-              <p>
-                Planner 接收 canonical descriptors 并编译 ExecutionPlan；输出 Task
-                分配。审查点是它只能分配既有 Assertion，不能生成 Criterion 身份。
-              </p>
-            </article>
-            <article class="source-map-card reference-card">
-              <strong
-                ><a href="../../packages/runtime/src/orchestration/kernel-coordinator.ts#L2430"
-                  >kernel-coordinator.ts:2430</a
-                ></strong
-              >
-              <p>
-                Kernel 从 Plan、accepted PRD、DesignSet 与 final CapabilityPlan 编译
-                TaskTddContract；任何 lineage 缺失返回 <code>binding_drift</code>。
-              </p>
-            </article>
-            <article class="source-map-card reference-card">
-              <strong
-                ><a href="../../packages/runtime/src/tdd/controller.ts#L13"
-                  >controller.ts:13</a
-                ></strong
-              >
-              <p>
-                状态机只接受 Baseline→Red→Green→Refactor
-                的合法迁移；证明阶段顺序受控，不单独证明测试语义命中目标。
-              </p>
-            </article>
-            <article class="source-map-card reference-card">
-              <strong
-                ><a href="../../packages/runtime/src/tdd/execution-runner.ts#L200"
-                  >execution-runner.ts:200</a
-                ></strong
-              >
-              <p>
-                Runner 消费 immutable contract；只有 accepted Red digest 才解锁 production write
-                grant。输出是结构化 Evidence，不是自由文本完成声明。
-              </p>
-            </article>
-          </div>
-
-          <div class="source-dossier">
-            <span class="source-dossier-label">核心源码 2 · TaskTddContract 编译入口</span>
-            <div class="source-context-grid">
-              <article class="source-context-card" data-kind="caller">
-                <strong>调用者与输入</strong>
-                <p>
-                  Kernel Coordinator 在 strict_tdd 子图存在时调用；输入来自 final
-                  CapabilityPlan、Plan、accepted PRD 与 DesignSet。
-                </p>
-              </article>
-              <article class="source-context-card" data-kind="output">
-                <strong>输出与下游</strong>
-                <p>为每个 Task 持久化 immutable contract，供 StrictTddExecutionPort 执行。</p>
-              </article>
-              <article class="source-context-card" data-kind="guard">
-                <strong>失败语义</strong>
-                <p>
-                  子图未激活直接返回；子图激活却缺任一 accepted input 时抛
-                  <code>binding_drift</code>。
-                </p>
-              </article>
-              <article class="source-context-card" data-kind="authority">
-                <strong>不能推断</strong>
-                <p>合同编译成功只证明输入血缘闭合；Red/Green 和 Verdict 仍需后续 Evidence。</p>
-              </article>
+            <h3>为什么读这段</h3>
+            <p>
+              它说明验收追踪的身份怎样保持稳定：Assertion id 由 Criterion id 与 semantic digest
+              推导，同时显式保留下游需要的血缘字段。
+            </p>
+            <a href="../../packages/core/src/plan/assertions.ts#L58"
+              >packages/core/src/plan/assertions.ts · materializeCriterionAssertions</a
+            >
+          </header>
+          <div class="source-reading-grid">
+            <pre><code>return criteria.map((criterion) =&gt; {
+  const strategy =
+    options?.primary_strategies?.[`${criterion.criterion_id}#${criterion.test_node_id}`];
+  return {
+    assertion_id: criterionAssertionId({
+      criterion_id: criterion.criterion_id,
+      criterion_semantic_digest: criterion.criterion_semantic_digest,
+    }),
+    assertion_kind: "criterion_assertion",
+</code></pre>
+            <div class="source-explanation">
+              <dl>
+                <dt>谁调用、输入是什么</dt>
+                <dd>
+                  计划准备逻辑把已接受 Criterion 列表和可选的主测试策略映射传入；每个 Criterion
+                  已带稳定 id、semantic digest 与 test node。
+                </dd>
+                <dt>关键逻辑</dt>
+                <dd>
+                  策略查找用 <code>criterion_id#test_node_id</code> 定位；Assertion id 用 Criterion
+                  id 与语义摘要生成，因此语义改变会得到新的身份。
+                </dd>
+                <dt>输出交给谁</dt>
+                <dd>
+                  返回 descriptors，后续 planner 把它们放进 Plan 的 Assertion 集合并分配给 Task。
+                </dd>
+                <dt>失败与证据边界</dt>
+                <dd>
+                  <code>map</code> 只物化一对一候选；完整覆盖、重复与 owner 唯一性由后续 coverage
+                  validator 检查。
+                </dd>
+              </dl>
             </div>
-            <div class="code-translation">
-              <figure class="code-panel">
-                <figcaption>
-                  原样源码 ·
-                  <a href="../../packages/runtime/src/orchestration/kernel-coordinator.ts#L2430"
-                    >packages/runtime/src/orchestration/kernel-coordinator.ts:2430–2454</a
-                  >
-                </figcaption>
-                <pre><code>/**
- * Compile the accepted DesignSet test strategy into one immutable contract
- * per Task. The planner never invents TDD applicability: every field below
- * is traced through Task Assertion -&gt; accepted Test seed -&gt; Criterion -&gt;
- * Requirement -&gt; primary accepted test_strategy asset.
- */
-async function compileTaskTddContracts(ctx: PipelineContext): Promise&lt;void&gt; {
+          </div>
+        </article>
+        <div class="prediction-card">
+          <strong>阅读源码 2 前先预测：</strong>如果 strict TDD 已激活，但运行上下文缺少已接受
+          DesignSet，系统应该让 planner 临时选择测试框架，还是阻断 contract 编译？为什么？
+        </div>
+      </section>
+
+      <section class="lesson-section" id="source-two">
+        <p class="screen-kicker">04 · SOURCE READING 2</p>
+        <h2>执行契约只能从已接受事实编译，不能由 planner 发明</h2>
+        <article class="source-reading">
+          <header class="source-reading-header">
+            <p class="source-position">
+              调用链位置：final Plan + accepted DesignSet + PRD →
+              <strong>compileTaskTddContracts</strong> → Task contracts
+            </p>
+            <h3>为什么读这段</h3>
+            <p>
+              它显示 strict TDD 是 CapabilityPlan 中的真实运行子图；只有子图存在才编译
+              contract，且输入缺失时 fail closed。
+            </p>
+            <a href="../../packages/runtime/src/orchestration/kernel-coordinator.ts#L2436"
+              >packages/runtime/src/orchestration/kernel-coordinator.ts · compileTaskTddContracts</a
+            >
+          </header>
+          <div class="source-reading-grid">
+            <pre><code>async function compileTaskTddContracts(ctx: PipelineContext): Promise&lt;void&gt; {
   const capabilityPlan = ctx.capabilityPlan;
   if (
     capabilityPlan === undefined ||
@@ -365,376 +215,124 @@ async function compileTaskTddContracts(ctx: PipelineContext): Promise&lt;void&gt
   }
   const plan = ctx.plan ?? loadPlan(ctx);
   const designSet = ctx.designSet ?? loadAcceptedDesignSet(ctx);
-  const acceptedPrd = acceptedPrdForOperation(ctx);
-  if (plan === undefined || designSet === undefined || acceptedPrd === undefined) {
-    throw new OrchestrationError(
-      "binding_drift",
-      "strict_tdd contract compilation requires accepted PRD, DesignSet and final Plan",
-    );
-  }</code></pre>
-              </figure>
-              <aside class="translation-panel translation-english">
-                <span class="translation-label">逻辑块讲解</span>
-                <ol>
-                  <li>注释先声明 authority boundary：Planner 不拥有 TDD applicability。</li>
-                  <li>
-                    第一段检查运行图是否真的含 strict_tdd 子图，避免为 inactive 能力生成残留合同。
-                  </li>
-                  <li>
-                    Plan、DesignSet、PRD 可以从 context 或权威读取路径取得，但语义必须是
-                    accepted/final。
-                  </li>
-                  <li>
-                    任一输入缺失都归一化为 <code>binding_drift</code>，禁止猜测策略或继续执行。
-                  </li>
-                </ol>
-              </aside>
+  const acceptedPrd = acceptedPrdForOperation(ctx);</code></pre>
+            <div class="source-explanation">
+              <dl>
+                <dt>谁调用、输入是什么</dt>
+                <dd>
+                  Kernel coordinator 在进入严格执行前调用；上下文必须能提供 CapabilityPlan、final
+                  Plan、accepted DesignSet 与 accepted PRD。
+                </dd>
+                <dt>第一个守卫</dt>
+                <dd>
+                  只有 Operation DAG 的 execute 节点明确带 <code>strict_tdd</code> subgraph
+                  才进入编译；未激活时正常返回，不制造无关契约。
+                </dd>
+                <dt>第二个守卫</dt>
+                <dd>
+                  紧随本切片的代码会检查 Plan、DesignSet、PRD；任一缺失抛出
+                  <code>binding_drift</code>，而不是让 planner 补猜。
+                </dd>
+                <dt>下游与证据边界</dt>
+                <dd>
+                  编译出的 contract 交给 strict TDD runner，runner 再要求 Red、Green、Refactor
+                  血缘。这里证明契约来源，不单独证明 TaskVerdict 已通过。
+                </dd>
+              </dl>
             </div>
           </div>
-        </div>
+        </article>
+        <aside class="callout callout-success">
+          <p class="callout-label">本课结论</p>
+          <p>
+            Assertion 固定“要证明什么”，TaskTddContract 固定“谁用什么策略证明”，TDD Evidence
+            记录“实际发生了什么”，Verdict 才回答“是否完成”。四者不能合并成一个测试结果字段。
+          </p>
+        </aside>
       </section>
 
-      <section
-        class="lesson-section lesson-screen"
-        id="decisions"
-        aria-labelledby="decisions-title"
-      >
-        <div class="screen-inner wide">
-          <p class="eyebrow">Screen 4 · 决策练习</p>
-          <h2 id="decisions-title">四条绑定断了，最早应该在哪里停？</h2>
-          <p>
-            <abbr
-              class="term"
-              title="fail closed：信息缺失、身份漂移或证据不合格时，默认拒绝而非猜测通过"
-              data-definition="信息缺失、身份漂移或证据不合格时，默认拒绝而非猜测通过"
-              >fail closed</abbr
-            >
-            的要点是“在最早能确定不可证明的地方停下”。先口头作答，再展开对照。
-          </p>
-
-          <div class="decision-grid pattern-cards">
-            <details class="decision-card">
-              <summary><span>01</span> Criterion → Test seed 绑定断裂</summary>
-              <div class="decision-answer">
-                <strong>最早停在：TaskTddContract 编译层</strong>
-                <p>
-                  Kernel 从 Task Assertion 取 Test id 后找不到已接受的 Criterion lineage，抛出
-                  <code>binding_drift</code>；不得进入 TDD 执行。
-                </p>
-                <a href="../../packages/runtime/src/orchestration/kernel-coordinator.ts#L2479"
-                  >证据：kernel-coordinator.ts:2479–2496</a
-                >
-              </div>
-            </details>
-
-            <details class="decision-card">
-              <summary><span>02</span> Assertion → Task 归属断裂</summary>
-              <div class="decision-answer">
-                <strong>最早停在：Plan 覆盖校验层</strong>
-                <p>
-                  每个 criterion_assertion 必须恰有一个拥有者。零个或多个 Task
-                  都是计划无效，不应等到测试或 Verdict 再发现。
-                </p>
-                <a href="../../packages/core/src/plan/assertions.ts#L100"
-                  >证据：assertions.ts:100–116</a
-                >
-              </div>
-            </details>
-
-            <details class="decision-card">
-              <summary><span>03</span> DesignSet → TddContract 绑定断裂</summary>
-              <div class="decision-answer">
-                <strong>最早停在：合同编译／校验层</strong>
-                <p>
-                  找不到 primary test strategy，或合同绑定的 Plan/CapabilityPlan 已过期，均抛出
-                  <code>binding_drift</code>；Planner 不能自行补一个策略。
-                </p>
-                <a href="../../packages/runtime/src/orchestration/kernel-coordinator.ts#L2498"
-                  >证据：kernel-coordinator.ts:2498–2519</a
-                >
-              </div>
-            </details>
-
-            <details class="decision-card">
-              <summary><span>04</span> Red Evidence → production grant 绑定断裂</summary>
-              <div class="decision-answer">
-                <strong>最早停在：Strict TDD 权限发放层</strong>
-                <p>
-                  语法错误、超时、无结构结果或未命中目标 Assertion 都不形成 Red
-                  Evidence。没有被接受的 Red digest，就不发放生产写入 grant。
-                </p>
-                <a href="../../packages/runtime/src/tdd/execution-runner.ts#L200"
-                  >证据：execution-runner.ts:200–205</a
-                >
-              </div>
-            </details>
+      <section class="lesson-section" id="verify">
+        <p class="screen-kicker">05 · VERIFY AND RETRIEVE</p>
+        <h2>复跑 Assertion、planner 与 strict TDD 路由</h2>
+        <div class="source-lab" data-lab-id="lesson-0003-trace">
+          <div class="lab-head">
+            <div>
+              <p class="card-kicker">REPEATABLE CHECK</p>
+              <h3>Acceptance trace + strict TDD</h3>
+            </div>
+            <span class="lab-status">尚未标记</span>
           </div>
+          <pre
+            class="command-block lab-command"
+          ><code data-command>pnpm exec vitest run packages/core/test/plan/assertions.test.ts packages/runtime/test/planning/default-planner-assertions.test.ts packages/runtime/test/orchestration/strict-tdd-routing.test.ts</code></pre>
+          <div class="lab-actions">
+            <button class="btn secondary" type="button" data-copy-command>复制命令</button
+            ><button class="btn" type="button" data-mark-lab>我已复跑并核对</button>
+          </div>
+          <p class="evidence-boundary">
+            <strong>证据边界：</strong>命令验证仓库内的 Assertion 覆盖、Task 归属和 strict TDD
+            路由；不证明某个真实项目的 Criterion 已全部写对。
+          </p>
+        </div>
 
-          <div class="decision-prompt" role="note">
-            <strong>再做一步：不只说“不行”</strong>
-            <p>
-              选一张卡，用这个句式回答：“我在 <em>层</em> 拒绝，因为缺少
-              <em>绑定</em>；若继续，将无法证明 <em>业务声称</em>。”
-            </p>
+        <div class="quiz-container" data-quiz>
+          <h3>即时判断</h3>
+          <div
+            class="quiz-question-block"
+            data-correct="b"
+            data-explanation-right="正确。语义摘要变化应产生新的 Assertion 身份。"
+            data-explanation-wrong="数组位置不能稳定表达验收语义版本。"
+          >
+            <p><strong>1. Assertion id 最应绑定哪类信息？</strong></p>
+            <button class="quiz-option" type="button" data-value="a">绑定它在列表中的位置</button
+            ><button class="quiz-option" type="button" data-value="b">绑定条件标识与语义摘要</button
+            ><span class="quiz-feedback"></span>
+          </div>
+          <div
+            class="quiz-question-block"
+            data-correct="a"
+            data-explanation-right="正确。缺已接受输入就是 binding drift，必须阻断。"
+            data-explanation-wrong="planner 临时补猜会切断 DesignSet 到 Evidence 的血缘。"
+          >
+            <p><strong>2. strict TDD 缺 DesignSet 时应怎样？</strong></p>
+            <button class="quiz-option" type="button" data-value="a">阻断并报告绑定发生漂移</button
+            ><button class="quiz-option" type="button" data-value="b">自行选择默认的测试方案</button
+            ><span class="quiz-feedback"></span>
+          </div>
+          <div class="quiz-actions">
+            <button class="btn" type="button" data-quiz-check>检查答案</button
+            ><button class="btn secondary" type="button" data-quiz-reset>重置</button>
           </div>
         </div>
-      </section>
 
-      <section class="lesson-section lesson-screen" id="verify" aria-labelledby="verify-title">
-        <div class="screen-inner">
-          <p class="eyebrow">Screen 5 · 可复跑源码实验</p>
-          <h2 id="verify-title">亲手核验三个关键约束</h2>
+        <div class="retrieval-card">
+          <strong>脱稿回忆</strong>
           <p>
-            <abbr
-              class="term"
-              title="Vitest：本仓库用来执行 TypeScript/JavaScript 自动化测试的工具"
-              data-definition="本仓库用来执行 TypeScript/JavaScript 自动化测试的工具"
-              >Vitest</abbr
-            >
-            会分别检查 Assertion 的规范身份、Planner 对归属的 fail-closed，以及 strict TDD
-            子图的路由。
+            从 Criterion
+            开始画五个框，并为每条箭头写出“保留了哪个身份或摘要”。然后解释为何“测试通过”本身还不能直接等于
+            TaskVerdict passed。
           </p>
-
-          <div class="source-lab" data-lab-id="lesson-0003-traceability">
-            <div class="lab-header">
-              <div>
-                <span class="lab-label">SOURCE LAB</span>
-                <h3>复跑追踪链基线</h3>
-              </div>
-              <span class="lab-status" aria-live="polite">尚未标记</span>
-            </div>
-
-            <div class="lab-command">
-              <pre><code data-command>pnpm exec vitest run \
-  packages/core/test/plan/assertions.test.ts \
-  packages/runtime/test/planning/default-planner-assertions.test.ts \
-  packages/runtime/test/orchestration/strict-tdd-routing.test.ts</code></pre>
-            </div>
-
-            <div class="lab-actions">
-              <button type="button" data-copy-command>复制命令</button>
-              <button type="button" class="secondary" data-mark-lab>我已运行并对照结果</button>
-            </div>
-
-            <div class="evidence-stamp">
-              <span class="status-dot verified" aria-hidden="true"></span>
-              <div>
-                <strong><code>05871fc</code> 已核验基线：3 files · 13/13 tests passed</strong>
-                <p>
-                  本课生成时复跑结果：全部通过。这是当前提交的仓库内证据，不自动等于外部 Provider
-                  或完整生产 E2E 已验证。
-                </p>
-              </div>
-            </div>
-          </div>
-
-          <div class="lab-observation">
-            <h3>运行后，不要只看“绿”</h3>
-            <ol>
-              <li>确认是 <strong>3</strong> 个指定文件，避免误跑别的测试。</li>
-              <li>确认是 <strong>13/13</strong> tests，而不是仅某个 describe 通过。</li>
-              <li>
-                若失败，记录当前 commit、首个失败名称与实际错误；不要把本课的历史基线写成当前事实。
-              </li>
-            </ol>
-          </div>
         </div>
-      </section>
-
-      <section class="lesson-section lesson-screen" id="quiz" aria-labelledby="quiz-title">
-        <div class="screen-inner">
-          <p class="eyebrow">Screen 6 · 闭卷检索</p>
-          <h2 id="quiz-title">不回看：你能从现象定位裁决层吗？</h2>
+        <div class="primary-source-card">
+          <strong>继续精读</strong>
           <p>
-            这 3 题检查的不是名词记忆，而是你能否用
-            <abbr
-              class="term"
-              title="TaskVerdict：基于有效 Gate、Evaluation 和 TDD Evidence 推导的 Task 完成裁决"
-              data-definition="基于有效 Gate、Evaluation 和 TDD Evidence 推导的 Task 完成裁决"
-              >TaskVerdict</abbr
+            先读
+            <a href="../../packages/core/src/plan/assertions.ts"
+              >packages/core/src/plan/assertions.ts</a
             >
-            的证据逻辑拒绝一个过早的“已完成”。
+            的 coverage issue codes，再读
+            <a href="../../packages/runtime/src/orchestration/kernel-coordinator.ts#L2436"
+              >compileTaskTddContracts</a
+            >
+            后半段的血缘校验。向教学 Agent 提问“哪一种缺口对应 missing、duplicate 或
+            binding_drift”。
           </p>
-
-          <div class="quiz-container" id="quiz-0003">
-            <article
-              class="quiz-question-block"
-              data-correct="b"
-              data-explanation-right="对。语义变化只旋转该 Criterion 的规范 Assertion 身份。"
-              data-explanation-wrong="再看身份公式：它绑定的是单条 Criterion id 与语义 digest。"
-            >
-              <p class="question-number">01</p>
-              <h3 class="quiz-question">
-                某条 Criterion 的语义 digest 发生变化，另一条无关 Criterion 未变。正确的 Assertion
-                身份结果是？
-              </h3>
-              <div class="quiz-options">
-                <button
-                  type="button"
-                  class="quiz-option"
-                  data-value="a"
-                  aria-pressed="false"
-                  onclick="selectOption(this)"
-                >
-                  所有断言身份一起轮换
-                </button>
-                <button
-                  type="button"
-                  class="quiz-option"
-                  data-value="b"
-                  aria-pressed="false"
-                  onclick="selectOption(this)"
-                >
-                  仅此断言身份发生轮换
-                </button>
-                <button
-                  type="button"
-                  class="quiz-option"
-                  data-value="c"
-                  aria-pressed="false"
-                  onclick="selectOption(this)"
-                >
-                  此断言身份仍保持不变
-                </button>
-              </div>
-              <p class="quiz-feedback" aria-live="polite"></p>
-            </article>
-
-            <article
-              class="quiz-question-block"
-              data-correct="a"
-              data-explanation-right="对。零拥有者在 Plan 覆盖校验层就是 missing ownership。"
-              data-explanation-wrong="它还没有合法的执行责任人；不应让它进入执行或快照阶段。"
-            >
-              <p class="question-number">02</p>
-              <h3 class="quiz-question">
-                某 Assertion 有可运行的 Test，但在 ExecutionPlan 中没有任何 Task 拥有它。系统应该？
-              </h3>
-              <div class="quiz-options">
-                <button
-                  type="button"
-                  class="quiz-option"
-                  data-value="a"
-                  aria-pressed="false"
-                  onclick="selectOption(this)"
-                >
-                  计划编译阶段拒绝继续
-                </button>
-                <button
-                  type="button"
-                  class="quiz-option"
-                  data-value="b"
-                  aria-pressed="false"
-                  onclick="selectOption(this)"
-                >
-                  执行结束阶段补写归属
-                </button>
-                <button
-                  type="button"
-                  class="quiz-option"
-                  data-value="c"
-                  aria-pressed="false"
-                  onclick="selectOption(this)"
-                >
-                  快照提交阶段自动通过
-                </button>
-              </div>
-              <p class="quiz-feedback" aria-live="polite"></p>
-            </article>
-
-            <article
-              class="quiz-question-block"
-              data-correct="a"
-              data-explanation-right="对。语法错误不形成 Red Evidence，因此没有 proof digest 可解锁实现 grant。"
-              data-explanation-wrong="Agent 自述不是 Evidence；Red 必须是结构化且命中目标 Assertion 的失败。"
-            >
-              <p class="question-number">03</p>
-              <h3 class="quiz-question">
-                Red 阶段只产生了语法错误，但 Agent 声称实现已准备好。下一步应该？
-              </h3>
-              <div class="quiz-options">
-                <button
-                  type="button"
-                  class="quiz-option"
-                  data-value="a"
-                  aria-pressed="false"
-                  onclick="selectOption(this)"
-                >
-                  拒绝证据并禁止生产写入
-                </button>
-                <button
-                  type="button"
-                  class="quiz-option"
-                  data-value="b"
-                  aria-pressed="false"
-                  onclick="selectOption(this)"
-                >
-                  接受失败并开放生产写入
-                </button>
-                <button
-                  type="button"
-                  class="quiz-option"
-                  data-value="c"
-                  aria-pressed="false"
-                  onclick="selectOption(this)"
-                >
-                  忽略红灯并直接记录绿灯
-                </button>
-              </div>
-              <p class="quiz-feedback" aria-live="polite"></p>
-            </article>
-
-            <div class="quiz-actions">
-              <button type="button" class="quiz-check-btn" onclick="checkQuiz('quiz-0003')">
-                提交 3 题
-              </button>
-              <button type="button" class="quiz-reset-btn" onclick="resetQuiz('quiz-0003')">
-                重做
-              </button>
-            </div>
-            <p class="quiz-summary" aria-live="polite"></p>
-          </div>
-
-          <div class="completion-checklist completion-box">
-            <h3>课后完成标准</h3>
-            <ul>
-              <li>
-                不看页面，口述 Criterion → Assertion → Task → TaskTddContract → Evidence → Verdict。
-              </li>
-              <li>能解释“测试通过”为什么仍可能不足以完成 Task。</li>
-              <li>选一条真实 Criterion，记录其追踪结果与残余不确定性。</li>
-            </ul>
-            <div class="button-row">
-              <button class="secondary-button" type="button" data-mark-reviewed>
-                标记本课已复习
-              </button>
-            </div>
-          </div>
-
-          <aside class="ask-agent callout callout-info" role="note">
-            <strong>有一段说不清？</strong>
-            <p>
-              直接让你的教师 Agent 选一条当前仓库
-              Criterion，和你一起做完整血缘追踪；不要用“我看懂了”代替检索。
-            </p>
-          </aside>
-
-          <nav class="lesson-footer-nav lesson-pagination" aria-label="前后课导航">
-            <a class="previous-lesson" href="0002-Profile与CapabilityPlan.html">
-              <span>上一课</span>
-              <strong>Profile 与 CapabilityPlan</strong>
-            </a>
-            <a class="next-lesson" href="0004-模型端口与Provider连通性.html">
-              <span>下一课</span>
-              <strong>模型端口与 Provider 连通性</strong>
-            </a>
-          </nav>
+        </div>
+        <div class="lesson-footer">
+          <a class="btn secondary" href="0002-Profile与CapabilityPlan.html">← 上一课</a
+          ><a class="btn" href="0004-模型端口与Provider连通性.html">下一课：模型连通链 →</a>
         </div>
       </section>
     </main>
-
-    <footer class="site-footer">
-      <p>证据优先 · 不伪造学习进度 · 最后核验基线 <code>05871fc</code></p>
-    </footer>
   </body>
 </html>
