@@ -403,6 +403,12 @@ export interface OperationCasInput {
   readonly project_id: string;
   readonly operation_id: string;
   readonly expected_head_oid?: string;
+  /**
+   * Candidate commit the publisher staged at
+   * `refs/heads/harness/candidate/<operation_id>` before publishing: the
+   * control store fetches that staging ref by name (remotes refuse bare-OID
+   * fetches) and requires its head to name exactly this commit.
+   */
   readonly candidate_commit: string;
   readonly fencing_token: number;
 }

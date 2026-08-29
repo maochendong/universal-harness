@@ -99,14 +99,18 @@ function cloneRemote(remote: string): string {
   return clone;
 }
 
-/** Commit a candidate on top of the remote's main and push it aside. */
-function pushCandidate(remote: string, file: string): string {
+/**
+ * Commit a candidate on top of the remote's main and stage it the way the
+ * CLI does: the commit is pushed to the untrusted staging ref
+ * `refs/heads/harness/candidate/<operationId>` that publish fetches by name.
+ */
+function pushCandidate(remote: string, file: string, operationId = "op_1"): string {
   const clone = cloneRemote(remote);
   writeFileSync(join(clone, file), `candidate ${file}\n`);
   git(clone, "add", file);
   git(clone, "commit", "-m", `candidate ${file}`);
   const candidate = git(clone, "rev-parse", "HEAD").trim();
-  git(clone, "push", "origin", `HEAD:refs/heads/candidate/${file}`);
+  git(clone, "push", "origin", `HEAD:refs/heads/harness/candidate/${operationId}`);
   return candidate;
 }
 

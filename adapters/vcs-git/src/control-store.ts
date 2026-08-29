@@ -122,6 +122,14 @@ export interface OperationCasRequest {
   readonly project_id: string;
   readonly operation_id: string;
   readonly expected_head_oid?: string;
+  /**
+   * Candidate commit the caller staged at
+   * `refs/heads/harness/candidate/<operation_id>` (the CLI's publish pushes
+   * exactly this ref). The Adapter fetches the staging ref by name — never a
+   * bare OID, which GitHub/GitLab refuse without allowAnySHA1InWant — and
+   * fails with `operation_ref_drift` when the ref is missing or names a
+   * different commit.
+   */
   readonly candidate_commit: string;
   /**
    * The caller's fencing token. Fencing authorization is the Coordinator's
