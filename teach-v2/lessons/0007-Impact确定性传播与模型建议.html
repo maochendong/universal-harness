@@ -1,0 +1,302 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      name="description"
+      content="第 7 课：穿透 Impact 的确定性传播、风险评分与模型建议合并边界。"
+    />
+    <title>0007 · Impact 确定性传播与模型建议</title>
+    <link rel="stylesheet" href="../assets/style.css" />
+    <script src="../assets/quiz.js" defer></script>
+    <script src="../assets/source-lab.js" defer></script>
+  </head>
+  <body class="lesson-page traditional-lesson" data-lesson-id="0007">
+    <a class="skip-link" href="#start">跳到课程内容</a>
+    <header class="topbar">
+      <div class="topbar-inner">
+        <a class="brand" href="../index.html">Universal Harness · Teach 2.0</a>
+        <nav class="nav-links">
+          <a href="0006-双图模型与全部关系语义.html">上一课</a
+          ><a href="../reference/architecture-map.html">架构地图</a><span>07 / 14</span>
+        </nav>
+        <span class="page-progress" role="progressbar" aria-label="本课阅读进度"></span>
+      </div>
+    </header>
+    <main class="lesson-main lesson-shell">
+      <section class="lesson-section lesson-hero" id="start">
+        <nav class="breadcrumb">
+          <a href="../index.html">课程地图</a><span>/</span><span>第 7 课</span>
+        </nav>
+        <div class="lesson-meta">
+          <span class="badge">Impact</span><span class="badge time">约 22 分钟</span
+          ><span class="status-pill status-connected">仓库内已连通</span>
+        </div>
+        <p class="eyebrow">LESSON 0007 · CHANGE SEED → PATH → RISK → ADVISORY</p>
+        <h1>模型可以补充候选，但不能改写确定性影响</h1>
+        <p class="lead">
+          Impact 的可信度来自可重放路径：从 ChangeSeed 沿受控关系和方向做确定性传播，再让模型只添加
+          inspect 候选。顺序颠倒，模型就会获得删除或降级既有影响的权力。
+        </p>
+        <div class="orientation-strip">
+          <div class="orientation-track">
+            <span class="orientation-node">双图</span><span class="orientation-arrow">→</span
+            ><span class="orientation-node current">确定性传播</span
+            ><span class="orientation-arrow">→</span><span class="orientation-node">风险评分</span
+            ><span class="orientation-arrow">→</span><span class="orientation-node">模型建议</span
+            ><span class="orientation-arrow">→</span><span class="orientation-node">ImpactSet</span>
+          </div>
+        </div>
+        <div class="lesson-win">
+          <strong>本课唯一胜利</strong
+          >你能给一条变更解释影响路径、方向、风险与来源，并拒绝任何试图覆盖确定性 entry 的模型输出。
+        </div>
+        <nav class="lesson-toc">
+          <a href="#recall">回忆</a><a href="#chain">传播链</a><a href="#source-one">规则源码</a
+          ><a href="#source-two">合并守卫</a><a href="#verify">实验</a>
+        </nav>
+      </section>
+
+      <section class="lesson-section" id="recall">
+        <p class="screen-kicker">00 · RETRIEVAL FIRST</p>
+        <div class="recall-entry">
+          <h2>先恢复第 6 课的关系判断</h2>
+          <ol>
+            <li><code>REALIZES</code> 和 <code>IMPLEMENTS</code> 的 source 分别是什么？</li>
+            <li><code>DEPENDS_ON</code> 表示确定前置依赖，<code>MAY_IMPACT</code> 表示什么？</li>
+            <li>模型建议一条图中不存在的影响边，应直接当事实吗？</li>
+          </ol>
+        </div>
+        <div class="remember-strip">
+          <h3>本课只需记住</h3>
+          <ul>
+            <li>传播规则固定 relation、方向、默认风险与是否允许 inferred edge。</li>
+            <li>确定性 entry 不可由模型删除、替换或改成更强行动。</li>
+            <li>每条影响必须保留 path，风险结论才可解释。</li>
+          </ul>
+        </div>
+      </section>
+
+      <section class="lesson-section" id="chain">
+        <p class="screen-kicker">01 · PRODUCTION CALL CHAIN</p>
+        <h2>先算事实闭包，再接纳附加建议</h2>
+        <div class="throughline">
+          <article class="throughline-node">
+            <strong>ChangeSeed</strong><br /><small>changed nodes/files</small>
+          </article>
+          <article class="throughline-node">
+            <strong>Propagation</strong><br /><small>relation + direction</small>
+          </article>
+          <article class="throughline-node">
+            <strong>Scoring</strong><br /><small>path risk</small>
+          </article>
+          <article class="throughline-node">
+            <strong>Advisory</strong><br /><small>model additions</small>
+          </article>
+          <article class="throughline-node">
+            <strong>Merge + validate</strong><br /><small>additive only</small>
+          </article>
+        </div>
+        <p>
+          已接受关系产生 deterministic entries；允许 inference 的 proposed edge 最多产生 inspect
+          candidate。模型可以发现确定性图尚未表达的候选，但不能篡改已经由路径证明的节点、分类或风险。
+        </p>
+        <details class="advanced-reading">
+          <summary>关系强化：本课重点重访哪些边</summary>
+          <p>
+            <code>DEPENDS_ON</code> 双向发现任务耦合但不允许 inferred；<code>MAY_IMPACT</code>
+            正向扩展候选且允许 inferred；<code>SUPPORTS</code>
+            不属于传播规则，因为证据支持不等于变更依赖。<code>REALIZES</code> 从 Component 反向追到
+            CodeArtifact，<code>IMPLEMENTS</code> 从义务反向追到 Task。
+          </p>
+        </details>
+      </section>
+
+      <section class="lesson-section" id="source-one">
+        <p class="screen-kicker">02 · SOURCE READING 1</p>
+        <h2>传播策略把同一条边的“能否走、往哪走、风险多高”固定下来</h2>
+        <article class="source-reading">
+          <header class="source-reading-header">
+            <p class="source-position">
+              active graph edges → <strong>PROPAGATION_RULES</strong> → deterministic traversal
+            </p>
+            <h3>为什么读这段</h3>
+            <p>
+              图遍历不是通用 BFS；关系方向和业务风险必须进入规则表，否则反向路径会制造错误影响。
+            </p>
+            <a href="../../packages/graph/src/impact/propagation.ts#L29"
+              >packages/graph/src/impact/propagation.ts · PROPAGATION_RULES</a
+            >
+          </header>
+          <div class="source-reading-grid">
+            <pre><code>{ type: "REFUTES", direction: "forward", defaultRisk: "high", allowsInference: false },
+{ type: "VIOLATES", direction: "forward", defaultRisk: "high", allowsInference: false },
+{ type: "BLOCKS", direction: "forward", defaultRisk: "high", allowsInference: false },
+{ type: "VERIFIES", direction: "both", defaultRisk: "medium", allowsInference: true },
+{ type: "ADDRESSES", direction: "inverse", defaultRisk: "medium", allowsInference: true },
+{ type: "SHAPES", direction: "forward", defaultRisk: "medium", allowsInference: true },
+// SPECIFIES binds a contract to its subject in both directions; inferred
+// edges never propagate (designset lifecycle design 8.1).
+{ type: "SPECIFIES", direction: "both", defaultRisk: "high", allowsInference: false },
+{ type: "REALIZES", direction: "inverse", defaultRisk: "high", allowsInference: true },
+{ type: "IMPLEMENTS", direction: "inverse", defaultRisk: "medium", allowsInference: true },</code></pre>
+            <div class="source-explanation">
+              <dl>
+                <dt>direction</dt>
+                <dd>
+                  <code>forward</code> 从 source 到 target，<code>inverse</code> 反向追踪，<code
+                    >both</code
+                  >
+                  表示双向均有影响语义。
+                </dd>
+                <dt>defaultRisk</dt>
+                <dd>同一路径上的边提供基础风险，再由 scoring 组合；它不是模型的自由文本评分。</dd>
+                <dt>allowsInference</dt>
+                <dd>
+                  只决定 proposed inferred edge 能否产生 inspect candidate，不会把 inferred 变成
+                  accepted fact。
+                </dd>
+                <dt>为什么关系不可合并</dt>
+                <dd>
+                  <code>REALIZES</code> 与
+                  <code>IMPLEMENTS</code> 风险不同；合并会同时破坏端点和评分。
+                </dd>
+              </dl>
+            </div>
+          </div>
+        </article>
+      </section>
+
+      <section class="lesson-section" id="source-two">
+        <p class="screen-kicker">03 · SOURCE READING 2</p>
+        <h2>模型 addition 命中 deterministic node 时直接拒绝</h2>
+        <article class="source-reading">
+          <header class="source-reading-header">
+            <p class="source-position">
+              ImpactSet + advisory additions → <strong>mergeImpactAdvisory</strong> → additive
+              merged set
+            </p>
+            <h3>为什么读这段</h3>
+            <p>
+              “additive only”必须落到冲突检测；否则模型用同一 node id 伪装
+              addition，实际覆盖确定性分类。
+            </p>
+            <a href="../../packages/graph/src/impact/impact-set.ts#L181"
+              >packages/graph/src/impact/impact-set.ts · advisory conflict guard</a
+            >
+          </header>
+          <div class="source-reading-grid">
+            <pre><code>const additions: ImpactEntry[] = [];
+for (const addition of advisory.additions) {
+  if (byNode.has(addition.node_id)) {
+    throw new ImpactError(
+      `advisory addition targets deterministic entry ${addition.node_id}; advisory output is additive only`,
+    );
+  }</code></pre>
+            <div class="source-explanation">
+              <dl>
+                <dt>上游</dt>
+                <dd><code>byNode</code> 来自已经算出的 deterministic ImpactSet entries。</dd>
+                <dt>关键守卫</dt>
+                <dd>模型 addition 的 node id 已存在即报错；不是“保留模型版本”也不是静默忽略。</dd>
+                <dt>失败语义</dt>
+                <dd>整个 advisory merge 失败，原 ImpactSet 保持不变，便于审计模型越界。</dd>
+                <dt>还需后续校验</dt>
+                <dd>
+                  未冲突的 addition 仍要验证 node type、classification、risk 与 evidence 绑定。
+                </dd>
+              </dl>
+            </div>
+          </div>
+        </article>
+        <div class="prediction-card">
+          <strong>先判断：</strong>模型认为 deterministic entry 风险太高，建议把 must-change 改为
+          inspect。正确动作是接受、取更低值，还是拒绝？说明权力边界。
+        </div>
+      </section>
+
+      <section class="lesson-section" id="verify">
+        <p class="screen-kicker">04 · EVIDENCE AND MASTERY</p>
+        <h2>复跑传播与 advisory merge</h2>
+        <div class="source-lab" data-lab-id="lesson-0007-impact">
+          <h3>Deterministic propagation + additive advisory</h3>
+          <pre
+            class="command-block lab-command"
+          ><code data-command>pnpm exec vitest run packages/graph/test/impact/propagation.test.ts packages/graph/test/impact/advisory-merge.test.ts packages/graph/test/impact/impact-set.test.ts</code></pre>
+          <div class="lab-actions">
+            <button class="btn secondary" type="button" data-copy-command>复制命令</button
+            ><button class="btn" type="button" data-mark-lab>我已复跑并核对</button>
+          </div>
+          <p class="lab-status"></p>
+          <p class="evidence-boundary">
+            <strong>证据边界：</strong>通过证明规则表、遍历和 additive merge
+            的仓库内行为；不证明当前项目图已经完整表达所有真实依赖。
+          </p>
+        </div>
+        <div class="quiz-container" data-quiz>
+          <h3>即时判断</h3>
+          <div
+            class="quiz-question-block"
+            data-correct="b"
+            data-explanation-right="正确。模型建议只能添加候选，不能覆盖确定性 entry。"
+            data-explanation-wrong="同 node id 的 addition 实质上是改写。"
+          >
+            <p><strong>1. 模型 addition 命中已有 deterministic node，如何处理？</strong></p>
+            <button class="quiz-option" type="button" data-value="a">用模型风险覆盖</button
+            ><button class="quiz-option" type="button" data-value="b">拒绝整个合并</button
+            ><span class="quiz-feedback"></span>
+          </div>
+          <div
+            class="quiz-question-block"
+            data-correct="a"
+            data-explanation-right="正确。路径记录让风险可复算、可解释。"
+            data-explanation-wrong="只保留最终分数无法回答影响是怎样传播来的。"
+          >
+            <p><strong>2. 为什么 ImpactEntry 必须保留 path？</strong></p>
+            <button class="quiz-option" type="button" data-value="a">让影响结论可追踪与重放</button
+            ><button class="quiz-option" type="button" data-value="b">让页面显示更多节点</button
+            ><span class="quiz-feedback"></span>
+          </div>
+          <div
+            class="quiz-question-block"
+            data-correct="b"
+            data-explanation-right="正确。MAY_IMPACT 是候选影响，不等于确定依赖。"
+            data-explanation-wrong="DEPENDS_ON 才表达任务成立的前置条件。"
+          >
+            <p><strong>3. 哪条关系最适合表达尚待核查的波及范围？</strong></p>
+            <button class="quiz-option" type="button" data-value="a">DEPENDS_ON</button
+            ><button class="quiz-option" type="button" data-value="b">MAY_IMPACT</button
+            ><span class="quiz-feedback"></span>
+          </div>
+          <div class="quiz-actions">
+            <button class="btn" type="button" data-quiz-check>检查答案</button
+            ><button class="btn secondary" type="button" data-quiz-reset>重置</button>
+          </div>
+        </div>
+        <div class="mastery-output">
+          <h3>架构审查输出</h3>
+          <ol>
+            <li>选择一个 ChangeSeed，画出至少两跳 path，并标 relation、方向与风险。</li>
+            <li>区分 deterministic、inferred candidate 和 model addition。</li>
+            <li>写明一条测试通过后仍不能证明的图完整性风险。</li>
+          </ol>
+        </div>
+        <div class="phase-checkpoint">
+          <h3>阶段回忆：事实层</h3>
+          <p>
+            不看前文，串起第 5–7 课：manifest 接受事实 → materializer 构建双图 → relation rules 传播
+            Impact。任何箭头说不出权威输入，就回到对应源码段。
+          </p>
+        </div>
+        <div class="button-row">
+          <button class="btn secondary" type="button" data-mark-reviewed>标记本课已复习</button>
+        </div>
+        <div class="lesson-footer">
+          <a class="btn secondary" href="0006-双图模型与全部关系语义.html">← 上一课</a
+          ><a class="btn" href="0008-ContextPolicyApproval权限收窄.html">下一课：治理收窄 →</a>
+        </div>
+      </section>
+    </main>
+  </body>
+</html>

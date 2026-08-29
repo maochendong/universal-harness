@@ -19,7 +19,7 @@
     </nav>
     <main class="page-shell">
       <header class="reference-hero animate-in">
-        <p class="eyebrow">Reference · 05871fc</p>
+        <p class="eyebrow">Reference · Resolve against current HEAD</p>
         <h1>一张地图定位所有事实</h1>
         <p class="reference-subtitle">
           从输入决策、动态 DAG、工程对象、事件流到三层存储。点击组件查看它的权力边界。
@@ -33,28 +33,21 @@
             <div class="arch-zone">
               <strong class="arch-zone-label">① 决策输入</strong>
               <div class="arch-components">
-                <button
-                  class="arch-component"
-                  data-desc="项目默认治理档位；只是一项编译输入。"
-                  onclick="showArchDesc(this)"
-                >
+                <button class="arch-component" data-desc="项目默认治理档位；只是一项编译输入。">
                   ProjectProfile</button
                 ><button
                   class="arch-component"
                   data-desc="由 accepted PRD 与上下文产生，决定是否升级能力。"
-                  onclick="showArchDesc(this)"
                 >
                   Risk</button
                 ><button
                   class="arch-component"
                   data-desc="收窄审批、Provider、Gate、预算和失败模式。"
-                  onclick="showArchDesc(this)"
                 >
                   Policy</button
                 ><button
                   class="arch-component"
                   data-desc="由 host 注册并绑定；项目配置只引用，不持有密钥。"
-                  onclick="showArchDesc(this)"
                 >
                   Provider
                 </button>
@@ -64,28 +57,20 @@
             <div class="arch-zone">
               <strong class="arch-zone-label">② final CapabilityPlan</strong>
               <div class="arch-components">
-                <button
-                  class="arch-component"
-                  data-desc="固定 Kernel 主干始终存在。"
-                  onclick="showArchDesc(this)"
-                >
-                  Kernel</button
+                <button class="arch-component" data-desc="固定 Kernel 主干始终存在。">Kernel</button
                 ><button
                   class="arch-component"
                   data-desc="只有 active Module 才向 Operation DAG 贡献节点。"
-                  onclick="showArchDesc(this)"
                 >
                   Active Modules</button
                 ><button
                   class="arch-component"
                   data-desc="Capture scope 与 Operation scope 互不重叠。"
-                  onclick="showArchDesc(this)"
                 >
                   Model Bindings</button
                 ><button
                   class="arch-component"
                   data-desc="provisional 或仍含 deferred 的计划不能进入 Plan。"
-                  onclick="showArchDesc(this)"
                 >
                   Final Guard
                 </button>
@@ -98,49 +83,41 @@
                 <button
                   class="arch-component"
                   data-desc="Intent 经过澄清、Review、Risk 和 Approval 成为 accepted PRD。"
-                  onclick="showArchDesc(this)"
                 >
                   Capture</button
                 ><button
                   class="arch-component"
                   data-desc="活动时运行确定性传播、模型增补、校验与批准。"
-                  onclick="showArchDesc(this)"
                 >
                   Impact</button
                 ><button
                   class="arch-component"
                   data-desc="活动时形成 DesignSet、独立 Review 与人工批准。"
-                  onclick="showArchDesc(this)"
                 >
                   Design</button
                 ><button
                   class="arch-component"
                   data-desc="canonical Assertion 先编译，模型只能建议 Task 分组。"
-                  onclick="showArchDesc(this)"
                 >
                   Plan</button
                 ><button
                   class="arch-component"
                   data-desc="为每个 Task 选择最小、fresh、受预算约束的来源。"
-                  onclick="showArchDesc(this)"
                 >
                   Context</button
                 ><button
                   class="arch-component"
                   data-desc="直接、Agent 或人工执行；strict TDD 是内部子图。"
-                  onclick="showArchDesc(this)"
                 >
                   Execute</button
                 ><button
                   class="arch-component"
                   data-desc="Gate、Evidence、TaskVerdict 与可选 Evaluation 决定完成。"
-                  onclick="showArchDesc(this)"
                 >
                   Verify</button
                 ><button
                   class="arch-component"
                   data-desc="完成后提交权威 Snapshot；Narrative 只是后置投影。"
-                  onclick="showArchDesc(this)"
                 >
                   Snapshot
                 </button>
@@ -202,21 +179,21 @@
         <div>
           <h2>三层存储永不越级</h2>
           <div class="pattern-cards">
-            <article class="pattern-card" style="border-top: 3px solid var(--color-success)">
+            <article class="pattern-card authority-ledger">
               <h3>Git-native Ledger</h3>
               <p>
                 <strong>决定完成真相。</strong> 保存 Node、Edge、Lifecycle
                 Event、Approval、Evidence、Capability 与 Snapshot。
               </p>
             </article>
-            <article class="pattern-card" style="border-top: 3px solid var(--color-info)">
+            <article class="pattern-card authority-projection">
               <h3>SQLite Projection</h3>
               <p>
                 <strong>只加速查询。</strong> 删除后应能从 Ledger
                 确定性重建；缓存状态不能批准或完成任务。
               </p>
             </article>
-            <article class="pattern-card" style="border-top: 3px solid var(--color-warning)">
+            <article class="pattern-card authority-live">
               <h3>Live Spool</h3>
               <p>
                 <strong>只展示现在。</strong> 保存 heartbeat、phase、output summary 与 approval
@@ -252,6 +229,20 @@
             <div class="ft-folder">
               <span class="ft-name">packages/graph/src/</span
               ><span class="ft-desc">物化、Impact 传播、双图读口与完整性</span>
+            </div>
+            <div class="ft-folder">
+              <span class="ft-name">packages/core/src/ledger/</span
+              ><span class="ft-desc">事务、append-only、manifest commit 与 replay 权威边界</span>
+            </div>
+            <div class="ft-folder">
+              <span class="ft-name">packages/runtime/src/policy/ · tools/ · workflow/</span
+              ><span class="ft-desc">权限收窄、真实副作用前守卫与恢复对账</span>
+            </div>
+            <div class="ft-folder">
+              <span class="ft-name">packages/runtime/src/collaboration/</span
+              ><span class="ft-desc"
+                >M3 Coordinator seam 与当前实现切片；必须对照正式设计和测试</span
+              >
             </div>
             <div class="ft-folder">
               <span class="ft-name">docs/evidence/</span

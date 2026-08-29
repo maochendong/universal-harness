@@ -1,0 +1,326 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      name="description"
+      content="第 12 课：从 Finding 穿透到 RCA、ImprovementCandidate、Approval 与新修订。"
+    />
+    <title>0012 · Feedback、RCA 与改进晋升</title>
+    <link rel="stylesheet" href="../assets/style.css" />
+    <script src="../assets/quiz.js" defer></script>
+    <script src="../assets/source-lab.js" defer></script>
+  </head>
+  <body class="lesson-page traditional-lesson" data-lesson-id="0012">
+    <a class="skip-link" href="#start">跳到课程内容</a>
+    <header class="topbar">
+      <div class="topbar-inner">
+        <a class="brand" href="../index.html">Universal Harness · Teach 2.0</a>
+        <nav class="nav-links">
+          <a href="0011-EvidenceGate与完成裁决.html">上一课</a
+          ><a href="../reference/glossary.html#relation-types">关系表</a><span>12 / 14</span>
+        </nav>
+        <span class="page-progress" role="progressbar" aria-label="本课阅读进度"></span>
+      </div>
+    </header>
+    <main class="lesson-main lesson-shell">
+      <section class="lesson-section lesson-hero" id="start">
+        <nav class="breadcrumb">
+          <a href="../index.html">课程地图</a><span>/</span><span>第 12 课</span>
+        </nav>
+        <div class="lesson-meta">
+          <span class="badge">反馈闭环</span><span class="badge time">约 24 分钟</span
+          ><span class="status-pill status-connected">仓库内已连通</span>
+        </div>
+        <p class="eyebrow">LESSON 0012 · FINDING → RCA → IMPROVEMENT → PROMOTION</p>
+        <h1>系统可以提出改进，但不能偷偷改写自己的规则</h1>
+        <p class="lead">
+          Finding 是观察到的问题，RCA 是可审查诊断，ImprovementCandidate 仍只是
+          proposed。只有精确绑定的非自批 Approval 通过，promotion 才创建目标对象的新 accepted
+          revision。
+        </p>
+        <div class="orientation-strip">
+          <div class="orientation-track">
+            <span class="orientation-node">Finding</span><span class="orientation-arrow">→</span
+            ><span class="orientation-node">RootCauseAnalysis</span
+            ><span class="orientation-arrow">→</span
+            ><span class="orientation-node current">ImprovementCandidate</span
+            ><span class="orientation-arrow">→</span><span class="orientation-node">Approval</span
+            ><span class="orientation-arrow">→</span
+            ><span class="orientation-node">Ledger revision</span>
+          </div>
+        </div>
+        <div class="lesson-win">
+          <strong>本课唯一胜利</strong>你能区分发现、诊断、建议和已生效变更四种状态，并证明模型或
+          proposer 不能自我晋升。
+        </div>
+        <nav class="lesson-toc">
+          <a href="#recall">回忆</a><a href="#chain">学习链</a><a href="#source-one">RCA</a
+          ><a href="#source-two">Promotion</a><a href="#verify">实验</a>
+        </nav>
+      </section>
+
+      <section class="lesson-section" id="recall">
+        <p class="screen-kicker">00 · RETRIEVAL FIRST</p>
+        <div class="recall-entry">
+          <h2>先区分证据、结论与变更</h2>
+          <ol>
+            <li><code>REFUTES</code> Evidence 与 <code>VIOLATES</code> Finding 各自表达什么？</li>
+            <li>Finding 被 RCA 解释后，Finding 是否自动 closed？</li>
+            <li>Approval <code>RESOLVES</code> 请求与 <code>APPROVES</code> 对象为何仍要分开？</li>
+          </ol>
+        </div>
+        <div class="remember-strip">
+          <h3>本课只需记住</h3>
+          <ul>
+            <li>RCA 是规则驱动的 proposed 诊断，低置信度或高风险必须人工复核。</li>
+            <li>ImprovementCandidate 只 <code>PROPOSES_CHANGE_TO</code>，不代表目标已改变。</li>
+            <li>Promotion 需要精确 digest 绑定、非自批 approve 和正确 owning layer。</li>
+          </ul>
+        </div>
+      </section>
+
+      <section class="lesson-section" id="chain">
+        <p class="screen-kicker">01 · FEEDBACK LIFECYCLE</p>
+        <h2>每一层都保留自己的不确定性</h2>
+        <div class="throughline">
+          <article class="throughline-node">
+            <strong>Finding</strong><br /><small>observed failure</small>
+          </article>
+          <article class="throughline-node">
+            <strong>RCA</strong><br /><small>classified diagnosis</small>
+          </article>
+          <article class="throughline-node">
+            <strong>Candidate</strong><br /><small>proposed reusable change</small>
+          </article>
+          <article class="throughline-node">
+            <strong>Approval</strong><br /><small>independent decision</small>
+          </article>
+          <article class="throughline-node">
+            <strong>Revision</strong><br /><small>accepted fact</small>
+          </article>
+        </div>
+        <p>
+          Finding <code>DIAGNOSED_BY</code> RCA；RCA
+          <code>PRODUCES</code> ImprovementCandidate；Candidate
+          <code>PROPOSES_CHANGE_TO</code> Evaluation、Knowledge 或 Engineering
+          层的拥有对象。Finding/Candidate 还可 <code>TRIGGERS</code> 新
+          ImpactSet，让规则变化重新进入影响分析，而不是直接修改生产事实。
+        </p>
+        <details class="advanced-reading">
+          <summary>为什么反馈闭环不能由模型端到端自动完成</summary>
+          <p>
+            模型可能帮助生成候选，但诊断分类、秘密检测、目标层所有权、Approval 绑定和 revision
+            sealing 都是确定性边界。让同一 actor 提议并批准，会把一次错误输出永久写入系统规则。
+          </p>
+        </details>
+      </section>
+
+      <section class="lesson-section" id="source-one">
+        <p class="screen-kicker">02 · SOURCE READING 1</p>
+        <h2>RCA 用确定性规则分类，并把不确定性显式带到记录中</h2>
+        <article class="source-reading">
+          <header class="source-reading-header">
+            <p class="source-position">
+              Finding + FailureSignal → <strong>analyzeRootCause</strong> → proposed RCA
+            </p>
+            <h3>为什么读这段</h3>
+            <p>
+              诊断不是自由文本总结。responsible layer、category、confidence、verification 与 human
+              review 都进入结构化内容。
+            </p>
+            <a href="../../packages/eval/src/feedback/rca.ts#L201"
+              >packages/eval/src/feedback/rca.ts · analyzeRootCause</a
+            >
+          </header>
+          <div class="source-reading-grid">
+            <pre><code>const diagnosis = classify(spec.signal);
+const content: RootCauseContent = {
+  finding_id: spec.finding.id,
+  observed_symptom: spec.finding.summary,
+  evidence_ids: [...new Set(spec.signal.evidenceIds ?? [])].sort(),
+  responsible_layer: diagnosis.layer,
+  responsible_module: spec.signal.module ?? "unscoped",
+  category: diagnosis.category,
+  confidence: diagnosis.confidence,
+  proposed_verification: diagnosis.verification,
+  requires_human_review:
+    diagnosis.confidence &lt; HUMAN_REVIEW_CONFIDENCE || spec.signal.highRisk === true,
+  rule: diagnosis.rule,
+};</code></pre>
+            <div class="source-explanation">
+              <dl>
+                <dt>输入身份</dt>
+                <dd>
+                  RCA 绑定 Finding 和 evidence ids；重复 evidence 去重排序，保持 digest 稳定。
+                </dd>
+                <dt>规则输出</dt>
+                <dd>分类器返回 layer、category、confidence 与建议验证，不让调用者任意组合。</dd>
+                <dt>不确定性</dt>
+                <dd>
+                  置信度低于阈值或 signal 为 high risk 时，<code>requires_human_review=true</code>。
+                </dd>
+                <dt>生命周期</dt>
+                <dd>生成记录仍是 proposed；它解释 Finding，不自动关闭 Finding 或修改目标层。</dd>
+              </dl>
+            </div>
+          </div>
+        </article>
+      </section>
+
+      <section class="lesson-section" id="source-two">
+        <p class="screen-kicker">03 · SOURCE READING 2</p>
+        <h2>Promotion 同时阻止绑定漂移、自我批准和越层修改</h2>
+        <article class="source-reading">
+          <header class="source-reading-header">
+            <p class="source-position">
+              Candidate + Request + Decision + Target →
+              <strong>promoteImprovementCandidate</strong> → new revision
+            </p>
+            <h3>为什么读这段</h3>
+            <p>
+              真正写入事实层的函数必须重新验证 Approval 看见的 candidate
+              digest，以及决定者和目标所有权。
+            </p>
+            <a href="../../packages/eval/src/feedback/promotion.ts#L61"
+              >packages/eval/src/feedback/promotion.ts · promotion guards</a
+            >
+          </header>
+          <div class="source-reading-grid">
+            <pre><code>if (
+  input.request.object_id !== input.candidate.id ||
+  input.request.object_digest !== input.candidate.digest ||
+  input.decision.request_id !== input.request.request_id ||
+  input.decision.object_digest !== input.candidate.digest
+) {
+  throw new FeedbackError(
+    "promotion_binding_mismatch",
+    `approval for improvement candidate ${input.candidate.id} does not bind its current digest`,
+  );
+}
+if (input.decision.actor === proposedByOf(input.request)) {
+  throw new FeedbackError(
+    "self_promotion",
+    `actor ${input.decision.actor} must not promote its own improvement candidate ${input.candidate.id}`,
+  );
+}</code></pre>
+            <div class="source-explanation">
+              <dl>
+                <dt>精确绑定</dt>
+                <dd>
+                  request 和 decision 都必须指向 candidate 当前
+                  id/digest；旧版本批准不能追随新内容。
+                </dd>
+                <dt>职责分离</dt>
+                <dd>
+                  decision actor 与 proposer 相同即
+                  <code>self_promotion</code>，不看建议内容是否合理。
+                </dd>
+                <dt>后续守卫</dt>
+                <dd>
+                  还要 decision=approve、target type 属于 candidate target layer，才能创建
+                  revision+1。
+                </dd>
+                <dt>写入结果</dt>
+                <dd>
+                  返回 accepted candidate 与 freshly digested target revision；调用方仍需通过 Ledger
+                  transaction 提交。
+                </dd>
+              </dl>
+            </div>
+          </div>
+        </article>
+        <div class="prediction-card">
+          <strong>先判断：</strong>Approval 批准 candidate v1 后，模型补充说明生成 v2。能否用旧
+          decision 晋升 v2？应该触发哪个错误？
+        </div>
+      </section>
+
+      <section class="lesson-section" id="verify">
+        <p class="screen-kicker">04 · EVIDENCE AND MASTERY</p>
+        <h2>复跑诊断、候选、路由与晋升边界</h2>
+        <div class="source-lab" data-lab-id="lesson-0012-feedback">
+          <h3>RCA + Improvement + Router + Promotion</h3>
+          <pre
+            class="command-block lab-command"
+          ><code data-command>pnpm exec vitest run packages/eval/test/feedback/rca.test.ts packages/eval/test/feedback/improvement.test.ts packages/eval/test/feedback/router.test.ts packages/eval/test/feedback/promotion.test.ts packages/runtime/test/finding/feedback-analysis-coordinator.test.ts</code></pre>
+          <div class="lab-actions">
+            <button class="btn secondary" type="button" data-copy-command>复制命令</button
+            ><button class="btn" type="button" data-mark-lab>我已复跑并核对</button>
+          </div>
+          <p class="lab-status"></p>
+          <p class="evidence-boundary">
+            <strong>证据边界：</strong>通过证明反馈记录、路由和 promotion
+            守卫；不证明分类规则覆盖全部现实根因，也不证明候选确实能防止复发。
+          </p>
+        </div>
+        <div class="quiz-container" data-quiz>
+          <h3>反馈生命周期</h3>
+          <div
+            class="quiz-question-block"
+            data-correct="b"
+            data-explanation-right="正确。Candidate 仍是 proposed，只表示建议修改。"
+            data-explanation-wrong="PROPOSES_CHANGE_TO 不改变目标当前修订。"
+          >
+            <p><strong>1. ImprovementCandidate 生成后，目标 Policy 是否已改变？</strong></p>
+            <button class="quiz-option" type="button" data-value="a">已改变</button
+            ><button class="quiz-option" type="button" data-value="b">未改变</button
+            ><span class="quiz-feedback"></span>
+          </div>
+          <div
+            class="quiz-question-block"
+            data-correct="a"
+            data-explanation-right="正确。职责分离是独立守卫，内容正确也不能自批。"
+            data-explanation-wrong="系统不以模型自信度替代独立批准。"
+          >
+            <p><strong>2. proposer 自己 approve 一个高质量候选，能晋升吗？</strong></p>
+            <button class="quiz-option" type="button" data-value="a">不能</button
+            ><button class="quiz-option" type="button" data-value="b">能</button
+            ><span class="quiz-feedback"></span>
+          </div>
+          <div
+            class="quiz-question-block"
+            data-correct="b"
+            data-explanation-right="正确。RCA 解释 Finding，用 DIAGNOSED_BY 表达。"
+            data-explanation-wrong="PRODUCES 用于 RCA 到 Candidate。"
+          >
+            <p><strong>3. Finding 与 RCA 之间的关系是？</strong></p>
+            <button class="quiz-option" type="button" data-value="a">PRODUCES</button
+            ><button class="quiz-option" type="button" data-value="b">DIAGNOSED_BY</button
+            ><span class="quiz-feedback"></span>
+          </div>
+          <div class="quiz-actions">
+            <button class="btn" type="button" data-quiz-check>检查答案</button
+            ><button class="btn secondary" type="button" data-quiz-reset>重置</button>
+          </div>
+        </div>
+        <div class="mastery-output">
+          <h3>反馈晋升审查</h3>
+          <ol>
+            <li>画出 Finding → RCA → Candidate → Approval → Revision，并在箭头上写 relation。</li>
+            <li>
+              列出 confidence、human review、digest binding、self-promotion、owning layer 五类守卫。
+            </li>
+            <li>说明新 revision 何时才成为事实：promotion 返回时，还是 Ledger manifest 提交时。</li>
+          </ol>
+        </div>
+        <div class="phase-checkpoint">
+          <h3>阶段回忆：控制与裁决</h3>
+          <p>
+            串起第 8–12 课：Policy/Approval 收窄 → Envelope/Grant 执行 → Checkpoint/Reconcile 恢复 →
+            Verdict/Snapshot 裁决 → Feedback/Promotion
+            学习。共同不变量是“候选不能自行获得更高权力”。
+          </p>
+        </div>
+        <div class="button-row">
+          <button class="btn secondary" type="button" data-mark-reviewed>标记本课已复习</button>
+        </div>
+        <div class="lesson-footer">
+          <a class="btn secondary" href="0011-EvidenceGate与完成裁决.html">← 上一课</a
+          ><a class="btn" href="0013-投影观察与M3远程协作边界.html">下一课：投影与协作 →</a>
+        </div>
+      </section>
+    </main>
+  </body>
+</html>

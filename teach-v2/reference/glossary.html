@@ -84,6 +84,45 @@
             <code>source → target</code>
             阅读。关系名不是近义词标签；每一种都保留独立的端点类型、审计问题和传播语义。
           </p>
+          <div class="relation-family-grid">
+            <article class="relation-family-card">
+              <h3>血缘与版本</h3>
+              <p>
+                <code>DERIVES_FROM</code> <code>SUPERSEDES</code> <code>GENERATED_BY</code>
+                <code>RESUMES</code>
+              </p>
+            </article>
+            <article class="relation-family-card">
+              <h3>需求与实现</h3>
+              <p>
+                <code>DECOMPOSES_TO</code> <code>ADDRESSES</code> <code>SHAPES</code>
+                <code>REALIZES</code> <code>IMPLEMENTS</code> <code>SPECIFIES</code>
+              </p>
+            </article>
+            <article class="relation-family-card">
+              <h3>证明与裁决</h3>
+              <p>
+                <code>VERIFIES</code> <code>EVALUATES</code> <code>SUPPORTS</code>
+                <code>REFUTES</code> <code>VIOLATES</code> <code>DIAGNOSED_BY</code>
+              </p>
+            </article>
+            <article class="relation-family-card">
+              <h3>执行与上下文</h3>
+              <p>
+                <code>EXECUTES</code> <code>INVOKES</code> <code>PRODUCES</code>
+                <code>CONTAINS</code> <code>DEPENDS_ON</code> <code>USES_CONTEXT</code>
+                <code>CAPTURES</code>
+              </p>
+            </article>
+            <article class="relation-family-card">
+              <h3>治理与变更</h3>
+              <p>
+                <code>CONSTRAINED_BY</code> <code>GOVERNED_BY</code> <code>BLOCKS</code>
+                <code>REQUESTS_APPROVAL_FOR</code> <code>RESOLVES</code> <code>APPROVES</code>
+                <code>PROPOSES_CHANGE_TO</code> <code>TRIGGERS</code> <code>MAY_IMPACT</code>
+              </p>
+            </article>
+          </div>
           <div class="table-wrap">
             <table aria-label="关系类型业务语言映射">
               <thead>
@@ -263,6 +302,18 @@
             回答请求生命周期是否结束，
             <code>APPROVES</code> 回答哪个对象版本获得授权。上层可以分组，底层不可合并。
           </p>
+          <details class="advanced-reading">
+            <summary>更多不可合并的近义关系</summary>
+            <p>
+              <code>VERIFIES</code> 是 Test 检验 Requirement/Constraint，<code>SUPPORTS</code>/<code
+                >REFUTES</code
+              >
+              是 Evidence 对声称的方向性结论；<code>EXECUTES</code> 是 Run 承担
+              Task/Gate/Case，<code>INVOKES</code> 是 Run 调用 Tool；<code>DERIVES_FROM</code>
+              保留来源，<code>SUPERSEDES</code> 改变当前有效版本；<code>TRIGGERS</code>
+              表示确定事件启动流程，<code>MAY_IMPACT</code> 只表示候选波及范围。
+            </p>
+          </details>
         </div>
       </section>
 

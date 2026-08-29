@@ -19,7 +19,7 @@
     </nav>
     <main class="page-shell">
       <header class="reference-hero animate-in">
-        <p class="eyebrow">Reference · source_commit 05871fc</p>
+        <p class="eyebrow">Reference · bind to current HEAD before review</p>
         <h1>模型 Port / Provider 连通矩阵</h1>
         <p class="reference-subtitle">
           状态快照日期 2026-08-24。代码链路与外部调用证据分别判定，避免一句“已接入”掩盖不同成熟度。
@@ -31,7 +31,7 @@
         </div>
         <p class="evidence-boundary">
           <strong>本矩阵中的“当前外部部分连通”：</strong>仓库内生产链与历史真实调用均有证据，但
-          <code>05871fc</code> 在当前凭据环境没有重新调用真实
+          当前学习基线在当前凭据环境没有重新调用真实
           Provider。它既不是“生产代码只接了一半”，也不是“从未连通过”。
         </p>
       </header>
@@ -205,28 +205,28 @@
         <div>
           <h2>证据冲突登记</h2>
           <div class="pattern-cards">
-            <article class="pattern-card" style="border-top: 3px solid var(--color-error)">
+            <article class="pattern-card status-error">
               <h3>过期状态表</h3>
               <p>
                 `docs/model-invocation-architecture.md` 仍写 FeedbackAnalysis 未开始；当前
                 `managed-pipeline-ports.ts`、`capability-dag-runners.ts` 和接线测试显示已连接。
               </p>
             </article>
-            <article class="pattern-card" style="border-top: 3px solid var(--color-warning)">
+            <article class="pattern-card authority-live">
               <h3>历史真实证据</h3>
               <p>
-                T20–T24 证明较早版本触达真实 DeepSeek 端点并按契约 fail closed；不能升级为 `05871fc`
-                的当前复验。
+                T20–T24 证明较早版本触达真实 DeepSeek 端点并按契约 fail closed；不能升级为当前 HEAD
+                的外部复验。
               </p>
             </article>
-            <article class="pattern-card" style="border-top: 3px solid var(--color-info)">
+            <article class="pattern-card authority-projection">
               <h3>Hermetic dogfood</h3>
               <p>
                 三档 packaged CLI 在 host-owned fake Provider 下 completed，证明生产 DAG 与 Binding
                 接线，但不证明公网端点状态。
               </p>
             </article>
-            <article class="pattern-card" style="border-top: 3px solid var(--color-success)">
+            <article class="pattern-card authority-ledger">
               <h3>安全结论</h3>
               <p>
                 可以声明仓库内模型链路已生产接线；真实外部 Provider

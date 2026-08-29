@@ -1,0 +1,388 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      name="description"
+      content="第 13 课：区分权威事实、可重建投影、实时观察与 M3 远程协作目标。"
+    />
+    <title>0013 · 投影、观察与 M3 远程协作边界</title>
+    <link rel="stylesheet" href="../assets/style.css" />
+    <script src="../assets/quiz.js" defer></script>
+    <script src="../assets/source-lab.js" defer></script>
+  </head>
+  <body class="lesson-page traditional-lesson" data-lesson-id="0013">
+    <a class="skip-link" href="#start">跳到课程内容</a>
+    <header class="topbar">
+      <div class="topbar-inner">
+        <a class="brand" href="../index.html">Universal Harness · Teach 2.0</a>
+        <nav class="nav-links">
+          <a href="0012-FeedbackRCA与改进晋升.html">上一课</a
+          ><a href="../reference/architecture-map.html">架构地图</a><span>13 / 14</span>
+        </nav>
+        <span class="page-progress" role="progressbar" aria-label="本课阅读进度"></span>
+      </div>
+    </header>
+    <main class="lesson-main lesson-shell">
+      <section class="lesson-section lesson-hero" id="start">
+        <nav class="breadcrumb">
+          <a href="../index.html">课程地图</a><span>/</span><span>第 13 课</span>
+        </nav>
+        <div class="lesson-meta">
+          <span class="badge">读取与协作</span><span class="badge time">约 25 分钟</span
+          ><span class="status-pill status-partial">M3 部分实现</span>
+        </div>
+        <p class="eyebrow">LESSON 0013 · AUTHORITY → PROJECTION → REMOTE CONTROL</p>
+        <h1>看得见、查得到、远程可协作，是三种不同能力</h1>
+        <p class="lead">
+          Live Spool 允许丢失，SQLite/Dashboard 必须可重建，Git/Ledger 才是权威。M3 又增加 Control
+          Ref、Lease、远程 Approval 和目标分支 CAS；定义与部分 connect/disconnect slice
+          存在，不等于完整远程闭环已连通。
+        </p>
+        <div class="orientation-strip">
+          <div class="orientation-track">
+            <span class="orientation-node">Git / Ledger</span
+            ><span class="orientation-arrow">→</span
+            ><span class="orientation-node">SQLite projection</span
+            ><span class="orientation-arrow">→</span><span class="orientation-node">Dashboard</span
+            ><span class="orientation-arrow">→</span
+            ><span class="orientation-node current">M3 Coordinator</span
+            ><span class="orientation-arrow">→</span
+            ><span class="orientation-node">Remote CAS</span>
+          </div>
+        </div>
+        <div class="lesson-win">
+          <strong>本课唯一胜利</strong>你能为任意协作数据指出权威源，并把 M3
+          结论严格拆成“目标设计、已提交基础、当前实现切片、真实外部验证”四层。
+        </div>
+        <nav class="lesson-toc">
+          <a href="#recall">回忆</a><a href="#layers">四层状态</a><a href="#source-one">观察面</a
+          ><a href="#source-two">M3 Port</a><a href="#review">评审会</a><a href="#verify">实验</a>
+        </nav>
+      </section>
+
+      <section class="lesson-section" id="recall">
+        <p class="screen-kicker">00 · RETRIEVAL FIRST</p>
+        <div class="recall-entry">
+          <h2>先恢复权威方向</h2>
+          <ol>
+            <li>Ledger 与 SQLite 不一致时，修复方向是什么？</li>
+            <li>Projection 更新失败后，能否盲目重试已经成功的权威 append？</li>
+            <li>Operation Branch 上有 merge commit，是否等于 Target Branch 已接受？</li>
+          </ol>
+        </div>
+        <div class="remember-strip">
+          <h3>本课只需记住</h3>
+          <ul>
+            <li>
+              Live observation 可丢；SQLite/Dashboard 可重建；Git/Ledger/Control Ref
+              才承载权威事实。
+            </li>
+            <li>M3 的 Coordinator 管远程写入资格，不裁决 Requirement、Gate 或 Evidence 内容。</li>
+            <li>只有重新验证并 CAS 更新 Target，Integration 才被接受。</li>
+          </ul>
+        </div>
+      </section>
+
+      <section class="lesson-section" id="layers">
+        <p class="screen-kicker">01 · TARGET VS CURRENT</p>
+        <h2>M3 必须按四层证据报告，不能只说“正在实现”</h2>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>层</th>
+                <th>当前能确认</th>
+                <th>不能外推</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>目标设计</td>
+                <td>
+                  单 Coordinator、Control Ref、Lease/fencing、远程 Approval、Operation
+                  Branch、Target CAS 的正式设计已批准。
+                </td>
+                <td>设计通过不等于生产代码或远程环境可用。</td>
+              </tr>
+              <tr>
+                <td>已提交基础</td>
+                <td>
+                  Protocol 1.2 五类 record、reader gate、Coordinator Port 与 connect/disconnect
+                  slice 已进入当前 Git 历史。
+                </td>
+                <td>Port 和局部 slice 不证明 lease、approval、integration 全闭环。</td>
+              </tr>
+              <tr>
+                <td>当前实现切片</td>
+                <td>
+                  Coordinator 源码明确把 Lease、Approval、Integration command
+                  留给后续任务，并为它们返回类型化 unavailable failure。
+                </td>
+                <td>command 已进入 union type 不代表对应生产分支已经实现。</td>
+              </tr>
+              <tr>
+                <td>外部证据</td>
+                <td>
+                  本课没有 GitHub/GitLab/Gitee OAuth、Control Ref 保护、Lease、remote approval 与
+                  target CAS 的同一提交端到端证据。
+                </td>
+                <td>因此 M3 当前只能标记部分实现/未完成外部连通。</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <details class="advanced-reading">
+          <summary>M3 的权威分配</summary>
+          <p>
+            项目 Requirement/Design/Plan/Evidence/Snapshot 仍在项目
+            Git/Ledger；Principal/Lease/Remote Approval 在 protected Control Ref；Operation
+            工作在候选 branch；只有 Target CAS 成功后 Integration 才被接受；Coordinator SQLite
+            只存可重建投影。
+          </p>
+        </details>
+      </section>
+
+      <section class="lesson-section" id="source-one">
+        <p class="screen-kicker">02 · SOURCE READING 1</p>
+        <h2>ObservationPublisher 在类型旁明确放弃权威性</h2>
+        <article class="source-reading">
+          <header class="source-reading-header">
+            <p class="source-position">
+              Run lifecycle → <strong>ObservationPublisher</strong> → Live Spool / SSE
+            </p>
+            <h3>为什么读这段</h3>
+            <p>实时状态要低延迟、限流和可删除；若把它当恢复或审计依据，就会让丢包改变系统事实。</p>
+            <a href="../../packages/runtime/src/observability/publisher.ts#L132"
+              >packages/runtime/src/observability/publisher.ts · authority comment</a
+            >
+          </header>
+          <div class="source-reading-grid">
+            <pre><code>/**
+ * Lossy live-observation publisher. It never writes authoritative state and
+ * may be deleted or fail independently of resume, audit and snapshot state.
+ */
+export class ObservationPublisher implements ObservationPublisherPort {</code></pre>
+            <div class="source-explanation">
+              <dl>
+                <dt>谁生产</dt>
+                <dd>
+                  Run、Gate、Approval 等运行过程发布观察事件，供 Live Spool 与 Dashboard 实时消费。
+                </dd>
+                <dt>lossy 的含义</dt>
+                <dd>
+                  允许节流、截断、segment 淘汰或整个缓存删除；这些都不能影响 workflow correctness。
+                </dd>
+                <dt>不能承载</dt>
+                <dd>
+                  Resume、Audit 和 Snapshot 必须读取 Ledger/artifacts，不得从最后一条 SSE
+                  消息推断权威状态。
+                </dd>
+                <dt>设计收益</dt>
+                <dd>观察面失败可独立降级，不会阻塞或伪造事实提交。</dd>
+              </dl>
+            </div>
+          </div>
+        </article>
+      </section>
+
+      <section class="lesson-section" id="source-two">
+        <p class="screen-kicker">03 · SOURCE READING 2</p>
+        <h2>Coordinator Port 很深，但当前 outcome 只覆盖连接切片</h2>
+        <article class="source-reading">
+          <header class="source-reading-header">
+            <p class="source-position">
+              CLI / Dashboard / Kernel → <strong>CollaborationCoordinatorPort</strong> →
+              platform/Git/projection adapters
+            </p>
+            <h3>为什么读这段</h3>
+            <p>
+              外部调用者只看 command/query；OAuth、平台权限、Git CAS 与 SQLite
+              重建留在模块内部。但接口全集不代表每个 command 已实现。
+            </p>
+            <a href="../../packages/runtime/src/collaboration/port.ts#L183"
+              >packages/runtime/src/collaboration/port.ts · public coordinator port</a
+            >
+          </header>
+          <div class="source-reading-grid">
+            <pre><code>export type CollaborationOutcome =
+  ConnectedOutcome | DisconnectedOutcome | CollaborationFailedOutcome;
+
+export interface CollaborationCoordinatorPort {
+  execute(
+    command: CollaborationCommand,
+    session: CollaborationSession,
+  ): Promise&lt;CollaborationOutcome&gt;;
+  query(query: CollaborationQuery, session: CollaborationSession): Promise&lt;CollaborationView&gt;;
+}</code></pre>
+            <div class="source-explanation">
+              <dl>
+                <dt>深模块边界</dt>
+                <dd>
+                  CLI/Dashboard 只提交判别式 command/query，不理解平台角色、fencing 或 CAS
+                  实现细节。
+                </dd>
+                <dt>当前事实</dt>
+                <dd>
+                  Coordinator comment 明确 connect/disconnect 为当前
+                  slice；Lease、Approval、Integration commands 由后续任务实现。
+                </dd>
+                <dt>typed failure</dt>
+                <dd>
+                  未实现命令返回 <code>coordinator_unavailable</code>，而不是伪成功或自由文本状态。
+                </dd>
+                <dt>当前提交范围</dt>
+                <dd>
+                  connect/disconnect 和 projection failure 语义已经提交；其余 command
+                  仍由源码明确标记为后续 slice。
+                </dd>
+              </dl>
+            </div>
+          </div>
+        </article>
+        <div class="prediction-card">
+          <strong>结论练习：</strong>Protocol records 测试与 connect tests
+          全绿后，可以说“远程协作已连通”吗？请列出仍缺的 Lease、Approval、Integration
+          与真实平台证据。
+        </div>
+      </section>
+
+      <section class="lesson-section" id="review">
+        <p class="screen-kicker">04 · ARCHITECTURE REVIEW</p>
+        <h2>观察一场范围化评审怎样阻止过度声称</h2>
+        <div class="chat-window" aria-label="M3 架构评审对话">
+          <div class="chat-messages">
+            <div class="chat-message" data-msg="1">
+              <div class="chat-avatar">开</div>
+              <div class="chat-bubble">
+                <span class="chat-sender">开发者</span>
+                <p>Protocol records、Port 和 connect tests 都有了，M3 应该可以标记已连通。</p>
+              </div>
+            </div>
+            <div class="chat-message" data-msg="2" data-sender="right">
+              <div class="chat-avatar">审</div>
+              <div class="chat-bubble">
+                <span class="chat-sender">架构评审</span>
+                <p>
+                  这是基础与连接 slice 的证据。Lease fencing、remote Approval、Integration CAS
+                  的生产消费者在哪里？
+                </p>
+              </div>
+            </div>
+            <div class="chat-message" data-msg="3">
+              <div class="chat-avatar">开</div>
+              <div class="chat-bubble">
+                <span class="chat-sender">开发者</span>
+                <p>这些 command 已在 union type 中，但 Coordinator 当前明确返回未实现 failure。</p>
+              </div>
+            </div>
+            <div class="chat-message" data-msg="4" data-sender="right">
+              <div class="chat-avatar">审</div>
+              <div class="chat-bubble">
+                <span class="chat-sender">架构评审</span>
+                <p>
+                  那么结论应是：目标设计已批准，Protocol/Port/connect slice
+                  已实现，完整仓库内闭环和真实平台端到端尚未验证。
+                </p>
+              </div>
+            </div>
+          </div>
+          <div class="chat-typing">
+            <div class="chat-typing-dots">
+              <span class="typing-dot"></span><span class="typing-dot"></span
+              ><span class="typing-dot"></span>
+            </div>
+          </div>
+          <div class="chat-controls">
+            <button class="btn chat-next-btn" type="button">下一句</button
+            ><button class="btn secondary chat-all-btn" type="button">全部展开</button
+            ><button class="btn secondary chat-reset-btn" type="button">重置</button
+            ><span class="chat-progress">0 / 4</span>
+          </div>
+        </div>
+      </section>
+
+      <section class="lesson-section" id="verify">
+        <p class="screen-kicker">05 · EVIDENCE AND MASTERY</p>
+        <h2>分开验证稳定投影与 M3 已提交基础</h2>
+        <div class="source-lab" data-lab-id="lesson-0013-projection-collaboration">
+          <h3>Observation + Dashboard + committed collaboration slices</h3>
+          <pre
+            class="command-block lab-command"
+          ><code data-command>pnpm exec vitest run packages/runtime/test/observability/publisher.test.ts packages/dashboard/test/sse.test.ts packages/core/test/collaboration/records.test.ts packages/core/test/protocol/protocol-1.2.test.ts packages/runtime/test/collaboration/connection.test.ts packages/runtime/test/collaboration/coordinator.test.ts</code></pre>
+          <div class="lab-actions">
+            <button class="btn secondary" type="button" data-copy-command>复制命令</button
+            ><button class="btn" type="button" data-mark-lab>我已复跑并核对</button>
+          </div>
+          <p class="lab-status"></p>
+          <p class="evidence-boundary">
+            <strong>证据边界：</strong>若工作树含未提交 coordinator
+            修改，本次结果证明的是该工作树，不是 HEAD。即使全绿，也不包含真实 OAuth、protected
+            Control Ref、远程 Lease 与 Target CAS。
+          </p>
+        </div>
+        <div class="quiz-container" data-quiz>
+          <h3>边界判断</h3>
+          <div
+            class="quiz-question-block"
+            data-correct="b"
+            data-explanation-right="正确。Live Spool 明确是 lossy observation。"
+            data-explanation-wrong="实时性不等于权威性。"
+          >
+            <p><strong>1. Dashboard SSE 显示 RunCompleted，能否单独作为完成事实？</strong></p>
+            <button class="quiz-option" type="button" data-value="a">能</button
+            ><button class="quiz-option" type="button" data-value="b">不能</button
+            ><span class="quiz-feedback"></span>
+          </div>
+          <div
+            class="quiz-question-block"
+            data-correct="a"
+            data-explanation-right="正确。Target CAS 才把 candidate integration 接纳为远程事实。"
+            data-explanation-wrong="Operation Branch 仍是候选工作。"
+          >
+            <p><strong>2. M3 中 Integration 最终接受点是？</strong></p>
+            <button class="quiz-option" type="button" data-value="a">
+              Target branch compare-and-swap</button
+            ><button class="quiz-option" type="button" data-value="b">本地 SQLite 插入成功</button
+            ><span class="quiz-feedback"></span>
+          </div>
+          <div
+            class="quiz-question-block"
+            data-correct="b"
+            data-explanation-right="正确。接口定义存在只证明可表达，未证明所有生产命令已实现。"
+            data-explanation-wrong="Port 是 seam，不是端到端证据。"
+          >
+            <p><strong>3. command union 包含 accept_integration，是否证明已实现？</strong></p>
+            <button class="quiz-option" type="button" data-value="a">证明</button
+            ><button class="quiz-option" type="button" data-value="b">不证明</button
+            ><span class="quiz-feedback"></span>
+          </div>
+          <div class="quiz-actions">
+            <button class="btn" type="button" data-quiz-check>检查答案</button
+            ><button class="btn secondary" type="button" data-quiz-reset>重置</button>
+          </div>
+        </div>
+        <div class="mastery-output">
+          <h3>M3 范围化结论</h3>
+          <ol>
+            <li>画出 Replica → Coordinator → Git Remote/平台的目标架构。</li>
+            <li>
+              为项目 Ledger、Control Ref、Operation Branch、Target Branch、SQLite 分别标权威性。
+            </li>
+            <li>
+              写四段结论：设计、已提交基础、当前实现切片、真实外部验证；禁止使用笼统“已完成”。
+            </li>
+          </ol>
+        </div>
+        <div class="button-row">
+          <button class="btn secondary" type="button" data-mark-reviewed>标记本课已复习</button>
+        </div>
+        <div class="lesson-footer">
+          <a class="btn secondary" href="0012-FeedbackRCA与改进晋升.html">← 上一课</a
+          ><a class="btn" href="0014-综合架构审查实战.html">下一课：综合审查 →</a>
+        </div>
+      </section>
+    </main>
+  </body>
+</html>

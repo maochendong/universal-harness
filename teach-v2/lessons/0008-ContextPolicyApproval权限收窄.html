@@ -1,0 +1,315 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      name="description"
+      content="第 8 课：理解 Context、Policy 与 Approval 如何只收窄、不扩大执行权限。"
+    />
+    <title>0008 · Context、Policy 与 Approval 权限收窄</title>
+    <link rel="stylesheet" href="../assets/style.css" />
+    <script src="../assets/quiz.js" defer></script>
+    <script src="../assets/source-lab.js" defer></script>
+  </head>
+  <body class="lesson-page traditional-lesson" data-lesson-id="0008">
+    <a class="skip-link" href="#start">跳到课程内容</a>
+    <header class="topbar">
+      <div class="topbar-inner">
+        <a class="brand" href="../index.html">Universal Harness · Teach 2.0</a>
+        <nav class="nav-links">
+          <a href="0007-Impact确定性传播与模型建议.html">上一课</a
+          ><a href="../reference/architecture-map.html">架构地图</a><span>08 / 14</span>
+        </nav>
+        <span class="page-progress" role="progressbar" aria-label="本课阅读进度"></span>
+      </div>
+    </header>
+    <main class="lesson-main lesson-shell">
+      <section class="lesson-section lesson-hero" id="start">
+        <nav class="breadcrumb">
+          <a href="../index.html">课程地图</a><span>/</span><span>第 8 课</span>
+        </nav>
+        <div class="lesson-meta">
+          <span class="badge">治理边界</span><span class="badge time">约 23 分钟</span
+          ><span class="status-pill status-connected">仓库内已连通</span>
+        </div>
+        <p class="eyebrow">LESSON 0008 · CONTEXT → POLICY → APPROVAL → GRANT</p>
+        <h1>治理层的核心不变量：权限只能收窄</h1>
+        <p class="lead">
+          ContextBundle 决定模型看见什么，Policy 决定系统允许什么，Approval
+          只放行精确版本。三者都不是给 Agent 增权的入口；任一绑定漂移，都必须重新裁决。
+        </p>
+        <div class="orientation-strip">
+          <div class="orientation-track">
+            <span class="orientation-node">Impact / Plan</span
+            ><span class="orientation-arrow">→</span
+            ><span class="orientation-node">ContextBundle</span
+            ><span class="orientation-arrow">→</span
+            ><span class="orientation-node current">EffectivePolicy</span
+            ><span class="orientation-arrow">→</span><span class="orientation-node">Approval</span
+            ><span class="orientation-arrow">→</span
+            ><span class="orientation-node">CapabilityGrant</span>
+          </div>
+        </div>
+        <div class="lesson-win">
+          <strong>本课唯一胜利</strong>你能审查多层 Policy 合并和 Approval digest
+          绑定，证明最终权限没有比任何上游约束更宽。
+        </div>
+        <nav class="lesson-toc">
+          <a href="#recall">回忆</a><a href="#chain">治理链</a><a href="#source-one">Policy</a
+          ><a href="#source-two">Approval</a><a href="#verify">实验</a>
+        </nav>
+      </section>
+
+      <section class="lesson-section" id="recall">
+        <p class="screen-kicker">00 · RETRIEVAL FIRST</p>
+        <div class="recall-entry">
+          <h2>先回答三个边界问题</h2>
+          <ol>
+            <li>ImpactSet 中的 <code>must-change</code> 能被模型降级吗？为什么？</li>
+            <li><code>GOVERNED_BY</code> 与 <code>CONSTRAINED_BY</code> 分别回答什么？</li>
+            <li>ApprovalRequest 被处理后，为什么未必产生 <code>APPROVES</code>？</li>
+          </ol>
+        </div>
+        <div class="remember-strip">
+          <h3>本课只需记住</h3>
+          <ul>
+            <li>数值上限取最小，允许集合取交集，拒绝项与审批要求取并集。</li>
+            <li>Approval 绑定 object、baseline、policy 与 impact path 的精确版本。</li>
+            <li>任何 drift 使旧授权失效，不能沿用“曾经批准过”。</li>
+          </ul>
+        </div>
+      </section>
+
+      <section class="lesson-section" id="chain">
+        <p class="screen-kicker">01 · PRODUCTION CALL CHAIN</p>
+        <h2>四层输入共同编译一次可执行边界</h2>
+        <div class="throughline">
+          <article class="throughline-node">
+            <strong>Context compiler</strong><br /><small>deterministic selection</small>
+          </article>
+          <article class="throughline-node">
+            <strong>Policy layers</strong><br /><small>profile + project + task</small>
+          </article>
+          <article class="throughline-node">
+            <strong>EffectivePolicy</strong><br /><small>field-wise narrowing</small>
+          </article>
+          <article class="throughline-node">
+            <strong>Approval binding</strong><br /><small>exact digests</small>
+          </article>
+          <article class="throughline-node">
+            <strong>Execution preflight</strong><br /><small>bundle + grant closure</small>
+          </article>
+        </div>
+        <p>
+          ContextBudget 不是“尽量塞满”，而是按确定性候选和稳定顺序选择可复现上下文。Policy evaluator
+          不做后写覆盖，而按每个字段的 merge operator 计算更严格结果。Approval
+          只覆盖需要人工裁决的精确对象版本，不跳过 Policy。
+        </p>
+        <details class="advanced-reading">
+          <summary>关系强化：治理链怎样落到边</summary>
+          <p>
+            对象 <code>CONSTRAINED_BY</code> Constraint 表达合法形状；对象
+            <code>GOVERNED_BY</code> Policy 表达生命周期权力；Finding 可
+            <code>BLOCKS</code> Task/Iteration；ApprovalRequest
+            <code>REQUESTS_APPROVAL_FOR</code> 精确对象；Approval
+            <code>RESOLVES</code> 请求，只有批准时才 <code>APPROVES</code> 对象。
+          </p>
+        </details>
+      </section>
+
+      <section class="lesson-section" id="source-one">
+        <p class="screen-kicker">02 · SOURCE READING 1</p>
+        <h2>不同字段使用不同的“只收窄”代数</h2>
+        <article class="source-reading">
+          <header class="source-reading-header">
+            <p class="source-position">
+              Policy layers → field entries → <strong>mergeField</strong> → EffectivePolicyField
+            </p>
+            <h3>为什么读这段</h3>
+            <p>
+              简单的 last-write-wins 会让下游层覆盖上游限制；<code>hard_ceiling</code> 与
+              <code>allow_intersection</code> 把不扩大权限写成计算规则。
+            </p>
+            <a href="../../packages/runtime/src/policy/evaluator.ts#L90"
+              >packages/runtime/src/policy/evaluator.ts · mergeField</a
+            >
+          </header>
+          <div class="source-reading-grid">
+            <pre><code>case "hard_ceiling": {
+  for (const entry of entries) {
+    if (typeof entry.value !== "number" || !Number.isFinite(entry.value)) {
+      throw new PolicyError(
+        "policy_conflict",
+        `policy field ${path}: hard_ceiling requires finite numeric values`,
+      );
+    }
+  }
+  const values = entries.map((entry) =&gt; entry.value as number);
+  const merged = Math.min(...values);
+  return {
+    path,
+    merge_operator: operator,
+    value: merged,
+    reason: `hard_ceiling:min(${values.join(",")})=${String(merged)}`,
+    sources,
+  };
+}</code></pre>
+            <div class="source-explanation">
+              <dl>
+                <dt>输入校验</dt>
+                <dd>任何非有限数值都是 policy conflict，不做隐式转换。</dd>
+                <dt>收窄逻辑</dt>
+                <dd>多个预算上限取最小值；任何层都不能通过给更大数字扩大权限。</dd>
+                <dt>可解释性</dt>
+                <dd>结果保留 operator、计算 reason 与 sources，评审者能重算。</dd>
+                <dt>同类规则</dt>
+                <dd>
+                  allow 取交集；deny 与 approval requirement 取并集，因为更多拒绝/审批同样是收窄。
+                </dd>
+              </dl>
+            </div>
+          </div>
+        </article>
+      </section>
+
+      <section class="lesson-section" id="source-two">
+        <p class="screen-kicker">03 · SOURCE READING 2</p>
+        <h2>批准的身份是四组绑定，而不是一枚永久布尔值</h2>
+        <article class="source-reading">
+          <header class="source-reading-header">
+            <p class="source-position">
+              ApprovalRequest + current snapshot → <strong>bindingDrift</strong> → valid or replace
+              request
+            </p>
+            <h3>为什么读这段</h3>
+            <p>
+              批准对象、仓库基线、Policy 或 Impact path
+              任一变化，评审者看到的输入已经不是当前执行输入。
+            </p>
+            <a href="../../packages/runtime/src/approval/invalidation.ts#L17"
+              >packages/runtime/src/approval/invalidation.ts · bindingDrift</a
+            >
+          </header>
+          <div class="source-reading-grid">
+            <pre><code>export function bindingDrift(
+  request: ApprovalRequestRecord,
+  current: ApprovalBindingSnapshot,
+): readonly string[] {
+  const drifted: string[] = [];
+  if (current.objectDigest !== request.object_digest) drifted.push("object_digest");
+  if (current.baselineDigest !== request.baseline_digest) drifted.push("baseline_digest");
+  if (current.policyDigest !== request.policy_digest) drifted.push("policy_digest");
+  if (
+    current.impactPath.length !== request.impact_path.length ||
+    current.impactPath.some((entry, index) =&gt; entry !== request.impact_path[index])
+  ) {
+    drifted.push("impact_path");
+  }
+  return drifted;
+}</code></pre>
+            <div class="source-explanation">
+              <dl>
+                <dt>四种漂移</dt>
+                <dd>对象内容、执行基线、治理规则和影响路径分别代表四个独立审查输入。</dd>
+                <dt>返回列表</dt>
+                <dd>函数不只给 true/false，而返回稳定字段名，供失效记录与替换请求解释原因。</dd>
+                <dt>生命周期后果</dt>
+                <dd>
+                  旧请求被 supersede，新的请求绑定当前 digests；不能修改旧 Approval 来“追上”新版本。
+                </dd>
+                <dt>证据边界</dt>
+                <dd>
+                  digest
+                  相等证明输入未漂移，不证明批准者身份、权限或决定本身有效；这些由其他守卫检查。
+                </dd>
+              </dl>
+            </div>
+          </div>
+        </article>
+        <div class="prediction-card">
+          <strong>先判断：</strong>对象内容没变，但 Impact path 新增一个高风险节点。旧 Approval
+          能否继续使用？写出具体 drift 字段。
+        </div>
+      </section>
+
+      <section class="lesson-section" id="verify">
+        <p class="screen-kicker">04 · EVIDENCE AND MASTERY</p>
+        <h2>复跑 Context、Policy 和 Approval 三条守卫</h2>
+        <div class="source-lab" data-lab-id="lesson-0008-governance">
+          <h3>Context compiler + policy evaluator + approval invalidation</h3>
+          <pre
+            class="command-block lab-command"
+          ><code data-command>pnpm exec vitest run packages/runtime/test/context/compiler.test.ts packages/runtime/test/policy/evaluator.test.ts packages/runtime/test/approval/invalidation.test.ts packages/runtime/test/policy/execution-preflight.test.ts</code></pre>
+          <div class="lab-actions">
+            <button class="btn secondary" type="button" data-copy-command>复制命令</button
+            ><button class="btn" type="button" data-mark-lab>我已复跑并核对</button>
+          </div>
+          <p class="lab-status"></p>
+          <p class="evidence-boundary">
+            <strong>证据边界：</strong>通过证明仓库内编译、合并、漂移与 preflight
+            守卫；不证明外部身份提供方或某次人工决定真实发生。
+          </p>
+        </div>
+        <div class="quiz-container" data-quiz>
+          <h3>即时判断</h3>
+          <div
+            class="quiz-question-block"
+            data-correct="a"
+            data-explanation-right="正确。hard ceiling 取最小值，最终仍受 100 限制。"
+            data-explanation-wrong="后层不能覆盖并扩大前层上限。"
+          >
+            <p><strong>1. 项目上限 100，Task 层写 200，最终上限是？</strong></p>
+            <button class="quiz-option" type="button" data-value="a">100</button
+            ><button class="quiz-option" type="button" data-value="b">200</button
+            ><span class="quiz-feedback"></span>
+          </div>
+          <div
+            class="quiz-question-block"
+            data-correct="b"
+            data-explanation-right="正确。影响路径是批准输入的一部分，变化即失效。"
+            data-explanation-wrong="批准不是只绑定对象 digest。"
+          >
+            <p><strong>2. 仅 impact path 漂移，旧批准如何处理？</strong></p>
+            <button class="quiz-option" type="button" data-value="a">继续沿用</button
+            ><button class="quiz-option" type="button" data-value="b">失效并重新请求</button
+            ><span class="quiz-feedback"></span>
+          </div>
+          <div
+            class="quiz-question-block"
+            data-correct="a"
+            data-explanation-right="正确。RESOLVES 记录请求已闭合，APPROVES 才放行对象。"
+            data-explanation-wrong="reject 同样能 RESOLVES 请求。"
+          >
+            <p><strong>3. 哪条边直接表达对象获得授权？</strong></p>
+            <button class="quiz-option" type="button" data-value="a">APPROVES</button
+            ><button class="quiz-option" type="button" data-value="b">RESOLVES</button
+            ><span class="quiz-feedback"></span>
+          </div>
+          <div class="quiz-actions">
+            <button class="btn" type="button" data-quiz-check>检查答案</button
+            ><button class="btn secondary" type="button" data-quiz-reset>重置</button>
+          </div>
+        </div>
+        <div class="mastery-output">
+          <h3>权限不扩大证明</h3>
+          <ol>
+            <li>给三层 policy 数值、allow、deny 各一组输入，手算 EffectivePolicy。</li>
+            <li>列出 Approval 的四个 drift 字段，并解释每个字段为何需要重审。</li>
+            <li>
+              判断最终 CapabilityGrant 比 Profile/Policy/Approval 任一输入更宽时，应在哪层 fail
+              closed。
+            </li>
+          </ol>
+        </div>
+        <div class="button-row">
+          <button class="btn secondary" type="button" data-mark-reviewed>标记本课已复习</button>
+        </div>
+        <div class="lesson-footer">
+          <a class="btn secondary" href="0007-Impact确定性传播与模型建议.html">← 上一课</a
+          ><a class="btn" href="0009-TaskEnvelope与受控工具执行.html">下一课：受控执行 →</a>
+        </div>
+      </section>
+    </main>
+  </body>
+</html>

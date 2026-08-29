@@ -16,7 +16,7 @@
         <a class="brand" href="../index.html">Universal Harness · Teach 2.0</a>
         <nav class="nav-links">
           <a href="../index.html">课程地图</a
-          ><a href="../reference/architecture-map.html">架构参考</a><span>01 / 04</span>
+          ><a href="../reference/architecture-map.html">架构参考</a><span>01 / 14</span>
         </nav>
         <span class="page-progress" role="progressbar" aria-label="本课阅读进度"></span>
       </div>
@@ -28,7 +28,7 @@
           <a href="../index.html">课程地图</a><span>/</span><span>第 1 课</span>
         </nav>
         <div class="lesson-meta">
-          <span class="badge">全局总览</span><span class="badge time">约 15 分钟</span
+          <span class="badge">全局总览</span><span class="badge time">约 20 分钟</span
           ><span class="status-pill status-connected">仓库内架构已验证</span>
         </div>
         <p class="eyebrow">LESSON 0001 · GLOBAL MODEL</p>
@@ -51,6 +51,26 @@
         <div class="lesson-win">
           <strong>本课唯一胜利</strong>你能不看页面，画出“事实与意图 → 编译 → 执行 → 裁决 →
           Ledger”的主链，并正确解释 Kernel 与 Module 的区别。
+        </div>
+      </section>
+
+      <section class="lesson-section" id="recall">
+        <p class="screen-kicker">00 · ENTRY CHECK</p>
+        <div class="recall-entry">
+          <h2>进入源码前，先暴露自己的默认假设</h2>
+          <ol>
+            <li>你现在认为“任务完成”由 Agent、测试进程、Dashboard 还是 Ledger 决定？</li>
+            <li>你会把 Lite、Standard、Governed 理解为三套流程，还是同一 Kernel 的三张子图？</li>
+            <li>SQLite 被删除后，系统事实应不应该丢失？</li>
+          </ol>
+        </div>
+        <div class="remember-strip">
+          <h3>本课只需记住</h3>
+          <ul>
+            <li>Kernel 固定生命周期，CapabilityPlan 选择 Module 子图。</li>
+            <li>模型和 Agent 只能提出候选，确定性边界负责裁决。</li>
+            <li>Ledger/Snapshot 是权威，SQLite/Dashboard/Live Spool 是读取或观察面。</li>
+          </ul>
         </div>
       </section>
 
@@ -228,7 +248,7 @@
           </div>
         </div>
 
-        <div class="retrieval-card">
+        <div class="mastery-output">
           <strong>脱稿回忆</strong>
           <p>
             关闭本页，用五个框画出主链；然后各用一句话解释
@@ -251,6 +271,9 @@
           <div><strong>固定</strong>Kernel 给所有 Profile 同一生命周期。</div>
           <div><strong>可变</strong>CapabilityPlan 决定哪些 Module 被物化。</div>
           <div><strong>权威</strong>Evidence、Verdict、Snapshot 最终进入 Ledger。</div>
+        </div>
+        <div class="button-row">
+          <button class="btn secondary" type="button" data-mark-reviewed>标记本课已复习</button>
         </div>
         <div class="lesson-footer">
           <a class="btn secondary" href="../index.html">返回课程地图</a

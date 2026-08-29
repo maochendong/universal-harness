@@ -140,40 +140,60 @@
 
       <section class="lesson-section animate-in">
         <div>
-          <h2>首批四课的最小验证命令</h2>
-          <div class="source-lab" data-lab-id="reference-four-lessons">
-            <h3>架构文档与注册表一致性</h3>
+          <h2>14 课的分层验证命令</h2>
+          <p class="section-intro">
+            先运行所属课程的最小命令，不要把三个阶段一次性全跑当作“更强证据”。命令结果必须与当时的
+            <code>git rev-parse HEAD</code> 和 <code>git status --short</code> 一起保存。
+          </p>
+          <div class="source-lab" data-lab-id="reference-fourteen-lessons">
+            <h3>阶段 I · 架构、Capability、验收与 Provider</h3>
             <div class="command-box">
-              <code id="cmd-arch" data-command
-                >pnpm exec vitest run tests/e2e/graph-model-documentation.test.ts</code
-              ><button data-copy-command data-command-target="cmd-arch">复制</button>
+              <code id="cmd-phase-one" data-command
+                >pnpm exec vitest run tests/e2e/graph-model-documentation.test.ts
+                packages/core/test/capability/compiler.test.ts
+                packages/runtime/test/orchestration/capability-plan-routing.test.ts
+                packages/core/test/plan/assertions.test.ts
+                packages/runtime/test/orchestration/strict-tdd-routing.test.ts
+                packages/runtime/test/model/managed-runner.test.ts
+                packages/cli/test/managed-pipeline-ports.test.ts</code
+              ><button data-copy-command data-command-target="cmd-phase-one">复制</button>
             </div>
-            <h3 style="margin-top: 1.5rem">CapabilityPlan 编译与路由</h3>
+            <h3>阶段 II · Ledger、Graph、Impact、Policy、Tool 与 Resume</h3>
             <div class="command-box">
-              <code id="cmd-cap" data-command
-                >pnpm exec vitest run packages/core/test/capability/compiler.test.ts
-                packages/runtime/test/orchestration/capability-plan-routing.test.ts</code
-              ><button data-copy-command data-command-target="cmd-cap">复制</button>
+              <code id="cmd-phase-two" data-command
+                >pnpm exec vitest run packages/core/test/ledger/repository.test.ts
+                packages/graph/test/integrity.property.test.ts
+                packages/graph/test/materializer.test.ts
+                packages/graph/test/impact/propagation.test.ts
+                packages/graph/test/impact/advisory-merge.test.ts
+                packages/runtime/test/policy/evaluator.test.ts
+                packages/runtime/test/approval/invalidation.test.ts
+                packages/runtime/test/loop/task-envelope.test.ts
+                packages/runtime/test/tools/invocation.test.ts
+                packages/runtime/test/workflow/resume.test.ts
+                packages/runtime/test/tools/reconciliation.test.ts</code
+              ><button data-copy-command data-command-target="cmd-phase-two">复制</button>
             </div>
-            <h3 style="margin-top: 1.5rem">Assertion 与 Strict TDD 路由</h3>
+            <h3>阶段 III · Verdict、Snapshot、Feedback、Projection 与 M3 基础</h3>
             <div class="command-box">
-              <code id="cmd-tdd" data-command
-                >pnpm exec vitest run packages/core/test/plan/assertions.test.ts
-                packages/runtime/test/planning/default-planner-assertions.test.ts
-                packages/runtime/test/orchestration/strict-tdd-routing.test.ts</code
-              ><button data-copy-command data-command-target="cmd-tdd">复制</button>
+              <code id="cmd-phase-three" data-command
+                >pnpm exec vitest run packages/runtime/test/evaluation/task-verdict.test.ts
+                packages/runtime/test/tdd/verdict.test.ts
+                packages/runtime/test/snapshot/builder.test.ts
+                packages/eval/test/feedback/rca.test.ts
+                packages/eval/test/feedback/improvement.test.ts
+                packages/eval/test/feedback/promotion.test.ts
+                packages/runtime/test/observability/publisher.test.ts
+                packages/dashboard/test/sse.test.ts packages/core/test/collaboration/records.test.ts
+                packages/core/test/protocol/protocol-1.2.test.ts
+                packages/runtime/test/collaboration/coordinator.test.ts</code
+              ><button data-copy-command data-command-target="cmd-phase-three">复制</button>
             </div>
-            <h3 style="margin-top: 1.5rem">Managed Provider 与生产消费</h3>
-            <div class="command-box">
-              <code id="cmd-provider" data-command
-                >pnpm exec vitest run packages/runtime/test/model/managed-runner.test.ts
-                packages/runtime/test/model/provider-registry.test.ts
-                packages/cli/test/managed-pipeline-ports.test.ts
-                packages/runtime/test/orchestration/feedback-analysis-wiring.test.ts</code
-              ><button data-copy-command data-command-target="cmd-provider">复制</button>
-            </div>
-            <p class="lab-baseline">`05871fc` 生成基线：7/7、31/31、13/13、31/31 全部通过。</p>
-            <div class="lab-actions"><button data-mark-lab>我已复跑所需命令</button></div>
+            <p class="lab-baseline">
+              不固化历史通过数：源码与 M3 正在演进，学习者必须保存当前 commit、worktree 和实际
+              Vitest 输出。
+            </p>
+            <div class="lab-actions"><button data-mark-lab>我已保存当前基线与所需输出</button></div>
             <p class="lab-status"></p>
           </div>
         </div>

@@ -1,0 +1,333 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content="第 10 课：理解 Checkpoint、Resume、幂等与外部副作用对账。" />
+    <title>0010 · Checkpoint 恢复与外部副作用对账</title>
+    <link rel="stylesheet" href="../assets/style.css" />
+    <script src="../assets/quiz.js" defer></script>
+    <script src="../assets/source-lab.js" defer></script>
+  </head>
+  <body class="lesson-page traditional-lesson" data-lesson-id="0010">
+    <a class="skip-link" href="#start">跳到课程内容</a>
+    <header class="topbar">
+      <div class="topbar-inner">
+        <a class="brand" href="../index.html">Universal Harness · Teach 2.0</a>
+        <nav class="nav-links">
+          <a href="0009-TaskEnvelope与受控工具执行.html">上一课</a
+          ><a href="../reference/verification-playbook.html">验证手册</a><span>10 / 14</span>
+        </nav>
+        <span class="page-progress" role="progressbar" aria-label="本课阅读进度"></span>
+      </div>
+    </header>
+    <main class="lesson-main lesson-shell">
+      <section class="lesson-section lesson-hero" id="start">
+        <nav class="breadcrumb">
+          <a href="../index.html">课程地图</a><span>/</span><span>第 10 课</span>
+        </nav>
+        <div class="lesson-meta">
+          <span class="badge">恢复语义</span><span class="badge time">约 24 分钟</span
+          ><span class="status-pill status-connected">仓库内已连通</span>
+        </div>
+        <p class="eyebrow">LESSON 0010 · CHECKPOINT → RESUME → RECONCILE</p>
+        <h1>超时不是失败证明：恢复前必须先对账</h1>
+        <p class="lead">
+          本地步骤可以从合法 checkpoint 接续，外部副作用却可能在响应丢失前已经成功。盲目 retry
+          会重复付款、发布或删除；正确路径是先验证 checkpoint 绑定，再对每个未决 intent 探测结果。
+        </p>
+        <div class="orientation-strip">
+          <div class="orientation-track">
+            <span class="orientation-node">Run records</span><span class="orientation-arrow">→</span
+            ><span class="orientation-node">Checkpoint</span><span class="orientation-arrow">→</span
+            ><span class="orientation-node current">Resume validation</span
+            ><span class="orientation-arrow">→</span
+            ><span class="orientation-node">Intent reconcile</span
+            ><span class="orientation-arrow">→</span
+            ><span class="orientation-node">Successor Run</span>
+          </div>
+        </div>
+        <div class="lesson-win">
+          <strong>本课唯一胜利</strong>面对中断运行，你能区分 retry、resume 与 reconcile，并为
+          applied / not_applied / unknown 三种探测结果选择安全动作。
+        </div>
+        <nav class="lesson-toc">
+          <a href="#recall">回忆</a><a href="#chain">恢复链</a><a href="#source-one">Resume</a
+          ><a href="#source-two">Reconcile</a><a href="#verify">实验</a>
+        </nav>
+      </section>
+
+      <section class="lesson-section" id="recall">
+        <p class="screen-kicker">00 · RETRIEVAL FIRST</p>
+        <div class="recall-entry">
+          <h2>先从执行边界推导恢复问题</h2>
+          <ol>
+            <li>TaskEnvelope digest 在 resume 时能检测什么？</li>
+            <li>Tool invocation 为什么在副作用前记录 ActionIntent？</li>
+            <li>HTTP timeout 能证明 provider 没有应用副作用吗？</li>
+          </ol>
+        </div>
+        <div class="remember-strip">
+          <h3>本课只需记住</h3>
+          <ul>
+            <li>Resume 只从最新合法 committed checkpoint 恢复。</li>
+            <li>恢复前重验 baseline、Approval 与 Context digests。</li>
+            <li>外部结果未知时只允许对账；无法证明就人工处理，绝不盲重试。</li>
+          </ul>
+        </div>
+      </section>
+
+      <section class="lesson-section" id="chain">
+        <p class="screen-kicker">01 · THREE DIFFERENT ACTIONS</p>
+        <h2>retry、resume、reconcile 解决的是不同不确定性</h2>
+        <div class="definition-grid">
+          <article class="definition-card">
+            <h3>Retry</h3>
+            <p>
+              用相同 idempotency key 再次提交已知可重试动作。前提是系统或 provider
+              能证明第一次未应用，或完成结果已缓存。
+            </p>
+          </article>
+          <article class="definition-card">
+            <h3>Resume</h3>
+            <p>
+              从 committed checkpoint 的合法前缀继续 workflow，建立新 attempt/successor
+              Run，不复制已完成节点与 Evidence。
+            </p>
+          </article>
+          <article class="definition-card">
+            <h3>Reconcile</h3>
+            <p>
+              对未决外部 intent 查询 provider：已应用则复用，未应用才允许 retry，未知则人工裁决。
+            </p>
+          </article>
+          <article class="definition-card">
+            <h3>Graph reconcile</h3>
+            <p>把运行工件和 accepted Ledger 重新物化成缺失 Evidence/edges；不是重演外部副作用。</p>
+          </article>
+        </div>
+        <div class="throughline">
+          <article class="throughline-node">
+            <strong>Read current op</strong><br /><small>terminal?</small>
+          </article>
+          <article class="throughline-node">
+            <strong>Load checkpoint</strong><br /><small>committed + valid</small>
+          </article>
+          <article class="throughline-node">
+            <strong>Reverify bindings</strong><br /><small>baseline/context/approval</small>
+          </article>
+          <article class="throughline-node">
+            <strong>Reconcile intents</strong><br /><small>provider proof</small>
+          </article>
+          <article class="throughline-node">
+            <strong>Append successor</strong><br /><small>RESUMES lineage</small>
+          </article>
+        </div>
+        <details class="advanced-reading">
+          <summary>关系强化：恢复链为什么需要多种边</summary>
+          <p>
+            Checkpoint <code>CAPTURES</code> Run/Iteration 状态；successor Run
+            <code>RESUMES</code> interrupted Run；Run <code>USES_CONTEXT</code> 精确 bundle；未决
+            Finding 可 <code>BLOCKS</code> 恢复；失败 <code>DIAGNOSED_BY</code> RCA
+            是后续学习链，不等于恢复动作本身。
+          </p>
+        </details>
+      </section>
+
+      <section class="lesson-section" id="source-one">
+        <p class="screen-kicker">02 · SOURCE READING 1</p>
+        <h2>Resume 在创建任何新记录前重新验证三类绑定</h2>
+        <article class="source-reading">
+          <header class="source-reading-header">
+            <p class="source-position">
+              workflow operation → latest checkpoint → <strong>binding revalidation</strong> →
+              interrupted runs
+            </p>
+            <h3>为什么读这段</h3>
+            <p>
+              Checkpoint 是过去时的合法状态；恢复时当前 baseline
+              或治理输入可能已变化，不能直接信任旧授权。
+            </p>
+            <a href="../../packages/runtime/src/workflow/resume.ts#L180"
+              >packages/runtime/src/workflow/resume.ts · resume validation</a
+            >
+          </header>
+          <div class="source-reading-grid">
+            <pre><code>const committed = latestValidCheckpoint(harnessRoot, operations, workflowOperationId);
+if (committed === undefined) {
+  throw new WorkflowError(
+    "checkpoint_not_found",
+    `workflow operation ${workflowOperationId} has no valid checkpoint to resume from`,
+  );
+}
+const { workingState } = committed;
+
+// Re-verify bindings recorded in the checkpoint before any new commit.
+const baseline = deps.readBaseline();
+if (baseline !== workingState.baseline_commit) {
+  throw new WorkflowError(
+    "baseline_mismatch",
+    `baseline drifted since the checkpoint: expected ${workingState.baseline_commit}, current ${baseline}`,
+  );
+}
+const allowedDigests = artifactDigestAllowlist(operations, workflowOperationId);
+verifyApprovalBindings(harnessRoot, allowedDigests, workingState);
+verifyContextBundleBinding(harnessRoot, allowedDigests, workingState);</code></pre>
+            <div class="source-explanation">
+              <dl>
+                <dt>只读 committed checkpoint</dt>
+                <dd>
+                  <code>latestValidCheckpoint</code> 以 Ledger operations 验证
+                  checkpoint，不采用任意磁盘快照。
+                </dd>
+                <dt>baseline guard</dt>
+                <dd>工作树基线变化意味着旧执行前提失效，直接报 <code>baseline_mismatch</code>。</dd>
+                <dt>digest allowlist</dt>
+                <dd>
+                  Approval 和 Context 必须来自该 operation 已提交的 artifact
+                  digests，防止路径注入未授权文件。
+                </dd>
+                <dt>时序</dt>
+                <dd>这些检查发生在新 attempt、successor Run 和新 Ledger commit 之前。</dd>
+              </dl>
+            </div>
+          </div>
+        </article>
+      </section>
+
+      <section class="lesson-section" id="source-two">
+        <p class="screen-kicker">03 · SOURCE READING 2</p>
+        <h2>Provider 不能证明结果时，唯一自动决策是 manual_required</h2>
+        <article class="source-reading">
+          <header class="source-reading-header">
+            <p class="source-position">
+              unresolved ActionIntent + ToolRegistry + probe → <strong>reconcileIntent</strong> →
+              decision
+            </p>
+            <h3>为什么读这段</h3>
+            <p>这段 switch 是外部副作用的安全真值表：只有 provider 的肯定证明才能复用或重试。</p>
+            <a href="../../packages/runtime/src/tools/reconciliation.ts#L88"
+              >packages/runtime/src/tools/reconciliation.ts · probe outcome</a
+            >
+          </header>
+          <div class="source-reading-grid">
+            <pre><code>const outcome = await probe(intent);
+switch (outcome) {
+  case "applied":
+    return decide(
+      intent,
+      "reuse_result",
+      `provider proves the effect of intent ${intent.intent_id} applied; the side effect ` +
+        "is reused, not replayed",
+    );
+  case "not_applied":
+    return decide(
+      intent,
+      "retry_allowed",
+      `provider proves the effect of intent ${intent.intent_id} was not applied; ` +
+        "retrying the idempotency key is safe",
+    );
+  case "unknown":
+    return decide(
+      intent,
+      "manual_required",
+      `provider cannot prove the outcome of intent ${intent.intent_id}; human review is required`,
+    );
+}</code></pre>
+            <div class="source-explanation">
+              <dl>
+                <dt>applied</dt>
+                <dd>复用已发生的结果，不重放副作用；后续需要补齐本地 result/evidence 记录。</dd>
+                <dt>not_applied</dt>
+                <dd>provider 明确证明未发生，才允许使用原 idempotency key 重试。</dd>
+                <dt>unknown</dt>
+                <dd>不确定性不会被当作失败；自动流程停止并请求人工核查。</dd>
+                <dt>额外 fail closed</dt>
+                <dd>
+                  Tool 不再注册、声明 manual reconciliation、或没有 probe，都返回
+                  <code>manual_required</code>。
+                </dd>
+              </dl>
+            </div>
+          </div>
+        </article>
+      </section>
+
+      <section class="lesson-section" id="verify">
+        <p class="screen-kicker">04 · EVIDENCE AND MASTERY</p>
+        <h2>复跑 resume、reconciliation 与 graph repair</h2>
+        <div class="source-lab" data-lab-id="lesson-0010-recovery">
+          <h3>Workflow resume + external reconciliation + graph reconcile</h3>
+          <pre
+            class="command-block lab-command"
+          ><code data-command>pnpm exec vitest run packages/runtime/test/workflow/resume.test.ts packages/runtime/test/tools/reconciliation.test.ts packages/runtime/test/graph/reconcile.test.ts packages/cli/test/resume.test.ts</code></pre>
+          <div class="lab-actions">
+            <button class="btn secondary" type="button" data-copy-command>复制命令</button
+            ><button class="btn" type="button" data-mark-lab>我已复跑并核对</button>
+          </div>
+          <p class="lab-status"></p>
+          <p class="evidence-boundary">
+            <strong>证据边界：</strong>通过证明受控 fixtures 下的恢复与对账规则；不证明某个真实外部
+            provider 实现了可靠 probe。
+          </p>
+        </div>
+        <div class="quiz-container" data-quiz>
+          <h3>恢复裁决</h3>
+          <div
+            class="quiz-question-block"
+            data-correct="b"
+            data-explanation-right="正确。timeout 不能证明副作用未发生，先 reconcile。"
+            data-explanation-wrong="盲重试可能重复外部效果。"
+          >
+            <p><strong>1. 外部发布请求超时，第一步是什么？</strong></p>
+            <button class="quiz-option" type="button" data-value="a">立即 retry</button
+            ><button class="quiz-option" type="button" data-value="b">
+              按 intent 向 provider 对账</button
+            ><span class="quiz-feedback"></span>
+          </div>
+          <div
+            class="quiz-question-block"
+            data-correct="a"
+            data-explanation-right="正确。baseline 漂移使 checkpoint 的执行前提失效。"
+            data-explanation-wrong="resume 不能把旧状态强行应用到新基线。"
+          >
+            <p><strong>2. checkpoint baseline 与当前不同，如何处理？</strong></p>
+            <button class="quiz-option" type="button" data-value="a">fail closed</button
+            ><button class="quiz-option" type="button" data-value="b">更新 digest 后继续</button
+            ><span class="quiz-feedback"></span>
+          </div>
+          <div
+            class="quiz-question-block"
+            data-correct="b"
+            data-explanation-right="正确。provider 不能证明时必须人工处理。"
+            data-explanation-wrong="unknown 不是 not_applied。"
+          >
+            <p><strong>3. probe 返回 unknown，对应决策是？</strong></p>
+            <button class="quiz-option" type="button" data-value="a">retry_allowed</button
+            ><button class="quiz-option" type="button" data-value="b">manual_required</button
+            ><span class="quiz-feedback"></span>
+          </div>
+          <div class="quiz-actions">
+            <button class="btn" type="button" data-quiz-check>检查答案</button
+            ><button class="btn secondary" type="button" data-quiz-reset>重置</button>
+          </div>
+        </div>
+        <div class="mastery-output">
+          <h3>中断案例裁决</h3>
+          <ol>
+            <li>为本地纯读步骤、幂等写步骤、外部非幂等动作分别选 retry/resume/reconcile。</li>
+            <li>列出 resume 前的 checkpoint、baseline、Approval、Context 检查。</li>
+            <li>写出 applied/not_applied/unknown 的动作与绝不能做的事。</li>
+          </ol>
+        </div>
+        <div class="button-row">
+          <button class="btn secondary" type="button" data-mark-reviewed>标记本课已复习</button>
+        </div>
+        <div class="lesson-footer">
+          <a class="btn secondary" href="0009-TaskEnvelope与受控工具执行.html">← 上一课</a
+          ><a class="btn" href="0011-EvidenceGate与完成裁决.html">下一课：完成裁决 →</a>
+        </div>
+      </section>
+    </main>
+  </body>
+</html>

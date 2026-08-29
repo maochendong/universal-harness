@@ -19,7 +19,7 @@
         <a class="brand" href="../index.html">Universal Harness · Teach 2.0</a>
         <nav class="nav-links">
           <a href="0003-需求设计计划与TDD追踪链.html">上一课</a
-          ><a href="../reference/provider-connectivity-matrix.html">连通矩阵</a><span>04 / 04</span>
+          ><a href="../reference/provider-connectivity-matrix.html">连通矩阵</a><span>04 / 14</span>
         </nav>
         <span class="page-progress" role="progressbar" aria-label="本课阅读进度"></span>
       </div>
@@ -31,7 +31,7 @@
           <a href="../index.html">课程地图</a><span>/</span><span>第 4 课</span>
         </nav>
         <div class="lesson-meta">
-          <span class="badge">模型链穿透</span><span class="badge time">约 18 分钟</span
+          <span class="badge">模型链穿透</span><span class="badge time">约 23 分钟</span
           ><span class="status-pill status-partial">外部当前部分连通</span>
         </div>
         <p class="eyebrow">LESSON 0004 · PORT → CONSUMER</p>
@@ -53,6 +53,26 @@
         <div class="lesson-win">
           <strong>本课唯一胜利</strong>看到“Provider
           已接入”时，你能沿五层链逐项找证据，并准确解释为什么当前仓库内是已连通、当前外部仍只能标记部分连通。
+        </div>
+      </section>
+
+      <section class="lesson-section" id="recall">
+        <p class="screen-kicker">00 · RETRIEVAL FIRST</p>
+        <div class="recall-entry">
+          <h2>先从验收链恢复证据边界</h2>
+          <ol>
+            <li>一个接口存在能否证明生产消费者已经调用它？</li>
+            <li>targeted tests 全绿能否证明真实凭据和网络可用？</li>
+            <li>模型输出通过 Schema 后，是否自动成为 accepted fact？</li>
+          </ol>
+        </div>
+        <div class="remember-strip">
+          <h3>本课只需记住</h3>
+          <ul>
+            <li>连通要穿过 Port、Binding、Resolver/Adapter、Runner/Validator 与 Consumer。</li>
+            <li>仓库内接线和当前外部验证必须分别定级。</li>
+            <li>required provider closure 不完整时，生产装配必须整体失败。</li>
+          </ul>
         </div>
       </section>
 
@@ -312,7 +332,7 @@ if (uncovered.length &gt; 0) {
           </div>
         </div>
 
-        <div class="retrieval-card">
+        <div class="mastery-output">
           <strong>脱稿回忆</strong>
           <p>
             写出 Port → Binding → Resolver/Adapter → Runner/Validator → Consumer/Evidence
@@ -335,9 +355,12 @@ if (uncovered.length &gt; 0) {
             Agent 提问“这个槽位最后由哪个生产消费者调用”。
           </p>
         </div>
+        <div class="button-row">
+          <button class="btn secondary" type="button" data-mark-reviewed>标记本课已复习</button>
+        </div>
         <div class="lesson-footer">
           <a class="btn secondary" href="0003-需求设计计划与TDD追踪链.html">← 上一课</a
-          ><a class="btn" href="../index.html">回到课程地图</a>
+          ><a class="btn" href="0005-Ledger事务与权威提交.html">下一课：Ledger 提交 →</a>
         </div>
       </section>
     </main>

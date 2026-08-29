@@ -1,0 +1,304 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      name="description"
+      content="第 9 课：从 TaskEnvelope 穿透到 CapabilityGrant 与 Tool Invocation。"
+    />
+    <title>0009 · TaskEnvelope 与受控工具执行</title>
+    <link rel="stylesheet" href="../assets/style.css" />
+    <script src="../assets/quiz.js" defer></script>
+    <script src="../assets/source-lab.js" defer></script>
+  </head>
+  <body class="lesson-page traditional-lesson" data-lesson-id="0009">
+    <a class="skip-link" href="#start">跳到课程内容</a>
+    <header class="topbar">
+      <div class="topbar-inner">
+        <a class="brand" href="../index.html">Universal Harness · Teach 2.0</a>
+        <nav class="nav-links">
+          <a href="0008-ContextPolicyApproval权限收窄.html">上一课</a
+          ><a href="../reference/architecture-map.html">架构地图</a><span>09 / 14</span>
+        </nav>
+        <span class="page-progress" role="progressbar" aria-label="本课阅读进度"></span>
+      </div>
+    </header>
+    <main class="lesson-main lesson-shell">
+      <section class="lesson-section lesson-hero" id="start">
+        <nav class="breadcrumb">
+          <a href="../index.html">课程地图</a><span>/</span><span>第 9 课</span>
+        </nav>
+        <div class="lesson-meta">
+          <span class="badge">受控执行</span><span class="badge time">约 22 分钟</span
+          ><span class="status-pill status-connected">仓库内已连通</span>
+        </div>
+        <p class="eyebrow">LESSON 0009 · ENVELOPE → GRANT → TOOL</p>
+        <h1>Agent 不能靠“计划要做”给自己授权</h1>
+        <p class="lead">
+          TaskEnvelope 固定任务身份与执行边界，CapabilityGrant 是治理层签发的可用能力，Tool invoker
+          在真正副作用前再次校验。三层分开，才能阻止模型输出越过确定性控制面。
+        </p>
+        <div class="orientation-strip">
+          <div class="orientation-track">
+            <span class="orientation-node">Accepted Plan</span
+            ><span class="orientation-arrow">→</span
+            ><span class="orientation-node">TaskEnvelope</span
+            ><span class="orientation-arrow">→</span
+            ><span class="orientation-node current">CapabilityGrant</span
+            ><span class="orientation-arrow">→</span
+            ><span class="orientation-node">Tool Invocation</span
+            ><span class="orientation-arrow">→</span><span class="orientation-node">Evidence</span>
+          </div>
+        </div>
+        <div class="lesson-win">
+          <strong>本课唯一胜利</strong>你能从一次 tool call 反查 TaskEnvelope、Grant 与
+          Approval，并指出任一缺失时为何必须在副作用前失败。
+        </div>
+        <nav class="lesson-toc">
+          <a href="#recall">回忆</a><a href="#chain">执行链</a><a href="#source-one">Envelope</a
+          ><a href="#source-two">Tool guard</a><a href="#verify">实验</a>
+        </nav>
+      </section>
+
+      <section class="lesson-section" id="recall">
+        <p class="screen-kicker">00 · RETRIEVAL FIRST</p>
+        <div class="recall-entry">
+          <h2>先恢复治理不变量</h2>
+          <ol>
+            <li>Policy merge 为什么不能 last-write-wins？</li>
+            <li>Approval 绑定哪四组会漂移的输入？</li>
+            <li>如果模型在响应中要求一个未获准工具，谁拥有最终裁决权？</li>
+          </ol>
+        </div>
+        <div class="remember-strip">
+          <h3>本课只需记住</h3>
+          <ul>
+            <li>Envelope 固定“这项任务可读、拟写、可用工具和循环策略”。</li>
+            <li>Grant 只能由控制面签发并继续收窄。</li>
+            <li>Invoker 在副作用前检查定义、参数、Grant、Approval 与 intent。</li>
+          </ul>
+        </div>
+      </section>
+
+      <section class="lesson-section" id="chain">
+        <p class="screen-kicker">01 · PRODUCTION CALL CHAIN</p>
+        <h2>执行边界由三个不同对象共同成立</h2>
+        <div class="throughline">
+          <article class="throughline-node">
+            <strong>Task</strong><br /><small>accepted obligation</small>
+          </article>
+          <article class="throughline-node">
+            <strong>TaskEnvelope</strong><br /><small>immutable execution input</small>
+          </article>
+          <article class="throughline-node">
+            <strong>CapabilityGrant</strong><br /><small>effective permission</small>
+          </article>
+          <article class="throughline-node">
+            <strong>ToolInvoker</strong><br /><small>pre-side-effect checks</small>
+          </article>
+          <article class="throughline-node">
+            <strong>Intent / Result</strong><br /><small>reconcile + evidence</small>
+          </article>
+        </div>
+        <p>
+          Envelope 描述任务允许的执行形状，不等于授予能力；Grant
+          描述当前授权，不等于调用已经发生；Run 通过 <code>INVOKES</code> 连接 ToolDefinition，通过
+          <code>EXECUTES</code> 连接 Task，通过 <code>USES_CONTEXT</code> 固定 ContextBundle，最后
+          <code>PRODUCES</code> Evidence。
+        </p>
+        <details class="advanced-reading">
+          <summary>为什么不把 Grant 直接塞进模型 Prompt</summary>
+          <p>
+            Prompt 是模型可见输入，不是强制边界。即使模型“承诺”只调用某些工具，真正的 ToolInvoker
+            仍必须基于类型化 Grant 独立校验；否则提示注入或模型错误会变成权限升级。
+          </p>
+        </details>
+      </section>
+
+      <section class="lesson-section" id="source-one">
+        <p class="screen-kicker">02 · SOURCE READING 1</p>
+        <h2>TaskEnvelope 先规范化，再计算 digest 和校验结构</h2>
+        <article class="source-reading">
+          <header class="source-reading-header">
+            <p class="source-position">
+              Task + plan/context/tool bindings → <strong>buildTaskEnvelope</strong> → immutable
+              digest
+            </p>
+            <h3>为什么读这段</h3>
+            <p>
+              相同语义输入必须产生相同 envelope；路径重复、顺序差异不能制造不同 digest 或绕过比较。
+            </p>
+            <a href="../../packages/runtime/src/loop/task-envelope.ts#L167"
+              >packages/runtime/src/loop/task-envelope.ts · buildTaskEnvelope</a
+            >
+          </header>
+          <div class="source-reading-grid">
+            <pre><code>const normalized: TaskEnvelopeSpec = {
+  ...spec,
+  allowed_read_paths: [...new Set(spec.allowed_read_paths.map(normalizeRepoRelativePath))].sort(),
+  proposed_write_paths: [
+    ...new Set(spec.proposed_write_paths.map(normalizeRepoRelativePath)),
+  ].sort(),
+  tools: [...spec.tools].sort((left, right) =&gt;
+    left.name &lt; right.name ? -1 : left.name &gt; right.name ? 1 : 0,
+  ),
+};
+const envelope: TaskEnvelope = { ...normalized, digest: envelopeDigest(normalized) };</code></pre>
+            <div class="source-explanation">
+              <dl>
+                <dt>规范化路径</dt>
+                <dd>转成仓库相对路径、去重、排序，使比较不受输入表示和数组顺序影响。</dd>
+                <dt>规范化工具</dt>
+                <dd>按 name 排序，避免同一授权集合产生不同 digest。</dd>
+                <dt>digest 角色</dt>
+                <dd>
+                  把任务、计划、上下文、工具与 loop policy 绑定成可校验身份，供 checkpoint/resume
+                  检测漂移。
+                </dd>
+                <dt>证据边界</dt>
+                <dd>Envelope 合法只证明执行输入结构成立，不证明 Grant 允许其中每项动作。</dd>
+              </dl>
+            </div>
+          </div>
+        </article>
+      </section>
+
+      <section class="lesson-section" id="source-two">
+        <p class="screen-kicker">03 · SOURCE READING 2</p>
+        <h2>ToolInvoker 把 Grant 变成真正的副作用前守卫</h2>
+        <article class="source-reading">
+          <header class="source-reading-header">
+            <p class="source-position">
+              ToolDefinition + request + Grant → <strong>checkGrant</strong> → invoke or ToolError
+            </p>
+            <h3>为什么读这段</h3>
+            <p>权限检查必须紧贴真实调用点。只在 planner 或 UI 检查，会留下其他入口绕过的可能。</p>
+            <a href="../../packages/runtime/src/tools/invocation.ts#L143"
+              >packages/runtime/src/tools/invocation.ts · checkGrant</a
+            >
+          </header>
+          <div class="source-reading-grid">
+            <pre><code>const action: PolicyAction = {
+  kind: "invoke_tool",
+  actor: "harness",
+  actor_kind: "harness",
+  origin: "control_plane",
+  phase: request.phase,
+  resource: definition.name,
+  parameters: request.parameters,
+  risk: definition.risk,
+};
+const reason = grantDenialReason(grant, action);
+if (reason !== undefined) {
+  throw new ToolError("grant_violation", `invocation of ${definition.name} denied: ${reason}`);
+}</code></pre>
+            <div class="source-explanation">
+              <dl>
+                <dt>重建 PolicyAction</dt>
+                <dd>
+                  Invoker 不信任调用者给一个“allowed=true”，而从受控 ToolDefinition 和 request
+                  重建动作。
+                </dd>
+                <dt>检查维度</dt>
+                <dd>
+                  phase、resource、parameters 与 risk 一起进入 Grant 裁决，不只是工具名白名单。
+                </dd>
+                <dt>失败语义</dt>
+                <dd>
+                  任何 denial reason 变成 <code>grant_violation</code>，发生在 provider/tool handler
+                  前。
+                </dd>
+                <dt>其他守卫</dt>
+                <dd>
+                  同一调用链还会检查参数 bounds、Approval 和 action intent；Grant
+                  通过不是最终全部通过。
+                </dd>
+              </dl>
+            </div>
+          </div>
+        </article>
+        <div class="prediction-card">
+          <strong>先判断：</strong>Envelope 列出了 shell 工具，但 Grant 只允许 read_file。模型发起
+          shell 时应该由哪一层拒绝？Envelope 是否需要被修改？
+        </div>
+      </section>
+
+      <section class="lesson-section" id="verify">
+        <p class="screen-kicker">04 · EVIDENCE AND MASTERY</p>
+        <h2>复跑不可变输入、Grant 收窄与真实调用守卫</h2>
+        <div class="source-lab" data-lab-id="lesson-0009-controlled-execution">
+          <h3>TaskEnvelope + CapabilityGrant + ToolInvoker</h3>
+          <pre
+            class="command-block lab-command"
+          ><code data-command>pnpm exec vitest run packages/runtime/test/loop/task-envelope.test.ts packages/runtime/test/policy/capability-grant.test.ts packages/runtime/test/tools/invocation.test.ts</code></pre>
+          <div class="lab-actions">
+            <button class="btn secondary" type="button" data-copy-command>复制命令</button
+            ><button class="btn" type="button" data-mark-lab>我已复跑并核对</button>
+          </div>
+          <p class="lab-status"></p>
+          <p class="evidence-boundary">
+            <strong>证据边界：</strong>通过证明仓库内 envelope、grant 与 invocation
+            守卫；不证明操作系统 sandbox 或外部 Tool Provider 没有独立漏洞。
+          </p>
+        </div>
+        <div class="quiz-container" data-quiz>
+          <h3>即时判断</h3>
+          <div
+            class="quiz-question-block"
+            data-correct="b"
+            data-explanation-right="正确。Envelope 固定任务输入，Grant 才表达当前权限。"
+            data-explanation-wrong="描述允许范围和签发执行权是两个对象。"
+          >
+            <p><strong>1. TaskEnvelope 包含一个工具是否等于已经授权？</strong></p>
+            <button class="quiz-option" type="button" data-value="a">等于</button
+            ><button class="quiz-option" type="button" data-value="b">不等于</button
+            ><span class="quiz-feedback"></span>
+          </div>
+          <div
+            class="quiz-question-block"
+            data-correct="a"
+            data-explanation-right="正确。调用点守卫覆盖所有生产入口并阻止副作用。"
+            data-explanation-wrong="planner 检查可能被其他调用路径绕过。"
+          >
+            <p><strong>2. Grant 检查为何放在 ToolInvoker？</strong></p>
+            <button class="quiz-option" type="button" data-value="a">
+              紧贴副作用且覆盖真实入口</button
+            ><button class="quiz-option" type="button" data-value="b">便于模型读取错误文本</button
+            ><span class="quiz-feedback"></span>
+          </div>
+          <div
+            class="quiz-question-block"
+            data-correct="b"
+            data-explanation-right="正确。INVOKES 表示调用工具，EXECUTES 表示 Run 承担 Task/Gate/Case。"
+            data-explanation-wrong="先判断 target 是 ToolDefinition 还是 Task。"
+          >
+            <p><strong>3. Run 与 ToolDefinition 之间使用哪条关系？</strong></p>
+            <button class="quiz-option" type="button" data-value="a">EXECUTES</button
+            ><button class="quiz-option" type="button" data-value="b">INVOKES</button
+            ><span class="quiz-feedback"></span>
+          </div>
+          <div class="quiz-actions">
+            <button class="btn" type="button" data-quiz-check>检查答案</button
+            ><button class="btn secondary" type="button" data-quiz-reset>重置</button>
+          </div>
+        </div>
+        <div class="mastery-output">
+          <h3>工具调用审查</h3>
+          <ol>
+            <li>为一条 tool request 标出 Envelope、Grant、Approval 与 Intent 的精确输入。</li>
+            <li>指出每层拒绝发生在副作用前还是后，并写出错误类型。</li>
+            <li>解释测试通过仍不能证明的外部 Tool/OS 边界。</li>
+          </ol>
+        </div>
+        <div class="button-row">
+          <button class="btn secondary" type="button" data-mark-reviewed>标记本课已复习</button>
+        </div>
+        <div class="lesson-footer">
+          <a class="btn secondary" href="0008-ContextPolicyApproval权限收窄.html">← 上一课</a
+          ><a class="btn" href="0010-Checkpoint恢复与外部副作用对账.html">下一课：恢复与对账 →</a>
+        </div>
+      </section>
+    </main>
+  </body>
+</html>

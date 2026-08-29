@@ -95,6 +95,12 @@
     if (description) description.textContent = component.dataset.desc || "此组件尚未提供说明。";
   };
 
+  function initializeArchitectureDiagrams() {
+    document.querySelectorAll(".arch-component[data-desc]").forEach((component) => {
+      component.addEventListener("click", () => window.showArchDesc(component));
+    });
+  }
+
   function initializeReveals() {
     const elements = document.querySelectorAll(".animate-in");
     if (!("IntersectionObserver" in window)) {
@@ -380,6 +386,7 @@
         element.textContent = `${visitedCount} / ${lessonIds.length}`;
       });
       const nextId =
+        lessonIds.find((id) => !localStorage.getItem(`${storagePrefix}visited:${id}`)) ||
         lessonIds.find((id) => !localStorage.getItem(`${storagePrefix}reviewed:${id}`)) ||
         lessonIds[0];
       const next = document.querySelector(`[data-next-for="${nextId}"]`);
@@ -395,6 +402,7 @@
 
   document.addEventListener("DOMContentLoaded", () => {
     initializeQuizzes();
+    initializeArchitectureDiagrams();
     initializeReveals();
     initializeFlows();
     initializeChats();

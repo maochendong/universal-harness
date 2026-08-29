@@ -1,0 +1,332 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      name="description"
+      content="第 11 课：从 Evidence、Gate 和 Evaluation 穿透到 TaskVerdict 与 Snapshot。"
+    />
+    <title>0011 · Evidence、Gate 与完成裁决</title>
+    <link rel="stylesheet" href="../assets/style.css" />
+    <script src="../assets/quiz.js" defer></script>
+    <script src="../assets/source-lab.js" defer></script>
+  </head>
+  <body class="lesson-page traditional-lesson" data-lesson-id="0011">
+    <a class="skip-link" href="#start">跳到课程内容</a>
+    <header class="topbar">
+      <div class="topbar-inner">
+        <a class="brand" href="../index.html">Universal Harness · Teach 2.0</a>
+        <nav class="nav-links">
+          <a href="0010-Checkpoint恢复与外部副作用对账.html">上一课</a
+          ><a href="../reference/verification-playbook.html">验证手册</a><span>11 / 14</span>
+        </nav>
+        <span class="page-progress" role="progressbar" aria-label="本课阅读进度"></span>
+      </div>
+    </header>
+    <main class="lesson-main lesson-shell">
+      <section class="lesson-section lesson-hero" id="start">
+        <nav class="breadcrumb">
+          <a href="../index.html">课程地图</a><span>/</span><span>第 11 课</span>
+        </nav>
+        <div class="lesson-meta">
+          <span class="badge">完成裁决</span><span class="badge time">约 23 分钟</span
+          ><span class="status-pill status-connected">仓库内已连通</span>
+        </div>
+        <p class="eyebrow">LESSON 0011 · EVIDENCE → VERDICT → SNAPSHOT</p>
+        <h1>绿色测试只是输入，不是“任务完成”本身</h1>
+        <p class="lead">
+          完成判断要把 Assertion、required Gate、Evaluation、TDD 序列、Finding、外部 Action 和
+          Evidence 新鲜度合在一起。TaskVerdict 裁决单个任务，Snapshot 再裁决整次迭代。
+        </p>
+        <div class="orientation-strip">
+          <div class="orientation-track">
+            <span class="orientation-node">Run results</span><span class="orientation-arrow">→</span
+            ><span class="orientation-node">Evidence / Gate</span
+            ><span class="orientation-arrow">→</span
+            ><span class="orientation-node current">TaskVerdict</span
+            ><span class="orientation-arrow">→</span
+            ><span class="orientation-node">Completion blockers</span
+            ><span class="orientation-arrow">→</span><span class="orientation-node">Snapshot</span>
+          </div>
+        </div>
+        <div class="lesson-win">
+          <strong>本课唯一胜利</strong>你能指出一次“tests green”结论还缺哪些绑定，并根据 blockers
+          判断 Snapshot 应是 completed、blocked 还是拒绝构建。
+        </div>
+        <nav class="lesson-toc">
+          <a href="#recall">回忆</a><a href="#chain">裁决链</a><a href="#source-one">TaskVerdict</a
+          ><a href="#source-two">Snapshot</a><a href="#verify">实验</a>
+        </nav>
+      </section>
+
+      <section class="lesson-section" id="recall">
+        <p class="screen-kicker">00 · RETRIEVAL FIRST</p>
+        <div class="recall-entry">
+          <h2>先恢复“记录不等于裁决”</h2>
+          <ol>
+            <li>Run <code>PRODUCES</code> Evidence，是否自动说明 Requirement 通过？</li>
+            <li>
+              Test <code>VERIFIES</code> Requirement 与 Evidence <code>SUPPORTS</code> Requirement
+              有何不同？
+            </li>
+            <li>一次未决外部 Action 会怎样影响 completed Snapshot？</li>
+          </ol>
+        </div>
+        <div class="remember-strip">
+          <h3>本课只需记住</h3>
+          <ul>
+            <li>
+              Assertion 通过要求测试身份、required gates、evidence requirements 与 active Evaluation
+              同时满足。
+            </li>
+            <li>Strict TDD 还要求合法 Red/Green/Refactor 证据序列。</li>
+            <li>
+              Snapshot completed 要求所有 required tasks、blocking findings、mandatory evidence 与
+              external actions 全部闭合。
+            </li>
+          </ul>
+        </div>
+      </section>
+
+      <section class="lesson-section" id="chain">
+        <p class="screen-kicker">01 · TWO-LEVEL VERDICT</p>
+        <h2>先判任务，再判迭代</h2>
+        <div class="throughline">
+          <article class="throughline-node">
+            <strong>Assertion</strong><br /><small>tests + requirements</small>
+          </article>
+          <article class="throughline-node">
+            <strong>Gate / Eval</strong><br /><small>machine-checkable proof</small>
+          </article>
+          <article class="throughline-node">
+            <strong>TaskVerdict</strong><br /><small>task acceptance</small>
+          </article>
+          <article class="throughline-node">
+            <strong>Blocker scan</strong><br /><small>global closure</small>
+          </article>
+          <article class="throughline-node">
+            <strong>Snapshot</strong><br /><small>iteration state</small>
+          </article>
+        </div>
+        <p>
+          <code>VERIFIES</code> 表达 Test 对 Requirement/Constraint 的检查关系，<code
+            >EVALUATES</code
+          >
+          表达 EvaluationCase 对 Task/Run 的裁判，<code>SUPPORTS</code>/<code>REFUTES</code> 表达
+          Evidence 的方向。它们分开，TaskVerdict
+          才能判断“有测试”“测试执行”“证据当前有效”“质量评估通过”四件不同的事。
+        </p>
+        <details class="advanced-reading">
+          <summary>Kernel-only Profile 为什么不因缺 Evaluation 而失败</summary>
+          <p>
+            未激活 Evaluation module 时，该维度是 absent，不是 vacuously failed；但 planner 若仍生成
+            <code>evaluation_evidence</code> 要求，TaskVerdict 会 fail closed。这保持 CapabilityPlan
+            与验收义务一致。
+          </p>
+        </details>
+      </section>
+
+      <section class="lesson-section" id="source-one">
+        <p class="screen-kicker">02 · SOURCE READING 1</p>
+        <h2>每个 Assertion 都独立聚合 Gate、Evaluation 与 Evidence 要求</h2>
+        <article class="source-reading">
+          <header class="source-reading-header">
+            <p class="source-position">
+              Assertions + Gates + Evaluations + TDD → <strong>buildVerdict</strong> → TaskVerdict
+            </p>
+            <h3>为什么读这段</h3>
+            <p>
+              全局“任意测试绿”不能代替逐 Assertion coverage；这里按 assertion id 确认所有 required
+              gate 和 evidence requirement。
+            </p>
+            <a href="../../packages/runtime/src/evaluation/task-verdict.ts#L77"
+              >packages/runtime/src/evaluation/task-verdict.ts · assertion verdicts</a
+            >
+          </header>
+          <div class="source-reading-grid">
+            <pre><code>const requiredGates = assertion.required_gate_ids.map((gateId) =&gt; gateById.get(gateId));
+const gatesPass =
+  requiredGates.length === assertion.required_gate_ids.length &amp;&amp;
+  requiredGates.every((gate) =&gt; gate?.passed === true);
+const evidenceIds = uniqueSorted([
+  ...requiredGates.flatMap((gate) =&gt; (gate === undefined ? [] : [gate.evidence_id])),
+  ...input.evaluations.map((evaluation) =&gt; evaluation.evidence_id),
+]);
+const requirementsSatisfied = assertion.evidence_requirements.every((requirement) =&gt; {
+  if (requirement === "gate_evidence") return requiredGates.length &gt; 0;
+  if (requirement === "evaluation_evidence") {
+    return evaluationActive &amp;&amp; input.evaluations.length &gt; 0;
+  }
+  return evidenceIds.length &gt; 0;
+});</code></pre>
+            <div class="source-explanation">
+              <dl>
+                <dt>Gate identity</dt>
+                <dd>
+                  按 <code>required_gate_ids</code> 精确查找；缺一个 gate 和 gate failed 都使
+                  <code>gatesPass=false</code>。
+                </dd>
+                <dt>Evidence aggregation</dt>
+                <dd>只收集实际 Gate/Evaluation 绑定的 evidence id，并去重排序形成稳定记录。</dd>
+                <dt>Profile awareness</dt>
+                <dd><code>evaluation_evidence</code> 只有 Evaluation active 且确有结果时成立。</dd>
+                <dt>最终还不够</dt>
+                <dd>
+                  后续还检查 Assertion 有 test id、所有 assertions 通过以及 strict TDD verdict
+                  合法。
+                </dd>
+              </dl>
+            </div>
+          </div>
+        </article>
+      </section>
+
+      <section class="lesson-section" id="source-two">
+        <p class="screen-kicker">03 · SOURCE READING 2</p>
+        <h2>Snapshot 把任务外的全局未完成项重新列成 blockers</h2>
+        <article class="source-reading">
+          <header class="source-reading-header">
+            <p class="source-position">
+              TaskVerdicts + Findings + Evidence + Actions →
+              <strong>snapshotCompletionBlockers</strong> → status
+            </p>
+            <h3>为什么读这段</h3>
+            <p>
+              即使所有 TaskVerdict passed，开放的 blocking Finding、陈旧 Evidence 或未决外部 Action
+              仍可阻止迭代完成。
+            </p>
+            <a href="../../packages/runtime/src/snapshot/builder.ts#L205"
+              >packages/runtime/src/snapshot/builder.ts · completion blockers</a
+            >
+          </header>
+          <div class="source-reading-grid">
+            <pre><code>for (const finding of [...(input.findings ?? [])].sort((left, right) =&gt;
+  left.finding_id &lt; right.finding_id ? -1 : 1,
+)) {
+  if (!finding.blocking) continue;
+  if (finding.status !== "closed" &amp;&amp; finding.status !== "superseded") {
+    blockers.push(`blocking finding ${finding.finding_id} is ${finding.status}`);
+  }
+}
+for (const evidence of [...(input.evidence ?? [])].sort((left, right) =&gt;
+  left.evidence_id &lt; right.evidence_id ? -1 : 1,
+)) {
+  if (!evidence.mandatory) continue;
+  if (evidence.stale) {
+    blockers.push(`mandatory evidence ${evidence.evidence_id} is stale`);
+  } else if (evidence.provisional || !evidence.passed) {
+    blockers.push(`mandatory evidence ${evidence.evidence_id} has no current passing verdict`);
+  }
+}</code></pre>
+            <div class="source-explanation">
+              <dl>
+                <dt>稳定顺序</dt>
+                <dd>Finding 和 Evidence 先排序，保证相同输入产生相同 blocker 列表和 digest。</dd>
+                <dt>Finding 生命周期</dt>
+                <dd>
+                  blocking Finding 只有 closed 或 superseded 才不再阻塞；“有人在处理”仍不是完成。
+                </dd>
+                <dt>Evidence 生命周期</dt>
+                <dd>
+                  mandatory evidence 不能 stale、provisional 或
+                  failed；历史绿灯不会自动延续到新基线。
+                </dd>
+                <dt>下游</dt>
+                <dd>
+                  有 blockers 时请求 completed 会抛错；可恢复中断必须构建带
+                  <code>resume_phase</code> 的 blocked Snapshot。
+                </dd>
+              </dl>
+            </div>
+          </div>
+        </article>
+        <div class="prediction-card">
+          <strong>先判断：</strong>required tasks 全部 passed，但 mandatory Evidence 绑定的是旧 code
+          digest。Snapshot 能否 completed？应记录哪个 blocker？
+        </div>
+      </section>
+
+      <section class="lesson-section" id="verify">
+        <p class="screen-kicker">04 · EVIDENCE AND MASTERY</p>
+        <h2>复跑任务裁决、TDD 领域裁决与 Snapshot closure</h2>
+        <div class="source-lab" data-lab-id="lesson-0011-completion">
+          <h3>TaskVerdict + TDD verdict + Snapshot</h3>
+          <pre
+            class="command-block lab-command"
+          ><code data-command>pnpm exec vitest run packages/runtime/test/evaluation/task-verdict.test.ts packages/runtime/test/tdd/verdict.test.ts packages/runtime/test/snapshot/builder.test.ts packages/runtime/test/snapshot/anchor.test.ts</code></pre>
+          <div class="lab-actions">
+            <button class="btn secondary" type="button" data-copy-command>复制命令</button
+            ><button class="btn" type="button" data-mark-lab>我已复跑并核对</button>
+          </div>
+          <p class="lab-status"></p>
+          <p class="evidence-boundary">
+            <strong>证据边界：</strong>通过证明裁决函数和 Snapshot
+            closure；不证明测试本身充分覆盖业务风险，也不证明外部发布矩阵通过。
+          </p>
+        </div>
+        <div class="quiz-container" data-quiz>
+          <h3>完成裁决</h3>
+          <div
+            class="quiz-question-block"
+            data-correct="b"
+            data-explanation-right="正确。绿色结果必须绑定 required Assertion/Gate 和当前 Evidence。"
+            data-explanation-wrong="测试进程退出码只是裁决输入。"
+          >
+            <p><strong>1. 任意一组测试绿，Task 是否必然 passed？</strong></p>
+            <button class="quiz-option" type="button" data-value="a">必然</button
+            ><button class="quiz-option" type="button" data-value="b">不必然</button
+            ><span class="quiz-feedback"></span>
+          </div>
+          <div
+            class="quiz-question-block"
+            data-correct="a"
+            data-explanation-right="正确。mandatory stale evidence 是 completion blocker。"
+            data-explanation-wrong="历史通过不能证明当前代码。"
+          >
+            <p><strong>2. mandatory Evidence stale，Snapshot 状态应怎样？</strong></p>
+            <button class="quiz-option" type="button" data-value="a">不能 completed</button
+            ><button class="quiz-option" type="button" data-value="b">仍可 completed</button
+            ><span class="quiz-feedback"></span>
+          </div>
+          <div
+            class="quiz-question-block"
+            data-correct="b"
+            data-explanation-right="正确。EVALUATES 是质量裁判，VERIFIES 是 Test 检验规则。"
+            data-explanation-wrong="先区分 EvaluationCase 与 Test。"
+          >
+            <p><strong>3. EvaluationCase 对 Run 的关系是？</strong></p>
+            <button class="quiz-option" type="button" data-value="a">VERIFIES</button
+            ><button class="quiz-option" type="button" data-value="b">EVALUATES</button
+            ><span class="quiz-feedback"></span>
+          </div>
+          <div class="quiz-actions">
+            <button class="btn" type="button" data-quiz-check>检查答案</button
+            ><button class="btn secondary" type="button" data-quiz-reset>重置</button>
+          </div>
+        </div>
+        <div class="mastery-output">
+          <h3>完成性审查输出</h3>
+          <ol>
+            <li>
+              为一个 Assertion 列出 test ids、required gate ids、evidence requirements 与 evaluation
+              状态。
+            </li>
+            <li>
+              从 TaskVerdict 继续列出 Snapshot 的 tasks、findings、evidence、external actions
+              blockers。
+            </li>
+            <li>写一句“测试全绿但不能放行”的范围化结论。</li>
+          </ol>
+        </div>
+        <div class="button-row">
+          <button class="btn secondary" type="button" data-mark-reviewed>标记本课已复习</button>
+        </div>
+        <div class="lesson-footer">
+          <a class="btn secondary" href="0010-Checkpoint恢复与外部副作用对账.html">← 上一课</a
+          ><a class="btn" href="0012-FeedbackRCA与改进晋升.html">下一课：反馈学习 →</a>
+        </div>
+      </section>
+    </main>
+  </body>
+</html>

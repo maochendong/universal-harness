@@ -1,0 +1,328 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content="第 5 课：穿透 Ledger 事务、原子提交与重放权威边界。" />
+    <title>0005 · Ledger 事务与权威提交</title>
+    <link rel="stylesheet" href="../assets/style.css" />
+    <script src="../assets/quiz.js" defer></script>
+    <script src="../assets/source-lab.js" defer></script>
+  </head>
+  <body class="lesson-page traditional-lesson" data-lesson-id="0005">
+    <a class="skip-link" href="#start">跳到课程内容</a>
+    <header class="topbar">
+      <div class="topbar-inner">
+        <a class="brand" href="../index.html">Universal Harness · Teach 2.0</a>
+        <nav class="nav-links">
+          <a href="0004-模型端口与Provider连通性.html">上一课</a
+          ><a href="../reference/architecture-map.html">架构地图</a><span>05 / 14</span>
+        </nav>
+        <span class="page-progress" role="progressbar" aria-label="本课阅读进度"></span>
+      </div>
+    </header>
+
+    <main class="lesson-main lesson-shell">
+      <section class="lesson-section lesson-hero" id="start">
+        <nav class="breadcrumb">
+          <a href="../index.html">课程地图</a><span>/</span><span>第 5 课</span>
+        </nav>
+        <div class="lesson-meta">
+          <span class="badge">事实提交</span><span class="badge time">约 22 分钟</span
+          ><span class="status-pill status-connected">仓库内已连通</span>
+        </div>
+        <p class="eyebrow">LESSON 0005 · TRANSACTION → MANIFEST → REPLAY</p>
+        <h1>文件已经写入，为什么还不算系统事实</h1>
+        <p class="lead">
+          Ledger 的难点不是把 JSON
+          写到磁盘，而是让并发、崩溃和重试之后仍只有一条可验证历史。权威边界在提交清单，不在
+          staging、日志或 SQLite。
+        </p>
+        <div class="orientation-strip">
+          <div class="orientation-track">
+            <span class="orientation-node">意图与设计</span><span class="orientation-arrow">→</span
+            ><span class="orientation-node">编译运行图</span><span class="orientation-arrow">→</span
+            ><span class="orientation-node">受控执行</span><span class="orientation-arrow">→</span
+            ><span class="orientation-node current">Ledger 提交</span
+            ><span class="orientation-arrow">→</span
+            ><span class="orientation-node">重放与投影</span>
+          </div>
+        </div>
+        <div class="lesson-win">
+          <strong>本课唯一胜利</strong>你能解释 Transaction、shard、manifest 与 replay
+          的职责，并判断一次中途崩溃留下的文件为什么不能冒充已提交事实。
+        </div>
+        <nav class="lesson-toc" aria-label="本课目录">
+          <a href="#recall">回忆入口</a><a href="#chain">提交链</a><a href="#source-one">源码 1</a
+          ><a href="#source-two">源码 2</a><a href="#verify">证据实验</a
+          ><a href="#mastery">掌握输出</a>
+        </nav>
+      </section>
+
+      <section class="lesson-section" id="recall">
+        <p class="screen-kicker">00 · RETRIEVAL FIRST</p>
+        <div class="recall-entry">
+          <h2>先从记忆中回答</h2>
+          <ol>
+            <li>第 1 课为什么说 SQLite 和 Dashboard 不是系统真相？</li>
+            <li>第 3 课的 Evidence 在进入事实层前还缺哪一步？</li>
+            <li>如果进程写完 artifact 后崩溃，你会把它判为 committed 吗？先写理由。</li>
+          </ol>
+        </div>
+        <div class="remember-strip">
+          <h3>本课只需记住</h3>
+          <ul>
+            <li>Transaction 是待验证输入，不是事实。</li>
+            <li>manifest 最后发布，才把已写 shards 纳入权威历史。</li>
+            <li>重放只读取 committed operations；缓存可以删除并重建。</li>
+          </ul>
+        </div>
+      </section>
+
+      <section class="lesson-section" id="chain">
+        <p class="screen-kicker">01 · GLOBAL POSITION</p>
+        <h2>提交协议把“产生结果”变成“接受事实”</h2>
+        <div class="throughline" aria-label="Ledger 提交调用链">
+          <article class="throughline-node">
+            <strong>TransactionInput</strong><br /><small>artifacts + edges + events</small>
+          </article>
+          <article class="throughline-node">
+            <strong>Staging</strong><br /><small>先写隔离区</small>
+          </article>
+          <article class="throughline-node">
+            <strong>Validate</strong><br /><small>schema + sequence + baseline</small>
+          </article>
+          <article class="throughline-node">
+            <strong>Publish shards</strong><br /><small>内容就位但尚未授权</small>
+          </article>
+          <article class="throughline-node">
+            <strong>Publish manifest</strong><br /><small>提交点与重放入口</small>
+          </article>
+        </div>
+        <p>
+          Repository 同时解决三类竞争：同一 operation 的幂等重试、等待锁期间的另一写者、以及
+          baseline 漂移。失败时保留或清理的文件属于恢复材料；只有 manifest 使它们成为 committed
+          operation。
+        </p>
+        <details class="advanced-reading">
+          <summary>进阶：为什么不用“把目录 rename 一次”当原子提交？</summary>
+          <p>
+            事务跨 artifacts、edge shard、event shard 与 manifest
+            多个路径，还要验证仓库基线和序号。设计采用“内容先发布，manifest
+            最后发布”的协议；重放者以 manifest 为准，因此中间态不会进入权威读取。
+          </p>
+        </details>
+      </section>
+
+      <section class="lesson-section" id="source-one">
+        <p class="screen-kicker">02 · SOURCE READING 1</p>
+        <h2>append-only 不是口号，而是 operation id 与 sequence 的双重守卫</h2>
+        <article class="source-reading">
+          <header class="source-reading-header">
+            <p class="source-position">
+              调用链位置：已提交 manifests + candidate → <strong>assertAppendOnly</strong> →
+              sequence acceptance
+            </p>
+            <h3>为什么读这段</h3>
+            <p>
+              它定义“下一条历史”的唯一合法位置，并把重复 operation 与序号分叉变成不同的类型化失败。
+            </p>
+            <a href="../../packages/core/src/ledger/event-store.ts#L117"
+              >packages/core/src/ledger/event-store.ts · assertAppendOnly</a
+            >
+          </header>
+          <div class="source-reading-grid">
+            <pre><code>export function assertAppendOnly(
+  operations: readonly CommittedOperation[],
+  candidate: { readonly ledger_operation_id: string; readonly sequence: number },
+): void {
+  if (operations.some((op) =&gt; op.manifest.ledger_operation_id === candidate.ledger_operation_id)) {
+    throw new LedgerConflict(
+      `ledger operation is already committed: ${candidate.ledger_operation_id}`,
+    );
+  }
+  const expected = nextSequence(operations);
+  if (candidate.sequence !== expected) {
+    throw new LedgerSequenceError(
+      `append-only violation: next sequence is ${expected}, got ${candidate.sequence}`,
+    );
+  }
+}</code></pre>
+            <div class="source-explanation">
+              <dl>
+                <dt>谁调用</dt>
+                <dd>
+                  <code>LedgerRepository.commit</code> 在锁内重新读取已提交 operations 后调用。
+                </dd>
+                <dt>两个守卫</dt>
+                <dd>
+                  operation id 防止同一业务提交被重复接受；连续 sequence 防止历史出现空洞或分叉。
+                </dd>
+                <dt>为什么在锁内</dt>
+                <dd>
+                  锁外检查只能优化幂等重试；等待锁期间历史可能变化，因此裁决必须基于锁内新读的状态。
+                </dd>
+                <dt>证据边界</dt>
+                <dd>函数单测能证明局部规则，不能证明完整提交顺序或崩溃边界。</dd>
+              </dl>
+            </div>
+          </div>
+        </article>
+      </section>
+
+      <section class="lesson-section" id="source-two">
+        <p class="screen-kicker">03 · SOURCE READING 2</p>
+        <h2>manifest 是最后写入的提交点</h2>
+        <article class="source-reading">
+          <header class="source-reading-header">
+            <p class="source-position">
+              调用链位置：validated staging → shards → <strong>manifest</strong> → committed result
+            </p>
+            <h3>为什么读这段</h3>
+            <p>
+              这几行决定崩溃边界：shards 即使已经 rename，只要 manifest
+              未发布，重放就不会把它们视为已提交 operation。
+            </p>
+            <a href="../../packages/core/src/ledger/repository.ts#L359"
+              >packages/core/src/ledger/repository.ts · commit publish phase</a
+            >
+          </header>
+          <div class="source-reading-grid">
+            <pre><code>await this.publishShards(context);
+this.atBoundary("shards.renamed", context);
+
+const manifest = buildManifest({
+  ledger_operation_id: input.ledger_operation_id,
+  workflow_operation_id: input.workflow_operation_id,
+  attempt_id: input.attempt_id,
+  baseline_commit: input.expected_baseline,
+  sequence,
+  artifact_digests: [...digests.artifactDigests],
+  edge_file: context.edgeFile,
+  event_file: context.eventFile,
+  edge_file_digest: digests.edgeFileDigest,
+  event_file_digest: digests.eventFileDigest,
+  ...requiredReaderVersionField(input.required_reader_version),
+  committed_at: this.now(),
+});
+this.publishManifest(manifest, context);</code></pre>
+            <div class="source-explanation">
+              <dl>
+                <dt>顺序不变量</dt>
+                <dd>
+                  shards 先就位，manifest 后授权；读取者不会看到 manifest 指向尚未就位的内容。
+                </dd>
+                <dt>绑定内容</dt>
+                <dd>
+                  manifest 固定 baseline、sequence、artifact 与 shard digest，以及所需 reader
+                  version。
+                </dd>
+                <dt>失败语义</dt>
+                <dd>
+                  在 <code>shards.renamed</code> 后崩溃会留下孤儿 shard，但没有 manifest 就不是
+                  committed history。
+                </dd>
+                <dt>下游</dt>
+                <dd>
+                  <code>readCommittedOperations</code> 与 replay 从 manifests
+                  建立权威集合，materializer 只投影该集合。
+                </dd>
+              </dl>
+            </div>
+          </div>
+        </article>
+        <div class="prediction-card">
+          <strong>迁移判断：</strong>若 manifest 已提交但 SQLite 尚未刷新，正确修复是重写
+          Ledger，还是从 Ledger 重建投影？答案必须引用权威方向。
+        </div>
+      </section>
+
+      <section class="lesson-section" id="verify">
+        <p class="screen-kicker">04 · EVIDENCE LAB</p>
+        <h2>复跑事务与 Repository 的失败边界</h2>
+        <div class="source-lab" data-lab-id="lesson-0005-ledger-transaction">
+          <h3>Ledger transaction + repository</h3>
+          <pre
+            class="command-block lab-command"
+          ><code data-command>pnpm exec vitest run packages/core/test/ledger/transaction.test.ts packages/core/test/ledger/repository.test.ts packages/core/test/ledger/event-store.test.ts</code></pre>
+          <div class="lab-actions">
+            <button class="btn secondary" type="button" data-copy-command>复制命令</button
+            ><button class="btn" type="button" data-mark-lab>我已复跑并核对</button>
+          </div>
+          <p class="lab-status"></p>
+          <p class="evidence-boundary">
+            <strong>证据边界：</strong>通过证明当前仓库内的事务校验、崩溃边界、幂等和 append-only
+            行为；不证明网络文件系统、远程 Git 或未覆盖平台的原子性。
+          </p>
+        </div>
+        <div class="quiz-container" data-quiz>
+          <h3>即时判断</h3>
+          <div
+            class="quiz-question-block"
+            data-correct="b"
+            data-explanation-right="正确。manifest 未发布时，shard 只是未被权威历史引用的恢复材料。"
+            data-explanation-wrong="文件存在与被 committed manifest 接纳是两个状态。"
+          >
+            <p><strong>1. shard 已 rename，manifest 写入前崩溃，当前状态是？</strong></p>
+            <button class="quiz-option" type="button" data-value="a">已提交事实</button
+            ><button class="quiz-option" type="button" data-value="b">未提交中间态</button
+            ><span class="quiz-feedback"></span>
+          </div>
+          <div
+            class="quiz-question-block"
+            data-correct="a"
+            data-explanation-right="正确。锁外是快路径，锁内重查才基于最新历史裁决。"
+            data-explanation-wrong="等待锁时另一 writer 可能已经提交。"
+          >
+            <p><strong>2. 为什么同一 operation 要检查两次？</strong></p>
+            <button class="quiz-option" type="button" data-value="a">
+              分别处理快速幂等与锁内竞争</button
+            ><button class="quiz-option" type="button" data-value="b">
+              为了生成两份相同的 manifest</button
+            ><span class="quiz-feedback"></span>
+          </div>
+          <div
+            class="quiz-question-block"
+            data-correct="b"
+            data-explanation-right="正确。Projection 是派生缓存，修复方向永远从 Ledger 到 SQLite。"
+            data-explanation-wrong="让缓存反写权威账本会颠倒责任边界。"
+          >
+            <p><strong>3. SQLite 与 committed Ledger 不一致时怎么处理？</strong></p>
+            <button class="quiz-option" type="button" data-value="a">用 SQLite 覆盖 Ledger</button
+            ><button class="quiz-option" type="button" data-value="b">
+              验证 Ledger 后重建 SQLite</button
+            ><span class="quiz-feedback"></span>
+          </div>
+          <div class="quiz-actions">
+            <button class="btn" type="button" data-quiz-check>检查答案</button
+            ><button class="btn secondary" type="button" data-quiz-reset>重置</button>
+          </div>
+        </div>
+      </section>
+
+      <section class="lesson-section" id="mastery">
+        <p class="screen-kicker">05 · MASTERY OUTPUT</p>
+        <h2>用一次崩溃案例证明你掌握了提交协议</h2>
+        <div class="mastery-output">
+          <ol>
+            <li>画出 TransactionInput → staging → validate → shards → manifest → replay。</li>
+            <li>分别解释在 staging、shards、manifest 三个边界崩溃后，重放能看到什么。</li>
+            <li>写出一段审查结论，必须包含权威源、失败状态、可恢复动作与测试不能证明的环境。</li>
+          </ol>
+        </div>
+        <div class="verdict-template">
+          结论：{committed | not_committed | corrupt}<br />权威依据：{manifest + digests +
+          sequence}<br />恢复动作：{retry | cleanup | block}<br />残余范围：{filesystem / platform /
+          remote Git}
+        </div>
+        <div class="button-row">
+          <button class="btn secondary" type="button" data-mark-reviewed>标记本课已复习</button>
+        </div>
+        <div class="lesson-footer">
+          <a class="btn secondary" href="0004-模型端口与Provider连通性.html">← 上一课</a
+          ><a class="btn" href="0006-双图模型与全部关系语义.html">下一课：双图与关系语义 →</a>
+        </div>
+      </section>
+    </main>
+  </body>
+</html>

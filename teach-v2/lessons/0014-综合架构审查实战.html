@@ -1,0 +1,343 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      name="description"
+      content="第 14 课：独立完成一次从设计声称到源码、测试与残余风险的综合架构审查。"
+    />
+    <title>0014 · 综合架构审查实战</title>
+    <link rel="stylesheet" href="../assets/style.css" />
+    <script src="../assets/quiz.js" defer></script>
+    <script src="../assets/source-lab.js" defer></script>
+  </head>
+  <body class="lesson-page traditional-lesson" data-lesson-id="0014">
+    <a class="skip-link" href="#start">跳到课程内容</a>
+    <header class="topbar">
+      <div class="topbar-inner">
+        <a class="brand" href="../index.html">Universal Harness · Teach 2.0</a>
+        <nav class="nav-links">
+          <a href="0013-投影观察与M3远程协作边界.html">上一课</a
+          ><a href="../reference/verification-playbook.html">验证手册</a><span>14 / 14</span>
+        </nav>
+        <span class="page-progress" role="progressbar" aria-label="本课阅读进度"></span>
+      </div>
+    </header>
+    <main class="lesson-main lesson-shell">
+      <section class="lesson-section lesson-hero" id="start">
+        <nav class="breadcrumb">
+          <a href="../index.html">课程地图</a><span>/</span><span>第 14 课</span>
+        </nav>
+        <div class="lesson-meta">
+          <span class="badge">综合审查</span><span class="badge time">约 25 分钟</span
+          ><span class="status-pill status-target">掌握验收</span>
+        </div>
+        <p class="eyebrow">LESSON 0014 · CLAIM → CHAIN → CODE → EVIDENCE → VERDICT</p>
+        <h1>现在由你独立裁决一项“已经连通”的声称</h1>
+        <p class="lead">
+          最后一课不再增加新模块。你要把前 13
+          课的方法合成一次可复跑审查：限定声称、画权威链、读核心源码、检查失败守卫、运行证据，并写出不过度外推的结论。
+        </p>
+        <div class="orientation-strip">
+          <div class="orientation-track">
+            <span class="orientation-node">系统全图</span><span class="orientation-arrow">→</span
+            ><span class="orientation-node">局部声称</span><span class="orientation-arrow">→</span
+            ><span class="orientation-node current">生产链穿透</span
+            ><span class="orientation-arrow">→</span><span class="orientation-node">证据裁决</span
+            ><span class="orientation-arrow">→</span><span class="orientation-node">残余风险</span>
+          </div>
+        </div>
+        <div class="lesson-win">
+          <strong>本课唯一胜利</strong
+          >在不看课程答案的情况下，完成一份让下一位评审者可以复跑、反驳或放行的技术审查结论。
+        </div>
+        <nav class="lesson-toc">
+          <a href="#recall">全局回忆</a><a href="#choose">选择声称</a><a href="#method">审查方法</a
+          ><a href="#source-map">源码地图</a><a href="#verify">证据包</a><a href="#rubric">验收</a>
+        </nav>
+      </section>
+
+      <section class="lesson-section" id="recall">
+        <p class="screen-kicker">00 · CUMULATIVE RETRIEVAL</p>
+        <div class="recall-entry">
+          <h2>先用一张白纸重建整条系统</h2>
+          <ol>
+            <li>
+              画出 Profile → CapabilityPlan → Operation DAG → TaskEnvelope → Tool → Evidence →
+              TaskVerdict → Snapshot → Ledger。
+            </li>
+            <li>
+              在旁边补上双图/Impact、Context/Policy/Approval、Checkpoint/Reconcile、Feedback/Promotion、Projection/M3。
+            </li>
+            <li>给每个派生面画一条从权威源指向它的单向箭头。</li>
+          </ol>
+        </div>
+        <div class="remember-strip">
+          <h3>综合审查只需守住五问</h3>
+          <ul>
+            <li>声称的对象、Profile、commit 与环境是什么？</li>
+            <li>谁是权威定义，谁是真正生产消费者？</li>
+            <li>哪里 fail closed，失败留下什么状态？</li>
+            <li>哪条命令或 Ledger Evidence 能复跑？</li>
+            <li>证据明确不能证明什么？</li>
+          </ul>
+        </div>
+      </section>
+
+      <section class="lesson-section" id="choose">
+        <p class="screen-kicker">01 · CHOOSE ONE CLAIM</p>
+        <h2>从两个真实争议中选择一个，不要同时做</h2>
+        <div class="review-grid">
+          <article class="review-card">
+            <h3>A · 当前外部 Provider 已连通</h3>
+            <p>
+              <strong>待审查声称：</strong>“七类模型能力已经从 Profile binding 穿透到真实外部
+              Provider，并由生产消费者使用。”
+            </p>
+            <p>
+              <strong>主要风险：</strong>把 Schema/Adapter/fixture tests
+              当真实网络与凭据证据；把历史 dogfood 外推到当前 commit。
+            </p>
+            <p><strong>起始课：</strong>02、04、08、11。</p>
+          </article>
+          <article class="review-card">
+            <h3>B · M3 远程协作已完成</h3>
+            <p>
+              <strong>待审查声称：</strong>“多个 Replica 已能通过 Coordinator 安全 Lease、远程批准并
+              CAS 集成到 Target。”
+            </p>
+            <p>
+              <strong>主要风险：</strong>把 Protocol records、Port 或 connect slice 当完整
+              Lease/Approval/Integration 闭环。
+            </p>
+            <p><strong>起始课：</strong>05、08、10、13。</p>
+          </article>
+        </div>
+        <p class="phase-checkpoint">
+          <strong>禁止模糊改题：</strong>不能把 A 改成“仓库里有 Provider 代码”，也不能把 B 改成“有
+          M3 设计”。你要裁决原声称，再按证据范围降级结论。
+        </p>
+      </section>
+
+      <section class="lesson-section" id="method">
+        <p class="screen-kicker">02 · REVIEW WORKSHEET</p>
+        <h2>按七步写，任何一步缺证据都保留为 gap</h2>
+        <div class="evidence-ladder">
+          <article class="evidence-step">
+            <h3>1. Scope</h3>
+            <p>写能力、Profile、source commit、worktree 是否干净、外部环境与时间。</p>
+          </article>
+          <article class="evidence-step">
+            <h3>2. Target design</h3>
+            <p>用设计文档写预期链和不变量，但标记“目标”，不先判实现。</p>
+          </article>
+          <article class="evidence-step">
+            <h3>3. Authority</h3>
+            <p>找 Schema/Registry/Compiler/Ledger；说明哪个对象有最终裁决权。</p>
+          </article>
+          <article class="evidence-step">
+            <h3>4. Production chain</h3>
+            <p>从真实入口追到 Coordinator/Runner/Invoker/consumer，拒绝停在 interface。</p>
+          </article>
+          <article class="evidence-step">
+            <h3>5. Failure semantics</h3>
+            <p>至少找一个 drift、coverage、authorization 或 CAS 守卫，并写失败后的状态。</p>
+          </article>
+          <article class="evidence-step">
+            <h3>6. Evidence</h3>
+            <p>先 targeted tests，再按声称运行 E2E、真实 provider 或 remote host 验证。</p>
+          </article>
+          <article class="evidence-step">
+            <h3>7. Verdict</h3>
+            <p>只用 passed / partial / not_verified / blocked，并把限制写进结论正文。</p>
+          </article>
+        </div>
+      </section>
+
+      <section class="lesson-section" id="source-map">
+        <p class="screen-kicker">03 · SOURCE MAP WITH READING PURPOSE</p>
+        <h2>源码入口按审查问题组织，不按目录顺序罗列</h2>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>问题</th>
+                <th>Provider 声称</th>
+                <th>M3 声称</th>
+                <th>读它为了判断什么</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>契约能否表达</td>
+                <td><a href="../../packages/core/src/schema/profile.ts">profile.ts</a></td>
+                <td>
+                  <a href="../../packages/core/src/schema/collaboration.ts">collaboration.ts</a>
+                </td>
+                <td>字段、digest 与状态词表是否封闭；只能证明定义存在。</td>
+              </tr>
+              <tr>
+                <td>生产 seam 在哪里</td>
+                <td>
+                  <a href="../../packages/cli/src/managed-pipeline-ports.ts"
+                    >managed-pipeline-ports.ts</a
+                  >
+                </td>
+                <td>
+                  <a href="../../packages/runtime/src/collaboration/port.ts"
+                    >collaboration/port.ts</a
+                  >
+                </td>
+                <td>调用者依赖的深模块是什么；Port 本身仍不能证明实现覆盖。</td>
+              </tr>
+              <tr>
+                <td>谁真正执行</td>
+                <td>
+                  <a href="../../packages/runtime/src/model/managed-runner.ts">managed-runner.ts</a>
+                </td>
+                <td>
+                  <a href="../../packages/runtime/src/collaboration/coordinator.ts"
+                    >collaboration/coordinator.ts</a
+                  >
+                </td>
+                <td>沿函数分支确认当前真实 consumer、未实现 command 与 fail-closed 路径。</td>
+              </tr>
+              <tr>
+                <td>谁接受事实</td>
+                <td>
+                  <a href="../../packages/runtime/src/evaluation/task-verdict.ts"
+                    >task-verdict.ts</a
+                  >
+                </td>
+                <td>
+                  <a href="../../packages/core/src/ledger/repository.ts">ledger/repository.ts</a>
+                </td>
+                <td>结果如何进入 Verdict/Ledger；外部响应或 projection 不能自行变成事实。</td>
+              </tr>
+              <tr>
+                <td>现有外部证据</td>
+                <td><a href="../../docs/evidence/t20-real-provider-dogfood.md">T20 dogfood</a></td>
+                <td>
+                  <a
+                    href="../../docs/superpowers/specs/2026-08-29-universal-harness-m3-remote-collaboration-design.md"
+                    >M3 design</a
+                  >
+                </td>
+                <td>前者是历史真实调用，后者只是目标设计；两者证据类型完全不同。</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <details class="advanced-reading">
+          <summary>如何读一段未完成源码</summary>
+          <p>
+            先看它在当前 Git commit 还是 dirty worktree；再找调用者、typed
+            outcome、明确未实现分支与测试。未完成不是“没有价值”，但结论必须写“已实现到哪一条
+            slice、下一条缺口是什么”。
+          </p>
+        </details>
+      </section>
+
+      <section class="lesson-section" id="verify">
+        <p class="screen-kicker">04 · EVIDENCE PACK</p>
+        <h2>先保存基线，再运行所选声称的证据包</h2>
+        <div class="source-lab" data-lab-id="lesson-0014-capstone">
+          <h3>Architecture review evidence pack</h3>
+          <pre
+            class="command-block lab-command"
+          ><code data-command>git rev-parse HEAD &amp;&amp; git status --short &amp;&amp; pnpm exec vitest run packages/runtime/test/model/managed-runner.test.ts packages/cli/test/managed-pipeline-ports.test.ts packages/core/test/collaboration/records.test.ts packages/runtime/test/collaboration/coordinator.test.ts packages/core/test/ledger/repository.test.ts</code></pre>
+          <div class="lab-actions">
+            <button class="btn secondary" type="button" data-copy-command>复制命令</button
+            ><button class="btn" type="button" data-mark-lab>我已复跑并保存输出</button>
+          </div>
+          <p class="lab-status"></p>
+          <p class="evidence-boundary">
+            <strong>证据边界：</strong>这个合并包只建立当前 source/worktree 与仓库内测试状态。选择 A
+            仍需当前真实 Provider 调用；选择 B 仍需完整 commands、真实平台权限、protected Control
+            Ref、Lease 与 Target CAS 的同 commit E2E。
+          </p>
+        </div>
+        <div class="quiz-container" data-quiz>
+          <h3>最终裁决校准</h3>
+          <div
+            class="quiz-question-block"
+            data-correct="b"
+            data-explanation-right="正确。历史证据只能证明历史 commit/environment。"
+            data-explanation-wrong="Provider、Prompt、代码与凭据都可能漂移。"
+          >
+            <p><strong>1. 历史真实 Provider dogfood 能否证明当前 commit 外部连通？</strong></p>
+            <button class="quiz-option" type="button" data-value="a">能</button
+            ><button class="quiz-option" type="button" data-value="b">不能</button
+            ><span class="quiz-feedback"></span>
+          </div>
+          <div
+            class="quiz-question-block"
+            data-correct="a"
+            data-explanation-right="正确。当前实现覆盖到哪里，就对该 slice 给范围化结论。"
+            data-explanation-wrong="不是 completed 与 nothing 的二选一。"
+          >
+            <p><strong>2. M3 connect slice 通过但 Integration 未实现，最佳结论是？</strong></p>
+            <button class="quiz-option" type="button" data-value="a">部分实现并列出缺口</button
+            ><button class="quiz-option" type="button" data-value="b">整个 M3 已完成</button
+            ><span class="quiz-feedback"></span>
+          </div>
+          <div
+            class="quiz-question-block"
+            data-correct="b"
+            data-explanation-right="正确。可复跑、可反驳的范围化结论才达到审查级掌握。"
+            data-explanation-wrong="浏览状态与自信度不是技术证据。"
+          >
+            <p><strong>3. 哪项最能证明你掌握了课程？</strong></p>
+            <button class="quiz-option" type="button" data-value="a">14 页都打开过</button
+            ><button class="quiz-option" type="button" data-value="b">独立提交可复跑审查结论</button
+            ><span class="quiz-feedback"></span>
+          </div>
+          <div class="quiz-actions">
+            <button class="btn" type="button" data-quiz-check>检查答案</button
+            ><button class="btn secondary" type="button" data-quiz-reset>重置</button>
+          </div>
+        </div>
+      </section>
+
+      <section class="lesson-section" id="rubric">
+        <p class="screen-kicker">05 · COURSE COMPLETION RUBRIC</p>
+        <h2>达到 Review 级掌握，才记录课程完成</h2>
+        <div class="mastery-output">
+          <ol>
+            <li><strong>全局：</strong>不看资料画出主链与权威/投影方向。</li>
+            <li>
+              <strong>源码：</strong>对所选声称解释至少两个核心函数的 caller、input/output、guard 与
+              failure。
+            </li>
+            <li><strong>关系：</strong>正确使用至少六种 relation，并解释其中一组为何不能合并。</li>
+            <li>
+              <strong>证据：</strong>保存 commit、worktree、命令和结果，明确测试不能外推的环境。
+            </li>
+            <li>
+              <strong>结论：</strong>给出范围化 verdict、blocker 与解除 blocker 的最小下一步。
+            </li>
+          </ol>
+        </div>
+        <div class="verdict-template">
+          声称：{精确可判定句}<br />结论：{passed | partial | not_verified | blocked}<br />基线：{HEAD
+          + worktree + environment}<br />生产链：{entry → consumer → authority}<br />关键守卫：{symbol
+          + failure state}<br />证据：{tests + Ledger/external evidence}<br />残余风险：{明确不能证明什么}<br />下一步：{解除最关键
+          blocker 的最小动作}
+        </div>
+        <p class="primary-source-card">
+          <strong>学习记录规则：</strong>完成上述输出后再把真实回答与误区写入
+          <code>learning-records/</code
+          >。页面访问、测验点击和“我已复跑”按钮都只是本地导航状态，不自动生成掌握结论。
+        </p>
+        <div class="button-row">
+          <button class="btn secondary" type="button" data-mark-reviewed>标记本课已复习</button>
+        </div>
+        <div class="lesson-footer">
+          <a class="btn secondary" href="0013-投影观察与M3远程协作边界.html">← 上一课</a
+          ><a class="btn" href="../index.html">回到课程地图</a>
+        </div>
+      </section>
+    </main>
+  </body>
+</html>

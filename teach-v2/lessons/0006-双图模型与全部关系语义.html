@@ -1,0 +1,390 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      name="description"
+      content="第 6 课：理解语义图、执行图以及全部 32 种关系的业务语义与端点约束。"
+    />
+    <title>0006 · 双图模型与全部关系语义</title>
+    <link rel="stylesheet" href="../assets/style.css" />
+    <script src="../assets/quiz.js" defer></script>
+    <script src="../assets/source-lab.js" defer></script>
+  </head>
+  <body class="lesson-page traditional-lesson" data-lesson-id="0006">
+    <a class="skip-link" href="#start">跳到课程内容</a>
+    <header class="topbar">
+      <div class="topbar-inner">
+        <a class="brand" href="../index.html">Universal Harness · Teach 2.0</a>
+        <nav class="nav-links">
+          <a href="0005-Ledger事务与权威提交.html">上一课</a
+          ><a href="../reference/glossary.html#relation-types">关系表</a><span>06 / 14</span>
+        </nav>
+        <span class="page-progress" role="progressbar" aria-label="本课阅读进度"></span>
+      </div>
+    </header>
+
+    <main class="lesson-main lesson-shell">
+      <section class="lesson-section lesson-hero" id="start">
+        <nav class="breadcrumb">
+          <a href="../index.html">课程地图</a><span>/</span><span>第 6 课</span>
+        </nav>
+        <div class="lesson-meta">
+          <span class="badge">图模型</span><span class="badge time">约 25 分钟</span
+          ><span class="status-pill status-connected">仓库内已连通</span>
+        </div>
+        <p class="eyebrow">LESSON 0006 · LEDGER → MATERIALIZER → DUAL GRAPH</p>
+        <h1>关系不是标签：它们把不同的业务问题写进图</h1>
+        <p class="lead">
+          语义图回答“为什么做、什么约束什么”，执行图回答“谁执行、产生了什么证据”。32
+          种关系不能靠英文近义词理解，必须同时看业务断言、合法端点、方向和生命周期后果。
+        </p>
+        <div class="orientation-strip">
+          <div class="orientation-track">
+            <span class="orientation-node">Committed Ledger</span
+            ><span class="orientation-arrow">→</span
+            ><span class="orientation-node">Materializer</span
+            ><span class="orientation-arrow">→</span
+            ><span class="orientation-node current">语义图 + 执行图</span
+            ><span class="orientation-arrow">→</span><span class="orientation-node">Integrity</span
+            ><span class="orientation-arrow">→</span
+            ><span class="orientation-node">Query / Impact</span>
+          </div>
+        </div>
+        <div class="lesson-win">
+          <strong>本课唯一胜利</strong>拿到任意 relation，你能说出 source → target
+          的业务断言、合法端点与审计问题；并能解释相似关系为什么不能合并。
+        </div>
+        <nav class="lesson-toc">
+          <a href="#recall">回忆</a><a href="#taxonomy">32 种关系</a><a href="#nonmerge">不能合并</a
+          ><a href="#source-one">Registry</a><a href="#source-two">Integrity</a
+          ><a href="#verify">实验</a>
+        </nav>
+      </section>
+
+      <section class="lesson-section" id="recall">
+        <p class="screen-kicker">00 · RETRIEVAL FIRST</p>
+        <div class="recall-entry">
+          <h2>先从上一课恢复权威方向</h2>
+          <ol>
+            <li>materializer 应读取所有磁盘文件，还是只读取 committed manifest 引用的内容？</li>
+            <li>如果 SQLite 可重建，它能否新增一条 Ledger 中不存在的边？</li>
+            <li>尝试用一句话区分“设计由代码落地”和“任务负责兑现需求”。</li>
+          </ol>
+        </div>
+        <div class="remember-strip">
+          <h3>本课只需记住</h3>
+          <ul>
+            <li>关系的身份 = 业务断言 + source 类型 + target 类型 + 方向。</li>
+            <li>相同节点之间也可能有不同关系，因为它们回答不同审计问题。</li>
+            <li>投影前必须做完整性检查，非法边不能进入查询面。</li>
+          </ul>
+        </div>
+      </section>
+
+      <section class="lesson-section" id="taxonomy">
+        <p class="screen-kicker">01 · RELATION TAXONOMY</p>
+        <h2>先按业务问题分成五组，再记具体关系</h2>
+        <p class="section-intro">
+          以下全部按 <code>source → target</code> 阅读。第 3、5、7–12
+          课会在真实调用链中再次使用这些关系，本课负责建立完整词法与判断方法。
+        </p>
+        <div class="relation-family-grid">
+          <article class="relation-family-card">
+            <h3>1. 血缘与版本</h3>
+            <p>
+              <code>DERIVES_FROM</code> 当前版本源自目标依据；<code>SUPERSEDES</code>
+              当前修订正式取代旧版本；<code>GENERATED_BY</code> 当前工件由目标 Run/过程生成；<code
+                >RESUMES</code
+              >
+              当前 Run 接续目标中断 Run。
+            </p>
+            <p><strong>审计焦点：</strong>来源、替代、生产者与恢复前缀。</p>
+          </article>
+          <article class="relation-family-card">
+            <h3>2. 需求与实现</h3>
+            <p>
+              <code>DECOMPOSES_TO</code> 上层意图拆成需求；<code>ADDRESSES</code>
+              决策回应需求；<code>SHAPES</code> 决策影响组件形状；<code>REALIZES</code>
+              代码工件承载组件；<code>IMPLEMENTS</code> 任务兑现需求/决策/设计；<code
+                >SPECIFIES</code
+              >
+              设计工件精确定义目标要求。
+            </p>
+            <p><strong>审计焦点：</strong>从意图到可执行义务是否断链。</p>
+          </article>
+          <article class="relation-family-card">
+            <h3>3. 证明与裁决</h3>
+            <p>
+              <code>VERIFIES</code> Test 检验 Requirement/Constraint；<code>EVALUATES</code>
+              EvaluationCase 裁判 Task/Run；<code>SUPPORTS</code> Evidence 支持声称；<code
+                >REFUTES</code
+              >
+              Evidence 否定声称；<code>VIOLATES</code> Finding 指出违反规则；<code
+                >DIAGNOSED_BY</code
+              >
+              Finding 由 RCA 解释。
+            </p>
+            <p><strong>审计焦点：</strong>检查、证据、结论与根因不能混成一个动作。</p>
+          </article>
+          <article class="relation-family-card">
+            <h3>4. 执行与上下文</h3>
+            <p>
+              <code>EXECUTES</code> Run 执行 Task/Gate/Case；<code>INVOKES</code> Run 调用
+              Tool；<code>PRODUCES</code> Run/RCA 产出 Evidence/Improvement；<code>CONTAINS</code>
+              容器拥有成员；<code>DEPENDS_ON</code> Task 依赖 Task；<code>USES_CONTEXT</code> Run
+              绑定 ContextBundle；<code>CAPTURES</code> Checkpoint 固定 Run/Iteration 状态。
+            </p>
+            <p><strong>审计焦点：</strong>谁做、调用谁、依赖什么、结果归谁。</p>
+          </article>
+          <article class="relation-family-card">
+            <h3>5. 治理与变更</h3>
+            <p>
+              <code>CONSTRAINED_BY</code> 对象受 Constraint 限制；<code>GOVERNED_BY</code>
+              生命周期受 Policy 控制；<code>BLOCKS</code> Finding 阻止 Task/Iteration；<code
+                >REQUESTS_APPROVAL_FOR</code
+              >
+              请求放行精确对象；<code>RESOLVES</code> Approval 闭合请求；<code>APPROVES</code>
+              Approval 放行对象；<code>PROPOSES_CHANGE_TO</code> Improvement 提议改目标；<code
+                >TRIGGERS</code
+              >
+              Finding/Improvement 触发 ImpactSet；<code>MAY_IMPACT</code>
+              版本化对象可能影响另一对象。
+            </p>
+            <p><strong>审计焦点：</strong>约束、授权、触发与候选影响的边界。</p>
+          </article>
+        </div>
+        <p class="evidence-boundary">
+          需要逐项查询业务语言与主要审计问题时，使用<a
+            href="../reference/glossary.html#relation-types"
+            >完整关系表</a
+          >；不要用本节卡片替代端点 Registry。
+        </p>
+      </section>
+
+      <section class="lesson-section" id="nonmerge">
+        <p class="screen-kicker">02 · WHY RELATIONS DO NOT MERGE</p>
+        <h2>近义词不能合并，因为它们的主语、对象与生命周期后果不同</h2>
+        <div class="compare-pair">
+          <article>
+            <h3><code>REALIZES</code></h3>
+            <p><strong>CodeArtifact → Component</strong></p>
+            <p>
+              回答“哪个代码载体落地了这个设计组件”。它是结构实现映射，可用于从组件反查代码影响面。
+            </p>
+          </article>
+          <strong>≠</strong>
+          <article>
+            <h3><code>IMPLEMENTS</code></h3>
+            <p><strong>Task → Requirement | Decision | DesignArtifact</strong></p>
+            <p>
+              回答“哪项受控工作负责兑现义务”。Task 完成状态、Evidence 和 Verdict
+              会沿这条义务链审查。
+            </p>
+          </article>
+        </div>
+        <p>
+          合并后会丢失两个关键问题：代码文件存在不代表任务完成；任务完成也不说明哪个代码工件承载组件。Impact
+          传播方向和风险等级也不同：<code>REALIZES</code> 默认 high、<code>IMPLEMENTS</code> 默认
+          medium。
+        </p>
+        <div class="compare-pair">
+          <article>
+            <h3><code>RESOLVES</code></h3>
+            <p><strong>Approval → ApprovalRequest</strong></p>
+            <p>
+              回答“哪个决定闭合了请求”。reject/defer 同样可以处理请求，所以它不自动表示对象获准。
+            </p>
+          </article>
+          <strong>≠</strong>
+          <article>
+            <h3><code>APPROVES</code></h3>
+            <p><strong>Approval → versionable object</strong></p>
+            <p>回答“哪个精确对象 digest 获得放行”。只有 approve 决定才形成此授权语义。</p>
+          </article>
+        </div>
+        <p>
+          合并后，系统会把“请求已处理”误读为“对象已授权”，reject
+          也可能错误获得执行权。这正是治理系统必须避免的权限扩大。
+        </p>
+        <details class="advanced-reading">
+          <summary>其余容易混淆的关系</summary>
+          <p>
+            <code>VERIFIES</code> 是 Test 对规则的检查，<code>SUPPORTS/REFUTES</code> 是 Evidence
+            对声称的方向性结论；<code>EXECUTES</code> 表示承担执行，<code>INVOKES</code>
+            表示调用工具；<code>DERIVES_FROM</code> 保留来源，<code>SUPERSEDES</code>
+            改变当前有效版本；<code>TRIGGERS</code> 表示确定事件启动流程，<code>MAY_IMPACT</code>
+            只表示候选影响。
+          </p>
+        </details>
+      </section>
+
+      <section class="lesson-section" id="source-one">
+        <p class="screen-kicker">03 · SOURCE READING 1</p>
+        <h2>Registry 用合法端点把业务词变成可执行约束</h2>
+        <article class="source-reading">
+          <header class="source-reading-header">
+            <p class="source-position">
+              EdgeRecord(type, source, target) → <strong>RELATION_COMPATIBILITY</strong> →
+              compatible or violation
+            </p>
+            <h3>为什么读这段</h3>
+            <p>单看字符串枚举只能知道“有哪些词”；兼容表才说明每个词允许谁指向谁。</p>
+            <a href="../../packages/graph/src/integrity.ts#L94"
+              >packages/graph/src/integrity.ts · relation compatibility</a
+            >
+          </header>
+          <div class="source-reading-grid">
+            <pre><code>{ type: "SHAPES", sources: ["Decision"], targets: ["Component"] },
+{ type: "REALIZES", sources: ["CodeArtifact"], targets: ["Component"] },
+{ type: "IMPLEMENTS", sources: ["Task"], targets: ["Requirement", "Decision", "DesignArtifact"] },
+{ type: "VERIFIES", sources: ["Test"], targets: ["Requirement", "Constraint"] },
+{ type: "EVALUATES", sources: ["EvaluationCase"], targets: ["Task", "Run"] },
+{ type: "EXECUTES", sources: ["Run"], targets: ["Task", "Gate", "EvaluationCase"] },
+{ type: "INVOKES", sources: ["Run"], targets: ["ToolDefinition"] },</code></pre>
+            <div class="source-explanation">
+              <dl>
+                <dt>读法</dt>
+                <dd>每一行都是三元约束：relation、source type 集合、target type 集合。</dd>
+                <dt>非合并证据</dt>
+                <dd>
+                  <code>REALIZES</code> 和 <code>IMPLEMENTS</code> 的 source/target
+                  完全不同；合并会让非法事实通过。
+                </dd>
+                <dt>下游</dt>
+                <dd>完整性检查读取实际节点类型，逐边验证这张表，而不是相信 producer 的字符串。</dd>
+                <dt>证据边界</dt>
+                <dd>Registry 证明合法语法；不证明图中必需业务链已经完整存在。</dd>
+              </dl>
+            </div>
+          </div>
+        </article>
+      </section>
+
+      <section class="lesson-section" id="source-two">
+        <p class="screen-kicker">04 · SOURCE READING 2</p>
+        <h2>materializer 在投影前执行四类完整性检查</h2>
+        <article class="source-reading">
+          <header class="source-reading-header">
+            <p class="source-position">
+              committed operations → candidates + replay edges →
+              <strong>assertGraphIntegrity</strong> → SQLite projection
+            </p>
+            <h3>为什么读这段</h3>
+            <p>
+              双图不是“尽量显示”；只要存在悬空边、非法端点、版本倒退或依赖环，整个投影必须 fail
+              closed。
+            </p>
+            <a href="../../packages/graph/src/integrity.ts#L272"
+              >packages/graph/src/integrity.ts · checkGraphIntegrity</a
+            >
+          </header>
+          <div class="source-reading-grid">
+            <pre><code>return [
+  ...checkDanglingEdges(edges, nodeIds),
+  ...checkRelationCompatibility(edges, nodeIds, typeById),
+  ...checkVersionMonotonicity(nodes),
+  ...checkDependencyCycles(edges),
+];</code></pre>
+            <div class="source-explanation">
+              <dl>
+                <dt>悬空边</dt>
+                <dd>source 或 target 不存在，关系无法被审计。</dd>
+                <dt>端点兼容</dt>
+                <dd>节点存在仍不够，类型必须符合 relation Registry。</dd>
+                <dt>版本单调</dt>
+                <dd>同一对象的修订不能倒退或产生不可裁决分叉。</dd>
+                <dt>依赖无环</dt>
+                <dd>执行依赖必须可拓扑排序；否则 DAG 无法调度。</dd>
+              </dl>
+            </div>
+          </div>
+        </article>
+        <div class="prediction-card">
+          <strong>先判断：</strong>若一条 <code>APPROVES</code> 边指向
+          <code>ApprovalRequest</code>，节点都存在、digest
+          都正确，它能进入投影吗？说明应使用哪个关系。
+        </div>
+      </section>
+
+      <section class="lesson-section" id="verify">
+        <p class="screen-kicker">05 · EVIDENCE AND MASTERY</p>
+        <h2>用属性测试和 golden rules 检查图语义</h2>
+        <div class="source-lab" data-lab-id="lesson-0006-relations">
+          <h3>Integrity + materializer + relation golden rules</h3>
+          <pre
+            class="command-block lab-command"
+          ><code data-command>pnpm exec vitest run packages/graph/test/integrity.property.test.ts packages/graph/test/materializer.test.ts packages/graph/test/impact/relation-rules-golden.test.ts</code></pre>
+          <div class="lab-actions">
+            <button class="btn secondary" type="button" data-copy-command>复制命令</button
+            ><button class="btn" type="button" data-mark-lab>我已复跑并核对</button>
+          </div>
+          <p class="lab-status"></p>
+          <p class="evidence-boundary">
+            <strong>证据边界：</strong>通过证明当前
+            Registry、完整性检查、投影和传播规则彼此一致；不能证明每个业务 Operation
+            都产生了足够的边。
+          </p>
+        </div>
+        <div class="quiz-container" data-quiz>
+          <h3>关系裁决</h3>
+          <div
+            class="quiz-question-block"
+            data-correct="a"
+            data-explanation-right="正确。请求被 reject 仍已 RESOLVES，但不能形成 APPROVES。"
+            data-explanation-wrong="闭合请求不等于放行对象。"
+          >
+            <p><strong>1. ApprovalDecision=reject 后应保留哪条语义？</strong></p>
+            <button class="quiz-option" type="button" data-value="a">
+              RESOLVES 请求，不 APPROVES 对象</button
+            ><button class="quiz-option" type="button" data-value="b">
+              APPROVES 请求，不 RESOLVES 对象</button
+            ><span class="quiz-feedback"></span>
+          </div>
+          <div
+            class="quiz-question-block"
+            data-correct="b"
+            data-explanation-right="正确。Task 兑现义务用 IMPLEMENTS；代码承载组件才用 REALIZES。"
+            data-explanation-wrong="先看 source 是 Task 还是 CodeArtifact。"
+          >
+            <p><strong>2. Task 负责兑现一个 DesignArtifact，应使用？</strong></p>
+            <button class="quiz-option" type="button" data-value="a">REALIZES</button
+            ><button class="quiz-option" type="button" data-value="b">IMPLEMENTS</button
+            ><span class="quiz-feedback"></span>
+          </div>
+          <div
+            class="quiz-question-block"
+            data-correct="a"
+            data-explanation-right="正确。Evidence 对声称提供方向性支持；Test 才 VERIFIES Requirement/Constraint。"
+            data-explanation-wrong="Evidence 不是 Test，端点约束不同。"
+          >
+            <p><strong>3. Evidence 增强 Requirement 的可信度，应使用？</strong></p>
+            <button class="quiz-option" type="button" data-value="a">SUPPORTS</button
+            ><button class="quiz-option" type="button" data-value="b">VERIFIES</button
+            ><span class="quiz-feedback"></span>
+          </div>
+          <div class="quiz-actions">
+            <button class="btn" type="button" data-quiz-check>检查答案</button
+            ><button class="btn secondary" type="button" data-quiz-reset>重置</button>
+          </div>
+        </div>
+        <div class="mastery-output">
+          <h3>脱稿关系审查</h3>
+          <ol>
+            <li>从五个关系家族各抽一条，写出 source → target、业务断言和审计问题。</li>
+            <li>解释两组不可合并关系，再自选一组近义关系做同样分析。</li>
+            <li>给一条非法边，判断是悬空、端点不兼容、版本还是依赖环问题。</li>
+          </ol>
+        </div>
+        <div class="button-row">
+          <button class="btn secondary" type="button" data-mark-reviewed>标记本课已复习</button>
+        </div>
+        <div class="lesson-footer">
+          <a class="btn secondary" href="0005-Ledger事务与权威提交.html">← 上一课</a
+          ><a class="btn" href="0007-Impact确定性传播与模型建议.html">下一课：Impact 传播 →</a>
+        </div>
+      </section>
+    </main>
+  </body>
+</html>
