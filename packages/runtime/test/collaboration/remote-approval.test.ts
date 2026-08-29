@@ -97,7 +97,6 @@ describe("validateRemoteApprovalDecision", () => {
       request: remoteRequest(),
       snapshot: approverSnapshot(),
       decision: decisionDraft(),
-      now: NOW,
     });
     expect(result).toEqual({ status: "valid" });
   });
@@ -107,7 +106,6 @@ describe("validateRemoteApprovalDecision", () => {
       request: remoteRequest({ legacy: true }),
       snapshot: approverSnapshot(),
       decision: decisionDraft(),
-      now: NOW,
     });
     expect(result).toMatchObject({
       status: "blocked",
@@ -120,7 +118,6 @@ describe("validateRemoteApprovalDecision", () => {
       request: remoteRequest(),
       snapshot: approverSnapshot({ principal_id: "principal_alice" }),
       decision: decisionDraft(),
-      now: NOW,
     });
     expect(result).toMatchObject({
       status: "blocked",
@@ -128,14 +125,13 @@ describe("validateRemoteApprovalDecision", () => {
     });
   });
 
-  it("requires the snapshot to be valid at decided_at, not at validation time", () => {
+  it("requires the snapshot to be valid at decided_at", () => {
     // Snapshot expired before the decision was made.
     expect(
       validateRemoteApprovalDecision({
         request: remoteRequest(),
         snapshot: approverSnapshot({ expires_at: NOW }),
         decision: decisionDraft(),
-        now: NOW,
       }),
     ).toMatchObject({ status: "blocked", failure: { code: "permission_snapshot_stale" } });
     // Decision made before the snapshot was observed.
@@ -144,16 +140,15 @@ describe("validateRemoteApprovalDecision", () => {
         request: remoteRequest(),
         snapshot: approverSnapshot({ observed_at: LATER }),
         decision: decisionDraft(),
-        now: NOW,
       }),
     ).toMatchObject({ status: "blocked", failure: { code: "permission_snapshot_stale" } });
-    // The clock far beyond expiry does not matter: validity at decided_at rules.
+    // Validity is judged at decided_at only; the wall clock never enters the
+    // decision (design §13.1).
     expect(
       validateRemoteApprovalDecision({
         request: remoteRequest(),
         snapshot: approverSnapshot(),
         decision: decisionDraft(),
-        now: "2026-09-01T00:00:00.000Z",
       }),
     ).toEqual({ status: "valid" });
   });
@@ -171,7 +166,6 @@ describe("validateRemoteApprovalDecision", () => {
           request: remoteRequest(),
           snapshot: approverSnapshot(),
           decision,
-          now: NOW,
         }),
       ).toMatchObject({ status: "blocked", failure: { code: "approval_binding_mismatch" } });
     }
@@ -183,7 +177,6 @@ describe("validateRemoteApprovalDecision", () => {
         request: remoteRequest(),
         snapshot: approverSnapshot({ permission: "write" }),
         decision: decisionDraft(),
-        now: NOW,
       }),
     ).toMatchObject({ status: "blocked", failure: { code: "permission_denied" } });
     expect(
@@ -191,7 +184,6 @@ describe("validateRemoteApprovalDecision", () => {
         request: remoteRequest(),
         snapshot: approverSnapshot({ permission: "write" }),
         decision: decisionDraft({ required_permission: "write" }),
-        now: NOW,
       }),
     ).toEqual({ status: "valid" });
     expect(
@@ -199,7 +191,6 @@ describe("validateRemoteApprovalDecision", () => {
         request: remoteRequest(),
         snapshot: approverSnapshot({ permission: "maintain" }),
         decision: decisionDraft({ required_permission: "admin" }),
-        now: NOW,
       }),
     ).toMatchObject({ status: "blocked", failure: { code: "permission_denied" } });
   });

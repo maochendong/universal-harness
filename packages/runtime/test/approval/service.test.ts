@@ -566,4 +566,21 @@ describe("ApprovalService.resolveRemoteDecision", () => {
     expect(pending[0]?.requester_principal_id).toBe("principal_alice");
     expect(pending[0]?.protocol_version).toBe("1.2.0");
   });
+
+  it("refuses a defer even when the caller bypasses the narrowed type", async () => {
+    const { projectRoot, service, workflowOperationId, now } = await setup("rf");
+    const outcome = await service.requestApproval(
+      makeRequestInput(workflowOperationId, { requesterPrincipal }),
+    );
+    await resume(projectRoot, "rf", workflowOperationId, now);
+
+    // A defer is not terminal evidence; first-terminal-wins filters it on the
+    // Control Ref, and materialization refuses it even at runtime.
+    const deferring = remoteInput(outcome.request_id, { decision: "defer" });
+    await expect(service.resolveRemoteDecision(deferring as never)).rejects.toMatchObject({
+      name: "ApprovalError",
+      kind: "approval_decision_not_allowed",
+    });
+    expect(service.pendingRequests(workflowOperationId)).toHaveLength(1);
+  });
 });

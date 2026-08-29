@@ -108,7 +108,11 @@ export interface ResolveDecisionInput {
  */
 export interface ResolveRemoteDecisionInput {
   readonly requestId: string;
-  readonly decision: ApprovalDecision;
+  /**
+   * Terminal decisions only: a defer is not authoritative evidence and never
+   * materializes (design §13.1 first-terminal-wins filters it on the chain).
+   */
+  readonly decision: Exclude<ApprovalDecision, "defer">;
   /** Exact digest of the controlled object; a mismatch is never approved. */
   readonly objectDigest: string;
   readonly actor: string;
@@ -413,6 +417,14 @@ export class ApprovalService {
   async resolveRemoteDecision(
     input: ResolveRemoteDecisionInput,
   ): Promise<RemoteDecisionResolution> {
+    // Runtime guard for callers that bypass the narrowed type: defer is not
+    // terminal and never materializes.
+    if ((input.decision as ApprovalDecision) === "defer") {
+      throw new ApprovalError(
+        "approval_decision_not_allowed",
+        `decision defer is not allowed for request ${input.requestId}: defer is not terminal and never materializes`,
+      );
+    }
     const request = this.getRequestById(input.requestId);
     const existing = this.decisions(request.workflow_operation_id).find(
       (decision) => remoteDecisionDigestOf(decision) === input.remoteDecisionDigest,

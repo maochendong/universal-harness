@@ -1,5 +1,6 @@
 import type {
   CollaborationConnectionRecord,
+  CollaborationProvider,
   ControlRecord,
   LeaseRecord,
   PrincipalSnapshotRecord,
@@ -45,6 +46,7 @@ import type {
   DisconnectedOutcome,
   GitControlStorePort,
   PlatformIdentityPort,
+  PrincipalSnapshotFacts,
   PublishOperationCandidateCommand,
   SubmitRemoteApprovalCommand,
 } from "./port.js";
@@ -161,6 +163,75 @@ export function createCollaborationCoordinator(
   }
 
   /**
+   * OAuth the session principal against one remote target and require a
+   * fresh, session-owned permission snapshot (fail closed). Shared by connect
+   * and submit_remote_approval; `staleSummary` names the record whose write
+   * the snapshot would outlive.
+   */
+  async function authenticateFreshSnapshot(
+    target: {
+      readonly provider: CollaborationProvider;
+      readonly host: string;
+      readonly repository_id: string;
+    },
+    session: CollaborationSession,
+    staleSummary: string,
+  ): Promise<
+    | { readonly status: "authenticated"; readonly facts: PrincipalSnapshotFacts }
+    | { readonly status: "failed"; readonly failure: CollaborationFailure }
+  > {
+    const authentication = await deps.platform.authenticate({
+      provider: target.provider,
+      host: target.host,
+      repository_id: target.repository_id,
+      principal_id: session.principal_id,
+    });
+    if (authentication.status === "failed") {
+      return { status: "failed", failure: authentication.failure };
+    }
+    const facts = authentication.snapshot;
+    if (facts.principal_id !== session.principal_id) {
+      return {
+        status: "failed",
+        failure: collaborationFailure(
+          "permission_denied",
+          `authenticated principal ${facts.principal_id} does not own session principal ${session.principal_id}`,
+        ),
+      };
+    }
+    if (facts.expires_at <= now()) {
+      return {
+        status: "failed",
+        failure: collaborationFailure("permission_snapshot_stale", staleSummary, true),
+      };
+    }
+    return { status: "authenticated", facts };
+  }
+
+  /** Seal fresh snapshot facts into a PrincipalSnapshot record chained on the ref tail. */
+  function sealSnapshotRecord(
+    facts: PrincipalSnapshotFacts,
+    chain: readonly ControlRecord[],
+  ): PrincipalSnapshotRecord {
+    const previous = chain[chain.length - 1];
+    return buildCollaborationRecord({
+      record_kind: "principal_snapshot" as const,
+      control_sequence: chain.length + 1,
+      ...(previous === undefined ? {} : { previous_control_record_digest: previous.record_digest }),
+      snapshot_id: snapshotIdFor(facts.principal_id, facts.repository_id, facts.observed_at),
+      principal_id: facts.principal_id,
+      provider: facts.provider,
+      host: facts.host,
+      subject_id: facts.subject_id,
+      repository_id: facts.repository_id,
+      permission: facts.permission,
+      observed_at: facts.observed_at,
+      expires_at: facts.expires_at,
+      source_response_digest: facts.source_response_digest,
+    });
+  }
+
+  /**
    * Load the authoritative Git state and require an active connection; shared
    * by every remote command except connect (which reads by the command's own
    * target ref) and disconnect (which answers a disconnected project with a
@@ -236,35 +307,13 @@ export function createCollaborationCoordinator(
 
     // 5. Authorize: OAuth the session principal and require a fresh,
     //    session-owned permission snapshot.
-    const authentication = await deps.platform.authenticate({
-      provider: identity.identity.provider,
-      host: identity.identity.host,
-      repository_id: identity.identity.repository_id,
-      principal_id: session.principal_id,
-    });
-    if (authentication.status === "failed") {
-      return { status: "failed", failure: authentication.failure };
-    }
-    const facts = authentication.snapshot;
-    if (facts.principal_id !== session.principal_id) {
-      return {
-        status: "failed",
-        failure: collaborationFailure(
-          "permission_denied",
-          `authenticated principal ${facts.principal_id} does not own session principal ${session.principal_id}`,
-        ),
-      };
-    }
-    if (facts.expires_at <= now()) {
-      return {
-        status: "failed",
-        failure: collaborationFailure(
-          "permission_snapshot_stale",
-          "platform permission snapshot expired before the connection record could be written",
-          true,
-        ),
-      };
-    }
+    const auth = await authenticateFreshSnapshot(
+      identity.identity,
+      session,
+      "platform permission snapshot expired before the connection record could be written",
+    );
+    if (auth.status === "failed") return { status: "failed", failure: auth.failure };
+    const facts = auth.facts;
 
     // 6. Fail closed unless the platform proves Control Ref protection.
     const protection = await deps.platform.inspectControlRefProtection({
@@ -278,25 +327,7 @@ export function createCollaborationCoordinator(
     }
 
     // 7. Append the PrincipalSnapshot to the Control Ref via CAS.
-    const controlRecords = state.snapshot.control_records;
-    const previousControl = controlRecords[controlRecords.length - 1];
-    const snapshot = buildCollaborationRecord({
-      record_kind: "principal_snapshot" as const,
-      control_sequence: controlRecords.length + 1,
-      ...(previousControl === undefined
-        ? {}
-        : { previous_control_record_digest: previousControl.record_digest }),
-      snapshot_id: snapshotIdFor(facts.principal_id, facts.repository_id, facts.observed_at),
-      principal_id: facts.principal_id,
-      provider: facts.provider,
-      host: facts.host,
-      subject_id: facts.subject_id,
-      repository_id: facts.repository_id,
-      permission: facts.permission,
-      observed_at: facts.observed_at,
-      expires_at: facts.expires_at,
-      source_response_digest: facts.source_response_digest,
-    });
+    const snapshot = sealSnapshotRecord(facts, state.snapshot.control_records);
     const appended = await deps.controlStore.appendControl({
       project_id: command.project_id,
       control_ref: controlRef,
@@ -499,35 +530,17 @@ export function createCollaborationCoordinator(
           ),
         };
       }
-      const authentication = await deps.platform.authenticate({
-        provider: connection.provider,
-        host: hostSnapshot.host,
-        repository_id: connection.repository_id,
-        principal_id: session.principal_id,
-      });
-      if (authentication.status === "failed") {
-        return { status: "failed", failure: authentication.failure };
-      }
-      const facts = authentication.snapshot;
-      if (facts.principal_id !== session.principal_id) {
-        return {
-          status: "failed",
-          failure: collaborationFailure(
-            "permission_denied",
-            `authenticated principal ${facts.principal_id} does not own session principal ${session.principal_id}`,
-          ),
-        };
-      }
-      if (facts.expires_at <= now()) {
-        return {
-          status: "failed",
-          failure: collaborationFailure(
-            "permission_snapshot_stale",
-            "platform permission snapshot expired before the decision could be written",
-            true,
-          ),
-        };
-      }
+      const auth = await authenticateFreshSnapshot(
+        {
+          provider: connection.provider,
+          host: hostSnapshot.host,
+          repository_id: connection.repository_id,
+        },
+        session,
+        "platform permission snapshot expired before the decision could be written",
+      );
+      if (auth.status === "failed") return { status: "failed", failure: auth.failure };
+      const facts = auth.facts;
 
       // Validate the draft against the committed request and the snapshot.
       const draft: RemoteApprovalDecisionDraft = {
@@ -546,7 +559,6 @@ export function createCollaborationCoordinator(
         request,
         snapshot: facts,
         decision: draft,
-        now: now(),
       });
       if (validation.status === "blocked") {
         return { status: "failed", failure: validation.failure };
@@ -567,24 +579,7 @@ export function createCollaborationCoordinator(
           (record as PrincipalSnapshotRecord).snapshot_id === snapshotId,
       );
       if (snapshot === undefined) {
-        const previous = chain[chain.length - 1];
-        const sealed = buildCollaborationRecord({
-          record_kind: "principal_snapshot" as const,
-          control_sequence: chain.length + 1,
-          ...(previous === undefined
-            ? {}
-            : { previous_control_record_digest: previous.record_digest }),
-          snapshot_id: snapshotId,
-          principal_id: facts.principal_id,
-          provider: facts.provider,
-          host: facts.host,
-          subject_id: facts.subject_id,
-          repository_id: facts.repository_id,
-          permission: facts.permission,
-          observed_at: facts.observed_at,
-          expires_at: facts.expires_at,
-          source_response_digest: facts.source_response_digest,
-        });
+        const sealed = sealSnapshotRecord(facts, chain);
         const appended = await deps.controlStore.appendControl({
           project_id: command.project_id,
           control_ref: controlRef,
@@ -608,7 +603,7 @@ export function createCollaborationCoordinator(
         ...(previous === undefined
           ? {}
           : { previous_control_record_digest: previous.record_digest }),
-        remote_decision_id: remoteDecisionIdFor(command.command_id),
+        remote_decision_id: remoteDecisionIdFor(command.command_id, command.request_id),
         ...draft,
         principal_snapshot_digest: snapshot.record_digest,
         command_id: command.command_id,

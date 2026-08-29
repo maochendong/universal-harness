@@ -74,15 +74,14 @@ function blocked(
  * the approver's snapshot (design §13.1 checklist): first-class requester
  * Principal binding, self-approval prohibition, snapshot valid at
  * `decided_at`, exact request/operation/object/policy binding and the
- * required permission rank. `now` is part of the input contract for symmetry
- * with the deciding command; validity is judged at `decided_at`, never at
- * the wall clock.
+ * required permission rank. Validity is judged at `decided_at`, never at the
+ * wall clock: a legally written decision is immutable evidence that the
+ * principal held the permission when deciding (design §9.2).
  */
 export function validateRemoteApprovalDecision(input: {
   readonly request: ApprovalRequestRecord;
   readonly snapshot: RemoteApprovalSnapshot;
   readonly decision: RemoteApprovalDecisionDraft;
-  readonly now: string;
 }): RemoteApprovalValidation {
   const { request, snapshot, decision } = input;
   if (request.requester_principal_id === undefined) {
@@ -128,18 +127,27 @@ export function validateRemoteApprovalDecision(input: {
   return { status: "valid" };
 }
 
-/** Deterministic RemoteApprovalDecision identity per deciding command. */
-export function remoteDecisionIdFor(commandId: string): string {
-  return `remote-decision_${contentDigest({ commandId }).slice(0, 24)}`;
+/**
+ * Deterministic RemoteApprovalDecision identity per deciding command and
+ * request; the request id is part of the derivation so a command id reused
+ * across requests can never collide.
+ */
+export function remoteDecisionIdFor(commandId: string, requestId: string): string {
+  return `remote-decision_${contentDigest({ commandId, requestId }).slice(0, 24)}`;
 }
+
+/** A decision record known to be terminal (first-terminal-wins filters defer). */
+export type TerminalRemoteDecision = RemoteApprovalDecisionRecord & {
+  readonly decision: "approve" | "reject";
+};
 
 /** The first non-defer decision of one request on the chain, if any (first-terminal-wins). */
 export function terminalRemoteDecision(
   records: readonly { readonly record_kind: string }[],
   requestId: string,
-): RemoteApprovalDecisionRecord | undefined {
+): TerminalRemoteDecision | undefined {
   return records.find(
-    (record): record is RemoteApprovalDecisionRecord =>
+    (record): record is TerminalRemoteDecision =>
       record.record_kind === "remote_approval_decision" &&
       (record as RemoteApprovalDecisionRecord).request_id === requestId &&
       (record as RemoteApprovalDecisionRecord).decision !== "defer",
@@ -241,7 +249,6 @@ export async function materializeRemoteApprovalDecision(
     request,
     snapshot,
     decision: terminal,
-    now: terminal.decided_at,
   });
   if (validation.status === "blocked") {
     return { status: "failed", failure: validation.failure };

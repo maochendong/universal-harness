@@ -1177,6 +1177,7 @@ export {
   type RemoteApprovalMaterialization,
   type RemoteApprovalSnapshot,
   type RemoteApprovalValidation,
+  type TerminalRemoteDecision,
 } from "./collaboration/approval.js";
 export type {
   AcceptIntegrationCommand,

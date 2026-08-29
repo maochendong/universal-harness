@@ -274,7 +274,9 @@ describe("remote approval control-side crash recovery", () => {
     );
     expect(retried.status).toBe("remote_approval");
     if (retried.status !== "remote_approval") throw new Error("expected remote_approval outcome");
-    expect(retried.decision.remote_decision_id).toBe(remoteDecisionIdFor("command_decision_f1"));
+    expect(retried.decision.remote_decision_id).toBe(
+      remoteDecisionIdFor("command_decision_f1", "approval_request_f01"),
+    );
     expect(retried.decision.command_id).toBe("command_decision_f1");
     expect(
       controlStore.controlRecords.filter(
@@ -349,7 +351,7 @@ function decisionChain(request: ApprovalRequestRecord): {
     record_kind: "remote_approval_decision" as const,
     control_sequence: 2,
     previous_control_record_digest: snapshot.record_digest,
-    remote_decision_id: remoteDecisionIdFor("command_decision_fault"),
+    remote_decision_id: remoteDecisionIdFor("command_decision_fault", request.request_id),
     request_id: request.request_id,
     operation_id: request.workflow_operation_id,
     object_id: request.object_id,
