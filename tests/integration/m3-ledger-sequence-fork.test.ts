@@ -323,6 +323,26 @@ describe("m3 ledger sequence fork over real git", () => {
         .filter((line) => line.length > 0);
       expect(merges).toHaveLength(2);
 
+      // A fresh clone of the accepted Target replays both deterministic
+      // IntegrationAccepted events out of the integration transactions'
+      // event shards (design §20).
+      const acceptedRoot = join(tempDir("harness-m3-fork-accepted-"), "accepted");
+      git(dirname(acceptedRoot), "clone", remote, acceptedRoot);
+      const acceptedEvents = replayLedger(harnessRootFor(acceptedRoot)).events.filter(
+        (event) => event.event_type === "IntegrationAccepted",
+      );
+      expect(acceptedEvents).toHaveLength(2);
+      expect(acceptedEvents.map((event) => event.payload["integration_id"])).toEqual([
+        prepareA.integration_record.integration_id,
+        prepareB.integration_record.integration_id,
+      ]);
+      for (const event of acceptedEvents) {
+        expect(event).toMatchObject({ protocol_version: "1.2.0", sequence: 1 });
+      }
+      expect(acceptedEvents[1]?.payload["record_digest"]).toBe(
+        prepareB.integration_record.record_digest,
+      );
+
       projection.close();
     },
   );

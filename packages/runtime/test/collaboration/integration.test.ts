@@ -1,3 +1,8 @@
+import { execFileSync } from "node:child_process";
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
+
 import {
   buildCollaborationRecord,
   buildManifest,
@@ -25,6 +30,7 @@ import type {
 } from "../../src/collaboration/index.js";
 import { createCollaborationCoordinator } from "../../src/collaboration/index.js";
 import { SqliteCoordinatorProjection } from "../../src/collaboration/sqlite-projection.js";
+import { hashWorktreeCode } from "../../src/snapshot/anchor.js";
 import {
   createIntegrationFakeStore,
   operationRefFor,
@@ -171,6 +177,7 @@ function gateEvidenceArtifact(input: {
   passed: boolean;
   provisional?: boolean;
   policyDigest?: string;
+  codeDigests?: readonly string[];
 }): Record<string, string> {
   const record = {
     protocol_version: "1.0.0",
@@ -193,7 +200,7 @@ function gateEvidenceArtifact(input: {
         artifact_hashes: {},
         bindings: {
           artifact_digests: [],
-          code_digests: [],
+          code_digests: [...(input.codeDigests ?? [])],
           gate_digest: digest("g"),
           evaluation_case_digests: [],
           policy_digest: input.policyDigest ?? POLICY_DIGEST,
@@ -204,6 +211,22 @@ function gateEvidenceArtifact(input: {
   return {
     [`artifacts/evidence/${input.id}.json`]: `${canonicalizeJson(record)}\n`,
   };
+}
+
+/**
+ * The code digest a worktree holding exactly `files` binds — the same
+ * Git-listed digest the Coordinator recomputes on the candidate root.
+ */
+function codeDigestOf(files: Readonly<Record<string, string>>): string {
+  const root = mkdtempSync(join(tmpdir(), "harness-code-"));
+  for (const [path, content] of Object.entries(files)) {
+    const absolute = join(root, ...path.split("/"));
+    mkdirSync(dirname(absolute), { recursive: true });
+    writeFileSync(absolute, content);
+  }
+  execFileSync("git", ["init", "-q", "-b", "code"], { cwd: root });
+  execFileSync("git", ["add", "-A"], { cwd: root });
+  return hashWorktreeCode(root);
 }
 
 /** An approval request artifact file (ledger-relative path -> content). */
@@ -555,6 +578,86 @@ describe("integration commands", () => {
     expect(outcome.failure.code).toBe("integration_gate_failed");
   });
 
+  it("passes mandatory evidence whose code binding covers the candidate code", async () => {
+    const store = createIntegrationFakeStore();
+    const fork = store.commitTree(
+      [],
+      mergeFiles(
+        makeManifest({ id: "operation_a_1", sequence: 1, baseline: digest("a"), committedAt: T0 })
+          .files,
+        { "src/a.txt": "A\n" },
+      ),
+    );
+    store.moveRef(TARGET_REF, fork);
+    // The target adds no code after the fork, so the candidate code equals
+    // the code the evidence covered on the operation branch.
+    const evidence = gateEvidenceArtifact({
+      id: "evidence_fresh_1",
+      mandatory: true,
+      passed: true,
+      codeDigests: [codeDigestOf({ "src/a.txt": "A\n" })],
+    });
+    const operationTip = store.commitTree(
+      [fork],
+      makeManifest({
+        id: "operation_b_1",
+        sequence: 2,
+        baseline: fork,
+        committedAt: T2,
+        artifacts: evidence,
+      }).files,
+    );
+    store.moveRef(operationRefFor("operation_b"), operationTip);
+    const harness = createHarness(store);
+    await connect(harness);
+
+    const outcome = await harness.coordinator.execute(
+      prepareCommand("operation_b"),
+      session("principal_alice"),
+    );
+
+    expect(outcome.status).toBe("prepared");
+  });
+
+  it("blocks mandatory gate evidence whose code binding predates the candidate code", async () => {
+    const store = createIntegrationFakeStore();
+    const fork = store.commitTree(
+      [],
+      mergeFiles(
+        makeManifest({ id: "operation_a_1", sequence: 1, baseline: digest("a"), committedAt: T0 })
+          .files,
+        { "src/a.txt": "A\n" },
+      ),
+    );
+    store.moveRef(TARGET_REF, fork);
+    const evidence = gateEvidenceArtifact({
+      id: "evidence_moved_1",
+      mandatory: true,
+      passed: true,
+      codeDigests: [digest("c")],
+    });
+    const operationTip = store.commitTree(
+      [fork],
+      makeManifest({
+        id: "operation_b_1",
+        sequence: 2,
+        baseline: fork,
+        committedAt: T2,
+        artifacts: evidence,
+      }).files,
+    );
+    store.moveRef(operationRefFor("operation_b"), operationTip);
+    const harness = createHarness(store);
+    await connect(harness);
+
+    const outcome = failed(
+      await harness.coordinator.execute(prepareCommand("operation_b"), session("principal_alice")),
+    );
+
+    expect(outcome.failure.code).toBe("integration_gate_failed");
+    expect(outcome.failure.summary).toContain("code");
+  });
+
   it("rejects an approval request whose policy binding drifted", async () => {
     const store = createIntegrationFakeStore();
     const fork = store.commitTree(
@@ -636,6 +739,27 @@ describe("integration commands", () => {
       integration_id: record.integration_id,
     });
     expect(read.status).toBe("found");
+
+    // The accepted candidate's final transaction carries the deterministic
+    // IntegrationAccepted event (design §20), verifiable by ledger replay of
+    // the candidate bytes.
+    const replay = replayLedger(harnessRootFor(store.lastCandidateRoot as string));
+    const acceptedEvents = replay.events.filter(
+      (event) => event.event_type === "IntegrationAccepted",
+    );
+    expect(acceptedEvents).toHaveLength(1);
+    expect(acceptedEvents[0]).toMatchObject({
+      protocol_version: "1.2.0",
+      project_id: "project_demo",
+      ledger_operation_id: expect.stringMatching(/^ledger-integration_/u),
+      sequence: 1,
+      timestamp: T2,
+      payload: {
+        integration_id: record.integration_id,
+        operation_id: operationId,
+        record_digest: record.record_digest,
+      },
+    });
 
     const replayed = await harness.coordinator.execute(
       acceptCommand(record.integration_id, targetTip),

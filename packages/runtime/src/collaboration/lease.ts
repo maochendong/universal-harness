@@ -130,7 +130,7 @@ export function leaseRevocationDraft(tip: LeaseRecord, now: string): LeaseDraft 
   return draftRecord({
     lease_id: tip.lease_id,
     previous_lease_record_digest: tip.record_digest,
-    resource_kind: "operation",
+    resource_kind: tip.resource_kind,
     resource_id: tip.resource_id,
     fencing_token: tip.fencing_token,
     issued_at: now,

@@ -756,9 +756,13 @@ The final candidate Ledger transaction is sequence `max(resequenced manifests) +
 
 Call existing production functions for Graph reconcile, Impact, Evidence freshness, mandatory Gate and Approval binding checks against the candidate tree. Do not create a model seam or mock the result in production. Any failure returns the spec §16 code and leaves Target untouched.
 
+Implemented scope (see the `integration.ts` module header): the Coordinator re-runs Ledger replay, sequence linearity, strict `mergeCommittedOperations`, Graph materialization, mandatory-Gate verdict checks, and recomputes the evidence policy and code bindings (`hashWorktreeCode` on the candidate worktree). Impact is not recomputable at the Coordinator — the impact machinery needs planning-phase seeds and the frozen impact-set approval context — and the evidence artifact/context-bundle/gate/evaluation-case bindings plus the approval object/baseline/impact-path bindings are digest-only references to replica planning state; those stay replayed-verbatim (fail-closed on branch drift) and are re-checked by the replica's Snapshot rules after the accepted Target syncs back.
+
 - [ ] **Step 6: Implement Target CAS and lost-response recovery**
 
 `acceptIntegration()` re-reads the Integration Lease, Target head, candidate parents/tree and required digests. Update Target with force-with-lease semantics against `expected_target_commit`. On a lost response, inspect Target history for the same integration ID, command ID and record digest; return `accepted` if found, otherwise `target_cas_failed`. Emit `IntegrationAccepted` only after Target contains the candidate.
+
+Implemented as: the deterministic `IntegrationAccepted` LifecycleEvent (Protocol 1.2, payload bound to the integration record digest) is written into the final candidate transaction's event shard at plan time, so accept's byte-for-byte recomputation covers it and it enters the project Ledger exactly when the Target CAS accepts the candidate — never earlier.
 
 - [ ] **Step 7: Cover conflict, drift, tampering and crash paths**
 

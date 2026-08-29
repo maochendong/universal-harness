@@ -1035,6 +1035,50 @@ describe("resumeCollaborationCoordinator", () => {
     });
   });
 
+  it("revokes live integration leases as well as operation leases", async () => {
+    const grantedOperation = liveLease();
+    const grantedIntegration = materialize(
+      {
+        lease_record_id: "lease-record_integration",
+        lease_id: "lease_integration",
+        resource_kind: "integration",
+        resource_id: "project_demo",
+        fencing_token: 1,
+        issued_at: NOW,
+        expires_at: LEASE_EXPIRY,
+        state: "granted",
+        command_id: "command_prepare_1",
+      },
+      3,
+      grantedOperation.record_digest,
+    );
+    const { store, deps } = resumeHarness({
+      controlRecords: [snapshotFixture(), grantedOperation, grantedIntegration],
+      connection: connectionFixture(),
+    });
+
+    const startup = await resumeCollaborationCoordinator(deps, "project_demo");
+
+    expect(startup).toEqual({ status: "ready" });
+    expect(store.controlRecords).toHaveLength(5);
+    expect(store.controlRecords[3]).toMatchObject({
+      record_kind: "lease",
+      state: "revoked",
+      resource_kind: "operation",
+      resource_id: "op_1",
+      lease_id: grantedOperation.lease_id,
+      fencing_token: 1,
+    });
+    expect(store.controlRecords[4]).toMatchObject({
+      record_kind: "lease",
+      state: "revoked",
+      resource_kind: "integration",
+      resource_id: "project_demo",
+      lease_id: "lease_integration",
+      fencing_token: 1,
+    });
+  });
+
   it("appends nothing on a repeated resume and leaves expired leases untouched", async () => {
     const granted = liveLease();
     const { store, projection, deps } = resumeHarness({

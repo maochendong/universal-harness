@@ -1146,7 +1146,12 @@ export function createGitControlStoreAdapter(
 
   // --- Integration candidates (design §14, plan M3 Task 6 step 3) -----------
 
-  /** Scratch worktree where the candidate merge is built and validated. */
+  /**
+   * Scratch worktree where the candidate merge is built and validated. It is
+   * a per-mirror singleton: correctness relies on the design §3 single
+   * Coordinator executing integration commands serially per project;
+   * cross-project concurrency against one mirror is out of M3 scope.
+   */
   function candidateWorktree(): string {
     return join(dirname(mirror), "candidate-worktree");
   }

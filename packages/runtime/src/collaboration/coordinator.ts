@@ -1103,9 +1103,11 @@ export async function resumeCollaborationCoordinator(
   let snapshot = initial.snapshot;
 
   // 2. Revoke every lease still live on the wall clock, resource by resource.
+  // Both operation and integration leases are revoked: a restart must never
+  // inherit either kind (spec §10.1).
   const resourceIds = new Set<string>();
   for (const record of snapshot.control_records) {
-    if (record.record_kind === "lease" && (record as LeaseRecord).resource_kind === "operation") {
+    if (record.record_kind === "lease") {
       resourceIds.add((record as LeaseRecord).resource_id);
     }
   }
@@ -1118,9 +1120,7 @@ export async function resumeCollaborationCoordinator(
       }
       const history = snapshot.control_records.filter(
         (record): record is LeaseRecord =>
-          record.record_kind === "lease" &&
-          (record as LeaseRecord).resource_kind === "operation" &&
-          (record as LeaseRecord).resource_id === resourceId,
+          record.record_kind === "lease" && (record as LeaseRecord).resource_id === resourceId,
       );
       const tip = history[history.length - 1];
       const live =

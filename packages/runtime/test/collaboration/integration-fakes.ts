@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -35,6 +36,10 @@ import type {
  * match the production adapter's contract, and the candidate tree is
  * materialized into a temporary directory so the coordinator's tree-based
  * validation (ledger replay, graph materialization) runs against real bytes.
+ * The directory is initialized as a throwaway Git repository so the
+ * coordinator's code-digest recomputation (`hashWorktreeCode`, which lists
+ * files through Git) observes the same candidate bytes as on the real
+ * adapter's scratch worktree.
  */
 
 export const TARGET_REF = "refs/heads/main";
@@ -353,6 +358,11 @@ export function createIntegrationFakeStore(): IntegrationFakeStore {
       mkdirSync(dirname(absolute), { recursive: true });
       writeFileSync(absolute, content);
     }
+    // A plain directory is not enough: hashWorktreeCode lists code files
+    // through Git, so the scratch root must be a repository with every
+    // candidate file staged.
+    execFileSync("git", ["init", "-q", "-b", "candidate"], { cwd: root });
+    execFileSync("git", ["add", "-A"], { cwd: root });
     store.lastCandidateRoot = root;
     return root;
   }
@@ -457,6 +467,9 @@ export function createIntegrationFakeStore(): IntegrationFakeStore {
     });
     if (plan.status === "failed") return { status: "failed", failure: plan.failure };
     for (const write of plan.writes) {
+      // Keep this predicate in sync with `candidateWritePathValid` in
+      // adapters/vcs-git/src/control-store.ts — both enforce the same
+      // candidate-write path policy on either side of the port.
       if (
         !/^\.harness\/[A-Za-z0-9][A-Za-z0-9._/-]*$/u.test(write.path) ||
         write.path.includes("//") ||

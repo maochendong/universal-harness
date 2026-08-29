@@ -10,6 +10,7 @@ import {
   replayLedger,
   sha256Hex,
   shardMonthFor,
+  validateSchema,
   type CollaborationConnectionRecord,
   type ControlRecord,
   type IntegrationRecord,
@@ -27,7 +28,8 @@ import {
   type GateEvidenceExtension,
   type GateEvidenceRecord,
 } from "../gates/evidence.js";
-import { isEvidenceStale } from "../gates/freshness.js";
+import { evidenceStalenessReasons } from "../gates/freshness.js";
+import { hashWorktreeCode } from "../snapshot/anchor.js";
 import { snapshotIdFor } from "./connection.js";
 import { collaborationFailure, type CollaborationFailure } from "./errors.js";
 import { sealLeaseRecord, transitionAcquireLease, transitionLease } from "./lease.js";
@@ -71,13 +73,31 @@ import type {
  * by matching the integration id and the record digest (design §14.4); the
  * digest canonically covers the record's command id and every frozen field.
  * The accepted outcome is only returned after the Target provably contains
- * the candidate. `IntegrationAccepted` project events are materialized by the
- * replica after sync (Task 7+), never written by the Coordinator.
+ * the candidate. The final candidate transaction's event shard carries the
+ * deterministic `IntegrationAccepted` LifecycleEvent (Protocol 1.2, bound to
+ * the integration record digest); it enters the project Ledger only when the
+ * Target CAS accepts the candidate, which is what makes it an accepted fact
+ * rather than a claim (design §20).
  *
- * Evidence freshness caveat (honest scope): the Coordinator can only
- * recompute the policy digest binding — artifact/code/gate digests bind
- * domain state that the replica's existing Snapshot rules re-check after the
- * accepted Target syncs back.
+ * Validation scope (honest gaps in design §14.1 step 7): the Coordinator
+ * recomputes the policy digest binding and the candidate code digest
+ * (`hashWorktreeCode` over the candidate worktree) for Gate evidence
+ * freshness. It cannot recompute:
+ *
+ * - Impact: the impact machinery needs the planning phase's seeds and frozen
+ *   impact-set approval context; no standalone impact check runs on a
+ *   materialized graph, so the candidate is only required to materialize
+ *   cleanly (Graph reconcile above);
+ * - the evidence artifact / context-bundle / gate / evaluation-case bindings:
+ *   the bindings store digests only, never paths, so the current set cannot
+ *   be rebuilt from the tree;
+ * - the approval object / baseline / impact-path bindings: those digests are
+ *   minted from replica planning state (e.g. the proposed content digest, the
+ *   captured baseline), not from anything addressable in the candidate tree.
+ *
+ * These dimensions bind domain state that the replica's existing Snapshot
+ * rules re-check after the accepted Target syncs back; here they are replayed
+ * verbatim so the checks still fail closed when the branch itself drifted.
  */
 
 export interface IntegrationDeps {
@@ -228,6 +248,7 @@ function collectProofDigests(artifacts: readonly CandidateArtifact[]): {
  */
 export function planIntegrationCandidate(input: {
   readonly integration_id: string;
+  readonly project_id: string;
   readonly operation_id: string;
   readonly expected_target_commit: string;
   readonly operation_commit: string;
@@ -283,18 +304,60 @@ export function planIntegrationCandidate(input: {
   const edgeFile = edgeShardRelativePath(month, manifestId);
   const eventFile = eventShardRelativePath(month, manifestId);
   const emptyShardDigest = sha256Hex("");
+
+  // The final transaction is synthetic — no workflow operation produced it —
+  // so it gets its own deterministic workflow/attempt identifiers derived
+  // from the integration id. That keeps the event's operation binding intact
+  // and makes its sequence 1 unambiguous: no earlier events exist for this
+  // workflow operation id on either branch.
+  const syntheticDigest = contentDigest({ integrationId: input.integration_id }).slice(0, 24);
+  const workflowOperationId = `workflow_integration_${syntheticDigest}`;
+  const acceptedEvent = {
+    protocol_version: "1.2.0",
+    record_kind: "event" as const,
+    event_id: `event_integration_${syntheticDigest}`,
+    event_type: "IntegrationAccepted" as const,
+    project_id: input.project_id,
+    iteration_id: "iteration_integration",
+    workflow_operation_id: workflowOperationId,
+    ledger_operation_id: manifestId,
+    sequence: 1,
+    timestamp: committedAt,
+    payload: {
+      integration_id: input.integration_id,
+      operation_id: input.operation_id,
+      expected_target_commit: input.expected_target_commit,
+      operation_commit: input.operation_commit,
+      lease_fencing_token: input.lease_fencing_token,
+      record_digest: record.record_digest,
+    },
+  };
+  const eventValidation = validateSchema("event", acceptedEvent);
+  if (!eventValidation.valid) {
+    return failed(
+      collaborationFailure(
+        "ledger_resequence_failed",
+        `the IntegrationAccepted event does not satisfy the event schema: ${eventValidation.errors
+          .map((issue) => `${issue.instancePath}: ${issue.message}`)
+          .join("; ")}`,
+      ),
+    );
+  }
+  const eventContent = `${canonicalizeJson(acceptedEvent)}\n`;
+
   const finalManifest = buildManifest({
     ledger_operation_id: manifestId,
-    workflow_operation_id: last.workflow_operation_id,
-    attempt_id: last.attempt_id,
+    workflow_operation_id: workflowOperationId,
+    attempt_id: `attempt_integration_${syntheticDigest}`,
     baseline_commit: input.expected_target_commit,
     sequence: last.sequence + 1,
     artifact_digests: [sha256Hex(recordContent)],
     edge_file: edgeFile,
     event_file: eventFile,
     edge_file_digest: emptyShardDigest,
-    event_file_digest: emptyShardDigest,
-    // The transaction carries a Protocol 1.2 IntegrationRecord artifact.
+    event_file_digest: sha256Hex(eventContent),
+    // The transaction carries Protocol 1.2 records (IntegrationRecord
+    // artifact, IntegrationAccepted event).
     required_reader_version: "1.2.0",
     committed_at: committedAt,
   });
@@ -317,7 +380,7 @@ export function planIntegrationCandidate(input: {
     content: `${canonicalizeJson(finalManifest)}\n`,
   });
   writes.push({ path: `.harness/${edgeFile}`, content: "" });
-  writes.push({ path: `.harness/${eventFile}`, content: "" });
+  writes.push({ path: `.harness/${eventFile}`, content: eventContent });
   return { status: "planned", record, writes };
 }
 
@@ -383,7 +446,15 @@ export function validateCandidateTree(input: {
     );
   }
 
-  // Mandatory Gate evidence carried by the incoming branch.
+  // Mandatory Gate evidence carried by the incoming branch. The code binding
+  // is recomputable here: the candidate root is a Git worktree, so its code
+  // digest is recomputed exactly the way the replica binds it (any code the
+  // merge added beyond what the evidence covered makes the binding stale).
+  let candidateCode: string[] | undefined;
+  const currentCodeDigests = (): string[] => {
+    candidateCode ??= [hashWorktreeCode(input.candidate_root)];
+    return candidateCode;
+  };
   for (const artifact of input.incoming_artifacts) {
     const parsed = parseArtifact(artifact.content);
     if (parsed === undefined || parsed.record_kind !== "evidence") continue;
@@ -403,24 +474,32 @@ export function validateCandidateTree(input: {
         `${gate} is provisional and can never satisfy integration`,
       );
     }
-    // Only the policy binding is recomputable by the Coordinator (see the
-    // module header); every other bound digest is replayed verbatim so the
-    // check still fails closed on a policy downgrade.
-    if (
-      isEvidenceStale(record, {
+    // The policy and code bindings are recomputable by the Coordinator (see
+    // the module header); every other bound digest is replayed verbatim so
+    // the check still fails closed on those bindings drifting on the branch.
+    let staleness: readonly string[];
+    try {
+      staleness = evidenceStalenessReasons(record, {
         artifact_digests: extension.bindings.artifact_digests,
-        code_digests: extension.bindings.code_digests,
+        code_digests: currentCodeDigests(),
         ...(extension.bindings.context_bundle_digest === undefined
           ? {}
           : { context_bundle_digest: extension.bindings.context_bundle_digest }),
         gate_digest: extension.bindings.gate_digest,
         evaluation_case_digests: extension.bindings.evaluation_case_digests,
         policy_digest: input.policy_digest,
-      })
-    ) {
+      });
+    } catch (error) {
+      return collaborationFailure(
+        "coordinator_unavailable",
+        `cannot recompute the candidate code digest for evidence freshness: ${errorMessage(error)}`,
+        true,
+      );
+    }
+    if (staleness.length > 0) {
       return collaborationFailure(
         "integration_gate_failed",
-        `${gate} is stale against the connection's current policy digest`,
+        `${gate} is stale on the candidate: ${staleness.join(", ")}`,
       );
     }
   }
@@ -490,6 +569,7 @@ async function recomputeAndValidate(
       observed = merge;
       const plan = planIntegrationCandidate({
         integration_id: input.record.integration_id,
+        project_id: input.project_id,
         operation_id: input.record.operation_id,
         expected_target_commit: input.record.expected_target_commit,
         operation_commit: input.record.operation_commit,
@@ -578,6 +658,170 @@ function sealSnapshot(facts: PrincipalSnapshotFacts, chain: readonly ControlReco
   });
 }
 
+/**
+ * The liveness gate prepare and accept both apply to the Integration Lease
+ * chain tip: a released/revoked tip retires its fencing token permanently, an
+ * expired tip is retryable through a fresh prepare, and a fencing-token
+ * mismatch means the caller's epoch was fenced by a newer one. Returns the
+ * failure to report, or undefined while the tip is live.
+ */
+function assertLiveLeaseTip(
+  tip: LeaseRecord,
+  now: string,
+  fencingToken?: number,
+): CollaborationFailure | undefined {
+  if (tip.state === "released" || tip.state === "revoked") {
+    return collaborationFailure(
+      "lease_fenced",
+      `integration lease ${tip.lease_id} is ${tip.state}; its fencing token is permanently retired`,
+    );
+  }
+  if (tip.state === "expired" || tip.expires_at <= now) {
+    return collaborationFailure(
+      "lease_expired",
+      `integration lease ${tip.lease_id} expired at ${tip.expires_at}; re-run prepare_integration`,
+      true,
+    );
+  }
+  if (fencingToken !== undefined && tip.fencing_token !== fencingToken) {
+    return collaborationFailure(
+      "lease_fenced",
+      `fencing token ${fencingToken} is stale; the live integration lease holds token ${tip.fencing_token}`,
+    );
+  }
+  return undefined;
+}
+
+type IntegrationLeaseAcquisition =
+  | {
+      readonly status: "acquired";
+      readonly lease: LeaseRecord;
+      /** Control Ref records appended while acquiring (snapshot, lease). */
+      readonly appended: readonly ControlRecord[];
+    }
+  | { readonly status: "cas_lost" }
+  | { readonly status: "failed"; readonly failure: CollaborationFailure };
+
+/**
+ * Fetch and validate the Integration Lease for one prepare attempt (design
+ * §14.1.1): seal the actor's fresh PrincipalSnapshot when the chain does not
+ * carry it yet, run the acquire transition until the lease record stands on
+ * the chain, then require the command's lease to still hold the resource at
+ * the live tip. `cas_lost` asks the caller to re-read and re-decide.
+ */
+async function acquireIntegrationLease(
+  deps: IntegrationDeps,
+  input: {
+    readonly project_id: string;
+    readonly command_id: string;
+    readonly control: ControlSnapshot;
+    readonly session: CollaborationSession;
+    readonly snapshot_facts: PrincipalSnapshotFacts;
+  },
+): Promise<IntegrationLeaseAcquisition> {
+  let chain: ControlRecord[] = [...input.control.control_records];
+  let headOid = input.control.control_head_oid;
+  const appended: ControlRecord[] = [];
+
+  // Bind the lease to the actor's fresh snapshot; seal it when the chain
+  // does not carry it yet (a retry after a lost response reuses it).
+  const snapshotId = snapshotIdFor(
+    input.snapshot_facts.principal_id,
+    input.snapshot_facts.repository_id,
+    input.snapshot_facts.observed_at,
+  );
+  let snapshot = chain.find(
+    (record): record is PrincipalSnapshotRecord =>
+      record.record_kind === "principal_snapshot" &&
+      (record as PrincipalSnapshotRecord).snapshot_id === snapshotId,
+  );
+  if (snapshot === undefined) {
+    const sealed = sealSnapshot(input.snapshot_facts, chain);
+    const appendedSnapshot = await deps.controlStore.appendControl({
+      project_id: input.project_id,
+      control_ref: deps.control_ref,
+      ...(headOid === undefined ? {} : { expected_head_oid: headOid }),
+      record: sealed,
+    });
+    if (appendedSnapshot.status === "failed") {
+      if (appendedSnapshot.failure.code === "control_ref_cas_failed") {
+        return { status: "cas_lost" };
+      }
+      return { status: "failed", failure: appendedSnapshot.failure };
+    }
+    headOid = appendedSnapshot.head_oid;
+    chain = [...chain, sealed];
+    appended.push(sealed);
+    snapshot = sealed;
+  }
+
+  const acquire = {
+    resource_kind: "integration" as const,
+    resource_id: input.project_id,
+    command_id: input.command_id,
+  };
+  let transition = transitionAcquireLease(
+    integrationLeaseHistory(chain, input.project_id),
+    acquire,
+    deps.now(),
+  );
+  while (transition.kind === "draft") {
+    const record = sealLeaseRecord(
+      transition.draft,
+      chain,
+      snapshot.record_digest,
+      input.session.client_instance_id,
+    );
+    const appendedLease = await deps.controlStore.appendControl({
+      project_id: input.project_id,
+      control_ref: deps.control_ref,
+      ...(headOid === undefined ? {} : { expected_head_oid: headOid }),
+      record,
+    });
+    if (appendedLease.status === "failed") {
+      if (appendedLease.failure.code === "control_ref_cas_failed") {
+        return { status: "cas_lost" };
+      }
+      return { status: "failed", failure: appendedLease.failure };
+    }
+    headOid = appendedLease.head_oid;
+    chain = [...chain, record];
+    appended.push(record);
+    transition = transitionAcquireLease(
+      integrationLeaseHistory(chain, input.project_id),
+      acquire,
+      deps.now(),
+    );
+  }
+  if (transition.kind === "rejected") return { status: "failed", failure: transition.failure };
+  if (transition.kind !== "existing") {
+    return {
+      status: "failed",
+      failure: collaborationFailure(
+        "coordinator_unavailable",
+        "integration lease transition ended in an unexpected draft state",
+      ),
+    };
+  }
+  const lease = transition.record;
+
+  // A replayed lease record is only usable while it still holds the resource
+  // on the chain tip.
+  const tip = integrationLeaseHistory(chain, input.project_id).at(-1);
+  if (tip === undefined || tip.lease_id !== lease.lease_id) {
+    return {
+      status: "failed",
+      failure: collaborationFailure(
+        "lease_fenced",
+        "the integration lease recorded for this command no longer holds the resource",
+      ),
+    };
+  }
+  const unlive = assertLiveLeaseTip(tip, deps.now());
+  if (unlive !== undefined) return { status: "failed", failure: unlive };
+  return { status: "acquired", lease, appended };
+}
+
 export async function prepareIntegration(
   deps: IntegrationDeps,
   input: PrepareIntegrationInput,
@@ -589,121 +833,18 @@ export async function prepareIntegration(
   for (let attempt = 0; attempt < 2; attempt += 1) {
     const control = attempt === 0 ? input.control : await rereadControl(deps, input);
     if (!("control_records" in control)) return failed(control);
-    let chain: ControlRecord[] = [...control.control_records];
-    let headOid = control.control_head_oid;
-    const appended: ControlRecord[] = [];
-    let casLost = false;
 
-    // Bind the lease to the actor's fresh snapshot; seal it when the chain
-    // does not carry it yet (a retry after a lost response reuses it).
-    const snapshotId = snapshotIdFor(
-      input.snapshot_facts.principal_id,
-      input.snapshot_facts.repository_id,
-      input.snapshot_facts.observed_at,
-    );
-    let snapshot = chain.find(
-      (record): record is PrincipalSnapshotRecord =>
-        record.record_kind === "principal_snapshot" &&
-        (record as PrincipalSnapshotRecord).snapshot_id === snapshotId,
-    );
-    if (snapshot === undefined) {
-      const sealed = sealSnapshot(input.snapshot_facts, chain);
-      const appendedSnapshot = await deps.controlStore.appendControl({
-        project_id: input.project_id,
-        control_ref: deps.control_ref,
-        ...(headOid === undefined ? {} : { expected_head_oid: headOid }),
-        record: sealed,
-      });
-      if (appendedSnapshot.status === "failed") {
-        if (appendedSnapshot.failure.code === "control_ref_cas_failed") continue;
-        return failed(appendedSnapshot.failure);
-      }
-      headOid = appendedSnapshot.head_oid;
-      chain = [...chain, sealed];
-      appended.push(sealed);
-      snapshot = sealed;
-    }
-
-    // Acquire the short-lived per-project Integration Lease (design §14.1.1).
-    let transition = transitionAcquireLease(
-      integrationLeaseHistory(chain, input.project_id),
-      {
-        resource_kind: "integration",
-        resource_id: input.project_id,
-        command_id: input.command_id,
-      },
-      deps.now(),
-    );
-    while (transition.kind === "draft") {
-      const record = sealLeaseRecord(
-        transition.draft,
-        chain,
-        snapshot.record_digest,
-        input.session.client_instance_id,
-      );
-      const appendedLease = await deps.controlStore.appendControl({
-        project_id: input.project_id,
-        control_ref: deps.control_ref,
-        ...(headOid === undefined ? {} : { expected_head_oid: headOid }),
-        record,
-      });
-      if (appendedLease.status === "failed") {
-        if (appendedLease.failure.code === "control_ref_cas_failed") {
-          casLost = true;
-          break;
-        }
-        return failed(appendedLease.failure);
-      }
-      headOid = appendedLease.head_oid;
-      chain = [...chain, record];
-      appended.push(record);
-      transition = transitionAcquireLease(
-        integrationLeaseHistory(chain, input.project_id),
-        {
-          resource_kind: "integration",
-          resource_id: input.project_id,
-          command_id: input.command_id,
-        },
-        deps.now(),
-      );
-    }
-    if (casLost) continue;
-    if (transition.kind === "rejected") return failed(transition.failure);
-    if (transition.kind !== "existing") {
-      return failed(
-        collaborationFailure(
-          "coordinator_unavailable",
-          "integration lease transition ended in an unexpected draft state",
-        ),
-      );
-    }
-    const lease = transition.record;
-
-    // A replayed lease record is only usable while it still holds the
-    // resource on the chain tip.
-    const tip = integrationLeaseHistory(chain, input.project_id).at(-1);
-    if (tip === undefined || tip.lease_id !== lease.lease_id) {
-      return failed(
-        collaborationFailure(
-          "lease_fenced",
-          "the integration lease recorded for this command no longer holds the resource",
-        ),
-      );
-    }
-    if (tip.state === "released" || tip.state === "revoked") {
-      return failed(
-        collaborationFailure("lease_fenced", `integration lease ${tip.lease_id} is ${tip.state}`),
-      );
-    }
-    if (tip.state === "expired" || tip.expires_at <= deps.now()) {
-      return failed(
-        collaborationFailure(
-          "lease_expired",
-          `integration lease ${tip.lease_id} expired at ${tip.expires_at}; retry with a new command id`,
-          true,
-        ),
-      );
-    }
+    const acquired = await acquireIntegrationLease(deps, {
+      project_id: input.project_id,
+      command_id: input.command_id,
+      control,
+      session: input.session,
+      snapshot_facts: input.snapshot_facts,
+    });
+    if (acquired.status === "cas_lost") continue;
+    if (acquired.status === "failed") return failed(acquired.failure);
+    const lease = acquired.lease;
+    const appended = acquired.appended;
 
     // Idempotent replay: the same command already staged this candidate.
     // Re-run the deterministic verification before answering, so a candidate
@@ -744,6 +885,7 @@ export async function prepareIntegration(
         observed = merge;
         const plan = planIntegrationCandidate({
           integration_id: integrationId,
+          project_id: input.project_id,
           operation_id: input.operation_id,
           expected_target_commit: input.expected_target_commit,
           operation_commit: input.operation_commit,
@@ -895,31 +1037,8 @@ export async function acceptIntegration(
       ),
     );
   }
-  if (tip.state === "released" || tip.state === "revoked") {
-    return failed(
-      collaborationFailure(
-        "lease_fenced",
-        `integration lease ${tip.lease_id} is ${tip.state}; its fencing token is permanently retired`,
-      ),
-    );
-  }
-  if (tip.state === "expired" || tip.expires_at <= deps.now()) {
-    return failed(
-      collaborationFailure(
-        "lease_expired",
-        `integration lease ${tip.lease_id} expired at ${tip.expires_at}; re-run prepare_integration`,
-        true,
-      ),
-    );
-  }
-  if (tip.fencing_token !== record.lease_fencing_token) {
-    return failed(
-      collaborationFailure(
-        "lease_fenced",
-        `fencing token ${record.lease_fencing_token} is stale; the live integration lease holds token ${tip.fencing_token}`,
-      ),
-    );
-  }
+  const unlive = assertLiveLeaseTip(tip, deps.now(), record.lease_fencing_token);
+  if (unlive !== undefined) return failed(unlive);
 
   // 3b. The Target head moved after prepare and the move is not this
   //     integration: the frozen expected commit is stale (spec §15.1). The
