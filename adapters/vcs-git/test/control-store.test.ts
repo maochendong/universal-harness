@@ -160,7 +160,11 @@ async function appendTwoRecords(
   return { head: second.head_oid, records: [snapshot, lease] };
 }
 
-describe("git control store control ref", () => {
+// Real-git integration tests: every case clones/fetches/pushes against a
+// temporary remote, which exceeds the 5s default under full-suite parallel
+// load (observed 4.5–11s per case). Follow the e2e precedent of a
+// describe-level timeout.
+describe("git control store control ref", { timeout: 30_000 }, () => {
   it("appends the first control record to an empty control ref and reads it back", async () => {
     const { store } = createHarness();
     const snapshot = principalSnapshot(1);
@@ -330,7 +334,7 @@ describe("git control store control ref", () => {
   });
 });
 
-describe("git control store project records", () => {
+describe("git control store project records", { timeout: 30_000 }, () => {
   it("commits connection records to the target ref and reads the latest revision", async () => {
     const { store } = createHarness();
     const active = connectionRecord(1, "active");
@@ -382,7 +386,7 @@ describe("git control store project records", () => {
   });
 });
 
-describe("git control store operation refs", () => {
+describe("git control store operation refs", { timeout: 30_000 }, () => {
   it("lists remote operation heads", async () => {
     const { remote, store } = createHarness();
     const clone = cloneRemote(remote);
@@ -508,7 +512,7 @@ describe("git control store operation refs", () => {
   });
 });
 
-describe("git control store read fallback and publish hardening", () => {
+describe("git control store read fallback and publish hardening", { timeout: 30_000 }, () => {
   it("falls back to the remembered target ref when readControl gets none", async () => {
     const { store } = createHarness();
     const active = connectionRecord(1, "active");
