@@ -1,0 +1,62 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.universal-harness.dev/1.2/principal-snapshot.schema.json",
+  "additionalProperties": false,
+  "type": "object",
+  "required": [
+    "protocol_version",
+    "record_kind",
+    "control_sequence",
+    "snapshot_id",
+    "principal_id",
+    "provider",
+    "host",
+    "subject_id",
+    "repository_id",
+    "permission",
+    "observed_at",
+    "expires_at",
+    "source_response_digest",
+    "record_digest"
+  ],
+  "properties": {
+    "protocol_version": { "const": "1.2.0", "type": "string" },
+    "record_kind": { "const": "principal_snapshot", "type": "string" },
+    "control_sequence": { "minimum": 1, "type": "integer" },
+    "previous_control_record_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
+    "snapshot_id": {
+      "minLength": 3,
+      "maxLength": 160,
+      "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+      "type": "string"
+    },
+    "principal_id": {
+      "minLength": 3,
+      "maxLength": 160,
+      "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+      "type": "string"
+    },
+    "provider": {
+      "anyOf": [
+        { "const": "github", "type": "string" },
+        { "const": "gitlab", "type": "string" },
+        { "const": "gitee", "type": "string" }
+      ]
+    },
+    "host": { "minLength": 1, "type": "string" },
+    "subject_id": { "minLength": 1, "type": "string" },
+    "repository_id": { "minLength": 1, "type": "string" },
+    "permission": {
+      "anyOf": [
+        { "const": "read", "type": "string" },
+        { "const": "write", "type": "string" },
+        { "const": "maintain", "type": "string" },
+        { "const": "admin", "type": "string" }
+      ]
+    },
+    "observed_at": { "format": "date-time", "type": "string" },
+    "expires_at": { "format": "date-time", "type": "string" },
+    "source_response_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
+    "record_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" }
+  }
+}

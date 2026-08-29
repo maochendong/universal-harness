@@ -784,6 +784,24 @@
     },
     {
       "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": { "requester_principal_id": {} },
+            "required": ["requester_principal_id"]
+          },
+          "then": {
+            "properties": { "requester_principal_snapshot_digest": {} },
+            "required": ["requester_principal_snapshot_digest"]
+          },
+          "else": {
+            "not": {
+              "properties": { "requester_principal_snapshot_digest": {} },
+              "required": ["requester_principal_snapshot_digest"]
+            }
+          }
+        }
+      ],
       "type": "object",
       "required": [
         "protocol_version",
@@ -865,6 +883,13 @@
         },
         "created_at": { "format": "date-time", "type": "string" },
         "resume_phase": { "minLength": 1, "type": "string" },
+        "requester_principal_id": {
+          "minLength": 3,
+          "maxLength": 160,
+          "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+          "type": "string"
+        },
+        "requester_principal_snapshot_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
         "extensions": {
           "additionalProperties": false,
           "default": {},

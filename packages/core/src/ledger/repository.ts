@@ -88,6 +88,12 @@ export interface LedgerRepositoryOptions {
   readonly sleep?: (ms: number) => Promise<void>;
   /** Injectable device lookup so tests can simulate cross-volume file systems. */
   readonly deviceOf?: (path: string) => number;
+  /**
+   * Protocol version this repository reads as. Defaults to the newest
+   * version this runtime implements; an older reader fails closed on
+   * manifests carrying `required_reader_version` beyond it.
+   */
+  readonly readerVersion?: string;
 }
 
 interface CommitContext {
@@ -227,6 +233,7 @@ export class LedgerRepository {
   private readonly lockTuning: LockTuning | undefined;
   private readonly sleep: ((ms: number) => Promise<void>) | undefined;
   private readonly deviceOf: ((path: string) => number) | undefined;
+  private readonly readerVersion: string | undefined;
 
   constructor(options: LedgerRepositoryOptions) {
     this.harnessRoot = harnessRootFor(options.projectRoot);
@@ -236,14 +243,15 @@ export class LedgerRepository {
     this.lockTuning = options.lock;
     this.sleep = options.sleep;
     this.deviceOf = options.deviceOf;
+    this.readerVersion = options.readerVersion;
   }
 
   operations(): CommittedOperation[] {
-    return readCommittedOperations(this.harnessRoot);
+    return readCommittedOperations(this.harnessRoot, { readerVersion: this.readerVersion });
   }
 
   replay(): ReplayResult {
-    return replayLedger(this.harnessRoot);
+    return replayLedger(this.harnessRoot, { readerVersion: this.readerVersion });
   }
 
   /**
@@ -361,6 +369,9 @@ export class LedgerRepository {
         event_file: context.eventFile,
         edge_file_digest: digests.edgeFileDigest,
         event_file_digest: digests.eventFileDigest,
+        ...(input.required_reader_version !== undefined
+          ? { required_reader_version: input.required_reader_version }
+          : {}),
         committed_at: this.now(),
       });
       this.publishManifest(manifest, context);
@@ -395,6 +406,9 @@ export class LedgerRepository {
       event_file: existing.event_file,
       edge_file_digest: digests.edgeFileDigest,
       event_file_digest: digests.eventFileDigest,
+      ...(input.required_reader_version !== undefined
+        ? { required_reader_version: input.required_reader_version }
+        : {}),
       committed_at: existing.committed_at,
     });
     if (candidateDigest === existing.digest) {

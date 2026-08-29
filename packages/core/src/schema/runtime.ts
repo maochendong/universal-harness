@@ -198,27 +198,58 @@ export const EvidenceRecordSchema = strictObject({
 
 export const APPROVAL_DECISIONS = ["approve", "reject", "defer"] as const;
 
-export const ApprovalRequestRecordSchema = strictObject({
-  ...persistedRecordProperties("approval_request"),
-  request_id: IdentifierSchema,
-  workflow_operation_id: IdentifierSchema,
-  object_id: IdentifierSchema,
-  object_type: Type.String({ minLength: 1 }),
-  object_digest: DigestSchema,
-  baseline_digest: DigestSchema,
-  policy_digest: DigestSchema,
-  preview_digest: DigestSchema,
-  impact_path: Type.Array(IdentifierSchema),
-  risk: enumerated(["low", "medium", "high", "critical"] as const),
-  reason: Type.String({ minLength: 1 }),
-  allowed_decisions: Type.Array(enumerated(APPROVAL_DECISIONS), {
-    minItems: 1,
-    uniqueItems: true,
-  }),
-  created_at: TimestampSchema,
-  resume_phase: Type.String({ minLength: 1 }),
-  extensions: Type.Optional(ExtensionsSchema),
-});
+/**
+ * Protocol 1.2 adds two optional first-class requester principal fields for
+ * remote approval (design §9.3). Both are present or absent together;
+ * requests without them keep the existing local `proposed_by` semantics and
+ * can never be remotely approved.
+ */
+export const ApprovalRequestRecordSchema = Type.Object(
+  {
+    ...persistedRecordProperties("approval_request"),
+    request_id: IdentifierSchema,
+    workflow_operation_id: IdentifierSchema,
+    object_id: IdentifierSchema,
+    object_type: Type.String({ minLength: 1 }),
+    object_digest: DigestSchema,
+    baseline_digest: DigestSchema,
+    policy_digest: DigestSchema,
+    preview_digest: DigestSchema,
+    impact_path: Type.Array(IdentifierSchema),
+    risk: enumerated(["low", "medium", "high", "critical"] as const),
+    reason: Type.String({ minLength: 1 }),
+    allowed_decisions: Type.Array(enumerated(APPROVAL_DECISIONS), {
+      minItems: 1,
+      uniqueItems: true,
+    }),
+    created_at: TimestampSchema,
+    resume_phase: Type.String({ minLength: 1 }),
+    requester_principal_id: Type.Optional(IdentifierSchema),
+    requester_principal_snapshot_digest: Type.Optional(DigestSchema),
+    extensions: Type.Optional(ExtensionsSchema),
+  },
+  {
+    additionalProperties: false,
+    allOf: [
+      {
+        if: {
+          properties: { requester_principal_id: {} },
+          required: ["requester_principal_id"],
+        },
+        then: {
+          properties: { requester_principal_snapshot_digest: {} },
+          required: ["requester_principal_snapshot_digest"],
+        },
+        else: {
+          not: {
+            properties: { requester_principal_snapshot_digest: {} },
+            required: ["requester_principal_snapshot_digest"],
+          },
+        },
+      },
+    ],
+  },
+);
 
 export const ApprovalDecisionRecordSchema = strictObject({
   ...persistedRecordProperties("approval_decision"),

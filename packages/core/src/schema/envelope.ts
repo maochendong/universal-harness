@@ -42,6 +42,40 @@ export function recordEnvelopeProperties(recordKind: string): {
   };
 }
 
+/**
+ * Strict record schema for any registered protocol version: envelope plus
+ * domain properties plus the digest field. Protocol 1.2 records are built
+ * with this constructor; the 1.1 `recordEnvelopeSchema` wrapper below keeps
+ * every existing 1.1 schema byte-identical.
+ */
+export function recordEnvelopeSchemaFor<const V extends string, T extends TProperties>(
+  protocolVersion: V,
+  recordKind: string,
+  properties: T,
+): TObject<
+  T & {
+    protocol_version: TLiteral<V>;
+    record_kind: TLiteral<string>;
+    record_digest: typeof DigestSchema;
+  }
+> {
+  if (!RECORD_KIND_REGEX.test(recordKind)) {
+    throw new RecordEnvelopeError(`record kind must be snake_case: ${recordKind}`);
+  }
+  return strictObject({
+    protocol_version: Type.Literal(protocolVersion),
+    record_kind: Type.Literal(recordKind),
+    ...properties,
+    [RECORD_DIGEST_FIELD]: DigestSchema,
+  }) as unknown as TObject<
+    T & {
+      protocol_version: TLiteral<V>;
+      record_kind: TLiteral<string>;
+      record_digest: typeof DigestSchema;
+    }
+  >;
+}
+
 /** Strict record schema: envelope plus domain properties plus the digest field. */
 export function recordEnvelopeSchema<T extends TProperties>(
   recordKind: string,
@@ -53,19 +87,7 @@ export function recordEnvelopeSchema<T extends TProperties>(
     record_digest: typeof DigestSchema;
   }
 > {
-  // The spread of the generic `T` computes the same property set at runtime;
-  // the intersection in the return type is the statically checkable form.
-  return strictObject({
-    ...recordEnvelopeProperties(recordKind),
-    ...properties,
-    [RECORD_DIGEST_FIELD]: DigestSchema,
-  }) as unknown as TObject<
-    T & {
-      protocol_version: TLiteral<typeof PROTOCOL_1_1_VERSION>;
-      record_kind: TLiteral<string>;
-      record_digest: typeof DigestSchema;
-    }
-  >;
+  return recordEnvelopeSchemaFor(PROTOCOL_1_1_VERSION, recordKind, properties);
 }
 
 /** SHA-256 over the canonical record with the digest field itself excluded. */

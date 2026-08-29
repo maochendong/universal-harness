@@ -1,0 +1,78 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.universal-harness.dev/1.2/remote-approval-decision.schema.json",
+  "additionalProperties": false,
+  "type": "object",
+  "required": [
+    "protocol_version",
+    "record_kind",
+    "control_sequence",
+    "remote_decision_id",
+    "request_id",
+    "operation_id",
+    "object_id",
+    "object_digest",
+    "policy_digest",
+    "decision",
+    "principal_snapshot_digest",
+    "required_permission",
+    "decided_at",
+    "command_id",
+    "record_digest"
+  ],
+  "properties": {
+    "protocol_version": { "const": "1.2.0", "type": "string" },
+    "record_kind": { "const": "remote_approval_decision", "type": "string" },
+    "control_sequence": { "minimum": 1, "type": "integer" },
+    "previous_control_record_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
+    "remote_decision_id": {
+      "minLength": 3,
+      "maxLength": 160,
+      "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+      "type": "string"
+    },
+    "request_id": {
+      "minLength": 3,
+      "maxLength": 160,
+      "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+      "type": "string"
+    },
+    "operation_id": {
+      "minLength": 3,
+      "maxLength": 160,
+      "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+      "type": "string"
+    },
+    "object_id": {
+      "minLength": 3,
+      "maxLength": 160,
+      "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+      "type": "string"
+    },
+    "object_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
+    "policy_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
+    "decision": {
+      "anyOf": [
+        { "const": "approve", "type": "string" },
+        { "const": "reject", "type": "string" },
+        { "const": "defer", "type": "string" }
+      ]
+    },
+    "principal_snapshot_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
+    "required_permission": {
+      "anyOf": [
+        { "const": "write", "type": "string" },
+        { "const": "maintain", "type": "string" },
+        { "const": "admin", "type": "string" }
+      ]
+    },
+    "decided_at": { "format": "date-time", "type": "string" },
+    "command_id": {
+      "minLength": 3,
+      "maxLength": 160,
+      "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+      "type": "string"
+    },
+    "record_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" }
+  }
+}

@@ -1,0 +1,80 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.universal-harness.dev/1.2/collaboration-connection.schema.json",
+  "additionalProperties": false,
+  "type": "object",
+  "required": [
+    "protocol_version",
+    "record_kind",
+    "connection_id",
+    "project_id",
+    "revision",
+    "status",
+    "provider",
+    "repository_id",
+    "canonical_remote",
+    "canonical_remote_digest",
+    "coordinator_origin",
+    "target_ref",
+    "control_ref",
+    "policy_digest",
+    "actor_principal_id",
+    "principal_snapshot_digest",
+    "command_id",
+    "effective_at",
+    "record_digest"
+  ],
+  "properties": {
+    "protocol_version": { "const": "1.2.0", "type": "string" },
+    "record_kind": { "const": "collaboration_connection", "type": "string" },
+    "connection_id": {
+      "minLength": 3,
+      "maxLength": 160,
+      "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+      "type": "string"
+    },
+    "project_id": {
+      "minLength": 3,
+      "maxLength": 160,
+      "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+      "type": "string"
+    },
+    "revision": { "minimum": 1, "type": "integer" },
+    "status": {
+      "anyOf": [
+        { "const": "active", "type": "string" },
+        { "const": "disconnected", "type": "string" }
+      ]
+    },
+    "provider": {
+      "anyOf": [
+        { "const": "github", "type": "string" },
+        { "const": "gitlab", "type": "string" },
+        { "const": "gitee", "type": "string" }
+      ]
+    },
+    "repository_id": { "minLength": 1, "type": "string" },
+    "canonical_remote": { "minLength": 1, "type": "string" },
+    "canonical_remote_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
+    "coordinator_origin": { "minLength": 1, "type": "string" },
+    "target_ref": { "minLength": 1, "type": "string" },
+    "control_ref": { "minLength": 1, "type": "string" },
+    "policy_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
+    "actor_principal_id": {
+      "minLength": 3,
+      "maxLength": 160,
+      "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+      "type": "string"
+    },
+    "principal_snapshot_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
+    "command_id": {
+      "minLength": 3,
+      "maxLength": 160,
+      "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+      "type": "string"
+    },
+    "effective_at": { "format": "date-time", "type": "string" },
+    "supersedes_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
+    "record_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" }
+  }
+}

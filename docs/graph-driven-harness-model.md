@@ -281,7 +281,7 @@ DesignSet 同时扩展既有关系端点：`DesignSet DERIVES_FROM ImpactSet` �
 
 Harness 使用两条不同生命周期的事件流。43+ 类 Lifecycle Event 是写入 Git-native Ledger 的权威治理事实；11 类 Observation Event 是写入 Live Spool 的实时观察。两者可以在读取侧关联展示，但不能互相替代。
 
-### 3.1 24 类权威 Lifecycle Event（15 类通用工作流事件 + 9 类 TDD 事件）
+### 3.1 29 类权威 Lifecycle Event（16 类通用工作流事件 + 9 类 TDD 事件 + 4 类 M3 远程协作事件）
 
 Lifecycle Event 记录一次受治理操作已经发生的关键里程碑。每条事件绑定 `project_id`、`iteration_id`、`workflow_operation_id`、`ledger_operation_id`、单调 `sequence`、`timestamp` 和结构化 `payload`。它们随 append-only Ledger 提交，可重放、可验证，并参与恢复、审计、投影和完成状态判断。
 
@@ -314,6 +314,10 @@ Lifecycle Event 记录一次受治理操作已经发生的关键里程碑。每�
 | `TddRefactorAccepted` | TDD 重构已接受 | 可证明 TDD | 记录不改变外部行为且完整门禁仍通过的重构。 |
 | `TddCycleCompleted` | TDD 周期已完成 | 可证明 TDD | 形成当前有效的 Baseline/Red/Green 配对记录。 |
 | `TddCycleInvalidated` | TDD 周期已失效 | 可证明 TDD | 任一 Contract、patch、Gate、environment 或上游 digest 漂移后使旧证明失效。 |
+| `RemoteConnected` | 远程协作已连接 | 远程协作（M3） | 证明项目 Ledger 已接受 `active` CollaborationConnectionRecord，协作模式显式开启。 |
+| `RemoteDisconnected` | 远程协作已断开 | 远程协作（M3） | 记录 `disconnected` revision 已接受，Control Ref 历史保留但权威远程写入停止。 |
+| `RemoteApprovalMaterialized` | 远程批准已物化 | 远程协作（M3） | 证明一条合法 RemoteApprovalDecision 经本地重验证后物化为既有 ApprovalDecision。 |
+| `IntegrationAccepted` | 集成已接受 | 远程协作（M3） | 证明候选 merge commit 已通过 Target Ref CAS 成为已接受事实。 |
 
 <!-- graph-model:lifecycle-events:end -->
 

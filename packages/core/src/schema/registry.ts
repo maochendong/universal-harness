@@ -2,9 +2,16 @@ import type { ValidateFunction } from "ajv/dist/2020.js";
 import type { TSchema } from "@sinclair/typebox";
 
 import { isProtocolCompatible } from "../version.js";
-import { PROTOCOL_1_1_VERSION } from "../protocol.js";
+import { PROTOCOL_1_1_VERSION, PROTOCOL_1_2_VERSION } from "../protocol.js";
 import { createDomainSchemaRegistry, mergeSchemaDocuments } from "./domain-registry.js";
 import { CapabilityPlanRecordSchema } from "./capability.js";
+import {
+  CollaborationConnectionRecordSchema,
+  IntegrationRecordSchema,
+  LeaseRecordSchema,
+  PrincipalSnapshotRecordSchema,
+  RemoteApprovalDecisionRecordSchema,
+} from "./collaboration.js";
 import {
   ProjectContextBundleInvalidationRecordSchema,
   ProjectContextBundleRecordSchema,
@@ -263,8 +270,26 @@ export const PROTOCOL_1_1_SCHEMA_REGISTRY = createDomainSchemaRegistry({
   ],
 });
 
+/**
+ * Protocol 1.2 (M3 remote collaboration): the five frozen authoritative
+ * record schemas — the project Ledger holds collaboration-connection and
+ * integration; the protected Control Ref holds principal-snapshot, lease and
+ * remote-approval-decision. No derived state registers a schema here.
+ */
+export const PROTOCOL_1_2_SCHEMA_REGISTRY = createDomainSchemaRegistry({
+  protocolVersion: PROTOCOL_1_2_VERSION,
+  entries: [
+    { key: "collaboration-connection", schema: CollaborationConnectionRecordSchema },
+    { key: "principal-snapshot", schema: PrincipalSnapshotRecordSchema },
+    { key: "lease", schema: LeaseRecordSchema },
+    { key: "remote-approval-decision", schema: RemoteApprovalDecisionRecordSchema },
+    { key: "integration", schema: IntegrationRecordSchema },
+  ],
+});
+
 /** Every document scripts/write-schemas.mjs persists into `schemas/`. */
 export const SCHEMA_EXPORT_DOCUMENTS = mergeSchemaDocuments(
   JSON_SCHEMA_DOCUMENTS,
   PROTOCOL_1_1_SCHEMA_REGISTRY.documents(),
+  PROTOCOL_1_2_SCHEMA_REGISTRY.documents(),
 );

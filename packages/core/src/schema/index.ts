@@ -2,6 +2,7 @@ export { PERSISTED_SOURCES } from "./common.js";
 export * from "./acceptance.js";
 export * from "./capability.js";
 export * from "./capture.js";
+export * from "./collaboration.js";
 export * from "./context.js";
 export * from "./domain-registry.js";
 export * from "./design-review.js";

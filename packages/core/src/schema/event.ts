@@ -35,6 +35,12 @@ export const EVENT_TYPES = [
   "TddRefactorAccepted",
   "TddCycleCompleted",
   "TddCycleInvalidated",
+  // Protocol 1.2 (M3): the only authoritative remote-collaboration events.
+  // Lease and candidate Integration state never enter the project Ledger.
+  "RemoteConnected",
+  "RemoteDisconnected",
+  "RemoteApprovalMaterialized",
+  "IntegrationAccepted",
 ] as const;
 
 export const EventSchema = strictObject({

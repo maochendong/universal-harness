@@ -6,6 +6,8 @@ import type { EdgeRecord } from "../schema/edge.js";
 import type { LifecycleEvent } from "../schema/event.js";
 import type { LedgerOperation } from "../schema/operation.js";
 import { validateSchema, type SchemaKey } from "../schema/registry.js";
+import { assertProtocolReaderCanProject } from "../collaboration/records.js";
+import { PROTOCOL_1_2_VERSION } from "../protocol.js";
 import { resolveHarnessPath } from "./layout.js";
 import {
   BaselineMismatch,
@@ -36,12 +38,34 @@ export function sha256Hex(content: string): string {
   return createHash("sha256").update(content, "utf8").digest("hex");
 }
 
-function parseManifest(fileName: string, raw: string): LedgerOperation {
+export interface LedgerReadOptions {
+  /**
+   * Protocol version of the active reader. Defaults to the newest version
+   * this runtime implements; passing an older version simulates a pre-1.2
+   * reader, which must fail closed on manifests that require a newer one.
+   */
+  readonly readerVersion?: string | undefined;
+}
+
+function parseManifest(fileName: string, raw: string, readerVersion: string): LedgerOperation {
   let parsed: unknown;
   try {
     parsed = JSON.parse(raw);
   } catch {
     throw new LedgerCorruptionError(`unparsable operation manifest: ${fileName}`);
+  }
+  // Inspect the raw reader gate before any domain validation or replay: an
+  // older reader must surface protocol_upgrade_required instead of silently
+  // skipping (or misprojecting) a Protocol 1.2 manifest.
+  if (typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)) {
+    const required = (parsed as Record<string, unknown>).required_reader_version;
+    if (typeof required === "string") {
+      assertProtocolReaderCanProject({
+        readerVersion,
+        recordVersion: required,
+        authoritative: true,
+      });
+    }
   }
   const result = validateSchema("ledger-operation", parsed);
   if (!result.valid) {
@@ -66,13 +90,21 @@ function parseManifest(fileName: string, raw: string): LedgerOperation {
  * Read every committed operation ordered by the manifest's logical sequence
  * — never by directory traversal order, which is platform-dependent.
  */
-export function readCommittedOperations(harnessRoot: string): CommittedOperation[] {
+export function readCommittedOperations(
+  harnessRoot: string,
+  options?: LedgerReadOptions,
+): CommittedOperation[] {
+  const readerVersion = options?.readerVersion ?? PROTOCOL_1_2_VERSION;
   const operationsDir = resolveHarnessPath(harnessRoot, "ledger/operations");
   if (!existsSync(operationsDir)) return [];
   const operations = readdirSync(operationsDir)
     .filter((fileName) => fileName.endsWith(".json"))
     .map((fileName) => ({
-      manifest: parseManifest(fileName, readFileSync(join(operationsDir, fileName), "utf8")),
+      manifest: parseManifest(
+        fileName,
+        readFileSync(join(operationsDir, fileName), "utf8"),
+        readerVersion,
+      ),
       manifestPath: join(operationsDir, fileName),
     }));
   return operations.sort((left, right) => left.manifest.sequence - right.manifest.sequence);
@@ -199,8 +231,8 @@ function readShardRecords<T>(
  * are verified against the digests recorded in each manifest, so a corrupt
  * shard blocks materialization instead of silently projecting bad data.
  */
-export function replayLedger(harnessRoot: string): ReplayResult {
-  const operations = readCommittedOperations(harnessRoot);
+export function replayLedger(harnessRoot: string, options?: LedgerReadOptions): ReplayResult {
+  const operations = readCommittedOperations(harnessRoot, options);
   const edges: EdgeRecord[] = [];
   const events: LifecycleEvent[] = [];
   for (const operation of operations) {

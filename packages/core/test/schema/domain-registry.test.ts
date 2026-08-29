@@ -10,6 +10,7 @@ import { recordEnvelopeSchema, sealRecordEnvelope } from "../../src/schema/envel
 import {
   JSON_SCHEMA_DOCUMENTS,
   PROTOCOL_1_1_SCHEMA_REGISTRY,
+  PROTOCOL_1_2_SCHEMA_REGISTRY,
   SCHEMA_EXPORT_DOCUMENTS,
 } from "../../src/schema/registry.js";
 
@@ -184,7 +185,11 @@ describe("protocol 1.1 schema plumbing", () => {
       expect(SCHEMA_EXPORT_DOCUMENTS[key]).toEqual(JSON_SCHEMA_DOCUMENTS[key]);
     }
     expect([...Object.keys(SCHEMA_EXPORT_DOCUMENTS)].sort()).toEqual(
-      [...m1Keys, ...PROTOCOL_1_1_SCHEMA_REGISTRY.keys.map((key) => `${key}.schema.json`)].sort(),
+      [
+        ...m1Keys,
+        ...PROTOCOL_1_1_SCHEMA_REGISTRY.keys.map((key) => `${key}.schema.json`),
+        ...PROTOCOL_1_2_SCHEMA_REGISTRY.keys.map((key) => `${key}.schema.json`),
+      ].sort(),
     );
   });
 });

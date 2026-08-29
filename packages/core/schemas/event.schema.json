@@ -55,7 +55,11 @@
         { "const": "TddGreenAccepted", "type": "string" },
         { "const": "TddRefactorAccepted", "type": "string" },
         { "const": "TddCycleCompleted", "type": "string" },
-        { "const": "TddCycleInvalidated", "type": "string" }
+        { "const": "TddCycleInvalidated", "type": "string" },
+        { "const": "RemoteConnected", "type": "string" },
+        { "const": "RemoteDisconnected", "type": "string" },
+        { "const": "RemoteApprovalMaterialized", "type": "string" },
+        { "const": "IntegrationAccepted", "type": "string" }
       ]
     },
     "project_id": {

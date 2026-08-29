@@ -1,6 +1,7 @@
 export * from "./acceptance/index.js";
 export * from "./capability/index.js";
 export * from "./capture/index.js";
+export * from "./collaboration/index.js";
 export * from "./context/index.js";
 export * from "./design/index.js";
 export * from "./feedback/index.js";

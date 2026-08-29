@@ -1,0 +1,80 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.universal-harness.dev/1.2/lease.schema.json",
+  "additionalProperties": false,
+  "type": "object",
+  "required": [
+    "protocol_version",
+    "record_kind",
+    "control_sequence",
+    "lease_record_id",
+    "lease_id",
+    "resource_kind",
+    "resource_id",
+    "holder_principal_snapshot_digest",
+    "client_instance_id",
+    "fencing_token",
+    "issued_at",
+    "expires_at",
+    "state",
+    "command_id",
+    "record_digest"
+  ],
+  "properties": {
+    "protocol_version": { "const": "1.2.0", "type": "string" },
+    "record_kind": { "const": "lease", "type": "string" },
+    "control_sequence": { "minimum": 1, "type": "integer" },
+    "previous_control_record_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
+    "lease_record_id": {
+      "minLength": 3,
+      "maxLength": 160,
+      "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+      "type": "string"
+    },
+    "lease_id": {
+      "minLength": 3,
+      "maxLength": 160,
+      "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+      "type": "string"
+    },
+    "previous_lease_record_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
+    "resource_kind": {
+      "anyOf": [
+        { "const": "operation", "type": "string" },
+        { "const": "integration", "type": "string" }
+      ]
+    },
+    "resource_id": {
+      "minLength": 3,
+      "maxLength": 160,
+      "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+      "type": "string"
+    },
+    "holder_principal_snapshot_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
+    "client_instance_id": {
+      "minLength": 3,
+      "maxLength": 160,
+      "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+      "type": "string"
+    },
+    "fencing_token": { "minimum": 1, "type": "integer" },
+    "issued_at": { "format": "date-time", "type": "string" },
+    "expires_at": { "format": "date-time", "type": "string" },
+    "state": {
+      "anyOf": [
+        { "const": "granted", "type": "string" },
+        { "const": "renewed", "type": "string" },
+        { "const": "released", "type": "string" },
+        { "const": "expired", "type": "string" },
+        { "const": "revoked", "type": "string" }
+      ]
+    },
+    "command_id": {
+      "minLength": 3,
+      "maxLength": 160,
+      "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+      "type": "string"
+    },
+    "record_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" }
+  }
+}

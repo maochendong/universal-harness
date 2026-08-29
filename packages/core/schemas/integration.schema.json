@@ -1,0 +1,92 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.universal-harness.dev/1.2/integration.schema.json",
+  "additionalProperties": false,
+  "type": "object",
+  "required": [
+    "protocol_version",
+    "record_kind",
+    "integration_id",
+    "operation_id",
+    "expected_target_commit",
+    "operation_commit",
+    "lease_fencing_token",
+    "ledger_sequence_rewrites",
+    "evidence_digests",
+    "approval_decision_digests",
+    "command_id",
+    "record_digest"
+  ],
+  "properties": {
+    "protocol_version": { "const": "1.2.0", "type": "string" },
+    "record_kind": { "const": "integration", "type": "string" },
+    "integration_id": {
+      "minLength": 3,
+      "maxLength": 160,
+      "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+      "type": "string"
+    },
+    "operation_id": {
+      "minLength": 3,
+      "maxLength": 160,
+      "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+      "type": "string"
+    },
+    "expected_target_commit": {
+      "minLength": 7,
+      "maxLength": 64,
+      "pattern": "^[a-f0-9]+$",
+      "type": "string"
+    },
+    "operation_commit": {
+      "minLength": 7,
+      "maxLength": 64,
+      "pattern": "^[a-f0-9]+$",
+      "type": "string"
+    },
+    "lease_fencing_token": { "minimum": 1, "type": "integer" },
+    "ledger_sequence_rewrites": {
+      "type": "array",
+      "items": {
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "ledger_operation_id",
+          "old_sequence",
+          "old_manifest_digest",
+          "new_sequence",
+          "new_manifest_digest"
+        ],
+        "properties": {
+          "ledger_operation_id": {
+            "minLength": 3,
+            "maxLength": 160,
+            "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+            "type": "string"
+          },
+          "old_sequence": { "minimum": 1, "type": "integer" },
+          "old_manifest_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
+          "new_sequence": { "minimum": 1, "type": "integer" },
+          "new_manifest_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" }
+        }
+      }
+    },
+    "evidence_digests": {
+      "uniqueItems": true,
+      "type": "array",
+      "items": { "pattern": "^[a-f0-9]{64}$", "type": "string" }
+    },
+    "approval_decision_digests": {
+      "uniqueItems": true,
+      "type": "array",
+      "items": { "pattern": "^[a-f0-9]{64}$", "type": "string" }
+    },
+    "command_id": {
+      "minLength": 3,
+      "maxLength": 160,
+      "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+      "type": "string"
+    },
+    "record_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" }
+  }
+}
