@@ -1,4 +1,8 @@
-import type { CollaborationConnectionRecord } from "@universal-harness-internal/core";
+import type {
+  CollaborationConnectionRecord,
+  ControlRecord,
+  LeaseRecord,
+} from "@universal-harness-internal/core";
 import { buildCollaborationRecord } from "@universal-harness-internal/core";
 
 import {
@@ -10,6 +14,7 @@ import {
   snapshotIdFor,
 } from "./connection.js";
 import { collaborationFailure } from "./errors.js";
+import { transitionLease, type LeaseCommand, type LeaseDraft } from "./lease.js";
 import type {
   CollaborationCommand,
   CollaborationCoordinatorPort,
@@ -24,18 +29,23 @@ import type {
   DisconnectedOutcome,
   GitControlStorePort,
   PlatformIdentityPort,
+  PublishOperationCandidateCommand,
 } from "./port.js";
 
 /**
- * Connection-slice Coordinator: command routing, command_id idempotency and
- * fail-closed orchestration for connect/disconnect. Every command runs as
+ * Connection- and Lease-slice Coordinator: command routing, command_id
+ * idempotency and fail-closed orchestration. Every command runs as
  * validate → load authoritative Git state → authorize → append via CAS →
  * update the SQLite projection. Git is authoritative; when the projection
  * update fails after a successful append, the outcome carries
  * `projection_rebuild_required` and the append is never blindly retried.
  *
- * Lease, Approval and Integration commands are implemented by later tasks;
- * this slice answers them with a typed `coordinator_unavailable` failure.
+ * Lease decisions come from the pure `transitionLease` state machine over the
+ * per-resource chain read from the Control Ref; a lost Control Ref CAS loops
+ * once through a fresh read and semantic re-decision, and a second loss
+ * answers `lease_unavailable`. Approval and Integration commands are
+ * implemented by later tasks; this slice answers them with a typed
+ * `coordinator_unavailable` failure.
  */
 export interface CollaborationCoordinatorDependencies {
   readonly platform: PlatformIdentityPort;
@@ -341,6 +351,239 @@ export function createCollaborationCoordinator(
     };
   }
 
+  // --- Lease slice -----------------------------------------------------------
+
+  function leaseRecordsOf(records: readonly ControlRecord[], resourceId: string): LeaseRecord[] {
+    return records.filter(
+      (record): record is LeaseRecord =>
+        record.record_kind === "lease" &&
+        (record as LeaseRecord).resource_kind === "operation" &&
+        (record as LeaseRecord).resource_id === resourceId,
+    );
+  }
+
+  /** The per-resource chain a lease command decides over. */
+  function leaseHistoryFor(
+    records: readonly ControlRecord[],
+    command: LeaseCommand,
+  ): readonly LeaseRecord[] {
+    if (command.kind === "acquire_operation_lease") {
+      return leaseRecordsOf(records, command.operation_id);
+    }
+    const addressed = records.find(
+      (record): record is LeaseRecord =>
+        record.record_kind === "lease" && (record as LeaseRecord).lease_id === command.lease_id,
+    );
+    if (addressed === undefined) return [];
+    return leaseRecordsOf(records, addressed.resource_id);
+  }
+
+  /** The holder snapshot digest for new Lease records: latest snapshot on the ref. */
+  function latestSnapshotDigest(records: readonly ControlRecord[]): string | undefined {
+    for (let index = records.length - 1; index >= 0; index -= 1) {
+      const record = records[index] as ControlRecord;
+      if (record.record_kind === "principal_snapshot") return record.record_digest;
+    }
+    return undefined;
+  }
+
+  function sealLeaseDraft(
+    draft: LeaseDraft,
+    chain: readonly ControlRecord[],
+    holderDigest: string,
+    session: CollaborationSession,
+  ): LeaseRecord {
+    const previous = chain[chain.length - 1];
+    return buildCollaborationRecord({
+      record_kind: "lease" as const,
+      control_sequence: chain.length + 1,
+      ...(previous === undefined ? {} : { previous_control_record_digest: previous.record_digest }),
+      ...draft,
+      holder_principal_snapshot_digest: holderDigest,
+      client_instance_id: session.client_instance_id,
+    });
+  }
+
+  async function leaseCommand(
+    command: LeaseCommand,
+    session: CollaborationSession,
+  ): Promise<CollaborationOutcome> {
+    // A lost Control Ref CAS loops once through a fresh read and a semantic
+    // re-decision; a second loss answers lease_unavailable (plan Task 3).
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      const state = await deps.controlStore.readControl({
+        project_id: command.project_id,
+        control_ref: controlRef,
+      });
+      if (state.status === "failed") return { status: "failed", failure: state.failure };
+      if (state.snapshot.latest_connection?.status !== "active") {
+        return {
+          status: "failed",
+          failure: collaborationFailure(
+            "coordinator_unavailable",
+            `project is not connected; remote command '${command.kind}' is blocked`,
+          ),
+        };
+      }
+      const records = state.snapshot.control_records;
+      const holderDigest = latestSnapshotDigest(records);
+      if (holderDigest === undefined) {
+        return {
+          status: "failed",
+          failure: collaborationFailure(
+            "control_ref_invalid",
+            "the active connection has no principal snapshot on the control ref",
+          ),
+        };
+      }
+
+      let headOid = state.snapshot.control_head_oid;
+      let chain: ControlRecord[] = [...records];
+      const appendedRecords: LeaseRecord[] = [];
+      let transition = transitionLease(leaseHistoryFor(records, command), command, now());
+      let casLost = false;
+      while (transition.kind === "draft") {
+        const record = sealLeaseDraft(transition.draft, chain, holderDigest, session);
+        const appended = await deps.controlStore.appendControl({
+          project_id: command.project_id,
+          control_ref: controlRef,
+          ...(headOid === undefined ? {} : { expected_head_oid: headOid }),
+          record,
+        });
+        if (appended.status === "failed") {
+          if (appended.failure.code === "control_ref_cas_failed") {
+            casLost = true;
+            break;
+          }
+          return { status: "failed", failure: appended.failure };
+        }
+        headOid = appended.head_oid;
+        chain = [...chain, record];
+        appendedRecords.push(record);
+        transition = transitionLease(leaseHistoryFor(chain, command), command, now());
+      }
+      if (casLost) continue;
+
+      if (transition.kind === "rejected") {
+        return { status: "failed", failure: transition.failure };
+      }
+      if (transition.kind !== "existing") {
+        // Unreachable: the loop above only exits on existing/rejected.
+        return {
+          status: "failed",
+          failure: collaborationFailure(
+            "coordinator_unavailable",
+            "lease transition ended in an unexpected draft state",
+          ),
+        };
+      }
+      const lease = transition.record;
+      if (appendedRecords.length === 0) {
+        return { status: "lease", lease, replayed: transition.replayed };
+      }
+      const projection = await applyProjection(appendedRecords);
+      return {
+        status: "lease",
+        lease,
+        replayed: false,
+        ...(projection.rebuild_required ? { projection_rebuild_required: true } : {}),
+      };
+    }
+    return {
+      status: "failed",
+      failure: collaborationFailure(
+        "lease_unavailable",
+        "control ref compare-and-swap was lost twice; re-read and retry the lease command",
+        true,
+      ),
+    };
+  }
+
+  async function publishOperationCandidate(
+    command: PublishOperationCandidateCommand,
+  ): Promise<CollaborationOutcome> {
+    const state = await deps.controlStore.readControl({
+      project_id: command.project_id,
+      control_ref: controlRef,
+    });
+    if (state.status === "failed") return { status: "failed", failure: state.failure };
+    if (state.snapshot.latest_connection?.status !== "active") {
+      return {
+        status: "failed",
+        failure: collaborationFailure(
+          "coordinator_unavailable",
+          `project is not connected; remote command '${command.kind}' is blocked`,
+        ),
+      };
+    }
+
+    // Validate the resource id and fencing token through the Lease projection:
+    // only the holder of the current, live Lease may publish.
+    const history = leaseRecordsOf(state.snapshot.control_records, command.operation_id);
+    const tip = history[history.length - 1];
+    if (tip === undefined) {
+      return {
+        status: "failed",
+        failure: collaborationFailure(
+          "lease_unavailable",
+          `operation ${command.operation_id} has no lease; acquire one before publishing`,
+          true,
+        ),
+      };
+    }
+    if (tip.state === "released" || tip.state === "revoked") {
+      return {
+        status: "failed",
+        failure: collaborationFailure(
+          "lease_fenced",
+          `lease ${tip.lease_id} is ${tip.state}; its fencing token is permanently retired`,
+        ),
+      };
+    }
+    if (tip.state === "expired" || tip.expires_at <= now()) {
+      return {
+        status: "failed",
+        failure: collaborationFailure(
+          "lease_expired",
+          `lease ${tip.lease_id} expired at ${tip.expires_at}; the candidate stays local, re-acquire the lease`,
+          true,
+        ),
+      };
+    }
+
+    const heads = await deps.controlStore.listOperationHeads({ project_id: command.project_id });
+    if (heads.status === "failed") return { status: "failed", failure: heads.failure };
+    const head = heads.heads.find((entry) => entry.operation_id === command.operation_id);
+
+    // Idempotent replay: the candidate is already the Operation Ref head.
+    if (head?.head_oid === command.candidate_commit) {
+      return {
+        status: "published",
+        operation_id: command.operation_id,
+        head_oid: command.candidate_commit,
+        replayed: true,
+      };
+    }
+
+    // The store verifies the candidate commit exists and descends from the
+    // Operation baseline before CAS; a drifted ref answers operation_ref_drift
+    // and the local candidate is preserved for a re-publish.
+    const cas = await deps.controlStore.compareAndSwapOperation({
+      project_id: command.project_id,
+      operation_id: command.operation_id,
+      ...(head === undefined ? {} : { expected_head_oid: head.head_oid }),
+      candidate_commit: command.candidate_commit,
+      fencing_token: tip.fencing_token,
+    });
+    if (cas.status === "failed") return { status: "failed", failure: cas.failure };
+    return {
+      status: "published",
+      operation_id: command.operation_id,
+      head_oid: cas.head_oid,
+      replayed: false,
+    };
+  }
+
   return {
     execute(command, session) {
       switch (command.kind) {
@@ -348,6 +591,12 @@ export function createCollaborationCoordinator(
           return connect(command, session);
         case "disconnect":
           return disconnect(command, session);
+        case "acquire_operation_lease":
+        case "renew_operation_lease":
+        case "release_operation_lease":
+          return leaseCommand(command, session);
+        case "publish_operation_candidate":
+          return publishOperationCandidate(command);
         default:
           return gatedRemoteCommand(command);
       }

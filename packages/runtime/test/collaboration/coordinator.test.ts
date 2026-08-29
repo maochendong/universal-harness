@@ -665,16 +665,17 @@ describe("collaboration coordinator disconnect", () => {
 });
 
 describe("collaboration coordinator command routing", () => {
-  it("reports a typed failure for commands outside the connection slice", async () => {
+  it("reports a typed failure for commands outside the connection and lease slices", async () => {
     const { coordinator } = createHarness();
     await coordinator.execute(connectCommand(), session("principal_alice"));
 
     const outcome = await coordinator.execute(
       {
-        kind: "acquire_operation_lease",
-        command_id: "command_lease_1",
+        kind: "submit_remote_approval",
+        command_id: "command_decision_1",
         project_id: "project_demo",
-        operation_id: "operation_01",
+        request_id: "request_01",
+        decision: "approve",
       },
       session("principal_alice"),
     );

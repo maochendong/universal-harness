@@ -5,6 +5,7 @@ import type {
   CollaborationRecord,
   ControlRecord,
   IntegrationRecord,
+  LeaseRecord,
   REMOTE_APPROVAL_DECISIONS,
   RemoteApprovalDecisionRecord,
 } from "@universal-harness-internal/core";
@@ -175,13 +176,33 @@ export interface DisconnectedOutcome {
   readonly projection_rebuild_required?: boolean;
 }
 
+/** Successful acquire/renew/release; the LeaseRecord carries the state. */
+export interface LeaseOutcome {
+  readonly status: "lease";
+  readonly lease: LeaseRecord;
+  readonly replayed: boolean;
+  readonly projection_rebuild_required?: boolean;
+}
+
+/** Successful candidate publish; `head_oid` is the new Operation Ref head. */
+export interface PublishedOperationOutcome {
+  readonly status: "published";
+  readonly operation_id: string;
+  readonly head_oid: string;
+  readonly replayed: boolean;
+}
+
 export interface CollaborationFailedOutcome {
   readonly status: "failed";
   readonly failure: CollaborationFailure;
 }
 
 export type CollaborationOutcome =
-  ConnectedOutcome | DisconnectedOutcome | CollaborationFailedOutcome;
+  | ConnectedOutcome
+  | DisconnectedOutcome
+  | LeaseOutcome
+  | PublishedOperationOutcome
+  | CollaborationFailedOutcome;
 
 export interface CollaborationCoordinatorPort {
   execute(

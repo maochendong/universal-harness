@@ -1112,6 +1112,18 @@ export {
   type CollaborationFailure,
 } from "./collaboration/errors.js";
 export {
+  OPERATION_LEASE_DURATION_MS,
+  transitionLease,
+  type LeaseCommand,
+  type LeaseDraft,
+  type LeaseTransition,
+} from "./collaboration/lease.js";
+export {
+  COORDINATOR_PROJECTION_SCHEMA_VERSION,
+  ProjectionRebuildRequiredError,
+  SqliteCoordinatorProjection,
+} from "./collaboration/sqlite-projection.js";
+export {
   createCollaborationCoordinator,
   type CollaborationCoordinatorDependencies,
 } from "./collaboration/coordinator.js";
@@ -1144,6 +1156,7 @@ export type {
   GitControlStorePort,
   IntegrationConflictsQuery,
   IntegrationConflictsView,
+  LeaseOutcome,
   ListOperationHeadsInput,
   OAuthRequest,
   OperationCasInput,
@@ -1162,6 +1175,7 @@ export type {
   ProjectRecordCommitResult,
   ProjectionRebuildInput,
   ProtectionResult,
+  PublishedOperationOutcome,
   PublishOperationCandidateCommand,
   ReadControlInput,
   ReleaseLeaseCommand,

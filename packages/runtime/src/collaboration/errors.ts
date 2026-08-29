@@ -18,6 +18,13 @@ export const COLLABORATION_ERROR_CODES = [
   "lease_fenced",
   "operation_ref_drift",
   "control_ref_invalid",
+  /**
+   * A Control Ref push that lost `--force-with-lease`; the caller re-reads and
+   * re-decides rather than blindly retrying. Required by plan Task 3; the
+   * spec §16 table omission is a documentation gap to close with the spec
+   * owners.
+   */
+  "control_ref_cas_failed",
   "control_ref_unprotected",
   "remote_identity_drift",
   "baseline_drift",
