@@ -231,6 +231,11 @@ export interface TargetCasRequest {
   readonly target_ref: string;
   readonly expected_commit: string;
   readonly new_commit: string;
+  /**
+   * Integration whose candidate staging ref is cleaned up best-effort after
+   * a successful swap. Optional so non-integration callers stay valid.
+   */
+  readonly integration_id?: string;
 }
 
 export type TargetCasOutcome =
@@ -994,28 +999,43 @@ export function createGitControlStoreAdapter(
     const fetched = await fetchRemoteHeads();
     if (fetched !== undefined) return { status: "failed", failure: fetched };
 
-    // The candidate must be fetchable from the remote; a purely local commit
-    // cannot be verified and stays the replica's untrusted input.
-    const exists = await run("compareAndSwapOperation", mirror, [
-      "cat-file",
-      "-e",
-      `${input.candidate_commit}^{commit}`,
+    // The candidate must be reachable through its staging ref; fetching a
+    // bare OID only works when the server enables allowAnySHA1InWant, which
+    // GitHub/GitLab refuse. Fetch by ref name and require the staging ref to
+    // name exactly the published commit.
+    const stagingRef = `${CANDIDATE_STAGING_PREFIX}/${input.operation_id}`;
+    const mirrorStagingRef = `${MIRROR_CANDIDATE_PREFIX}/${input.operation_id}`;
+    const fetchedStaging = await run("compareAndSwapOperation", mirror, [
+      "fetch",
+      "--no-tags",
+      remote,
+      `+${stagingRef}:${mirrorStagingRef}`,
     ]);
-    if (!exists.ok) {
-      await run("compareAndSwapOperation", mirror, [
-        "fetch",
-        "--no-tags",
-        remote,
-        input.candidate_commit,
-      ]);
-      const retried = await run("compareAndSwapOperation", mirror, [
-        "cat-file",
-        "-e",
-        `${input.candidate_commit}^{commit}`,
-      ]);
-      if (!retried.ok) {
-        return drift("candidate commit is not available from the remote; re-publish it");
+    if (!fetchedStaging.ok) {
+      const text = `${fetchedStaging.error.message}\n${fetchedStaging.error.stderr ?? ""}`;
+      if (REMOTE_REF_MISSING.test(text)) {
+        return drift(
+          `candidate staging ref ${stagingRef} is not available from the remote; re-publish it`,
+        );
       }
+      return {
+        status: "failed",
+        failure: remoteFailure("fetch", fetchedStaging.error.stderr),
+      };
+    }
+    const stagedHead = await run("compareAndSwapOperation", mirror, [
+      "rev-parse",
+      "--verify",
+      mirrorStagingRef,
+    ]);
+    if (!stagedHead.ok) {
+      return {
+        status: "failed",
+        failure: remoteFailure("rev-parse", stagedHead.error.stderr),
+      };
+    }
+    if (stagedHead.value.stdout.trim() !== input.candidate_commit) {
+      return drift("candidate staging ref head does not name the published commit; re-publish it");
     }
 
     const current = await run("compareAndSwapOperation", mirror, [
@@ -1835,6 +1855,18 @@ export function createGitControlStoreAdapter(
     );
     if (pushFailure !== undefined) return { status: "failed", failure: pushFailure };
     await run("compareAndSwapTarget", mirror, ["update-ref", MIRROR_TARGET_REF, input.new_commit]);
+    // The accepted candidate is now reachable from the target history, so its
+    // staging ref has served its purpose. Cleanup is best-effort: a failure
+    // must not turn a landed swap into a reported failure.
+    if (input.integration_id !== undefined && REF_COMPONENT_PATTERN.test(input.integration_id)) {
+      const stagingRef = `${CANDIDATE_STAGING_PREFIX}/${input.integration_id}`;
+      await run("compareAndSwapTarget", mirror, ["push", remote, `:${stagingRef}`]);
+      await run("compareAndSwapTarget", mirror, [
+        "update-ref",
+        "-d",
+        `${MIRROR_CANDIDATE_PREFIX}/${input.integration_id}`,
+      ]);
+    }
     return { status: "swapped", commit: input.new_commit };
   }
 

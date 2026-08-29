@@ -137,7 +137,7 @@ function cloneRemote(remote: string): string {
 }
 
 /** Push a replica-side candidate commit to an untrusted holding branch. */
-function pushCandidate(remote: string, base: string, file: string): string {
+function pushCandidate(remote: string, base: string, file: string, stagingId?: string): string {
   const clone = cloneRemote(remote);
   git(clone, "switch", "--detach", base);
   writeFileSync(join(clone, file), `candidate ${file}\n`);
@@ -145,6 +145,9 @@ function pushCandidate(remote: string, base: string, file: string): string {
   git(clone, "commit", "-m", `candidate ${file}`);
   const candidate = git(clone, "rev-parse", "HEAD").trim();
   git(clone, "push", "origin", `HEAD:refs/heads/candidate/${file}`);
+  if (stagingId !== undefined) {
+    git(clone, "push", "origin", `HEAD:refs/heads/harness/candidate/${stagingId}`);
+  }
   return candidate;
 }
 
@@ -426,7 +429,7 @@ describe("git control store operation refs", { timeout: 30_000 }, () => {
     const operationBase = git(clone, "rev-parse", "HEAD").trim();
     git(clone, "push", "origin", "operation/op_1");
 
-    const candidate = pushCandidate(remote, operationBase, "candidate.txt");
+    const candidate = pushCandidate(remote, operationBase, "candidate.txt", "op_1");
     const swapped = await store.compareAndSwapOperation({
       project_id: PROJECT_ID,
       operation_id: "op_1",
@@ -462,7 +465,7 @@ describe("git control store operation refs", { timeout: 30_000 }, () => {
     git(clone, "commit", "-m", "operation base");
     git(clone, "push", "origin", "operation/op_1");
 
-    const candidate = pushCandidate(remote, "main", "other.txt");
+    const candidate = pushCandidate(remote, "main", "other.txt", "op_1");
     const created = await store.compareAndSwapOperation({
       project_id: PROJECT_ID,
       operation_id: "op_1",
@@ -494,6 +497,7 @@ describe("git control store operation refs", { timeout: 30_000 }, () => {
     git(orphan, "commit", "-m", "unrelated root");
     const unrelated = git(orphan, "rev-parse", "HEAD").trim();
     git(orphan, "push", "origin", "HEAD:refs/heads/candidate/unrelated");
+    git(orphan, "push", "origin", "HEAD:refs/heads/harness/candidate/op_1");
 
     const result = await store.compareAndSwapOperation({
       project_id: PROJECT_ID,
@@ -593,7 +597,7 @@ describe("git control store read fallback and publish hardening", { timeout: 30_
     expect(committed).toMatchObject({ status: "committed" });
 
     // The candidate descends from the post-connect target head.
-    const candidate = pushCandidate(remote, "origin/main", "candidate.txt");
+    const candidate = pushCandidate(remote, "origin/main", "candidate.txt", "op_first");
     const swapped = await store.compareAndSwapOperation({
       project_id: PROJECT_ID,
       operation_id: "op_first",
@@ -620,6 +624,7 @@ describe("git control store read fallback and publish hardening", { timeout: 30_
     git(orphan, "commit", "-m", "unrelated root");
     const unrelated = git(orphan, "rev-parse", "HEAD").trim();
     git(orphan, "push", "origin", "HEAD:refs/heads/candidate/unrelated");
+    git(orphan, "push", "origin", "HEAD:refs/heads/harness/candidate/op_first");
 
     const result = await store.compareAndSwapOperation({
       project_id: PROJECT_ID,
@@ -635,7 +640,7 @@ describe("git control store read fallback and publish hardening", { timeout: 30_
 
   it("fails closed on a first publish when no target ref was ever connected", async () => {
     const { remote, store } = createHarness();
-    const candidate = pushCandidate(remote, "main", "candidate.txt");
+    const candidate = pushCandidate(remote, "main", "candidate.txt", "op_first");
     const result = await store.compareAndSwapOperation({
       project_id: PROJECT_ID,
       operation_id: "op_first",
@@ -672,7 +677,7 @@ describe("git control store read fallback and publish hardening", { timeout: 30_
       target_ref: "refs/heads/main",
       record: connectionRecord(1, "active"),
     });
-    const candidate = pushCandidate(remote, "origin/main", "candidate.txt");
+    const candidate = pushCandidate(remote, "origin/main", "candidate.txt", "op_1");
 
     // A token the live lease tip does not hold is permanently fenced.
     const stale = await store.compareAndSwapOperation({
@@ -984,9 +989,12 @@ describe("git control store candidate reads and target cas", { timeout: 30_000 }
       target_ref: "refs/heads/main",
       expected_commit: targetHead,
       new_commit: prepared.candidate_commit,
+      integration_id: "integration_accept1",
     });
     expect(swapped).toEqual({ status: "swapped", commit: prepared.candidate_commit });
     expect(git(remote, "rev-parse", "refs/heads/main").trim()).toBe(prepared.candidate_commit);
+    // The staging ref is cleaned up once the candidate lands on the target.
+    expect(git(remote, "for-each-ref", "--format=%(refname)", STAGING_REF_PREFIX).trim()).toBe("");
 
     const accepted = await store.readIntegrationRecord({
       project_id: PROJECT_ID,

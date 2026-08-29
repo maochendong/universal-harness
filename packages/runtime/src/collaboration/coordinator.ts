@@ -53,6 +53,7 @@ import type {
   PrincipalSnapshotFacts,
   PublishOperationCandidateCommand,
   SubmitRemoteApprovalCommand,
+  SyncNowCommand,
 } from "./port.js";
 
 /**
@@ -656,6 +657,44 @@ export function createCollaborationCoordinator(
     };
   }
 
+  /**
+   * `sync_now` (design §12, §18.1): re-read the authoritative Git state and
+   * rebuild the disposable projection. A connected or previously disconnected
+   * project syncs; a project with no connection record at all fails closed.
+   * Nothing is appended, so the outcome is never a replay; a rebuild failure
+   * is the typed `projection_rebuild_required` failure (Git stays untouched).
+   */
+  async function syncNow(command: SyncNowCommand): Promise<CollaborationOutcome> {
+    const state = await readProjectState(deps, controlRef, command.project_id);
+    if (state.status === "failed") return { status: "failed", failure: state.failure };
+    if (state.snapshot.latest_connection === undefined) {
+      return {
+        status: "failed",
+        failure: collaborationFailure(
+          "coordinator_unavailable",
+          "project is not connected; there is nothing to sync",
+        ),
+      };
+    }
+    try {
+      await deps.projection.rebuild({
+        project_id: command.project_id,
+        latest_connection: state.snapshot.latest_connection,
+        control_records: state.snapshot.control_records,
+      });
+    } catch (error) {
+      return {
+        status: "failed",
+        failure: collaborationFailure(
+          "projection_rebuild_required",
+          `coordinator projection rebuild failed during sync: ${error instanceof Error ? error.message : "unknown error"}`,
+          true,
+        ),
+      };
+    }
+    return { status: "synced", project_id: command.project_id };
+  }
+
   async function gatedRemoteCommand(command: CollaborationCommand): Promise<CollaborationOutcome> {
     const active = await requireActiveConnection(command.project_id, command.kind);
     if (active.status === "failed") return { status: "failed", failure: active.failure };
@@ -1060,6 +1099,8 @@ export function createCollaborationCoordinator(
           return prepareIntegrationCommand(command, session);
         case "accept_integration":
           return acceptIntegrationCommand(command, session);
+        case "sync_now":
+          return syncNow(command);
         default:
           return gatedRemoteCommand(command);
       }

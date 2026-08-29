@@ -10,3 +10,5 @@ export * from "./platform-adapters.js";
 export * from "./sqlite-projection.js";
 export * from "./port.js";
 export * from "./coordinator.js";
+export * from "./http-client.js";
+export * from "./http-server.js";

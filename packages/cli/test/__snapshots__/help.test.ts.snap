@@ -36,6 +36,14 @@ Inspection:
   graph project-tasks             Rebuild the managed Task projection from graph truth
   graph propose-edge|approve-edge Stage and commit human-reviewed graph edges
 
+Remote collaboration:
+  connect --coordinator <url>     Connect this project to a remote Coordinator
+  disconnect                      Leave remote collaboration mode
+  sync                            Poll the Coordinator and rebuild the projection
+  integrate prepare <op-id>       Prepare an Integration for a published candidate
+  integrate accept <id>           Accept a prepared Integration (Target CAS)
+  coordinator                     Host a Coordinator (host-only, TLS required)
+
 Global options:
   --json                          Emit one canonical JSON record (machine readable)
   --help, -h                      Show help
@@ -79,6 +87,14 @@ Inspection:
   graph project-tasks             Rebuild the managed Task projection from graph truth
   graph propose-edge|approve-edge Stage and commit human-reviewed graph edges
 
+Remote collaboration:
+  connect --coordinator <url>     Connect this project to a remote Coordinator
+  disconnect                      Leave remote collaboration mode
+  sync                            Poll the Coordinator and rebuild the projection
+  integrate prepare <op-id>       Prepare an Integration for a published candidate
+  integrate accept <id>           Accept a prepared Integration (Target CAS)
+  coordinator                     Host a Coordinator (host-only, TLS required)
+
 Global options:
   --json                          Emit one canonical JSON record (machine readable)
   --help, -h                      Show help
@@ -121,6 +137,14 @@ Inspection:
   graph backfill-evaluations      Repair verdict links from historical evaluation evidence
   graph project-tasks             Rebuild the managed Task projection from graph truth
   graph propose-edge|approve-edge Stage and commit human-reviewed graph edges
+
+Remote collaboration:
+  connect --coordinator <url>     Connect this project to a remote Coordinator
+  disconnect                      Leave remote collaboration mode
+  sync                            Poll the Coordinator and rebuild the projection
+  integrate prepare <op-id>       Prepare an Integration for a published candidate
+  integrate accept <id>           Accept a prepared Integration (Target CAS)
+  coordinator                     Host a Coordinator (host-only, TLS required)
 
 Global options:
   --json                          Emit one canonical JSON record (machine readable)
@@ -301,6 +325,58 @@ exports[`harness CLI help and version > prints per-command help 18`] = `
   project-tasks  Rebuild views/tasks.md (verified Harness views update automatically)
   propose-edge  Stage a human-driven edge proposal (--type, --source, --target)
   approve-edge  Commit a staged edge proposal (<edge-id> --digest <preview-digest>)
+"
+`;
+
+exports[`harness CLI help and version > prints per-command help 19`] = `
+"Usage: harness connect --coordinator <https://host:port> [--json]
+
+Connect this managed project to a remote Coordinator: the approved origin Git
+Remote and current branch are discovered and normalized, the OAuth
+authorization URL is printed for the browser flow, platform permissions are
+verified and the collaboration mode change is recorded. Only canonical HTTPS
+coordinator origins are accepted.
+"
+`;
+
+exports[`harness CLI help and version > prints per-command help 20`] = `
+"Usage: harness disconnect [--json]
+
+Leave remote collaboration mode: new Operation Leases are blocked, live leases
+are released or expire, and a disconnected connection record is appended. The
+Control Ref history is preserved; existing Operation Branches remain ordinary
+candidate branches.
+"
+`;
+
+exports[`harness CLI help and version > prints per-command help 21`] = `
+"Usage: harness sync [--json]
+
+Poll the Coordinator immediately: the authoritative Git state is re-read, the
+disposable projection is rebuilt and pending remote approval decisions are
+materialized into the project Ledger.
+"
+`;
+
+exports[`harness CLI help and version > prints per-command help 22`] = `
+"Usage: harness integrate prepare <operation-id> [--json]
+       harness integrate accept <integration-id> [--json]
+
+Drive a two-step Integration. prepare re-validates the published candidate and
+stages a sealed Integration record; accept performs the Target Ref compare-
+and-swap against the prepared record. There is no one-step push that bypasses
+re-validation.
+"
+`;
+
+exports[`harness CLI help and version > prints per-command help 23`] = `
+"Usage: harness coordinator --host <host> --port <1..65535> --tls-cert <path> --tls-key <path> --config <path> [--json]
+
+Host a Coordinator for remote collaboration (host-only; runs outside any
+managed project). TLS certificate and key must be absolute paths outside every
+managed project, and startup is refused without them. The provider config JSON
+carries endpoint/client identifiers and secret environment-variable NAMES —
+never secret values.
 "
 `;
 

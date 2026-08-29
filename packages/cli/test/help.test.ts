@@ -102,6 +102,11 @@ describe("harness CLI help and version", () => {
       "serve",
       "doctor",
       "graph",
+      "connect",
+      "disconnect",
+      "sync",
+      "integrate",
+      "coordinator",
     ]) {
       const captured = captureIo();
       const exitCode = await runCli([command, "--help"], { io: captured.io, cwd: "/" });

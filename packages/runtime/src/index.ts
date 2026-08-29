@@ -1188,6 +1188,21 @@ export {
   type CoordinatorStartup,
 } from "./collaboration/coordinator.js";
 export {
+  createHttpCollaborationCoordinatorAdapter,
+  createNodeHttpsFetch,
+  HttpCollaborationCoordinatorError,
+  type HttpCollaborationCoordinatorAdapterOptions,
+} from "./collaboration/http-client.js";
+export {
+  createCoordinatorOAuthBridge,
+  startCollaborationCoordinatorServer,
+  type CollaborationCoordinatorServer,
+  type CollaborationCoordinatorServerOptions,
+  type CoordinatorOAuthBridge,
+  type CoordinatorOAuthBridgeOptions,
+  type PendingAuthorization,
+} from "./collaboration/http-server.js";
+export {
   materializeRemoteApprovalDecision,
   remoteDecisionIdFor,
   terminalRemoteDecision,
@@ -1267,6 +1282,7 @@ export type {
   RemoteIdentityResult,
   RenewLeaseCommand,
   SubmitRemoteApprovalCommand,
+  SyncedOutcome,
   SyncNowCommand,
   TargetCasInput,
   TargetCasResult,

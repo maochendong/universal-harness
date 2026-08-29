@@ -18,10 +18,14 @@ import { runAbortCommand } from "./commands/abort.js";
 import { runAdoptCommand } from "./commands/adopt.js";
 import { runApproveCommand } from "./commands/approve.js";
 import { runAuditCommand } from "./commands/audit.js";
+import { runConnectCommand } from "./commands/connect.js";
+import { runCoordinatorCommand } from "./commands/coordinator.js";
+import { runDisconnectCommand } from "./commands/disconnect.js";
 import { runDoctorCommand } from "./commands/doctor.js";
 import { runEvalCommand } from "./commands/eval.js";
 import { runFindingCommand } from "./commands/finding.js";
 import { runImpactCommand } from "./commands/impact.js";
+import { runIntegrateCommand } from "./commands/integrate.js";
 import { runIterateCommand } from "./commands/iterate.js";
 import { runNewCommand } from "./commands/new.js";
 import { runPlanCommand } from "./commands/plan.js";
@@ -30,6 +34,7 @@ import { runRunCommand } from "./commands/run.js";
 import { runSnapshotCommand } from "./commands/snapshot.js";
 import { runServeCommand } from "./commands/serve.js";
 import { runStatusCommand } from "./commands/status.js";
+import { runSyncCommand } from "./commands/sync.js";
 import { runVerifyCommand } from "./commands/verify.js";
 import { runWatchCommand } from "./commands/watch.js";
 import { runGraphCheckCommand } from "./commands/graph/check.js";
@@ -133,6 +138,36 @@ export interface ServeRequest {
   readonly port: number;
 }
 
+export interface ConnectRequest {
+  readonly projectRoot: string;
+  /** Canonical HTTPS coordinator origin (validated by the command route). */
+  readonly coordinatorOrigin: string;
+}
+
+export interface DisconnectRequest {
+  readonly projectRoot: string;
+}
+
+export interface SyncRequest {
+  readonly projectRoot: string;
+}
+
+export interface IntegrateRequest {
+  readonly projectRoot: string;
+  readonly action: "prepare" | "accept";
+  /** Operation id for prepare; integration id for accept. */
+  readonly targetId: string;
+}
+
+/** Host-only Coordinator startup; runs outside any managed project. */
+export interface CoordinatorHostRequest {
+  readonly host?: string;
+  readonly port: number;
+  readonly tlsCert: string;
+  readonly tlsKey: string;
+  readonly configPath: string;
+}
+
 export interface RuntimeService {
   newProject(request: NewProjectRequest): Promise<CommandResult>;
   adoptProject(request: AdoptProjectRequest): Promise<CommandResult>;
@@ -150,6 +185,17 @@ export interface RuntimeService {
   snapshot(request: ProjectRequest): Promise<CommandResult>;
   audit(request: ProjectRequest): Promise<CommandResult>;
   serve(request: ServeRequest): Promise<CommandResult>;
+  connect(request: ConnectRequest): Promise<CommandResult>;
+  disconnect(request: DisconnectRequest): Promise<CommandResult>;
+  sync(request: SyncRequest): Promise<CommandResult>;
+  integrate(request: IntegrateRequest): Promise<CommandResult>;
+  coordinator(request: CoordinatorHostRequest): Promise<CommandResult>;
+  /**
+   * Optional remote connectivity summary for `status` (design section 18.1):
+   * undefined when the project has no active connection, so never-connected
+   * projects keep the exact pre-M3 status output (zero materialization).
+   */
+  remoteSummary?(request: ProjectRequest): Promise<Record<string, unknown> | undefined>;
 }
 
 function stageUnavailable(
@@ -201,6 +247,16 @@ export function createStubRuntimeService(): RuntimeService {
     audit: (request) => Promise.resolve(stageUnavailable("audit", "audit.run", { ...request })),
     serve: (request) =>
       Promise.resolve(stageUnavailable("serve", "dashboard.serve", { ...request })),
+    connect: (request) =>
+      Promise.resolve(stageUnavailable("connect", "collaboration.connect", { ...request })),
+    disconnect: (request) =>
+      Promise.resolve(stageUnavailable("disconnect", "collaboration.disconnect", { ...request })),
+    sync: (request) =>
+      Promise.resolve(stageUnavailable("sync", "collaboration.sync", { ...request })),
+    integrate: (request) =>
+      Promise.resolve(stageUnavailable("integrate", "collaboration.integrate", { ...request })),
+    coordinator: (request) =>
+      Promise.resolve(stageUnavailable("coordinator", "collaboration.coordinator", { ...request })),
   };
 }
 
@@ -300,6 +356,14 @@ Inspection:
   graph backfill-evaluations      Repair verdict links from historical evaluation evidence
   graph project-tasks             Rebuild the managed Task projection from graph truth
   graph propose-edge|approve-edge Stage and commit human-reviewed graph edges
+
+Remote collaboration:
+  connect --coordinator <url>     Connect this project to a remote Coordinator
+  disconnect                      Leave remote collaboration mode
+  sync                            Poll the Coordinator and rebuild the projection
+  integrate prepare <op-id>       Prepare an Integration for a published candidate
+  integrate accept <id>           Accept a prepared Integration (Target CAS)
+  coordinator                     Host a Coordinator (host-only, TLS required)
 
 Global options:
   --json                          Emit one canonical JSON record (machine readable)
@@ -437,6 +501,43 @@ and graph cache health. Exits non-zero when any check fails.
   propose-edge  Stage a human-driven edge proposal (--type, --source, --target)
   approve-edge  Commit a staged edge proposal (<edge-id> --digest <preview-digest>)
 `,
+  connect: `Usage: harness connect --coordinator <https://host:port> [--json]
+
+Connect this managed project to a remote Coordinator: the approved origin Git
+Remote and current branch are discovered and normalized, the OAuth
+authorization URL is printed for the browser flow, platform permissions are
+verified and the collaboration mode change is recorded. Only canonical HTTPS
+coordinator origins are accepted.
+`,
+  disconnect: `Usage: harness disconnect [--json]
+
+Leave remote collaboration mode: new Operation Leases are blocked, live leases
+are released or expire, and a disconnected connection record is appended. The
+Control Ref history is preserved; existing Operation Branches remain ordinary
+candidate branches.
+`,
+  sync: `Usage: harness sync [--json]
+
+Poll the Coordinator immediately: the authoritative Git state is re-read, the
+disposable projection is rebuilt and pending remote approval decisions are
+materialized into the project Ledger.
+`,
+  integrate: `Usage: harness integrate prepare <operation-id> [--json]
+       harness integrate accept <integration-id> [--json]
+
+Drive a two-step Integration. prepare re-validates the published candidate and
+stages a sealed Integration record; accept performs the Target Ref compare-
+and-swap against the prepared record. There is no one-step push that bypasses
+re-validation.
+`,
+  coordinator: `Usage: harness coordinator --host <host> --port <1..65535> --tls-cert <path> --tls-key <path> --config <path> [--json]
+
+Host a Coordinator for remote collaboration (host-only; runs outside any
+managed project). TLS certificate and key must be absolute paths outside every
+managed project, and startup is refused without them. The provider config JSON
+carries endpoint/client identifiers and secret environment-variable NAMES —
+never secret values.
+`,
 };
 
 function helpFor(command: string | undefined): string {
@@ -509,6 +610,16 @@ async function dispatch(args: readonly string[], context: CommandContext): Promi
       return runStatusCommand(rest, context);
     case "serve":
       return runServeCommand(rest, context);
+    case "connect":
+      return runConnectCommand(rest, context);
+    case "disconnect":
+      return runDisconnectCommand(rest, context);
+    case "sync":
+      return runSyncCommand(rest, context);
+    case "integrate":
+      return runIntegrateCommand(rest, context);
+    case "coordinator":
+      return runCoordinatorCommand(rest, context);
     case "watch":
       return runWatchCommand(rest, context);
     case "doctor":

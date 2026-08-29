@@ -105,8 +105,9 @@ export interface PlatformIdentityRegistryDependencies {
   readonly fetch: PlatformFetch;
   readonly sessions: OAuthSessionStore;
   /** Drives the user through the authorize URL and resolves with the full
-   * callback URL. Owned by the host (CLI/Dashboard); never by project files. */
-  readonly authorize: (authorizeUrl: string) => Promise<string>;
+   * callback URL. Owned by the host (CLI/Dashboard); never by project files.
+   * The provider name lets shared bridges route the pending authorization. */
+  readonly authorize: (authorizeUrl: string, provider?: CollaborationProvider) => Promise<string>;
   readonly now?: () => string;
 }
 
@@ -401,6 +402,64 @@ export function createPlatformIdentityRegistry(
     }
   }
 
+  /** Shared tail of `authenticate`: with a bearer token in hand, re-pull the
+   * user and repository permission facts and build a fresh snapshot. */
+  async function snapshotWithToken(
+    config: PlatformAdapterConfig,
+    input: OAuthRequest,
+    accessToken: string,
+  ): Promise<PrincipalSnapshotDraftResult> {
+    const user = await apiGetWithToken(config, accessToken, "/user");
+    const subjectId = subjectIdOf(user.json);
+    if (!user.ok || subjectId === undefined) {
+      return authenticationFailed(
+        collaborationFailure(
+          "authentication_required",
+          `${config.provider} did not report a stable subject id`,
+        ),
+      );
+    }
+
+    const repository = await apiGetWithToken(
+      config,
+      accessToken,
+      permissionRequestPath(config, input.repository_id),
+    );
+    let permission: CollaborationPermission;
+    try {
+      if (!repository.ok) {
+        throw permissionDenied(
+          `${config.provider} repository permission request failed (status ${repository.httpStatus ?? "unknown"})`,
+        );
+      }
+      permission = permissionOf(config, repository.json);
+    } catch (error) {
+      if (error instanceof PlatformAdapterError) {
+        return authenticationFailed(collaborationFailure(error.code, error.message));
+      }
+      throw error;
+    }
+
+    const observedAt = now();
+    return {
+      status: "authenticated",
+      snapshot: {
+        principal_id: principalIdFor(config.provider, config.host, subjectId),
+        provider: config.provider,
+        host: config.host,
+        subject_id: subjectId,
+        repository_id: input.repository_id,
+        permission,
+        observed_at: observedAt,
+        expires_at: new Date(Date.parse(observedAt) + PERMISSION_SNAPSHOT_TTL_MS).toISOString(),
+        source_response_digest: contentDigest({
+          user: user.raw ?? "",
+          repository: repository.raw ?? "",
+        }),
+      },
+    };
+  }
+
   async function authenticate(input: OAuthRequest): Promise<PrincipalSnapshotDraftResult> {
     const config = byHost.get(input.host);
     if (config === undefined || config.provider !== input.provider) {
@@ -410,6 +469,15 @@ export function createPlatformIdentityRegistry(
           `no adapter for ${input.provider}@${input.host}`,
         ),
       );
+    }
+
+    // Token-reuse short-circuit (design section 17.1: the CLI and the
+    // Dashboard share one OAuth session). A live token skips the browser
+    // dance and the code exchange; the user and permission facts are still
+    // re-pulled so every snapshot is freshly observed.
+    const liveToken = tokenFor(config, input.repository_id);
+    if (liveToken !== undefined) {
+      return snapshotWithToken(config, input, liveToken);
     }
 
     const oauthSession = deps.sessions.begin(config.redirect_uri);
@@ -424,7 +492,7 @@ export function createPlatformIdentityRegistry(
 
     let rawCallback: string;
     try {
-      rawCallback = await deps.authorize(authorizeUrl.toString());
+      rawCallback = await deps.authorize(authorizeUrl.toString(), config.provider);
     } catch {
       return authenticationFailed(
         collaborationFailure("authentication_required", "oauth authorization did not complete"),
@@ -446,71 +514,24 @@ export function createPlatformIdentityRegistry(
       );
     }
 
-    const user = await apiGetWithToken(config, token.access_token, "/user");
-    const subjectId = subjectIdOf(user.json);
-    if (!user.ok || subjectId === undefined) {
-      return authenticationFailed(
-        collaborationFailure(
-          "authentication_required",
-          `${config.provider} did not report a stable subject id`,
-        ),
-      );
+    const drafted = await snapshotWithToken(config, input, token.access_token);
+    if (drafted.status === "authenticated") {
+      const authenticated: AuthenticatedPlatformSession =
+        token.token_expires_at === undefined
+          ? {
+              principal_id: drafted.snapshot.principal_id,
+              repository_id: input.repository_id,
+              access_token: token.access_token,
+            }
+          : {
+              principal_id: drafted.snapshot.principal_id,
+              repository_id: input.repository_id,
+              access_token: token.access_token,
+              token_expires_at: token.token_expires_at,
+            };
+      sessions.set(`${config.provider}@${config.host}:${input.repository_id}`, authenticated);
     }
-
-    const repository = await apiGetWithToken(
-      config,
-      token.access_token,
-      permissionRequestPath(config, input.repository_id),
-    );
-    let permission: CollaborationPermission;
-    try {
-      if (!repository.ok) {
-        throw permissionDenied(
-          `${config.provider} repository permission request failed (status ${repository.httpStatus ?? "unknown"})`,
-        );
-      }
-      permission = permissionOf(config, repository.json);
-    } catch (error) {
-      if (error instanceof PlatformAdapterError) {
-        return authenticationFailed(collaborationFailure(error.code, error.message));
-      }
-      throw error;
-    }
-
-    const principalId = principalIdFor(config.provider, config.host, subjectId);
-    const authenticated: AuthenticatedPlatformSession =
-      token.token_expires_at === undefined
-        ? {
-            principal_id: principalId,
-            repository_id: input.repository_id,
-            access_token: token.access_token,
-          }
-        : {
-            principal_id: principalId,
-            repository_id: input.repository_id,
-            access_token: token.access_token,
-            token_expires_at: token.token_expires_at,
-          };
-    sessions.set(`${config.provider}@${config.host}:${input.repository_id}`, authenticated);
-
-    const observedAt = now();
-    return {
-      status: "authenticated",
-      snapshot: {
-        principal_id: principalId,
-        provider: config.provider,
-        host: config.host,
-        subject_id: subjectId,
-        repository_id: input.repository_id,
-        permission,
-        observed_at: observedAt,
-        expires_at: new Date(Date.parse(observedAt) + PERMISSION_SNAPSHOT_TTL_MS).toISOString(),
-        source_response_digest: contentDigest({
-          user: user.raw ?? "",
-          repository: repository.raw ?? "",
-        }),
-      },
-    };
+    return drafted;
   }
 
   async function apiGetWithToken(

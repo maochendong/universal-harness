@@ -69,17 +69,26 @@ import type {
   AbortRequest,
   AdoptProjectRequest,
   ApproveRequest,
+  ConnectRequest,
+  CoordinatorHostRequest,
+  DisconnectRequest,
   FindingGroupRequest,
   FindingRequest,
   ImpactRequest,
+  IntegrateRequest,
   IterateRequest,
   NewProjectRequest,
   ProjectRequest,
   ResumeRequest,
   RunRequest,
   ServeRequest,
+  SyncRequest,
   RuntimeService,
 } from "./router.js";
+import {
+  createCliCollaborationRuntime,
+  type CollaborationRuntimeSeams,
+} from "./runtime/collaboration-runtime.js";
 import { createConfiguredAgentExecutor } from "./project-agent.js";
 import { createProjectCapabilityPlanCompiler } from "./capability-plan-compiler.js";
 import { createConfiguredGateSuite } from "./project-gates.js";
@@ -156,6 +165,11 @@ export interface OrchestratedServiceOptions {
     options: readonly ProfileId[],
     preview: string,
   ) => Promise<string | null>;
+  /**
+   * Injectable collaboration seams (Coordinator port, control store, host
+   * composition) so tests pin remote routing without real TLS or OAuth.
+   */
+  readonly collaboration?: CollaborationRuntimeSeams;
 }
 
 /** Interactive stdin prompt; only constructed when the CLI runs on a TTY. */
@@ -671,6 +685,43 @@ export function createOrchestratedRuntimeService(
     configuration.baselineDigest(projectRoot);
 
   /**
+   * Remote collaboration wiring (plan M3 Task 7): the lease-gated iterate /
+   * resume and remote approve/sync/integrate flows all share this runtime;
+   * never-connected projects never touch it (zero materialization).
+   */
+  const collaboration = createCliCollaborationRuntime({
+    io: options.io,
+    now: clock,
+    newId: options.newId ?? ((kind: string) => `${kind}_${ulid()}`),
+    projectIdFor,
+    readBaseline: (projectRoot) => gitHead(projectRoot),
+    ...(options.collaboration === undefined ? {} : { seams: options.collaboration }),
+  });
+
+  /**
+   * Orchestrator dependencies with the workflow operation id pre-minted, so a
+   * connected iterate can acquire the Operation Lease before any local work.
+   */
+  const orchestratorDepsForWorkflow = (
+    projectRoot: string,
+    workflowOperationId: string,
+  ): OrchestratorDependencies => {
+    const base = orchestratorDeps(projectRoot);
+    const mint = base.newId ?? ((kind: string) => `${kind}_${ulid()}`);
+    let consumed = false;
+    return {
+      ...base,
+      newId: (kind: string) => {
+        if (!consumed && kind === "workflow") {
+          consumed = true;
+          return workflowOperationId;
+        }
+        return mint(kind);
+      },
+    };
+  };
+
+  /**
    * T20 slice 1 capture routing: when the committed runtime config declares a
    * provider covering the prd_proposal slot, intent is interpreted through the
    * managed model layer; anything else keeps the generic interpreter, so
@@ -815,12 +866,125 @@ export function createOrchestratedRuntimeService(
           }
         }
       }
+      const remote = await iterateRemoteImpl(request, active);
+      if (remote !== undefined) return remote;
       const outcome = await runIteration(orchestratorDeps(request.projectRoot), {
         intent: request.text,
         intentShape: "pack-converted",
       });
       return outcomeToResult("iterate", outcome, profileResultExtra(active));
     });
+
+  /**
+   * Connected iterate (design section 18.1): the Operation Lease is acquired
+   * before any local work; local candidate commits are pushed to the staging
+   * ref and published with the live fencing token instead of pushing the
+   * managed Operation Ref directly.
+   */
+  const iterateRemoteImpl = async (
+    request: IterateRequest,
+    active: ProjectProfileRecord,
+  ): Promise<CommandResult | undefined> => {
+    const context = collaboration.remoteContext(request.projectRoot);
+    if (context === undefined) return undefined;
+    const operationId = (options.newId ?? ((kind: string) => `${kind}_${ulid()}`))("workflow");
+    const lease = await collaboration.acquireLease(context, operationId);
+    if (lease.status === "failed") {
+      return {
+        command: "iterate",
+        status: "failed",
+        message: lease.failure.summary,
+        data: { kind: lease.failure.code, retryable: lease.failure.retryable },
+      };
+    }
+    const baselineBefore = gitHead(request.projectRoot);
+    let outcome: OrchestrationOutcome;
+    try {
+      outcome = await runIteration(orchestratorDepsForWorkflow(request.projectRoot, operationId), {
+        intent: request.text,
+        intentShape: "pack-converted",
+      });
+    } catch (error) {
+      // A crashed iteration must not strand the Operation Lease.
+      await collaboration.releaseLease(context, operationId);
+      throw error;
+    }
+    const publishFailure = await collaboration.publishCandidate(
+      context,
+      operationId,
+      baselineBefore,
+    );
+    if (publishFailure !== undefined) {
+      await collaboration.releaseLease(context, operationId);
+      return {
+        command: "iterate",
+        status: "failed",
+        message: publishFailure.failure.summary,
+        data: { kind: publishFailure.failure.code, retryable: publishFailure.failure.retryable },
+      };
+    }
+    // A finished run (completed, input_required or the terminal aborted)
+    // releases the lease; an approval pause or a blocked/migration resumable
+    // run keeps it so the same client resumes with the fencing token.
+    if (
+      outcome.status === "input_required" ||
+      outcome.status === "completed" ||
+      outcome.status === "aborted"
+    ) {
+      await collaboration.releaseLease(context, operationId);
+    }
+    return outcomeToResult("iterate", outcome, profileResultExtra(active));
+  };
+
+  /** Connected resume: renew (or re-acquire) the lease, resume locally, publish. */
+  const resumeRemoteImpl = async (request: ResumeRequest): Promise<CommandResult | undefined> => {
+    const context = collaboration.remoteContext(request.projectRoot);
+    if (context === undefined) return undefined;
+    const lease = await collaboration.renewOrAcquireLease(context, request.workflowOperationId);
+    if (lease.status === "failed") {
+      return {
+        command: "resume",
+        status: "failed",
+        message: lease.failure.summary,
+        data: { kind: lease.failure.code, retryable: lease.failure.retryable },
+      };
+    }
+    const baselineBefore = gitHead(request.projectRoot);
+    let outcome: OrchestrationOutcome;
+    try {
+      outcome = await resumeRuntime.resume({
+        projectRoot: request.projectRoot,
+        workflowOperationId: request.workflowOperationId,
+        ...(request.answers === undefined ? {} : { answers: request.answers }),
+      });
+    } catch (error) {
+      // A crashed resume must not strand the Operation Lease.
+      await collaboration.releaseLease(context, request.workflowOperationId);
+      throw error;
+    }
+    const publishFailure = await collaboration.publishCandidate(
+      context,
+      request.workflowOperationId,
+      baselineBefore,
+    );
+    if (publishFailure !== undefined) {
+      await collaboration.releaseLease(context, request.workflowOperationId);
+      return {
+        command: "resume",
+        status: "failed",
+        message: publishFailure.failure.summary,
+        data: { kind: publishFailure.failure.code, retryable: publishFailure.failure.retryable },
+      };
+    }
+    if (
+      outcome.status === "input_required" ||
+      outcome.status === "completed" ||
+      outcome.status === "aborted"
+    ) {
+      await collaboration.releaseLease(context, request.workflowOperationId);
+    }
+    return outcomeToResult("resume", outcome);
+  };
 
   const resumeImpl = async (request: ResumeRequest): Promise<CommandResult> =>
     guard("resume", async () => {
@@ -837,6 +1001,8 @@ export function createOrchestratedRuntimeService(
         if (!selection.ok) return selection.result;
         persistInitialProfile(request.projectRoot, selection.profileId);
       }
+      const remote = await resumeRemoteImpl(request);
+      if (remote !== undefined) return remote;
       const outcome = await resumeRuntime.resume({
         projectRoot: request.projectRoot,
         workflowOperationId: request.workflowOperationId,
@@ -1209,8 +1375,31 @@ export function createOrchestratedRuntimeService(
       };
     },
 
+    connect: async (request: ConnectRequest): Promise<CommandResult> =>
+      guard("connect", () => collaboration.connect(request)),
+
+    disconnect: async (request: DisconnectRequest): Promise<CommandResult> =>
+      guard("disconnect", () => collaboration.disconnect(request)),
+
+    sync: async (request: SyncRequest): Promise<CommandResult> =>
+      guard("sync", () => collaboration.sync(request)),
+
+    integrate: async (request: IntegrateRequest): Promise<CommandResult> =>
+      guard("integrate", () => collaboration.integrate(request)),
+
+    coordinator: async (request: CoordinatorHostRequest): Promise<CommandResult> =>
+      guard("coordinator", () => collaboration.coordinator(request)),
+
+    remoteSummary: (request: ProjectRequest): Promise<Record<string, unknown> | undefined> =>
+      collaboration.remoteSummary(request),
+
     approve: async (request: ApproveRequest): Promise<CommandResult> =>
       guard("approve", async () => {
+        // An active collaboration connection routes the decision through the
+        // Coordinator (design section 18.1); otherwise the local ledger path
+        // is untouched.
+        const remote = await collaboration.submitRemoteApproval(request);
+        if (remote !== undefined) return remote;
         const resolved = await approvalRuntime.resolve({
           projectRoot: request.projectRoot,
           requestId: request.requestId,

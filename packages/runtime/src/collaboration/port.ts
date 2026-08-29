@@ -243,6 +243,16 @@ export interface CollaborationFailedOutcome {
   readonly failure: CollaborationFailure;
 }
 
+/**
+ * Successful `sync_now`: the Coordinator re-read the authoritative Git state
+ * and rebuilt the disposable projection (design §12, §18.1). Nothing is
+ * appended, so a sync is never a replay.
+ */
+export interface SyncedOutcome {
+  readonly status: "synced";
+  readonly project_id: string;
+}
+
 export type CollaborationOutcome =
   | ConnectedOutcome
   | DisconnectedOutcome
@@ -251,6 +261,7 @@ export type CollaborationOutcome =
   | RemoteApprovalOutcome
   | PreparedIntegrationOutcome
   | AcceptedIntegrationOutcome
+  | SyncedOutcome
   | CollaborationFailedOutcome;
 
 export interface CollaborationCoordinatorPort {
@@ -493,6 +504,11 @@ export interface TargetCasInput {
   readonly target_ref: string;
   readonly expected_commit: string;
   readonly new_commit: string;
+  /**
+   * Integration whose candidate staging ref is cleaned up best-effort after
+   * a successful swap (design §14.4). Optional for non-integration callers.
+   */
+  readonly integration_id?: string;
 }
 
 export type TargetCasResult =

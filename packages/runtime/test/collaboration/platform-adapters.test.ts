@@ -298,6 +298,47 @@ describe("GitHub adapter", () => {
     expect(authorizeUrl.searchParams.get("state")).toMatch(/^[0-9a-f]{64}$/);
   });
 
+  it("reuses a live token and re-pulls facts instead of re-running OAuth", async () => {
+    let authorizeCalls = 0;
+    const { registry, requests } = makeRegistry({
+      routes: githubRoutes,
+      authorize: (url) => {
+        authorizeCalls += 1;
+        return callbackAuthorize({})(url);
+      },
+    });
+    const principalId = principalIdFor("github", "github.com", "4242");
+    const input = {
+      provider: "github" as const,
+      host: "github.com",
+      repository_id: "Acme/Demo",
+      principal_id: principalId,
+    };
+    const first = await registry.authenticate(input);
+    expect(first.status).toBe("authenticated");
+    expect(authorizeCalls).toBe(1);
+    expect(requests.map((request) => `${request.method} ${request.url}`)).toEqual([
+      "POST https://github.com/login/oauth/access_token",
+      "GET https://api.github.com/user",
+      "GET https://api.github.com/repos/Acme/Demo",
+    ]);
+
+    // The second authenticate (same repository, live token) skips the browser
+    // dance and the code exchange but still re-observes user and permission.
+    const second = await registry.authenticate(input);
+    expect(second.status).toBe("authenticated");
+    if (second.status !== "authenticated") throw new Error("expected authenticated");
+    expect(second.snapshot).toEqual(first.status === "authenticated" ? first.snapshot : undefined);
+    expect(authorizeCalls).toBe(1);
+    expect(requests.map((request) => `${request.method} ${request.url}`)).toEqual([
+      "POST https://github.com/login/oauth/access_token",
+      "GET https://api.github.com/user",
+      "GET https://api.github.com/repos/Acme/Demo",
+      "GET https://api.github.com/user",
+      "GET https://api.github.com/repos/Acme/Demo",
+    ]);
+  });
+
   it("rejects a callback from a foreign origin", async () => {
     const { registry } = makeRegistry({
       routes: githubRoutes,

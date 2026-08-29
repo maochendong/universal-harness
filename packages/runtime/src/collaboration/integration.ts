@@ -977,6 +977,34 @@ export async function acceptIntegration(
   });
   if (staged.status === "failed") return failed(staged.failure);
   if (staged.status === "missing") {
+    // A landed swap cleans the staging ref up, so a retry after a lost
+    // response may find no staged candidate; recover the accepted fact from
+    // the Target history before declaring the candidate missing. The stored
+    // record is digest-validated on read, and the integration id plus the
+    // command's frozen expected commit pin the identity of the accept.
+    const recovered = await deps.controlStore.readIntegrationRecord({
+      project_id: input.project_id,
+      target_ref: input.connection.target_ref,
+      integration_id: input.integration_id,
+    });
+    if (recovered.status === "failed") return failed(recovered.failure);
+    if (recovered.status === "found") {
+      if (recovered.record.expected_target_commit === input.expected_target_commit) {
+        return {
+          status: "accepted",
+          integration_record: recovered.record,
+          target_commit: recovered.commit,
+          appended: [],
+          replayed: true,
+        };
+      }
+      return failed(
+        collaborationFailure(
+          "target_cas_failed",
+          "the target history carries a conflicting record for this integration id; never replay an old accept",
+        ),
+      );
+    }
     return failed(
       collaborationFailure(
         "coordinator_unavailable",
@@ -1074,6 +1102,7 @@ export async function acceptIntegration(
     target_ref: input.connection.target_ref,
     expected_commit: record.expected_target_commit,
     new_commit: staged.candidate_commit,
+    integration_id: input.integration_id,
   });
   if (cas.status === "failed") {
     if (cas.failure.code === "target_cas_failed" || cas.failure.code === "git_remote_unavailable") {
