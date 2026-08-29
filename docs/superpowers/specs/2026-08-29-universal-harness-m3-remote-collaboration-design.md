@@ -1,7 +1,7 @@
 # Universal Harness M3：远程协作正式设计
 
 日期：2026-08-29  
-状态：设计已确认，待文档复核  
+状态：评审问题已修订，待复核<br>
 协议版本：Protocol 1.2  
 范围：单仓库、单 Coordinator、远程协作；不包含 Multi-Agent 调度
 
@@ -15,7 +15,7 @@
 
 ## 1. 结论
 
-M3 在现有单机 Git-native Harness 上增加一个可选的远程协作 Capability：
+M3 在现有单机 Git-native Harness 上增加一个可选的远程协作模式：
 `remote_collaboration`。
 
 启用后，多个 Harness Replica 可以围绕同一个远程 Git 仓库并行推进不同
@@ -63,6 +63,10 @@ M1 已有的 repository-qualified identity 继续保留，但 M3 验收不宣称
 
 本设计取代 2026-08-15 范围决策中“在 M3 启用跨仓库执行”的表述。跨仓库能力没有被
 隐式移动到 M4，也没有获得新的里程碑归属；需要时必须另行设计和批准。
+
+本设计同时取代 M1 §18 中把 M3 描述为 repository-qualified 跨仓库执行的表述，并在
+Protocol 1.2 Port Registry 中仅新增 `CollaborationCoordinatorPort`。不增加跨仓库 Port、
+消息总线或新的分布式协调层。
 
 ## 4. 已确认的产品决策
 
@@ -127,6 +131,7 @@ M1 已有的 repository-qualified identity 继续保留，但 M3 验收不宣称
 | Requirement、DesignSet、Plan、Evidence、ApprovalDecision、Snapshot | 项目 Git/Ledger | 继续遵守现有生命周期与 digest 规则 |
 | Target commit | 目标分支 | CAS 成功是 Integration 被接受的最终事实 |
 | Operation 工作 | Operation Branch | 仅为候选；必须重新验证后才能进入 Target |
+| CollaborationConnectionRecord | 项目 Git/Ledger | 记录已验证 Remote 的启用或停用；与 CapabilityPlan 正交 |
 | Principal、Lease、Remote Approval 协调记录 | Git Control Ref | 由单 Coordinator 以 fast-forward CAS 更新 |
 | IntegrationRecord | 候选 merge commit；CAS 后进入项目 Ledger | 只有 Target 可达历史中的记录才是已接受事实 |
 | OAuth Token | 不持久化 | 只在受控认证会话中短暂使用 |
@@ -168,6 +173,7 @@ interface CollaborationCoordinatorPort {
 `CollaborationCommand` 至少覆盖：
 
 - `connect`；
+- `disconnect`；
 - `acquire_operation_lease`、`renew_operation_lease`、`release_operation_lease`；
 - `submit_remote_approval`；
 - `prepare_integration`、`accept_integration`；
@@ -202,13 +208,16 @@ Coordinator 内部只保留已有真实变化的 seam：
 平台 Adapter 只能输出统一 Principal 和权限，不得把平台专有角色字符串扩散到 Kernel。
 
 现有 `EventStreamPort` 继续作为已接受 Lifecycle Event 的读取与观测 Interface，不承担 Lease、
-Approval 或 Integration 命令。Coordinator 接受的远程事实进入现有 Ledger 后再由
-`EventStreamPort` 投影；这细化并取代早期范围决策中把 M3 笼统描述为“在 EventStreamPort
-框架内同步”的表述。
+Approval 或 Integration 命令。Control Ref 中的 Lease、远程 Approval 和候选 Integration 状态
+通过 `CollaborationCoordinatorPort.query` 与 Dashboard Read Model 呈现；只有连接记录进入
+项目 Ledger、Remote Decision 被 Local Kernel 物化，或 Integration 被 Target CAS 接受后，
+才生成项目 Lifecycle Event 并由 `EventStreamPort` 投影。这细化并取代早期范围决策中把 M3
+笼统描述为“在 EventStreamPort 框架内同步”的表述。
 
-## 7. Profile 与 Capability
+## 7. Profile 与远程协作模式
 
-`remote_collaboration` 是与 Profile 正交的可选 Capability：
+`remote_collaboration` 是与 Profile 正交的可选产品能力，但不是 Protocol 1.1 的
+`CapabilityId`，也不进入 CapabilityPlan：
 
 ```text
 Lite      + remote_collaboration?
@@ -219,12 +228,39 @@ Governed  + remote_collaboration?
 Profile 继续决定 Capture、Impact、Design、TDD、Evaluation 等治理深度；M3 只改变协作和
 同步拓扑。
 
+Profile、ProfileDefinition 和 CapabilityPlan 的 Schema、digest 与 Operation DAG 均保持不变。
+远程协作只由项目 Ledger 中最新有效的 `CollaborationConnectionRecord` 激活：
+
+```ts
+interface CollaborationConnectionRecord {
+  record_kind: "collaboration_connection";
+  schema_version: 1;
+  connection_id: string;
+  project_id: string;
+  revision: number;
+  status: "active" | "disconnected";
+  provider: "github" | "gitlab" | "gitee";
+  repository_id: string;
+  canonical_remote_digest: string;
+  control_ref: string;
+  policy_digest: string;
+  actor_principal_id: string;
+  principal_snapshot_digest: string;
+  command_id: string;
+  effective_at: string;
+  supersedes_digest?: string;
+  digest: string;
+}
+```
+
 启用规则：
 
-- 只有显式 `harness connect` 才激活；
-- 激活结果进入 CapabilityPlan；
+- 只有显式 `harness connect` 且 Remote、权限与 Control Ref 安全检查全部通过后，才追加
+  `active` revision；
+- `harness disconnect` 追加 `disconnected` revision，不改写历史；
+- 相同输入的重复命令返回现有 revision，不生成重复事实；
 - 未启用时不创建 Control Ref、不调用 Coordinator、不查询平台权限，也不生成远程占位记录；
-- Governed 可以通过现有 Policy 要求更高平台权限，但不新增 Profile 分支。
+- Governed 可以通过现有 Policy 要求更高平台权限，但不新增 Profile 分支或 CapabilityPlan 输入。
 
 ## 8. Git Remote 自动发现
 
@@ -236,8 +272,10 @@ Profile 继续决定 Capture、Impact、Design、TDD、Evaluation 等治理深�
 4. 解析当前单仓库 identity；
 5. 进行 OAuth/OIDC；
 6. 查询主体对当前仓库的权限；
-7. 创建 `PrincipalSnapshot`；
-8. 完成 Control Ref 安全检查后激活 Capability。
+7. 在内存中生成 `PrincipalSnapshot` 候选；
+8. 按 §17.3 完成 Control Ref 安全检查；
+9. 以 Control Ref CAS 持久化 PrincipalSnapshot；
+10. 向项目 Ledger 追加 `active` CollaborationConnectionRecord。
 
 不支持的 host、歧义 Remote、Remote 漂移或权限不足均阻止连接。项目不保存人工选择的
 平台绑定；每次会话都从当前批准 Remote 解析，解析结果及其 digest 进入本次命令 provenance。
@@ -286,13 +324,25 @@ interface PrincipalSnapshot {
 - `principal_id` 由 provider、canonical host 和平台稳定 subject id 确定性派生；
 - display name、email 或用户名不能作为稳定身份；M3 不要求持久化这些字段；
 - OAuth Token 和平台原始响应不得进入记录；只保留脱敏事实和响应摘要；
-- 权限快照默认最多使用 5 分钟；过期后必须重新查询；
-- Remote、权限、Policy 或主体变化会使依赖该 snapshot 的未完成 Decision 失效。
+- 权限快照默认最多使用 5 分钟；创建远程命令或 Decision 时必须仍在有效期内；
+- 合法写入的 RemoteApprovalDecision 是“决定发生时具备权限”的不可变证据；snapshot 后续到期
+  不会单独使该 Decision 失效，也不要求人类重复批准；
+- Remote、Policy、主体或权限在 Decision 写入前变化会阻止写入；写入后的有效性由既有
+  ApprovalRequest 领域绑定与 Policy freshness 决定。
 
 ### 9.3 自批禁止
 
-请求提出者与批准者通过稳定 `principal_id` 比较。相同主体不能批准自己的请求。Protocol
-1.0/1.1 的本地字符串 actor 继续可读，但不能直接满足远程批准的 Principal 要求。
+Protocol 1.2 在既有 ApprovalRequest 上增加两个可选的一等字段：
+
+```ts
+requester_principal_id?: string;
+requester_principal_snapshot_digest?: string;
+```
+
+已连接项目中新建或因绑定漂移而重发的远程 ApprovalRequest 必须同时包含二者。请求提出者与
+批准者通过稳定 `principal_id` 比较，相同主体不能批准自己的请求。旧 Request 和未连接项目
+继续使用既有本地 `proposed_by` 语义；缺少上述 Principal 绑定的旧 Request 不得远程批准，必须
+在当前连接与 PrincipalSnapshot 下重发，不能在物化时补写不可变 Request。
 
 ## 10. Git Control Ref
 
@@ -318,10 +368,16 @@ Control Ref 只保存三类 Protocol 1.2 记录：
 - 由 `command_id` 与领域 identity 保证幂等。
 
 Control Ref 复用现有 EventStore 的 append-only envelope、sequence、previous digest 与 manifest
-校验规则，不创建第五类领域记录。Record 是事件引用的不可变事实；状态变化必须追加新 Record，
-不能覆盖旧 Record。
+校验规则。Protocol 1.2 只新增五类必要的权威记录：项目 Ledger 中的
+`CollaborationConnectionRecord` 和 `IntegrationRecord`，以及 Control Ref 中的上述三类记录；
+不为派生状态另设记录。Record 是事件引用的不可变事实；状态变化必须追加新 Record，不能覆盖
+旧 Record。
 
 Control Ref 不保存 heartbeat、连接、通知投递或每轮 polling cursor。
+
+Lease 只在 grant、实际延长到期时间和 release/expiry 状态变化时追加记录；heartbeat 与 polling
+不得产生记录。M3 不引入压缩协议，实施门禁至少证明 10,000 条 Control Ref 记录仍可完整校验和
+重建 SQLite，再根据 dogfood 数据决定后续是否需要 checkpoint。
 
 ### 10.1 Coordinator 启动
 
@@ -415,7 +471,7 @@ ApprovalRequest 出现在活动 Operation
 → Coordinator polling 投影到 Approval Inbox
 → 用户 OAuth 登录
 → 查询并冻结 PrincipalSnapshot
-→ 校验权限、自批禁止、object/policy/baseline digest
+→ 校验权限、Request 的请求者 Principal、自批禁止、object/policy/baseline digest
 → Control Ref CAS 写 RemoteApprovalDecision
 → Local Kernel 同步并验证
 → 物化既有 ApprovalDecision
@@ -450,12 +506,16 @@ Local Kernel 只有在重新验证以下绑定后才物化现有 `ApprovalDecisi
 
 - request、object、operation；
 - object、policy 和 baseline digest；
-- PrincipalSnapshot 未过期；
-- required permission 满足；
-- 批准者不是请求提出者。
+- Decision 创建时使用的 PrincipalSnapshot 在 `decided_at` 有效；
+- 该 snapshot 中的 permission 满足 required permission；
+- ApprovalRequest 含一等 requester Principal 绑定，且批准者不是请求提出者。
 
-任一绑定漂移时，Remote Decision 保留为历史事实但状态变为 stale，必须生成绑定新 digest 的
-ApprovalRequest。
+物化后的既有 ApprovalDecision 通过 Protocol 1.2 extension 绑定 RemoteDecision digest。原
+snapshot 在 Decision 写入后到期不属于漂移；object、policy、baseline、requester identity 或其他
+既有 Approval binding 漂移时才使 Decision stale。
+
+领域绑定或请求者身份漂移时，Remote Decision 保留为历史事实但状态变为 stale，必须生成绑定
+新 digest 的 ApprovalRequest。
 
 ## 14. Integration
 
@@ -467,17 +527,41 @@ ApprovalRequest。
 2. 冻结 `expected_target_commit` 与 `operation_commit`；
 3. 执行三方合并；
 4. 文本冲突时返回 `integration_conflict`，不得由模型自动裁决；
-5. 无文本冲突时只生成候选 merge commit；
-6. 在候选 commit 上重新运行：
+5. 无文本冲突时执行 §14.2 的 Ledger sequence 重排；
+6. 只生成候选 merge commit；
+7. 在候选 commit 上重新运行：
    - Graph reconcile；
    - Impact；
    - Evidence freshness；
    - Mandatory Gate；
    - 受 baseline 影响的 Approval 失效检查。
 
-### 14.2 IntegrationRecord
+### 14.2 Ledger sequence 重排
 
-候选 merge commit 必须包含一份 canonical `IntegrationRecord`：
+项目 Ledger 的 `LedgerOperation.sequence` 保持全局线性语义；Protocol 1.2 不改变现有 Reader、
+EventStream 或 append-only 规则。两个 Operation Branch 从同一 Target 创建时允许带有重复的候选
+sequence，但重复 sequence 不能直接进入 Target。
+
+prepare 必须在候选 merge tree 中完成确定性重排：
+
+1. 识别 Operation Branch 新增且 Target 中不存在的 LedgerOperation；相同
+   `ledger_operation_id` 但 digest 不同仍按冲突拒绝；
+2. 按原 sequence、再按 `ledger_operation_id` 排序；
+3. 从 Target 当前最大 LedgerOperation sequence 加一开始连续编号；
+4. 只重写候选 tree 中这些 manifest 的 sequence 与 manifest digest；Operation Branch 历史不变；
+5. Artifact、Edge、Event shard 内容未变化时保留原字节和 shard digest。LifecycleEvent sequence
+   仍按 `workflow_operation_id` 排序，不随 LedgerOperation sequence 重排；
+6. 在最终候选 LedgerOperation 中写入 IntegrationRecord，并再次执行完整 Ledger replay 与
+   append-only 校验。
+
+重排不是对已接受 Ledger 的改写：原候选 manifest 仍可从 Operation Branch 历史审计，Target
+只接受重排后的 manifest。任何无法确定性解释的 operation id、digest、shard 或 sequence 关系
+返回 `ledger_resequence_failed`，不得降级为普通 Git 合并。
+
+### 14.3 IntegrationRecord
+
+候选 merge commit 必须在 `.harness/artifacts/integrations/<integration_id>.json` 包含一份
+canonical `IntegrationRecord`：
 
 ```ts
 interface IntegrationRecord {
@@ -488,6 +572,13 @@ interface IntegrationRecord {
   expected_target_commit: string;
   operation_commit: string;
   lease_fencing_token: number;
+  ledger_sequence_rewrites: readonly {
+    ledger_operation_id: string;
+    old_sequence: number;
+    old_manifest_digest: string;
+    new_sequence: number;
+    new_manifest_digest: string;
+  }[];
   evidence_digests: readonly string[];
   approval_decision_digests: readonly string[];
   command_id: string;
@@ -500,13 +591,19 @@ commit 被 Target Ref CAS 接受后，记录才成为 Target 历史中的已接�
 Gate failure 继续使用既有 Finding 与 Lifecycle Event，不为失败候选创建第二套 Integration
 状态真相。
 
-### 14.3 Accept
+`IntegrationRecord` 不保存 `candidate_commit`：记录自身位于该 commit 的 tree 中，嵌入自身 OID
+会形成递归哈希。candidate identity 由外层命令结果返回，并由以下规则确定性验证：candidate
+必须是双亲 merge commit，第一 parent 等于 `expected_target_commit`，第二 parent 等于
+`operation_commit`；其 tree 必须等于确定性三方合并、上述 Ledger 重排以及固定路径
+IntegrationRecord 共同产生的 tree。
+
+### 14.4 Accept
 
 Coordinator 在 accept 前再次验证：
 
 - Integration Lease 与 fencing token 仍有效；
 - Target head 仍等于 `expected_target_commit`；
-- candidate commit 可由 expected target 与 operation commit 解释；
+- candidate commit 的双亲、tree 与 IntegrationRecord 满足 §14.3 的确定性规则；
 - required Evidence、Gate 和 Approval 都 fresh 且通过；
 - IntegrationRecord Schema 与 digest 有效。
 
@@ -529,7 +626,8 @@ IntegrationRecord digest，幂等恢复 `accepted`，不得生成第二个合并
 PrincipalSnapshot 过期或平台权限下降后：
 
 - 新 Approval 与 Integration 阻塞；
-- 未被 Local Kernel 物化的 Remote Decision 失效；
+- 已合法写入但尚未物化的 Remote Decision 仍按 §13.1 校验其决定时权限和领域绑定；snapshot
+  后续到期不单独使它失效；
 - 已物化 Decision 是否继续有效由既有 Approval binding 与 Policy freshness 规则决定；
 - 权限恢复后必须生成新的 PrincipalSnapshot，不复用旧 snapshot。
 
@@ -554,11 +652,15 @@ M3 至少提供以下类型化错误：
 | `lease_expired` | 本地结果保持候选，重新申请 Lease |
 | `lease_fenced` | 永久拒绝旧 token 请求 |
 | `control_ref_invalid` | Coordinator 进入只读阻塞，人工修复 |
+| `control_ref_unprotected` | connect 阻塞，修复平台 Ref 保护后重试 |
+| `remote_identity_drift` | 停用远程会话，重新执行 connect |
 | `baseline_drift` | 重新 prepare 和重验证 |
 | `integration_conflict` | 人工解决文本冲突 |
+| `ledger_resequence_failed` | 保留候选分支，修复 Ledger 冲突或损坏后重新 prepare |
 | `integration_gate_failed` | 修复后重新运行 Gate |
 | `target_cas_failed` | 重新读取 Target，不重放旧 accept |
 | `projection_rebuild_required` | 从 Git 重建 SQLite |
+| `protocol_upgrade_required` | 使用支持项目权威记录版本的 Reader 重试 |
 
 Coordinator、终端和 Dashboard 必须使用同一错误码及恢复建议。
 
@@ -580,7 +682,12 @@ Coordinator 对 Git 的 fetch/push 凭据通过现有受信 host secret 注入�
 
 ### 17.3 Ref 保护
 
-- Control Ref 必须拒绝 Replica 直接写入；
+- connect 必须通过平台 Adapter 读取并验证 Control Ref 保护规则：只有 Coordinator credential
+  identity 可以更新，普通 Replica 不能直接写入、force push 或删除；
+- Adapter 无法证明平台规则可强制执行时返回 `control_ref_unprotected` 并拒绝连接；不得以本地
+  约定或文档声明代替平台保护；
+- Coordinator 每次读取都验证 Control Ref fast-forward ancestry、Schema、sequence 与 digest；
+  非预期回退或非法记录使 Coordinator 进入 `control_ref_invalid` 只读状态；
 - Target Ref 的最终 Integration 必须使用 CAS；
 - 直接的人类 Target push 仍可能发生，但会造成 baseline drift 并使正在 prepare 的
   Integration 失效；
@@ -598,7 +705,8 @@ M3 不要求持久化用户 email、头像、display name 或平台 Token。审�
 
 M3 在现有命令面上增加或扩展：
 
-- `harness connect`：发现 Remote、OAuth、验证权限并启用 Capability；
+- `harness connect`：发现 Remote、OAuth、验证权限并启用远程协作模式；
+- `harness disconnect`：阻止新 Lease，释放或等待现有 Lease 过期，并追加 disconnected 连接记录；
 - `harness sync`：立即轮询和重建远程投影；
 - `harness status`：增加连接、Operation、Approval 和 Integration 摘要；
 - 既有 `approve/reject/defer`：在远程会话中通过 Coordinator 执行；
@@ -625,15 +733,18 @@ Dashboard 展示远程状态时必须区分 Git 权威事实与 SQLite 投影时
 - Protocol 1.2 Reader 必须读取 1.0/1.1；
 - 旧字符串 actor 投影为 `legacy_local`；
 - `legacy_local` 可以满足本地历史审计，但不能满足新的远程 Approval；
-- 未识别的 1.2 记录由 1.0/1.1 Reader 忽略时不得改变既有领域投影；
+- 1.0/1.1 Reader 遇到会影响权威投影的 1.2 记录时必须 fail-closed，返回类型化
+  `protocol_upgrade_required`，不得静默跳过；
+- Control Ref 不属于未连接项目的本地读取路径，旧 Reader 不需要解析其记录；
 - 1.2 Writer 不改写历史记录，只追加新事实。
 
 ### 19.2 启用与停用
 
-连接是显式、可审计的 Capability 变更。停用 M3：
+连接是显式、可审计的协作模式变更。停用 M3：
 
 - 先阻止新 Lease；
 - 释放或使活动 Lease 过期；
+- 向项目 Ledger 追加 `disconnected` CollaborationConnectionRecord；
 - 保留 Control Ref 历史；
 - 删除 SQLite 不影响审计；
 - 已存在的 Operation Branch 保留为普通候选分支，不能自动集成。
@@ -644,21 +755,22 @@ Dashboard 展示远程状态时必须区分 Git 权威事实与 SQLite 投影时
 
 - 不创建 Control Ref；
 - 不读取平台身份；
-- 不生成 Principal、Lease、Remote Approval 或 Integration Record；
+- 不生成 CollaborationConnection、Principal、Lease、Remote Approval 或 Integration Record；
 - 不新增 Dashboard 远程状态请求；
 - 不改变本地 Approval 与 Iterate 行为。
 
 ## 20. 可观测性
 
-M3 复用现有 EventStream 和 Dashboard Read API。新增事件应保持最小：
+M3 复用现有 Dashboard Read API，但明确区分两条观测通道：
 
-- `RemoteConnected`、`RemoteDisconnected`；
-- `LeaseGranted`、`LeaseReleased`、`LeaseExpired`；
-- `RemoteApprovalRecorded`、`RemoteApprovalInvalidated`；
-- `IntegrationPrepared`、`IntegrationAccepted`、`IntegrationBlocked`。
+- `CollaborationCoordinatorPort.query` 投影连接、Lease、Remote Approval 与候选 Integration
+  状态；这些是 Control Ref 或 SQLite 投影，不伪装成项目 Lifecycle Event；
+- `EventStreamPort` 只投影项目 Ledger 中已接受的 `RemoteConnected`、
+  `RemoteDisconnected`、`RemoteApprovalMaterialized` 与 `IntegrationAccepted`。
 
-事件不得包含 OAuth Token、平台原始响应或未脱敏 PII。SQLite heartbeat 与每次 polling 不生成
-Ledger Event；只有状态变化产生事件，避免观测噪声。
+`LeaseGranted/Released/Expired`、`IntegrationPrepared/Blocked` 只作为协作 Read Model 状态变化，
+不进入项目 Ledger Event。两条通道都不得包含 OAuth Token、平台原始响应或未脱敏 PII；heartbeat
+与每次 polling 不生成记录或 Event，避免观测噪声。
 
 ## 21. 测试策略
 
@@ -671,7 +783,8 @@ Ledger Event；只有状态变化产生事件，避免观测噪声。
 - canonical JSON、digest 和 deterministic identity；
 - Lease 状态、fencing 比较和 command idempotency；
 - Approval binding、自批禁止和权限 freshness；
-- Integration 状态与兼容 Reader。
+- Ledger sequence 确定性重排及重排映射；
+- Integration 状态与新旧 Reader 的 fail-closed 兼容行为。
 
 ### 21.2 Interface Conformance
 
@@ -681,21 +794,27 @@ Ledger Event；只有状态变化产生事件，避免观测噪声。
 - Git 与 In-memory `GitControlStorePort` Adapter；
 - SQLite 与 In-memory `CoordinatorProjectionPort` Adapter。
 
-测试只通过模块 Interface 断言可观察结果，不依赖 Adapter 内部字段。
+测试只通过模块 Interface 断言可观察结果，不依赖 Adapter 内部字段。三个平台的 Kit 都必须证明
+Control Ref 保护可被查询并强制执行；不具备该能力的 Adapter 只能返回
+`control_ref_unprotected`，不能通过生产 Conformance。
 
 ### 21.3 双 Clone 集成测试
 
 使用本地 bare Git remote、两个 clone、假平台身份 Adapter 和可控时钟证明：
 
 - 不同 Operation 并行；
+- 两个分支从同一 Ledger sequence 起点推进、Git 无文本冲突时，后集成分支被确定性重排且
+  Target Ledger 可完整 replay；
 - 同一 Operation Lease 互斥；
 - 旧 fencing token 被拒绝；
 - 网络断开只允许离线准备；
 - Remote Approval 正确物化与失效；
+- Remote Approval 后离线超过 snapshot 有效期，只要决定时权限与领域绑定有效，就无需重复人工批准；
 - Target 漂移触发重验证；
 - 文本冲突、Gate 失败和权限撤销阻止 CAS；
 - SQLite 删除后可重建；
-- CAS 成功但响应丢失时幂等恢复。
+- CAS 成功但响应丢失时幂等恢复；
+- disconnect 后不再发放 Lease，历史 Control Ref 与候选 Operation Branch 保留。
 
 ### 21.4 真实平台 E2E
 
@@ -703,7 +822,7 @@ M3 正式完成前，GitHub、GitLab、Gitee 各保存一次脱敏 dogfood 证�
 
 ```text
 OAuth → 权限查询 → Operation Lease → Remote Approval
-→ clean Integration → Target CAS → Snapshot/Control Ref 审计
+→ clean Integration / Ledger sequence 重排 → Target CAS → Snapshot/Control Ref 审计
 ```
 
 真实 Token、用户名、email 和 Remote credential 不进入仓库证据。
@@ -722,14 +841,14 @@ smoke 必须全部通过。未启用 M3 的三档 Profile dogfood 必须证明�
 | M3-AC-03 | 两个 Replica 可并行推进不同 Operation，互不覆盖 |
 | M3-AC-04 | 同一 Operation 的旧 fencing token 在 Lease 过期后不能受管写入 |
 | M3-AC-05 | 断网允许本地准备，但不能更新 Control、Operation 受管状态或 Target |
-| M3-AC-06 | 有权限非提出者可批准；越权、自批、过期权限和错误 digest 被拒绝 |
-| M3-AC-07 | clean merge 后重新执行 Graph、Impact、Freshness、Gate 与 Approval 校验 |
+| M3-AC-06 | 有权限非提出者可批准；越权、自批、主体漂移和错误 digest 被拒绝；决定时有效的 snapshot 后续到期不单独使 Decision 失效 |
+| M3-AC-07 | clean merge 后确定性解决 Ledger sequence 分叉，并重新执行 Graph、Impact、Freshness、Gate 与 Approval 校验 |
 | M3-AC-08 | 文本冲突、Gate 失败、权限撤销或 Target 漂移阻止错误 CAS |
 | M3-AC-09 | Target CAS 成功但响应丢失时，重试不产生第二个 Integration |
 | M3-AC-10 | SQLite 可从 Git 重建，旧 Lease 不复活 |
-| M3-AC-11 | Protocol 1.0/1.1 保持可读；未启用 M3 时零远程副作用 |
+| M3-AC-11 | Protocol 1.2 向后读取 1.0/1.1；旧 Reader 对权威 1.2 记录类型化拒绝；未启用 M3 时零远程副作用 |
 | M3-AC-12 | CLI 与 Dashboard 对连接、Approval 和 Conflict 呈现一致 |
-| M3-AC-13 | 三平台 Adapter 通过 Conformance，且各有一次脱敏真实 dogfood |
+| M3-AC-13 | 三平台 Adapter 通过身份、权限与 Control Ref 保护 Conformance，且各有一次脱敏真实 dogfood |
 | M3-AC-14 | M1、M2、Protocol 1.1 全量发布门禁无回归 |
 
 ## 23. 完成定义
@@ -738,8 +857,8 @@ M3 只有在以下条件全部满足时才可声明完成：
 
 1. Protocol 1.2 Schema、canonical、digest、Reader 和 migration 已冻结；
 2. `CollaborationCoordinatorPort` 与三个内部 Adapter seam 通过 Conformance；
-3. 单 Coordinator、Git Control Ref 和 SQLite 重建闭环通过；
-4. 双 Clone 并行、Lease、远程 Approval、Integration 和故障恢复通过；
+3. CollaborationConnectionRecord、单 Coordinator、Git Control Ref 和 SQLite 重建闭环通过；
+4. 双 Clone 并行、Ledger sequence 重排、Lease、远程 Approval、Integration 和故障恢复通过；
 5. GitHub、GitLab、Gitee 真实 dogfood 证据齐全；
 6. M3-AC-01 至 M3-AC-14 均绑定当前 commit 的测试与 Evidence；
 7. 未启用 M3 的本地流程及三档 Profile 无行为回归；
@@ -749,10 +868,10 @@ M3 只有在以下条件全部满足时才可声明完成：
 
 实施计划应把 M3 拆成少量可独立验收的纵向切片，而不是按文件或平台横向堆任务：
 
-1. Protocol 1.2 与 Coordinator Interface；
+1. Protocol 1.2、CollaborationConnectionRecord 与 Coordinator Interface；
 2. Git Control Ref、Lease 与 SQLite 重建；
 3. OAuth 身份、权限映射与远程 Approval；
-4. Operation Branch、Integration 与冲突恢复；
+4. Operation Branch、Ledger sequence 重排、Integration 与冲突恢复；
 5. CLI/Dashboard、三平台 Conformance、真实 dogfood 与发布证据。
 
 任务数量、提交边界和实施顺序由后续 `writing-plans` 阶段确定。本设计不授权开始编码。
