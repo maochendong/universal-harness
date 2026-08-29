@@ -6,6 +6,7 @@ import type {
   ControlRecord,
   IntegrationRecord,
   LeaseRecord,
+  LedgerOperation,
   REMOTE_APPROVAL_DECISIONS,
   RemoteApprovalDecisionRecord,
 } from "@universal-harness-internal/core";
@@ -211,6 +212,32 @@ export interface RemoteApprovalOutcome {
   readonly projection_rebuild_required?: boolean;
 }
 
+/**
+ * Successful integration prepare: the deterministic candidate commit carries
+ * the sealed IntegrationRecord and is staged on the remote; only the Target
+ * CAS in `accept_integration` makes it an accepted fact (design §14.3/§14.4).
+ */
+export interface PreparedIntegrationOutcome {
+  readonly status: "prepared";
+  readonly integration_record: IntegrationRecord;
+  readonly candidate_commit: string;
+  readonly replayed: boolean;
+  readonly projection_rebuild_required?: boolean;
+}
+
+/**
+ * Successful integration accept: the Target Ref CAS accepted the candidate
+ * (or a lost-response retry recovered the same accepted record from the
+ * Target history). `target_commit` is the commit the Target ref now names.
+ */
+export interface AcceptedIntegrationOutcome {
+  readonly status: "accepted";
+  readonly integration_record: IntegrationRecord;
+  readonly target_commit: string;
+  readonly replayed: boolean;
+  readonly projection_rebuild_required?: boolean;
+}
+
 export interface CollaborationFailedOutcome {
   readonly status: "failed";
   readonly failure: CollaborationFailure;
@@ -222,6 +249,8 @@ export type CollaborationOutcome =
   | LeaseOutcome
   | PublishedOperationOutcome
   | RemoteApprovalOutcome
+  | PreparedIntegrationOutcome
+  | AcceptedIntegrationOutcome
   | CollaborationFailedOutcome;
 
 export interface CollaborationCoordinatorPort {
@@ -317,6 +346,8 @@ export interface ControlSnapshot {
   readonly control_head_oid?: string;
   readonly control_records: readonly ControlRecord[];
   readonly latest_connection?: CollaborationConnectionRecord;
+  /** Head of the connected target ref as fetched during this read. */
+  readonly target_head_oid?: string;
 }
 
 export type ControlSnapshotResult =
@@ -369,14 +400,92 @@ export type OperationCasResult =
   | { readonly status: "swapped"; readonly head_oid: string }
   | { readonly status: "failed"; readonly failure: CollaborationFailure };
 
+/** One file the integration plan writes into the candidate merge tree. */
+export interface CandidateFileWrite {
+  readonly path: string;
+  readonly content: string;
+}
+
+/** An artifact file of an incoming LedgerOperation, digest-matched from the merge tree. */
+export interface CandidateArtifact {
+  readonly path: string;
+  readonly content: string;
+  readonly digest: string;
+}
+
+/**
+ * The Ledger view the Coordinator's deterministic integration plan decides
+ * over; every byte is parsed from fetched Git trees by the Adapter.
+ */
+export interface CandidateMergeView {
+  readonly target_operations: readonly LedgerOperation[];
+  readonly incoming_operations: readonly LedgerOperation[];
+  readonly incoming_artifacts: readonly CandidateArtifact[];
+}
+
+export type CandidatePlan =
+  | {
+      readonly status: "planned";
+      readonly record: IntegrationRecord;
+      readonly writes: readonly CandidateFileWrite[];
+    }
+  | { readonly status: "failed"; readonly failure: CollaborationFailure };
+
 export interface PrepareGitCandidateInput {
   readonly project_id: string;
   readonly operation_id: string;
   readonly target_ref: string;
+  /** Frozen Target head the candidate must build on (design §14.1). */
+  readonly expected_target_commit: string;
+  /** Frozen Operation Branch head; the candidate's second parent. */
+  readonly operation_commit: string;
+  /**
+   * The Coordinator's pure, deterministic resequencing and record planner
+   * (design §14.2/§14.3). Called exactly once with the merged Ledger view; a
+   * failed plan aborts the merge and leaves every managed ref untouched.
+   */
+  readonly plan: (merge: CandidateMergeView) => CandidatePlan;
 }
 
 export type PreparedGitCandidateResult =
-  | { readonly status: "prepared"; readonly merge_commit: string }
+  | {
+      readonly status: "prepared";
+      readonly candidate_commit: string;
+      readonly tree_oid: string;
+      readonly integration_id: string;
+      /**
+       * Adapter-owned scratch checkout of the candidate tree, read-only for
+       * the caller and invalidated by the next prepareCandidate call; used to
+       * re-run the existing tree-based validators on the candidate.
+       */
+      readonly candidate_root: string;
+    }
+  | { readonly status: "failed"; readonly failure: CollaborationFailure };
+
+export interface ReadCandidateInput {
+  readonly project_id: string;
+  readonly integration_id: string;
+}
+
+export type CandidateReadResult =
+  | {
+      readonly status: "found";
+      readonly candidate_commit: string;
+      readonly tree_oid: string;
+      readonly record: IntegrationRecord;
+    }
+  | { readonly status: "missing" }
+  | { readonly status: "failed"; readonly failure: CollaborationFailure };
+
+export interface ReadIntegrationRecordInput {
+  readonly project_id: string;
+  readonly target_ref: string;
+  readonly integration_id: string;
+}
+
+export type IntegrationRecordReadResult =
+  | { readonly status: "found"; readonly commit: string; readonly record: IntegrationRecord }
+  | { readonly status: "missing" }
   | { readonly status: "failed"; readonly failure: CollaborationFailure };
 
 export interface TargetCasInput {
@@ -403,6 +512,8 @@ export interface GitControlStorePort {
   listOperationHeads(input: ListOperationHeadsInput): Promise<OperationHeadsResult>;
   compareAndSwapOperation(input: OperationCasInput): Promise<OperationCasResult>;
   prepareCandidate(input: PrepareGitCandidateInput): Promise<PreparedGitCandidateResult>;
+  readCandidate(input: ReadCandidateInput): Promise<CandidateReadResult>;
+  readIntegrationRecord(input: ReadIntegrationRecordInput): Promise<IntegrationRecordReadResult>;
   compareAndSwapTarget(input: TargetCasInput): Promise<TargetCasResult>;
 }
 

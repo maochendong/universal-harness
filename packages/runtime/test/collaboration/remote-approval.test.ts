@@ -275,6 +275,12 @@ function createFakeControlStore(): FakeControlStore {
       compareAndSwapTarget() {
         throw new Error("not used in the approval slice tests");
       },
+      readCandidate() {
+        throw new Error("not used in the approval slice tests");
+      },
+      readIntegrationRecord() {
+        throw new Error("not used in the approval slice tests");
+      },
     },
   };
   return store;

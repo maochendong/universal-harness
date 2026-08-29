@@ -10,6 +10,7 @@ import { buildCollaborationRecord } from "@universal-harness-internal/core";
 
 import type { ApprovalRequestRecord } from "../approval/request.js";
 import {
+  permissionSatisfies,
   remoteDecisionIdFor,
   terminalRemoteDecision,
   validateRemoteApprovalDecision,
@@ -24,13 +25,15 @@ import {
   snapshotIdFor,
 } from "./connection.js";
 import { collaborationFailure, type CollaborationFailure } from "./errors.js";
+import { acceptIntegration, prepareIntegration } from "./integration.js";
 import {
   leaseRevocationDraft,
+  sealLeaseRecord,
   transitionLease,
   type LeaseCommand,
-  type LeaseDraft,
 } from "./lease.js";
 import type {
+  AcceptIntegrationCommand,
   CollaborationCommand,
   CollaborationCoordinatorPort,
   CollaborationOutcome,
@@ -46,6 +49,7 @@ import type {
   DisconnectedOutcome,
   GitControlStorePort,
   PlatformIdentityPort,
+  PrepareIntegrationCommand,
   PrincipalSnapshotFacts,
   PublishOperationCandidateCommand,
   SubmitRemoteApprovalCommand,
@@ -65,8 +69,9 @@ import type {
  * answers `lease_unavailable`. Remote approval submissions validate the
  * committed request, the approver's fresh PrincipalSnapshot and the
  * self-approval prohibition before the Control Ref CAS (design §13.1);
- * Integration commands are implemented by later tasks and answered with a
- * typed `coordinator_unavailable` failure.
+ * Integration prepare/accept run the deterministic candidate pipeline of
+ * `integration.ts` (design §14) behind the same authorization and
+ * projection policy.
  */
 export interface CollaborationCoordinatorDependencies {
   readonly platform: PlatformIdentityPort;
@@ -691,23 +696,6 @@ export function createCollaborationCoordinator(
     return leaseRecordsOf(records, addressed.resource_id);
   }
 
-  function sealLeaseDraft(
-    draft: LeaseDraft,
-    chain: readonly ControlRecord[],
-    holderDigest: string,
-    session: CollaborationSession,
-  ): LeaseRecord {
-    const previous = chain[chain.length - 1];
-    return buildCollaborationRecord({
-      record_kind: "lease" as const,
-      control_sequence: chain.length + 1,
-      ...(previous === undefined ? {} : { previous_control_record_digest: previous.record_digest }),
-      ...draft,
-      holder_principal_snapshot_digest: holderDigest,
-      client_instance_id: session.client_instance_id,
-    });
-  }
-
   async function leaseCommand(
     command: LeaseCommand,
     session: CollaborationSession,
@@ -735,7 +723,12 @@ export function createCollaborationCoordinator(
       let transition = transitionLease(leaseHistoryFor(records, command), command, now());
       let casLost = false;
       while (transition.kind === "draft") {
-        const record = sealLeaseDraft(transition.draft, chain, holderDigest, session);
+        const record = sealLeaseRecord(
+          transition.draft,
+          chain,
+          holderDigest,
+          session.client_instance_id,
+        );
         const appended = await deps.controlStore.appendControl({
           project_id: command.project_id,
           control_ref: controlRef,
@@ -873,6 +866,181 @@ export function createCollaborationCoordinator(
     };
   }
 
+  // --- Integration slice -----------------------------------------------------
+
+  /**
+   * Shared authorization for the Integration commands (design §9.1, §15.2):
+   * an active connection, a fresh session-owned PrincipalSnapshot from the
+   * platform, and at least the maintain rank.
+   */
+  async function authorizeIntegrationActor(
+    command: PrepareIntegrationCommand | AcceptIntegrationCommand,
+    session: CollaborationSession,
+    staleSummary: string,
+  ): Promise<
+    | {
+        readonly status: "authorized";
+        readonly snapshot: ControlSnapshot;
+        readonly connection: CollaborationConnectionRecord;
+        readonly facts: PrincipalSnapshotFacts;
+      }
+    | { readonly status: "failed"; readonly failure: CollaborationFailure }
+  > {
+    const active = await requireActiveConnection(command.project_id, command.kind);
+    if (active.status === "failed") return { status: "failed", failure: active.failure };
+    const connection = active.snapshot.latest_connection as CollaborationConnectionRecord;
+    const hostSnapshot = latestSnapshot(active.snapshot.control_records);
+    if (hostSnapshot === undefined) {
+      return {
+        status: "failed",
+        failure: collaborationFailure(
+          "control_ref_invalid",
+          "the active connection has no principal snapshot on the control ref",
+        ),
+      };
+    }
+    const auth = await authenticateFreshSnapshot(
+      {
+        provider: connection.provider,
+        host: hostSnapshot.host,
+        repository_id: connection.repository_id,
+      },
+      session,
+      staleSummary,
+    );
+    if (auth.status === "failed") return { status: "failed", failure: auth.failure };
+    if (!permissionSatisfies(auth.facts.permission, "maintain")) {
+      return {
+        status: "failed",
+        failure: collaborationFailure(
+          "permission_denied",
+          `principal ${auth.facts.principal_id} holds ${auth.facts.permission} but integration requires maintain`,
+        ),
+      };
+    }
+    return {
+      status: "authorized",
+      snapshot: active.snapshot,
+      connection,
+      facts: auth.facts,
+    };
+  }
+
+  async function prepareIntegrationCommand(
+    command: PrepareIntegrationCommand,
+    session: CollaborationSession,
+  ): Promise<CollaborationOutcome> {
+    const authorized = await authorizeIntegrationActor(
+      command,
+      session,
+      "platform permission snapshot expired before the integration candidate could be prepared",
+    );
+    if (authorized.status === "failed") return { status: "failed", failure: authorized.failure };
+
+    // Freeze the two merge inputs: the published Operation Branch head and
+    // the Target head observed in the same authoritative read.
+    const heads = await deps.controlStore.listOperationHeads({
+      project_id: command.project_id,
+    });
+    if (heads.status === "failed") return { status: "failed", failure: heads.failure };
+    const head = heads.heads.find((entry) => entry.operation_id === command.operation_id);
+    if (head === undefined) {
+      return {
+        status: "failed",
+        failure: collaborationFailure(
+          "coordinator_unavailable",
+          `operation ${command.operation_id} has no published branch head; publish the candidate first`,
+          true,
+        ),
+      };
+    }
+    const targetHead = authorized.snapshot.target_head_oid;
+    if (targetHead === undefined) {
+      return {
+        status: "failed",
+        failure: collaborationFailure(
+          "coordinator_unavailable",
+          "the connected target ref head is unknown; re-read the connection and retry",
+          true,
+        ),
+      };
+    }
+
+    const result = await prepareIntegration(
+      { controlStore: deps.controlStore, control_ref: controlRef, now },
+      {
+        command_id: command.command_id,
+        project_id: command.project_id,
+        operation_id: command.operation_id,
+        operation_commit: head.head_oid,
+        expected_target_commit: targetHead,
+        connection: authorized.connection,
+        control: authorized.snapshot,
+        session,
+        snapshot_facts: authorized.facts,
+      },
+    );
+    if (result.status === "failed") return { status: "failed", failure: result.failure };
+    if (result.replayed) {
+      return {
+        status: "prepared",
+        integration_record: result.integration_record,
+        candidate_commit: result.candidate_commit,
+        replayed: true,
+      };
+    }
+    const projection = await applyProjection([...result.appended, result.integration_record]);
+    return {
+      status: "prepared",
+      integration_record: result.integration_record,
+      candidate_commit: result.candidate_commit,
+      replayed: false,
+      ...(projection.rebuild_required ? { projection_rebuild_required: true } : {}),
+    };
+  }
+
+  async function acceptIntegrationCommand(
+    command: AcceptIntegrationCommand,
+    session: CollaborationSession,
+  ): Promise<CollaborationOutcome> {
+    const authorized = await authorizeIntegrationActor(
+      command,
+      session,
+      "platform permission snapshot expired before the integration could be accepted",
+    );
+    if (authorized.status === "failed") return { status: "failed", failure: authorized.failure };
+
+    const result = await acceptIntegration(
+      { controlStore: deps.controlStore, control_ref: controlRef, now },
+      {
+        command_id: command.command_id,
+        project_id: command.project_id,
+        integration_id: command.integration_id,
+        expected_target_commit: command.expected_target_commit,
+        connection: authorized.connection,
+        control: authorized.snapshot,
+        session,
+      },
+    );
+    if (result.status === "failed") return { status: "failed", failure: result.failure };
+    if (result.replayed) {
+      return {
+        status: "accepted",
+        integration_record: result.integration_record,
+        target_commit: result.target_commit,
+        replayed: true,
+      };
+    }
+    const projection = await applyProjection([...result.appended, result.integration_record]);
+    return {
+      status: "accepted",
+      integration_record: result.integration_record,
+      target_commit: result.target_commit,
+      replayed: false,
+      ...(projection.rebuild_required ? { projection_rebuild_required: true } : {}),
+    };
+  }
+
   return {
     execute(command, session) {
       switch (command.kind) {
@@ -888,6 +1056,10 @@ export function createCollaborationCoordinator(
           return publishOperationCandidate(command);
         case "submit_remote_approval":
           return submitRemoteApproval(command, session);
+        case "prepare_integration":
+          return prepareIntegrationCommand(command, session);
+        case "accept_integration":
+          return acceptIntegrationCommand(command, session);
         default:
           return gatedRemoteCommand(command);
       }

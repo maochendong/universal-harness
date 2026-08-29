@@ -2,6 +2,8 @@ export * from "./errors.js";
 export * from "./connection.js";
 export * from "./lease.js";
 export * from "./approval.js";
+export * from "./ledger-resequence.js";
+export * from "./integration.js";
 export * from "./remote-discovery.js";
 export * from "./oauth-session.js";
 export * from "./platform-adapters.js";

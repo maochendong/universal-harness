@@ -1,18 +1,30 @@
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { buildCollaborationRecord } from "@universal-harness-internal/core";
+import {
+  buildCollaborationRecord,
+  buildManifest,
+  canonicalizeJson,
+  sha256Hex,
+} from "@universal-harness-internal/core";
 import type {
   CollaborationConnectionRecord,
   ControlRecord,
+  IntegrationRecord,
   LeaseRecord,
+  LedgerOperation,
   PrincipalSnapshotRecord,
 } from "@universal-harness-internal/core";
 import { afterEach, describe, expect, it } from "vitest";
 
-import { createGitControlStoreAdapter, type GitControlStoreAdapter } from "../src/control-store.js";
+import {
+  createGitControlStoreAdapter,
+  type CandidateMergeView,
+  type CandidatePlan,
+  type GitControlStoreAdapter,
+} from "../src/control-store.js";
 
-import { cleanupDirectories, git, makeRepo, makeTempDir } from "./helpers.js";
+import { cleanupDirectories, git, headOf, makeRepo, makeTempDir } from "./helpers.js";
 
 afterEach(cleanupDirectories);
 
@@ -682,5 +694,338 @@ describe("git control store read fallback and publish hardening", { timeout: 30_
       fencing_token: 1,
     });
     expect(matched).toMatchObject({ status: "swapped", head_oid: candidate });
+  });
+});
+
+// --- Integration candidate merge and Target CAS (plan M3 Task 6 step 3) ----
+
+const STAGING_REF_PREFIX = "refs/heads/harness/candidate";
+
+function integrationRecordRecord(
+  integrationId: string,
+  expectedTargetCommit: string,
+  operationCommit: string,
+): IntegrationRecord {
+  return buildCollaborationRecord({
+    record_kind: "integration" as const,
+    integration_id: integrationId,
+    operation_id: "op_1",
+    expected_target_commit: expectedTargetCommit,
+    operation_commit: operationCommit,
+    lease_fencing_token: 1,
+    ledger_sequence_rewrites: [],
+    evidence_digests: [],
+    approval_decision_digests: [],
+    command_id: "command_prepare_1",
+  });
+}
+
+/** The deterministic coordinator plan the tests inject into prepareCandidate. */
+function fixedPlan(record: IntegrationRecord) {
+  return (): CandidatePlan => ({
+    status: "planned",
+    record,
+    writes: [
+      {
+        path: `.harness/artifacts/integrations/${record.integration_id}.json`,
+        content: `${canonicalizeJson(record)}\n`,
+      },
+    ],
+  });
+}
+
+/** A branch with one Ledger operation, its empty shards and one artifact. */
+function commitLedgerOperation(root: string, operationId: string): LedgerOperation {
+  const artifactContent = `note for ${operationId}\n`;
+  const manifest = buildManifest({
+    ledger_operation_id: operationId,
+    workflow_operation_id: "workflow_op_01",
+    attempt_id: "attempt_01",
+    baseline_commit: headOf(root),
+    sequence: 1,
+    artifact_digests: [sha256Hex(artifactContent)],
+    edge_file: `ledger/edges/2026-08/${operationId}.jsonl`,
+    event_file: `events/2026-08/${operationId}.jsonl`,
+    edge_file_digest: sha256Hex(""),
+    event_file_digest: sha256Hex(""),
+    committed_at: NOW,
+  });
+  mkdirSync(join(root, ".harness/ledger/operations"), { recursive: true });
+  mkdirSync(join(root, ".harness/ledger/edges/2026-08"), { recursive: true });
+  mkdirSync(join(root, ".harness/events/2026-08"), { recursive: true });
+  mkdirSync(join(root, ".harness/artifacts/notes"), { recursive: true });
+  writeFileSync(
+    join(root, `.harness/ledger/operations/${operationId}.json`),
+    `${canonicalizeJson(manifest)}\n`,
+  );
+  writeFileSync(join(root, `.harness/ledger/edges/2026-08/${operationId}.jsonl`), "");
+  writeFileSync(join(root, `.harness/events/2026-08/${operationId}.jsonl`), "");
+  writeFileSync(join(root, ".harness/artifacts/notes/note.txt"), artifactContent);
+  git(root, "add", ".harness");
+  git(root, "commit", "-m", `ledger operation ${operationId}`);
+  return manifest;
+}
+
+/** Remote with `main` plus an `operation/op_1` branch carrying a Ledger op. */
+function createOperationHarness() {
+  const { remote, store } = createHarness();
+  const clone = cloneRemote(remote);
+  const targetHead = headOf(clone);
+  const manifest = commitLedgerOperation(clone, "ledger_op_b1");
+  writeFileSync(join(clone, "work.txt"), "candidate work\n");
+  git(clone, "add", "work.txt");
+  git(clone, "commit", "-m", "operation work");
+  const operationHead = headOf(clone);
+  git(clone, "push", "origin", "HEAD:refs/heads/operation/op_1");
+  return { remote, store, targetHead, operationHead, manifest };
+}
+
+describe("git control store integration candidates", { timeout: 30_000 }, () => {
+  it("builds a deterministic two-parent candidate and stages it without touching managed refs", async () => {
+    const { remote, store, targetHead, operationHead, manifest } = createOperationHarness();
+    const record = integrationRecordRecord("integration_test01", targetHead, operationHead);
+
+    let observed: CandidateMergeView | undefined;
+    const prepared = await store.prepareCandidate({
+      project_id: PROJECT_ID,
+      operation_id: "op_1",
+      target_ref: "refs/heads/main",
+      expected_target_commit: targetHead,
+      operation_commit: operationHead,
+      plan: (merge) => {
+        observed = merge;
+        return fixedPlan(record)();
+      },
+    });
+    expect(prepared).toMatchObject({ status: "prepared", integration_id: "integration_test01" });
+    if (prepared.status !== "prepared") throw new Error("expected a prepared candidate");
+
+    // The coordinator's plan sees the parsed Ledger view of both branches.
+    expect(observed?.target_operations).toEqual([]);
+    expect(observed?.incoming_operations.map((op) => op.ledger_operation_id)).toEqual([
+      "ledger_op_b1",
+    ]);
+    expect(observed?.incoming_operations[0]?.digest).toBe(manifest.digest);
+    expect(observed?.incoming_artifacts).toEqual([
+      {
+        path: ".harness/artifacts/notes/note.txt",
+        content: "note for ledger_op_b1\n",
+        digest: sha256Hex("note for ledger_op_b1\n"),
+      },
+    ]);
+
+    // Parent order is Target then Operation (design §14.3).
+    const verify = cloneRemote(remote);
+    const line = git(verify, "rev-list", "--parents", "-n", "1", prepared.candidate_commit).trim();
+    expect(line.split(" ")).toEqual([prepared.candidate_commit, targetHead, operationHead]);
+    git(verify, "checkout", "--detach", prepared.candidate_commit);
+    expect(readFileSync(join(verify, "work.txt"), "utf8")).toBe("candidate work\n");
+    expect(
+      readFileSync(join(verify, ".harness/artifacts/integrations/integration_test01.json"), "utf8"),
+    ).toBe(`${canonicalizeJson(record)}\n`);
+
+    // Managed refs never moved; only the staging ref names the candidate.
+    expect(git(remote, "rev-parse", "refs/heads/main").trim()).toBe(targetHead);
+    expect(git(remote, "rev-parse", "refs/heads/operation/op_1").trim()).toBe(operationHead);
+    expect(git(remote, "rev-parse", `${STAGING_REF_PREFIX}/integration_test01`).trim()).toBe(
+      prepared.candidate_commit,
+    );
+
+    // Recomputing the same merge + plan yields the same tree (design §14.3).
+    const recomputed = await store.prepareCandidate({
+      project_id: PROJECT_ID,
+      operation_id: "op_1",
+      target_ref: "refs/heads/main",
+      expected_target_commit: targetHead,
+      operation_commit: operationHead,
+      plan: fixedPlan(record),
+    });
+    expect(recomputed).toMatchObject({ status: "prepared", tree_oid: prepared.tree_oid });
+  });
+
+  it("returns integration_conflict on a text conflict and leaves every ref untouched", async () => {
+    const { remote, store } = createHarness();
+    const base = cloneRemote(remote);
+    writeFileSync(join(base, "shared.txt"), "base\n");
+    git(base, "add", "shared.txt");
+    git(base, "commit", "-m", "shared base");
+    git(base, "push", "origin", "main");
+    const baseHead = headOf(base);
+
+    writeFileSync(join(base, "shared.txt"), "target version\n");
+    git(base, "commit", "-am", "target edit");
+    git(base, "push", "origin", "main");
+    const targetHead = headOf(base);
+
+    const replica = cloneRemote(remote);
+    git(replica, "checkout", "-b", "work", baseHead);
+    writeFileSync(join(replica, "shared.txt"), "operation version\n");
+    git(replica, "commit", "-am", "operation edit");
+    const operationHead = headOf(replica);
+    git(replica, "push", "origin", "HEAD:refs/heads/operation/op_1");
+
+    const record = integrationRecordRecord("integration_conf01", targetHead, operationHead);
+    const result = await store.prepareCandidate({
+      project_id: PROJECT_ID,
+      operation_id: "op_1",
+      target_ref: "refs/heads/main",
+      expected_target_commit: targetHead,
+      operation_commit: operationHead,
+      plan: fixedPlan(record),
+    });
+    expect(result.status).toBe("failed");
+    if (result.status !== "failed") throw new Error("expected a conflict failure");
+    expect(result.failure.code).toBe("integration_conflict");
+    expect(result.failure.summary).toContain("shared.txt");
+    expect(() =>
+      git(remote, "rev-parse", "--verify", `${STAGING_REF_PREFIX}/integration_conf01`),
+    ).toThrow();
+    expect(git(remote, "rev-parse", "refs/heads/main").trim()).toBe(targetHead);
+  });
+
+  it("rejects drifted frozen commits before merging", async () => {
+    const { remote, store, targetHead, operationHead } = createOperationHarness();
+
+    const movedTarget = await store.prepareCandidate({
+      project_id: PROJECT_ID,
+      operation_id: "op_1",
+      target_ref: "refs/heads/main",
+      expected_target_commit: operationHead,
+      operation_commit: operationHead,
+      plan: fixedPlan(integrationRecordRecord("integration_drift1", operationHead, operationHead)),
+    });
+    expect(movedTarget).toMatchObject({ status: "failed", failure: { code: "baseline_drift" } });
+
+    const staleOperation = await store.prepareCandidate({
+      project_id: PROJECT_ID,
+      operation_id: "op_1",
+      target_ref: "refs/heads/main",
+      expected_target_commit: targetHead,
+      operation_commit: targetHead,
+      plan: fixedPlan(integrationRecordRecord("integration_drift2", targetHead, targetHead)),
+    });
+    expect(staleOperation).toMatchObject({
+      status: "failed",
+      failure: { code: "operation_ref_drift" },
+    });
+    expect(git(remote, "rev-parse", "refs/heads/main").trim()).toBe(targetHead);
+  });
+
+  it("rejects malformed commit oids before they reach a git argument", async () => {
+    const { store } = createHarness();
+    const result = await store.prepareCandidate({
+      project_id: PROJECT_ID,
+      operation_id: "op_1",
+      target_ref: "refs/heads/main",
+      expected_target_commit: "not-an-oid",
+      operation_commit: "0".repeat(40),
+      plan: fixedPlan(integrationRecordRecord("integration_bad01", "0".repeat(40), "0".repeat(40))),
+    });
+    expect(result).toMatchObject({
+      status: "failed",
+      failure: { code: "coordinator_unavailable", retryable: false },
+    });
+    const cas = await store.compareAndSwapTarget({
+      project_id: PROJECT_ID,
+      target_ref: "refs/heads/main",
+      expected_commit: "abc",
+      new_commit: "0".repeat(40),
+    });
+    expect(cas).toMatchObject({
+      status: "failed",
+      failure: { code: "coordinator_unavailable", retryable: false },
+    });
+  });
+});
+
+describe("git control store candidate reads and target cas", { timeout: 30_000 }, () => {
+  it("reads a staged candidate back, swaps the target fast-forward and finds the accepted record", async () => {
+    const { remote, store, targetHead, operationHead } = createOperationHarness();
+    const record = integrationRecordRecord("integration_accept1", targetHead, operationHead);
+
+    const missing = await store.readCandidate({
+      project_id: PROJECT_ID,
+      integration_id: "integration_accept1",
+    });
+    expect(missing).toEqual({ status: "missing" });
+
+    const prepared = await store.prepareCandidate({
+      project_id: PROJECT_ID,
+      operation_id: "op_1",
+      target_ref: "refs/heads/main",
+      expected_target_commit: targetHead,
+      operation_commit: operationHead,
+      plan: fixedPlan(record),
+    });
+    if (prepared.status !== "prepared") throw new Error("expected a prepared candidate");
+
+    const found = await store.readCandidate({
+      project_id: PROJECT_ID,
+      integration_id: "integration_accept1",
+    });
+    expect(found).toMatchObject({
+      status: "found",
+      candidate_commit: prepared.candidate_commit,
+      tree_oid: prepared.tree_oid,
+    });
+    if (found.status !== "found") throw new Error("expected the staged candidate");
+    expect(found.record).toEqual(record);
+
+    // Not accepted yet: the record is absent from the target history.
+    const notYet = await store.readIntegrationRecord({
+      project_id: PROJECT_ID,
+      target_ref: "refs/heads/main",
+      integration_id: "integration_accept1",
+    });
+    expect(notYet).toEqual({ status: "missing" });
+
+    const swapped = await store.compareAndSwapTarget({
+      project_id: PROJECT_ID,
+      target_ref: "refs/heads/main",
+      expected_commit: targetHead,
+      new_commit: prepared.candidate_commit,
+    });
+    expect(swapped).toEqual({ status: "swapped", commit: prepared.candidate_commit });
+    expect(git(remote, "rev-parse", "refs/heads/main").trim()).toBe(prepared.candidate_commit);
+
+    const accepted = await store.readIntegrationRecord({
+      project_id: PROJECT_ID,
+      target_ref: "refs/heads/main",
+      integration_id: "integration_accept1",
+    });
+    expect(accepted).toMatchObject({ status: "found", commit: prepared.candidate_commit });
+    if (accepted.status !== "found") throw new Error("expected the accepted record");
+    expect(accepted.record).toEqual(record);
+
+    // A stale expected commit loses the CAS and the target stays put.
+    const stale = await store.compareAndSwapTarget({
+      project_id: PROJECT_ID,
+      target_ref: "refs/heads/main",
+      expected_commit: targetHead,
+      new_commit: prepared.candidate_commit,
+    });
+    expect(stale).toMatchObject({ status: "failed", failure: { code: "target_cas_failed" } });
+    expect(git(remote, "rev-parse", "refs/heads/main").trim()).toBe(prepared.candidate_commit);
+  });
+
+  it("refuses a non-fast-forward target swap", async () => {
+    const { remote, store, targetHead } = createOperationHarness();
+    const orphan = cloneRemote(remote);
+    git(orphan, "switch", "--orphan", "unrelated");
+    git(orphan, "clean", "-fdq");
+    writeFileSync(join(orphan, "unrelated.txt"), "unrelated\n");
+    git(orphan, "add", "unrelated.txt");
+    git(orphan, "commit", "-m", "unrelated root");
+    const unrelated = headOf(orphan);
+    git(orphan, "push", "origin", "HEAD:refs/heads/candidate/unrelated");
+
+    const result = await store.compareAndSwapTarget({
+      project_id: PROJECT_ID,
+      target_ref: "refs/heads/main",
+      expected_commit: targetHead,
+      new_commit: unrelated,
+    });
+    expect(result).toMatchObject({ status: "failed", failure: { code: "target_cas_failed" } });
+    expect(git(remote, "rev-parse", "refs/heads/main").trim()).toBe(targetHead);
   });
 });

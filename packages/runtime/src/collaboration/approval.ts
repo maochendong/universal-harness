@@ -61,6 +61,14 @@ const PERMISSION_RANK: Record<CollaborationPermission, number> = {
   admin: 3,
 };
 
+/** Whether the held platform permission satisfies a required rank (spec §9.1). */
+export function permissionSatisfies(
+  held: CollaborationPermission,
+  required: "write" | "maintain" | "admin",
+): boolean {
+  return PERMISSION_RANK[held] >= PERMISSION_RANK[required];
+}
+
 function blocked(
   code: CollaborationFailure["code"],
   summary: string,

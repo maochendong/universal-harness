@@ -498,6 +498,18 @@ function createFakeStore(seed: {
           failure: collaborationFailure("coordinator_unavailable", "not implemented in slice"),
         });
       },
+      readCandidate() {
+        return Promise.resolve({
+          status: "failed" as const,
+          failure: collaborationFailure("coordinator_unavailable", "not implemented in slice"),
+        });
+      },
+      readIntegrationRecord() {
+        return Promise.resolve({
+          status: "failed" as const,
+          failure: collaborationFailure("coordinator_unavailable", "not implemented in slice"),
+        });
+      },
     },
   };
   return store;

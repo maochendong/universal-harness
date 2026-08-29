@@ -130,6 +130,12 @@ function createFakeControlStore(): FakeControlStore {
       compareAndSwapTarget() {
         throw new Error("not used in the approval fault tests");
       },
+      readCandidate() {
+        throw new Error("not used in the approval fault tests");
+      },
+      readIntegrationRecord() {
+        throw new Error("not used in the approval fault tests");
+      },
     },
   };
   return store;
@@ -384,6 +390,8 @@ function chainStore(records: readonly ControlRecord[]): GitControlStorePort {
     compareAndSwapOperation: () => Promise.reject(new Error("unused")),
     prepareCandidate: () => Promise.reject(new Error("unused")),
     compareAndSwapTarget: () => Promise.reject(new Error("unused")),
+    readCandidate: () => Promise.reject(new Error("unused")),
+    readIntegrationRecord: () => Promise.reject(new Error("unused")),
   };
 }
 

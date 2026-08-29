@@ -1,15 +1,19 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 
 import {
   assertControlChain,
   canonicalizeJson,
   PROTOCOL_1_2_SCHEMA_REGISTRY,
+  sha256Hex,
+  validateSchema,
+  verifyManifestDigest,
   verifyRecordEnvelope,
   type CollaborationConnectionRecord,
   type ControlRecord,
   type IntegrationRecord,
   type LeaseRecord,
+  type LedgerOperation,
   type PrincipalSnapshotRecord,
   type RemoteApprovalDecisionRecord,
 } from "@universal-harness-internal/core";
@@ -44,10 +48,13 @@ import {
  */
 
 export type GitControlStoreErrorCode =
+  | "baseline_drift"
   | "coordinator_unavailable"
   | "control_ref_cas_failed"
   | "control_ref_invalid"
   | "git_remote_unavailable"
+  | "integration_conflict"
+  | "ledger_resequence_failed"
   | "lease_fenced"
   | "operation_ref_drift"
   | "target_cas_failed";
@@ -73,6 +80,8 @@ export interface ControlStoreSnapshot {
   readonly control_head_oid?: string;
   readonly control_records: readonly ControlRecord[];
   readonly latest_connection?: CollaborationConnectionRecord;
+  /** Head of the connected target ref as fetched during this read. */
+  readonly target_head_oid?: string;
 }
 
 export type ControlStoreReadResult =
@@ -126,14 +135,95 @@ export type OperationCasOutcome =
   | { readonly status: "swapped"; readonly head_oid: string }
   | { readonly status: "failed"; readonly failure: GitControlStoreFailure };
 
+/** One file the candidate plan writes into the merge tree (repo-relative POSIX path). */
+export interface CandidateFileWrite {
+  readonly path: string;
+  readonly content: string;
+}
+
+/** An artifact file of an incoming LedgerOperation, digest-matched from the merge tree. */
+export interface CandidateArtifact {
+  /** Repo-relative POSIX path (under `.harness/artifacts/`). */
+  readonly path: string;
+  readonly content: string;
+  readonly digest: string;
+}
+
+/**
+ * The Ledger view the Coordinator's deterministic plan decides over: every
+ * Target manifest, every incoming Operation Branch manifest and the artifact
+ * bytes those incoming manifests bind. All of it is parsed from fetched Git
+ * trees; nothing comes from the replica.
+ */
+export interface CandidateMergeView {
+  readonly target_operations: readonly LedgerOperation[];
+  readonly incoming_operations: readonly LedgerOperation[];
+  readonly incoming_artifacts: readonly CandidateArtifact[];
+}
+
+export type CandidatePlan =
+  | {
+      readonly status: "planned";
+      readonly record: IntegrationRecord;
+      readonly writes: readonly CandidateFileWrite[];
+    }
+  | { readonly status: "failed"; readonly failure: GitControlStoreFailure };
+
 export interface CandidatePrepareRequest {
   readonly project_id: string;
   readonly operation_id: string;
   readonly target_ref: string;
+  /** Frozen Target head the candidate must build on (design §14.1). */
+  readonly expected_target_commit: string;
+  /** Frozen Operation Branch head; the candidate's second parent. */
+  readonly operation_commit: string;
+  /**
+   * The Coordinator's pure, deterministic resequencing and record planner.
+   * Called exactly once with the merged Ledger view; a failed plan aborts the
+   * merge and leaves every remote ref untouched.
+   */
+  readonly plan: (merge: CandidateMergeView) => CandidatePlan;
 }
 
 export type CandidatePrepareOutcome =
-  | { readonly status: "prepared"; readonly merge_commit: string }
+  | {
+      readonly status: "prepared";
+      readonly candidate_commit: string;
+      readonly tree_oid: string;
+      readonly integration_id: string;
+      /**
+       * Scratch checkout of the candidate tree, owned by the Adapter and kept
+       * read-only for the caller; invalidated by the next prepareCandidate
+       * call. Used to re-run the existing tree-based validators.
+       */
+      readonly candidate_root: string;
+    }
+  | { readonly status: "failed"; readonly failure: GitControlStoreFailure };
+
+export interface CandidateReadRequest {
+  readonly project_id: string;
+  readonly integration_id: string;
+}
+
+export type CandidateReadOutcome =
+  | {
+      readonly status: "found";
+      readonly candidate_commit: string;
+      readonly tree_oid: string;
+      readonly record: IntegrationRecord;
+    }
+  | { readonly status: "missing" }
+  | { readonly status: "failed"; readonly failure: GitControlStoreFailure };
+
+export interface IntegrationRecordReadRequest {
+  readonly project_id: string;
+  readonly target_ref: string;
+  readonly integration_id: string;
+}
+
+export type IntegrationRecordReadOutcome =
+  | { readonly status: "found"; readonly commit: string; readonly record: IntegrationRecord }
+  | { readonly status: "missing" }
   | { readonly status: "failed"; readonly failure: GitControlStoreFailure };
 
 export interface TargetCasRequest {
@@ -154,6 +244,8 @@ export interface GitControlStoreAdapter {
   listOperationHeads(input: { readonly project_id: string }): Promise<OperationHeadListResult>;
   compareAndSwapOperation(input: OperationCasRequest): Promise<OperationCasOutcome>;
   prepareCandidate(input: CandidatePrepareRequest): Promise<CandidatePrepareOutcome>;
+  readCandidate(input: CandidateReadRequest): Promise<CandidateReadOutcome>;
+  readIntegrationRecord(input: IntegrationRecordReadRequest): Promise<IntegrationRecordReadOutcome>;
   compareAndSwapTarget(input: TargetCasRequest): Promise<TargetCasOutcome>;
 }
 
@@ -181,6 +273,14 @@ const ROOT_WORK_BRANCH = "refs/heads/harness-control-work";
 const DEFAULT_CONTROL_REF = "refs/heads/harness/control";
 /** Mirror config key remembering the target ref of the connected project. */
 const TARGET_REF_CONFIG_KEY = "harness.target-ref";
+/**
+ * Remote staging namespace for prepared integration candidates. Candidates
+ * are untrusted until the Target CAS accepts them; staging never touches a
+ * managed ref (Target, Operation or Control).
+ */
+const CANDIDATE_STAGING_PREFIX = "refs/heads/harness/candidate";
+/** Mirror-local namespace tracking the observed staging refs. */
+const MIRROR_CANDIDATE_PREFIX = "refs/harness/candidate";
 
 const RECORD_FILE_PATTERN =
   /^records\/([0-9]{12})-(principal_snapshot|lease|remote_approval_decision)-([A-Za-z0-9_-]+)\.json$/u;
@@ -457,10 +557,11 @@ export function createGitControlStoreAdapter(
   }
 
   /** Latest connection revision on the target ref, or undefined when absent. */
-  async function readLatestConnection(
-    targetRef: string,
-  ): Promise<
-    | { readonly connection?: CollaborationConnectionRecord }
+  async function readLatestConnection(targetRef: string): Promise<
+    | {
+        readonly head?: string;
+        readonly connection?: CollaborationConnectionRecord;
+      }
     | { readonly failure: GitControlStoreFailure }
   > {
     const fetched = await run("readControl", mirror, [
@@ -477,11 +578,12 @@ export function createGitControlStoreAdapter(
     await rememberTargetRef(targetRef);
     const head = await run("readControl", mirror, ["rev-parse", "--verify", MIRROR_TARGET_REF]);
     if (!head.ok) return { failure: remoteFailure("rev-parse", head.error.stderr) };
+    const headOid = head.value.stdout.trim();
     const listed = await run("readControl", mirror, [
       "ls-tree",
       "-r",
       "--name-only",
-      head.value.stdout.trim(),
+      headOid,
       "--",
       ".harness/collaboration/connections",
     ]);
@@ -491,13 +593,13 @@ export function createGitControlStoreAdapter(
       .map((line) => line.trim())
       .filter((line) => line.length > 0)
       .sort();
-    if (paths.length === 0) return {};
+    if (paths.length === 0) return { head: headOid };
 
     const checkedOut = await run("readControl", mirror, [
       "checkout",
       "--force",
       "--detach",
-      head.value.stdout.trim(),
+      headOid,
     ]);
     if (!checkedOut.ok) return { failure: remoteFailure("checkout", checkedOut.error.stderr) };
 
@@ -533,7 +635,7 @@ export function createGitControlStoreAdapter(
       }
       if (latest === undefined || record.revision > latest.revision) latest = record;
     }
-    return latest === undefined ? {} : { connection: latest };
+    return { head: headOid, ...(latest === undefined ? {} : { connection: latest }) };
   }
 
   async function readControl(input: ControlStoreReadInput): Promise<ControlStoreReadResult> {
@@ -551,6 +653,7 @@ export function createGitControlStoreAdapter(
     }
 
     let latestConnection: CollaborationConnectionRecord | undefined;
+    let targetHeadOid: string | undefined;
     // Without an explicit target ref, fall back to the one the mirror
     // remembered from earlier writes; a cold mirror simply reports no
     // connection (fail-closed until a connect names the target).
@@ -559,6 +662,7 @@ export function createGitControlStoreAdapter(
       const connection = await readLatestConnection(targetRef);
       if ("failure" in connection) return { status: "failed", failure: connection.failure };
       latestConnection = connection.connection;
+      targetHeadOid = connection.head;
     }
 
     return {
@@ -567,6 +671,7 @@ export function createGitControlStoreAdapter(
         ...(fetched.head === undefined ? {} : { control_head_oid: fetched.head }),
         control_records: records,
         ...(latestConnection === undefined ? {} : { latest_connection: latestConnection }),
+        ...(targetHeadOid === undefined ? {} : { target_head_oid: targetHeadOid }),
       },
     };
   }
@@ -1039,26 +1144,693 @@ export function createGitControlStoreAdapter(
     return { status: "swapped", head_oid: input.candidate_commit };
   }
 
-  function prepareCandidate(): Promise<CandidatePrepareOutcome> {
-    return Promise.resolve({
-      status: "failed",
-      failure: failure(
-        "coordinator_unavailable",
-        "candidate merge is implemented by the integration task",
-        true,
-      ),
-    });
+  // --- Integration candidates (design §14, plan M3 Task 6 step 3) -----------
+
+  /** Scratch worktree where the candidate merge is built and validated. */
+  function candidateWorktree(): string {
+    return join(dirname(mirror), "candidate-worktree");
   }
 
-  function compareAndSwapTarget(): Promise<TargetCasOutcome> {
-    return Promise.resolve({
-      status: "failed",
-      failure: failure(
-        "coordinator_unavailable",
-        "target compare-and-swap is implemented by the integration task",
-        true,
-      ),
+  function integrationRecordPath(integrationId: string): string {
+    return `.harness/artifacts/integrations/${integrationId}.json`;
+  }
+
+  /** Repo-relative write paths stay inside `.harness` and never traverse. */
+  function candidateWritePathValid(path: string): boolean {
+    return (
+      /^\.harness\/[A-Za-z0-9][A-Za-z0-9._/-]*$/u.test(path) &&
+      !path.includes("//") &&
+      !path.split("/").some((segment) => segment === "." || segment === "..")
+    );
+  }
+
+  /** Parse and fully validate one ledger manifest fetched from a commit. */
+  async function readManifestAt(
+    operation: string,
+    commit: string,
+    path: string,
+  ): Promise<
+    { readonly manifest: LedgerOperation } | { readonly failure: GitControlStoreFailure }
+  > {
+    const shown = await run(operation, mirror, ["show", `${commit}:${path}`]);
+    if (!shown.ok) {
+      return {
+        failure: failure(
+          "ledger_resequence_failed",
+          `cannot read ledger manifest ${path} from ${commit}`,
+        ),
+      };
+    }
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(shown.value.stdout);
+    } catch {
+      return {
+        failure: failure("ledger_resequence_failed", `ledger manifest ${path} is not JSON`),
+      };
+    }
+    if (!validateSchema("ledger-operation", parsed).valid) {
+      return {
+        failure: failure(
+          "ledger_resequence_failed",
+          `ledger manifest ${path} failed schema validation`,
+        ),
+      };
+    }
+    const manifest = parsed as LedgerOperation;
+    if (!verifyManifestDigest(manifest)) {
+      return {
+        failure: failure(
+          "ledger_resequence_failed",
+          `ledger manifest ${path} has a digest that does not recompute`,
+        ),
+      };
+    }
+    return { manifest };
+  }
+
+  /** Every ledger manifest committed in one commit's `.harness` tree. */
+  async function readManifestSet(
+    operation: string,
+    commit: string,
+  ): Promise<
+    { readonly manifests: LedgerOperation[] } | { readonly failure: GitControlStoreFailure }
+  > {
+    const listed = await run(operation, mirror, [
+      "ls-tree",
+      "-r",
+      "--name-only",
+      commit,
+      "--",
+      ".harness/ledger/operations",
+    ]);
+    if (!listed.ok) return { failure: remoteFailure("ls-tree", listed.error.stderr) };
+    const paths = listed.value.stdout
+      .split("\n")
+      .map((line) => line.trim())
+      .filter((line) => line.length > 0)
+      .sort();
+    const manifests: LedgerOperation[] = [];
+    for (const path of paths) {
+      const read = await readManifestAt(operation, commit, path);
+      if ("failure" in read) return { failure: read.failure };
+      manifests.push(read.manifest);
+    }
+    return { manifests };
+  }
+
+  /** Remove and recreate the scratch worktree detached at `commit`. */
+  async function resetCandidateWorktree(
+    commit: string,
+  ): Promise<GitControlStoreFailure | undefined> {
+    const scratch = candidateWorktree();
+    await run("prepareCandidate", mirror, ["worktree", "remove", "--force", scratch]);
+    const added = await run("prepareCandidate", mirror, [
+      "worktree",
+      "add",
+      "--detach",
+      scratch,
+      commit,
+    ]);
+    if (!added.ok) return remoteFailure("worktree add", added.error.stderr);
+    return undefined;
+  }
+
+  /** Best-effort scratch cleanup on failure paths; never masks the failure. */
+  async function discardCandidateWorktree(): Promise<void> {
+    const scratch = candidateWorktree();
+    await run("prepareCandidate", scratch, ["merge", "--abort"]);
+    await run("prepareCandidate", mirror, ["worktree", "remove", "--force", scratch]);
+  }
+
+  async function prepareCandidate(
+    input: CandidatePrepareRequest,
+  ): Promise<CandidatePrepareOutcome> {
+    if (!REF_COMPONENT_PATTERN.test(input.operation_id)) {
+      return {
+        status: "failed",
+        failure: failure(
+          "coordinator_unavailable",
+          `operation id is not a valid ref component: ${input.operation_id}`,
+        ),
+      };
+    }
+    for (const [label, oid] of [
+      ["expected target commit", input.expected_target_commit],
+      ["operation commit", input.operation_commit],
+    ] as const) {
+      if (!COMMIT_OID_PATTERN.test(oid)) {
+        return {
+          status: "failed",
+          failure: failure("coordinator_unavailable", `${label} is not a full commit oid: ${oid}`),
+        };
+      }
+    }
+    const prepared = await ensureMirror();
+    if (prepared !== undefined) return { status: "failed", failure: prepared };
+
+    // Fetch both frozen heads and prove they still match the command's pins.
+    const fetchedTarget = await run("prepareCandidate", mirror, [
+      "fetch",
+      "--no-tags",
+      remote,
+      `+${input.target_ref}:${MIRROR_TARGET_REF}`,
+    ]);
+    if (!fetchedTarget.ok) {
+      return { status: "failed", failure: remoteFailure("fetch", fetchedTarget.error.stderr) };
+    }
+    const targetHead = await run("prepareCandidate", mirror, [
+      "rev-parse",
+      "--verify",
+      MIRROR_TARGET_REF,
+    ]);
+    if (!targetHead.ok) {
+      return { status: "failed", failure: remoteFailure("rev-parse", targetHead.error.stderr) };
+    }
+    if (targetHead.value.stdout.trim() !== input.expected_target_commit) {
+      return {
+        status: "failed",
+        failure: failure(
+          "baseline_drift",
+          "target head moved since the command froze it; re-read and re-prepare",
+          true,
+        ),
+      };
+    }
+    const operationRef = `refs/heads/operation/${input.operation_id}`;
+    const fetchedOperation = await run("prepareCandidate", mirror, [
+      "fetch",
+      "--no-tags",
+      remote,
+      `+${operationRef}:${operationMirrorRef(input.operation_id)}`,
+    ]);
+    if (!fetchedOperation.ok) {
+      const text = `${fetchedOperation.error.message}\n${fetchedOperation.error.stderr ?? ""}`;
+      if (REMOTE_REF_MISSING.test(text)) {
+        return {
+          status: "failed",
+          failure: failure(
+            "operation_ref_drift",
+            `operation branch ${operationRef} is not published on the remote`,
+          ),
+        };
+      }
+      return { status: "failed", failure: remoteFailure("fetch", fetchedOperation.error.stderr) };
+    }
+    const operationHead = await run("prepareCandidate", mirror, [
+      "rev-parse",
+      "--verify",
+      operationMirrorRef(input.operation_id),
+    ]);
+    if (!operationHead.ok) {
+      return { status: "failed", failure: remoteFailure("rev-parse", operationHead.error.stderr) };
+    }
+    if (operationHead.value.stdout.trim() !== input.operation_commit) {
+      return {
+        status: "failed",
+        failure: failure(
+          "operation_ref_drift",
+          "operation head moved since the command froze it; re-read and re-prepare",
+          true,
+        ),
+      };
+    }
+
+    const base = await run("prepareCandidate", mirror, [
+      "merge-base",
+      input.expected_target_commit,
+      input.operation_commit,
+    ]);
+    if (!base.ok) {
+      return {
+        status: "failed",
+        failure: failure(
+          "integration_conflict",
+          "target and operation branch share no merge base; resolve the histories manually",
+        ),
+      };
+    }
+    const contained = await run("prepareCandidate", mirror, [
+      "merge-base",
+      "--is-ancestor",
+      input.operation_commit,
+      input.expected_target_commit,
+    ]);
+    if (contained.ok) {
+      return {
+        status: "failed",
+        failure: failure(
+          "coordinator_unavailable",
+          "operation branch is already contained in the target; there is nothing to integrate",
+        ),
+      };
+    }
+
+    // Three-way merge in the scratch worktree, never committed automatically.
+    const worktree = await resetCandidateWorktree(input.expected_target_commit);
+    if (worktree !== undefined) return { status: "failed", failure: worktree };
+    const scratch = candidateWorktree();
+    const merged = await run("prepareCandidate", scratch, [
+      "merge",
+      "--no-commit",
+      "--no-ff",
+      input.operation_commit,
+    ]);
+    if (!merged.ok) {
+      const unmerged = await run("prepareCandidate", scratch, ["ls-files", "-u"]);
+      const conflicted = unmerged.ok
+        ? [
+            ...new Set(
+              unmerged.value.stdout
+                .split("\n")
+                .map((line) => line.split("\t")[1]?.trim() ?? "")
+                .filter((path) => path.length > 0),
+            ),
+          ].sort()
+        : [];
+      await discardCandidateWorktree();
+      if (conflicted.length > 0) {
+        return {
+          status: "failed",
+          failure: failure(
+            "integration_conflict",
+            `text conflict in: ${conflicted.join(", ")}; resolve it on the operation branch and re-prepare`,
+          ),
+        };
+      }
+      return {
+        status: "failed",
+        failure: remoteFailure("merge", merged.error.stderr),
+      };
+    }
+
+    // The coordinator's deterministic plan decides over the parsed Ledger view.
+    const targetOperations = await readManifestSet(
+      "prepareCandidate",
+      input.expected_target_commit,
+    );
+    if ("failure" in targetOperations) {
+      await discardCandidateWorktree();
+      return { status: "failed", failure: targetOperations.failure };
+    }
+    const incomingOperations = await readManifestSet("prepareCandidate", input.operation_commit);
+    if ("failure" in incomingOperations) {
+      await discardCandidateWorktree();
+      return { status: "failed", failure: incomingOperations.failure };
+    }
+    const incomingDigests = new Set(
+      incomingOperations.manifests.flatMap((manifest) => manifest.artifact_digests),
+    );
+    const incomingArtifacts: CandidateArtifact[] = [];
+    const artifactsRoot = join(scratch, ".harness", "artifacts");
+    const walk = (directory: string, relativePrefix: string): void => {
+      if (!existsSync(directory)) return;
+      for (const entry of readdirSync(directory, { withFileTypes: true }).sort((left, right) =>
+        left.name < right.name ? -1 : 1,
+      )) {
+        const relative =
+          relativePrefix.length === 0 ? entry.name : `${relativePrefix}/${entry.name}`;
+        const absolute = join(directory, entry.name);
+        if (entry.isDirectory()) {
+          walk(absolute, relative);
+        } else if (entry.isFile()) {
+          const content = readFileSync(absolute, "utf8");
+          const digest = sha256Hex(content);
+          if (incomingDigests.has(digest)) {
+            incomingArtifacts.push({ path: `.harness/artifacts/${relative}`, content, digest });
+          }
+        }
+      }
+    };
+    walk(artifactsRoot, "");
+
+    const plan = input.plan({
+      target_operations: targetOperations.manifests,
+      incoming_operations: incomingOperations.manifests,
+      incoming_artifacts: incomingArtifacts,
     });
+    if (plan.status === "failed") {
+      await discardCandidateWorktree();
+      return { status: "failed", failure: plan.failure };
+    }
+    for (const write of plan.writes) {
+      if (!candidateWritePathValid(write.path)) {
+        await discardCandidateWorktree();
+        return {
+          status: "failed",
+          failure: failure(
+            "ledger_resequence_failed",
+            `candidate plan wrote an illegal path: ${JSON.stringify(write.path)}`,
+          ),
+        };
+      }
+    }
+
+    // Apply the plan's deterministic writes on top of the clean merge and
+    // create the two-parent candidate (Target first, Operation second).
+    for (const write of plan.writes) {
+      const absolute = join(scratch, ...write.path.split("/"));
+      mkdirSync(dirname(absolute), { recursive: true });
+      writeFileSync(absolute, write.content);
+    }
+    const staged = await run("prepareCandidate", scratch, [
+      "add",
+      "--",
+      ...plan.writes.map((write) => write.path),
+    ]);
+    if (!staged.ok) {
+      await discardCandidateWorktree();
+      return { status: "failed", failure: remoteFailure("add", staged.error.stderr) };
+    }
+    const committed = await run("prepareCandidate", scratch, [
+      "-c",
+      "user.name=harness-coordinator",
+      "-c",
+      "user.email=harness-coordinator@harness.invalid",
+      "commit",
+      "--no-verify",
+      "-m",
+      `integration: ${plan.record.integration_id}`,
+    ]);
+    if (!committed.ok) {
+      await discardCandidateWorktree();
+      return { status: "failed", failure: remoteFailure("commit", committed.error.stderr) };
+    }
+    const candidate = await run("prepareCandidate", scratch, ["rev-parse", "HEAD"]);
+    if (!candidate.ok) {
+      await discardCandidateWorktree();
+      return { status: "failed", failure: remoteFailure("rev-parse", candidate.error.stderr) };
+    }
+    const candidateCommit = candidate.value.stdout.trim();
+
+    // The candidate identity rule (design §14.3): exactly the two expected
+    // parents in order, Target then Operation.
+    const parents = await run("prepareCandidate", scratch, [
+      "rev-list",
+      "--parents",
+      "-n",
+      "1",
+      "HEAD",
+    ]);
+    const tokens = parents.ok ? parents.value.stdout.trim().split(" ") : [];
+    if (
+      tokens.length !== 3 ||
+      tokens[1] !== input.expected_target_commit ||
+      tokens[2] !== input.operation_commit
+    ) {
+      await discardCandidateWorktree();
+      return {
+        status: "failed",
+        failure: failure(
+          "coordinator_unavailable",
+          "candidate commit does not have exactly the expected target and operation parents",
+        ),
+      };
+    }
+    const tree = await run("prepareCandidate", scratch, ["rev-parse", "HEAD^{tree}"]);
+    if (!tree.ok) {
+      await discardCandidateWorktree();
+      return { status: "failed", failure: remoteFailure("rev-parse", tree.error.stderr) };
+    }
+
+    // Stage the candidate on the remote so a restarted coordinator and the
+    // replicas can fetch and verify it. The staging ref is scoped to the
+    // content-derived integration id; no managed ref is ever updated here.
+    const stagingRef = `${CANDIDATE_STAGING_PREFIX}/${plan.record.integration_id}`;
+    const mirrorStagingRef = `${MIRROR_CANDIDATE_PREFIX}/${plan.record.integration_id}`;
+    const fetchedStaging = await run("prepareCandidate", mirror, [
+      "fetch",
+      "--no-tags",
+      remote,
+      `+${stagingRef}:${mirrorStagingRef}`,
+    ]);
+    let previousStaging = "";
+    if (fetchedStaging.ok) {
+      const current = await run("prepareCandidate", mirror, [
+        "rev-parse",
+        "--verify",
+        "--quiet",
+        mirrorStagingRef,
+      ]);
+      if (current.ok) previousStaging = current.value.stdout.trim();
+    } else {
+      const text = `${fetchedStaging.error.message}\n${fetchedStaging.error.stderr ?? ""}`;
+      if (!REMOTE_REF_MISSING.test(text)) {
+        await discardCandidateWorktree();
+        return {
+          status: "failed",
+          failure: remoteFailure("fetch", fetchedStaging.error.stderr),
+        };
+      }
+    }
+    const pushed = await run("prepareCandidate", mirror, [
+      "push",
+      remote,
+      `${candidateCommit}:${stagingRef}`,
+      `--force-with-lease=${stagingRef}:${previousStaging}`,
+    ]);
+    const pushFailure = mapPushOutcome(
+      pushed,
+      "coordinator_unavailable",
+      "candidate staging push lost the compare-and-swap; retry the prepare",
+    );
+    if (pushFailure !== undefined) {
+      await discardCandidateWorktree();
+      return { status: "failed", failure: pushFailure };
+    }
+    await run("prepareCandidate", mirror, ["update-ref", mirrorStagingRef, candidateCommit]);
+
+    return {
+      status: "prepared",
+      candidate_commit: candidateCommit,
+      tree_oid: tree.value.stdout.trim(),
+      integration_id: plan.record.integration_id,
+      candidate_root: scratch,
+    };
+  }
+
+  /** Read and validate the IntegrationRecord file inside one commit's tree. */
+  async function readRecordAt(
+    operation: string,
+    commit: string,
+    integrationId: string,
+    invalidCode: GitControlStoreErrorCode,
+  ): Promise<
+    { readonly record: IntegrationRecord } | { readonly failure: GitControlStoreFailure }
+  > {
+    const path = integrationRecordPath(integrationId);
+    const shown = await run(operation, mirror, ["show", `${commit}:${path}`]);
+    if (!shown.ok) {
+      return {
+        failure: failure(invalidCode, `commit ${commit} carries no readable record at ${path}`),
+      };
+    }
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(shown.value.stdout);
+    } catch {
+      return { failure: failure(invalidCode, `integration record at ${path} is not JSON`) };
+    }
+    const record = parsed as IntegrationRecord;
+    if (
+      record.record_kind !== "integration" ||
+      record.integration_id !== integrationId ||
+      !recordShapeValid(record, "integration") ||
+      shown.value.stdout !== canonicalFileContent(record)
+    ) {
+      return {
+        failure: failure(
+          invalidCode,
+          `integration record at ${path} failed schema, digest or canonical-form checks`,
+        ),
+      };
+    }
+    return { record };
+  }
+
+  async function readCandidate(input: CandidateReadRequest): Promise<CandidateReadOutcome> {
+    if (!REF_COMPONENT_PATTERN.test(input.integration_id)) {
+      return {
+        status: "failed",
+        failure: failure(
+          "coordinator_unavailable",
+          `integration id is not a valid ref component: ${input.integration_id}`,
+        ),
+      };
+    }
+    const prepared = await ensureMirror();
+    if (prepared !== undefined) return { status: "failed", failure: prepared };
+
+    const stagingRef = `${CANDIDATE_STAGING_PREFIX}/${input.integration_id}`;
+    const mirrorStagingRef = `${MIRROR_CANDIDATE_PREFIX}/${input.integration_id}`;
+    const fetched = await run("readCandidate", mirror, [
+      "fetch",
+      "--no-tags",
+      remote,
+      `+${stagingRef}:${mirrorStagingRef}`,
+    ]);
+    if (!fetched.ok) {
+      const text = `${fetched.error.message}\n${fetched.error.stderr ?? ""}`;
+      if (REMOTE_REF_MISSING.test(text)) return { status: "missing" };
+      return { status: "failed", failure: remoteFailure("fetch", fetched.error.stderr) };
+    }
+    const head = await run("readCandidate", mirror, ["rev-parse", "--verify", mirrorStagingRef]);
+    if (!head.ok)
+      return { status: "failed", failure: remoteFailure("rev-parse", head.error.stderr) };
+    const candidateCommit = head.value.stdout.trim();
+    const tree = await run("readCandidate", mirror, ["rev-parse", `${candidateCommit}^{tree}`]);
+    if (!tree.ok)
+      return { status: "failed", failure: remoteFailure("rev-parse", tree.error.stderr) };
+
+    // The staging ref is untrusted candidate data: the record must validate
+    // before it may feed an accept decision.
+    const record = await readRecordAt(
+      "readCandidate",
+      candidateCommit,
+      input.integration_id,
+      "ledger_resequence_failed",
+    );
+    if ("failure" in record) return { status: "failed", failure: record.failure };
+    return {
+      status: "found",
+      candidate_commit: candidateCommit,
+      tree_oid: tree.value.stdout.trim(),
+      record: record.record,
+    };
+  }
+
+  async function readIntegrationRecord(
+    input: IntegrationRecordReadRequest,
+  ): Promise<IntegrationRecordReadOutcome> {
+    const prepared = await ensureMirror();
+    if (prepared !== undefined) return { status: "failed", failure: prepared };
+
+    const fetched = await run("readIntegrationRecord", mirror, [
+      "fetch",
+      "--no-tags",
+      remote,
+      `+${input.target_ref}:${MIRROR_TARGET_REF}`,
+    ]);
+    if (!fetched.ok) {
+      return { status: "failed", failure: remoteFailure("fetch", fetched.error.stderr) };
+    }
+    const head = await run("readIntegrationRecord", mirror, [
+      "rev-parse",
+      "--verify",
+      MIRROR_TARGET_REF,
+    ]);
+    if (!head.ok) {
+      return { status: "failed", failure: remoteFailure("rev-parse", head.error.stderr) };
+    }
+    const commit = head.value.stdout.trim();
+
+    // Records are append-only and never deleted, so the head tree carries the
+    // accepted record when the integration ever landed (design §14.4).
+    const path = integrationRecordPath(input.integration_id);
+    const present = await run("readIntegrationRecord", mirror, [
+      "cat-file",
+      "-e",
+      `${commit}:${path}`,
+    ]);
+    if (!present.ok) return { status: "missing" };
+    // Target history is authoritative: an unreadable record there is damage.
+    const record = await readRecordAt(
+      "readIntegrationRecord",
+      commit,
+      input.integration_id,
+      "control_ref_invalid",
+    );
+    if ("failure" in record) return { status: "failed", failure: record.failure };
+    return { status: "found", commit, record: record.record };
+  }
+
+  async function compareAndSwapTarget(input: TargetCasRequest): Promise<TargetCasOutcome> {
+    for (const [label, oid] of [
+      ["expected commit", input.expected_commit],
+      ["new commit", input.new_commit],
+    ] as const) {
+      if (!COMMIT_OID_PATTERN.test(oid)) {
+        return {
+          status: "failed",
+          failure: failure("coordinator_unavailable", `${label} is not a full commit oid: ${oid}`),
+        };
+      }
+    }
+    const prepared = await ensureMirror();
+    if (prepared !== undefined) return { status: "failed", failure: prepared };
+
+    const fetched = await run("compareAndSwapTarget", mirror, [
+      "fetch",
+      "--no-tags",
+      remote,
+      `+${input.target_ref}:${MIRROR_TARGET_REF}`,
+    ]);
+    if (!fetched.ok) {
+      return { status: "failed", failure: remoteFailure("fetch", fetched.error.stderr) };
+    }
+    const head = await run("compareAndSwapTarget", mirror, [
+      "rev-parse",
+      "--verify",
+      MIRROR_TARGET_REF,
+    ]);
+    if (!head.ok)
+      return { status: "failed", failure: remoteFailure("rev-parse", head.error.stderr) };
+    if (head.value.stdout.trim() !== input.expected_commit) {
+      return {
+        status: "failed",
+        failure: failure(
+          "target_cas_failed",
+          "target head moved since the command froze it; re-read the target",
+          true,
+        ),
+      };
+    }
+
+    const exists = await run("compareAndSwapTarget", mirror, [
+      "cat-file",
+      "-e",
+      `${input.new_commit}^{commit}`,
+    ]);
+    if (!exists.ok) {
+      return {
+        status: "failed",
+        failure: failure(
+          "coordinator_unavailable",
+          "candidate commit is not available in the coordinator mirror; re-run prepare",
+        ),
+      };
+    }
+    // The CAS only ever fast-forwards the target onto the verified candidate.
+    const ancestry = await run("compareAndSwapTarget", mirror, [
+      "merge-base",
+      "--is-ancestor",
+      input.expected_commit,
+      input.new_commit,
+    ]);
+    if (!ancestry.ok) {
+      return {
+        status: "failed",
+        failure: failure(
+          "target_cas_failed",
+          "candidate commit does not descend from the expected target commit",
+        ),
+      };
+    }
+
+    const pushed = await run("compareAndSwapTarget", mirror, [
+      "push",
+      remote,
+      `${input.new_commit}:${input.target_ref}`,
+      `--force-with-lease=${input.target_ref}:${input.expected_commit}`,
+    ]);
+    const pushFailure = mapPushOutcome(
+      pushed,
+      "target_cas_failed",
+      "target ref push lost the compare-and-swap; re-read the target, never replay an old accept",
+    );
+    if (pushFailure !== undefined) return { status: "failed", failure: pushFailure };
+    await run("compareAndSwapTarget", mirror, ["update-ref", MIRROR_TARGET_REF, input.new_commit]);
+    return { status: "swapped", commit: input.new_commit };
   }
 
   return {
@@ -1068,6 +1840,8 @@ export function createGitControlStoreAdapter(
     listOperationHeads: () => listOperationHeads(),
     compareAndSwapOperation,
     prepareCandidate,
+    readCandidate,
+    readIntegrationRecord,
     compareAndSwapTarget,
   };
 }
