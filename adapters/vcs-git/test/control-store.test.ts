@@ -124,6 +124,18 @@ function cloneRemote(remote: string): string {
   return clone;
 }
 
+/** Push a replica-side candidate commit to an untrusted holding branch. */
+function pushCandidate(remote: string, base: string, file: string): string {
+  const clone = cloneRemote(remote);
+  git(clone, "switch", "--detach", base);
+  writeFileSync(join(clone, file), `candidate ${file}\n`);
+  git(clone, "add", file);
+  git(clone, "commit", "-m", `candidate ${file}`);
+  const candidate = git(clone, "rev-parse", "HEAD").trim();
+  git(clone, "push", "origin", `HEAD:refs/heads/candidate/${file}`);
+  return candidate;
+}
+
 async function appendTwoRecords(
   store: GitControlStoreAdapter,
 ): Promise<{ head: string; records: ControlRecord[] }> {
@@ -371,18 +383,6 @@ describe("git control store project records", () => {
 });
 
 describe("git control store operation refs", () => {
-  /** Push a replica-side candidate commit to an untrusted holding branch. */
-  function pushCandidate(remote: string, base: string, file: string): string {
-    const clone = cloneRemote(remote);
-    git(clone, "switch", "--detach", base);
-    writeFileSync(join(clone, file), `candidate ${file}\n`);
-    git(clone, "add", file);
-    git(clone, "commit", "-m", `candidate ${file}`);
-    const candidate = git(clone, "rev-parse", "HEAD").trim();
-    git(clone, "push", "origin", `HEAD:refs/heads/candidate/${file}`);
-    return candidate;
-  }
-
   it("lists remote operation heads", async () => {
     const { remote, store } = createHarness();
     const clone = cloneRemote(remote);
@@ -505,5 +505,178 @@ describe("git control store operation refs", () => {
       status: "failed",
       failure: { code: "operation_ref_drift" },
     });
+  });
+});
+
+describe("git control store read fallback and publish hardening", () => {
+  it("falls back to the remembered target ref when readControl gets none", async () => {
+    const { store } = createHarness();
+    const active = connectionRecord(1, "active");
+    const committed = await store.appendProjectRecord({
+      project_id: PROJECT_ID,
+      target_ref: "refs/heads/main",
+      record: active,
+    });
+    expect(committed).toMatchObject({ status: "committed" });
+
+    // No target_ref: the mirror-remembered config locates the Ledger record.
+    const read = await store.readControl({
+      project_id: PROJECT_ID,
+      control_ref: COLLABORATION_CONTROL_REF,
+    });
+    expect(read.status).toBe("ok");
+    if (read.status !== "ok") return;
+    expect(read.snapshot.latest_connection).toEqual(active);
+  });
+
+  it("rejects malformed commit oids before they reach a git argument", async () => {
+    const { store } = createHarness();
+    const badCandidate = await store.compareAndSwapOperation({
+      project_id: PROJECT_ID,
+      operation_id: "op_1",
+      candidate_commit: "not-an-oid",
+      fencing_token: 1,
+    });
+    expect(badCandidate).toMatchObject({
+      status: "failed",
+      failure: { code: "coordinator_unavailable", retryable: false },
+    });
+
+    const badExpected = await store.compareAndSwapOperation({
+      project_id: PROJECT_ID,
+      operation_id: "op_1",
+      expected_head_oid: "abc",
+      candidate_commit: "0".repeat(40),
+      fencing_token: 1,
+    });
+    expect(badExpected).toMatchObject({
+      status: "failed",
+      failure: { code: "coordinator_unavailable", retryable: false },
+    });
+
+    const badControlHead = await store.appendControl({
+      project_id: PROJECT_ID,
+      control_ref: COLLABORATION_CONTROL_REF,
+      expected_head_oid: "zz",
+      record: principalSnapshot(1),
+    });
+    expect(badControlHead).toMatchObject({
+      status: "failed",
+      failure: { code: "coordinator_unavailable", retryable: false },
+    });
+  });
+
+  it("anchors the first publish to the connected target ref baseline", async () => {
+    const { remote, store } = createHarness();
+    // A project record write is what connects the target ref to the mirror.
+    const committed = await store.appendProjectRecord({
+      project_id: PROJECT_ID,
+      target_ref: "refs/heads/main",
+      record: connectionRecord(1, "active"),
+    });
+    expect(committed).toMatchObject({ status: "committed" });
+
+    // The candidate descends from the post-connect target head.
+    const candidate = pushCandidate(remote, "origin/main", "candidate.txt");
+    const swapped = await store.compareAndSwapOperation({
+      project_id: PROJECT_ID,
+      operation_id: "op_first",
+      candidate_commit: candidate,
+      fencing_token: 1,
+    });
+    expect(swapped).toMatchObject({ status: "swapped", head_oid: candidate });
+    expect(git(remote, "rev-parse", "refs/heads/operation/op_first").trim()).toBe(candidate);
+  });
+
+  it("rejects a first publish that does not descend from the target baseline", async () => {
+    const { remote, store } = createHarness();
+    await store.appendProjectRecord({
+      project_id: PROJECT_ID,
+      target_ref: "refs/heads/main",
+      record: connectionRecord(1, "active"),
+    });
+
+    const orphan = cloneRemote(remote);
+    git(orphan, "switch", "--orphan", "unrelated");
+    git(orphan, "clean", "-fdq");
+    writeFileSync(join(orphan, "unrelated.txt"), "unrelated\n");
+    git(orphan, "add", "unrelated.txt");
+    git(orphan, "commit", "-m", "unrelated root");
+    const unrelated = git(orphan, "rev-parse", "HEAD").trim();
+    git(orphan, "push", "origin", "HEAD:refs/heads/candidate/unrelated");
+
+    const result = await store.compareAndSwapOperation({
+      project_id: PROJECT_ID,
+      operation_id: "op_first",
+      candidate_commit: unrelated,
+      fencing_token: 1,
+    });
+    expect(result).toMatchObject({
+      status: "failed",
+      failure: { code: "operation_ref_drift" },
+    });
+  });
+
+  it("fails closed on a first publish when no target ref was ever connected", async () => {
+    const { remote, store } = createHarness();
+    const candidate = pushCandidate(remote, "main", "candidate.txt");
+    const result = await store.compareAndSwapOperation({
+      project_id: PROJECT_ID,
+      operation_id: "op_first",
+      candidate_commit: candidate,
+      fencing_token: 1,
+    });
+    expect(result).toMatchObject({
+      status: "failed",
+      failure: { code: "coordinator_unavailable" },
+    });
+  });
+
+  it("backstops fencing against the control ref lease chain", { timeout: 30_000 }, async () => {
+    const { remote, store } = createHarness();
+    const snapshot = principalSnapshot(1);
+    const first = await store.appendControl({
+      project_id: PROJECT_ID,
+      control_ref: COLLABORATION_CONTROL_REF,
+      record: snapshot,
+    });
+    expect(first).toMatchObject({ status: "appended" });
+    if (first.status !== "appended") throw new Error("expected first append to succeed");
+    const lease = leaseRecord(2, snapshot.record_digest);
+    const second = await store.appendControl({
+      project_id: PROJECT_ID,
+      control_ref: COLLABORATION_CONTROL_REF,
+      expected_head_oid: first.head_oid,
+      record: lease,
+    });
+    expect(second).toMatchObject({ status: "appended" });
+
+    await store.appendProjectRecord({
+      project_id: PROJECT_ID,
+      target_ref: "refs/heads/main",
+      record: connectionRecord(1, "active"),
+    });
+    const candidate = pushCandidate(remote, "origin/main", "candidate.txt");
+
+    // A token the live lease tip does not hold is permanently fenced.
+    const stale = await store.compareAndSwapOperation({
+      project_id: PROJECT_ID,
+      operation_id: "op_1",
+      candidate_commit: candidate,
+      fencing_token: 2,
+    });
+    expect(stale).toMatchObject({
+      status: "failed",
+      failure: { code: "lease_fenced", retryable: false },
+    });
+
+    // The live token publishes.
+    const matched = await store.compareAndSwapOperation({
+      project_id: PROJECT_ID,
+      operation_id: "op_1",
+      candidate_commit: candidate,
+      fencing_token: 1,
+    });
+    expect(matched).toMatchObject({ status: "swapped", head_oid: candidate });
   });
 });

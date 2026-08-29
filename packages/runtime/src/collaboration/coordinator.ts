@@ -13,8 +13,13 @@ import {
   semanticConnectionEqual,
   snapshotIdFor,
 } from "./connection.js";
-import { collaborationFailure } from "./errors.js";
-import { transitionLease, type LeaseCommand, type LeaseDraft } from "./lease.js";
+import { collaborationFailure, type CollaborationFailure } from "./errors.js";
+import {
+  leaseRevocationDraft,
+  transitionLease,
+  type LeaseCommand,
+  type LeaseDraft,
+} from "./lease.js";
 import type {
   CollaborationCommand,
   CollaborationCoordinatorPort,
@@ -24,6 +29,8 @@ import type {
   CollaborationView,
   ConnectCommand,
   ConnectedOutcome,
+  ControlSnapshot,
+  ControlSnapshotResult,
   CoordinatorProjectionPort,
   DisconnectCommand,
   DisconnectedOutcome,
@@ -66,6 +73,47 @@ function connectionOutcome(
     : { status: "disconnected", connection: record, replayed };
 }
 
+/**
+ * Read the authoritative Git state for one command. The projection is only a
+ * locator hint for the project's target ref (the latest connection record
+ * lives on the target ref's Ledger, which a real remote can only reach by
+ * name); authority stays with the Git read, and a projection failure degrades
+ * to no hint instead of failing the command.
+ */
+async function readProjectState(
+  deps: CollaborationCoordinatorDependencies,
+  controlRef: string,
+  projectId: string,
+  targetRefHint?: string,
+): Promise<ControlSnapshotResult> {
+  let targetRef = targetRefHint;
+  if (targetRef === undefined) {
+    try {
+      const view = await deps.projection.query({
+        kind: "connection_status",
+        project_id: projectId,
+      });
+      if (view.kind === "connection_status") targetRef = view.connection?.target_ref;
+    } catch {
+      targetRef = undefined;
+    }
+  }
+  return deps.controlStore.readControl({
+    project_id: projectId,
+    control_ref: controlRef,
+    ...(targetRef === undefined ? {} : { target_ref: targetRef }),
+  });
+}
+
+/** The holder snapshot digest for new Lease records: latest snapshot on the ref. */
+function latestSnapshotDigest(records: readonly ControlRecord[]): string | undefined {
+  for (let index = records.length - 1; index >= 0; index -= 1) {
+    const record = records[index] as ControlRecord;
+    if (record.record_kind === "principal_snapshot") return record.record_digest;
+  }
+  return undefined;
+}
+
 export function createCollaborationCoordinator(
   deps: CollaborationCoordinatorDependencies,
 ): CollaborationCoordinatorPort {
@@ -88,6 +136,33 @@ export function createCollaborationCoordinator(
     } catch {
       return { rebuild_required: true };
     }
+  }
+
+  /**
+   * Load the authoritative Git state and require an active connection; shared
+   * by every remote command except connect (which reads by the command's own
+   * target ref) and disconnect (which answers a disconnected project with a
+   * no-op outcome instead of a failure).
+   */
+  async function requireActiveConnection(
+    projectId: string,
+    commandKind: CollaborationCommand["kind"],
+  ): Promise<
+    | { readonly status: "ok"; readonly snapshot: ControlSnapshot }
+    | { readonly status: "failed"; readonly failure: CollaborationFailure }
+  > {
+    const state = await readProjectState(deps, controlRef, projectId);
+    if (state.status === "failed") return { status: "failed", failure: state.failure };
+    if (state.snapshot.latest_connection?.status !== "active") {
+      return {
+        status: "failed",
+        failure: collaborationFailure(
+          "coordinator_unavailable",
+          `project is not connected; remote command '${commandKind}' is blocked`,
+        ),
+      };
+    }
+    return { status: "ok", snapshot: state.snapshot };
   }
 
   async function connect(
@@ -253,10 +328,7 @@ export function createCollaborationCoordinator(
     session: CollaborationSession,
   ): Promise<CollaborationOutcome> {
     // 1. Load authoritative Git state.
-    const state = await deps.controlStore.readControl({
-      project_id: command.project_id,
-      control_ref: controlRef,
-    });
+    const state = await readProjectState(deps, controlRef, command.project_id);
     if (state.status === "failed") return { status: "failed", failure: state.failure };
     const latest = state.snapshot.latest_connection;
 
@@ -327,20 +399,8 @@ export function createCollaborationCoordinator(
   }
 
   async function gatedRemoteCommand(command: CollaborationCommand): Promise<CollaborationOutcome> {
-    const state = await deps.controlStore.readControl({
-      project_id: command.project_id,
-      control_ref: controlRef,
-    });
-    if (state.status === "failed") return { status: "failed", failure: state.failure };
-    if (state.snapshot.latest_connection?.status !== "active") {
-      return {
-        status: "failed",
-        failure: collaborationFailure(
-          "coordinator_unavailable",
-          `project is not connected; remote command '${command.kind}' is blocked`,
-        ),
-      };
-    }
+    const active = await requireActiveConnection(command.project_id, command.kind);
+    if (active.status === "failed") return { status: "failed", failure: active.failure };
     return {
       status: "failed",
       failure: collaborationFailure(
@@ -378,15 +438,6 @@ export function createCollaborationCoordinator(
     return leaseRecordsOf(records, addressed.resource_id);
   }
 
-  /** The holder snapshot digest for new Lease records: latest snapshot on the ref. */
-  function latestSnapshotDigest(records: readonly ControlRecord[]): string | undefined {
-    for (let index = records.length - 1; index >= 0; index -= 1) {
-      const record = records[index] as ControlRecord;
-      if (record.record_kind === "principal_snapshot") return record.record_digest;
-    }
-    return undefined;
-  }
-
   function sealLeaseDraft(
     draft: LeaseDraft,
     chain: readonly ControlRecord[],
@@ -411,21 +462,9 @@ export function createCollaborationCoordinator(
     // A lost Control Ref CAS loops once through a fresh read and a semantic
     // re-decision; a second loss answers lease_unavailable (plan Task 3).
     for (let attempt = 0; attempt < 2; attempt += 1) {
-      const state = await deps.controlStore.readControl({
-        project_id: command.project_id,
-        control_ref: controlRef,
-      });
-      if (state.status === "failed") return { status: "failed", failure: state.failure };
-      if (state.snapshot.latest_connection?.status !== "active") {
-        return {
-          status: "failed",
-          failure: collaborationFailure(
-            "coordinator_unavailable",
-            `project is not connected; remote command '${command.kind}' is blocked`,
-          ),
-        };
-      }
-      const records = state.snapshot.control_records;
+      const active = await requireActiveConnection(command.project_id, command.kind);
+      if (active.status === "failed") return { status: "failed", failure: active.failure };
+      const records = active.snapshot.control_records;
       const holderDigest = latestSnapshotDigest(records);
       if (holderDigest === undefined) {
         return {
@@ -437,7 +476,7 @@ export function createCollaborationCoordinator(
         };
       }
 
-      let headOid = state.snapshot.control_head_oid;
+      let headOid = active.snapshot.control_head_oid;
       let chain: ControlRecord[] = [...records];
       const appendedRecords: LeaseRecord[] = [];
       let transition = transitionLease(leaseHistoryFor(records, command), command, now());
@@ -502,24 +541,12 @@ export function createCollaborationCoordinator(
   async function publishOperationCandidate(
     command: PublishOperationCandidateCommand,
   ): Promise<CollaborationOutcome> {
-    const state = await deps.controlStore.readControl({
-      project_id: command.project_id,
-      control_ref: controlRef,
-    });
-    if (state.status === "failed") return { status: "failed", failure: state.failure };
-    if (state.snapshot.latest_connection?.status !== "active") {
-      return {
-        status: "failed",
-        failure: collaborationFailure(
-          "coordinator_unavailable",
-          `project is not connected; remote command '${command.kind}' is blocked`,
-        ),
-      };
-    }
+    const active = await requireActiveConnection(command.project_id, command.kind);
+    if (active.status === "failed") return { status: "failed", failure: active.failure };
 
-    // Validate the resource id and fencing token through the Lease projection:
-    // only the holder of the current, live Lease may publish.
-    const history = leaseRecordsOf(state.snapshot.control_records, command.operation_id);
+    // Validate the resource id and fencing token against the authoritative
+    // Lease chain: only the holder of the current, live Lease may publish.
+    const history = leaseRecordsOf(active.snapshot.control_records, command.operation_id);
     const tip = history[history.length - 1];
     if (tip === undefined) {
       return {
@@ -547,6 +574,15 @@ export function createCollaborationCoordinator(
           "lease_expired",
           `lease ${tip.lease_id} expired at ${tip.expires_at}; the candidate stays local, re-acquire the lease`,
           true,
+        ),
+      };
+    }
+    if (command.fencing_token !== tip.fencing_token) {
+      return {
+        status: "failed",
+        failure: collaborationFailure(
+          "lease_fenced",
+          `fencing token ${command.fencing_token} is stale; the live lease holds token ${tip.fencing_token}`,
         ),
       };
     }
@@ -607,4 +643,137 @@ export function createCollaborationCoordinator(
       return deps.projection.query(query);
     },
   };
+}
+
+/** Result of the Coordinator startup/recovery routine (spec §10.1). */
+export type CoordinatorStartup =
+  | { readonly status: "ready" }
+  | { readonly status: "blocked"; readonly failure: CollaborationFailure };
+
+/**
+ * Coordinator startup/recovery routine (spec §10.1): re-read the
+ * authoritative Git state, revoke every lease that is still live on the wall
+ * clock (a coordinator restart must never inherit a lease whose holder may be
+ * gone), then rebuild the disposable projection from Git. Already-expired
+ * leases are left untouched — the wall clock has already retired them and
+ * `transitionLease` never revives them. Each revocation rides the same CAS
+ * policy as lease commands: a lost race re-reads and re-judges once, a second
+ * loss blocks startup with `lease_unavailable`. Any failure blocks startup
+ * with a typed failure instead of serving stale state.
+ */
+export async function resumeCollaborationCoordinator(
+  deps: CollaborationCoordinatorDependencies,
+  projectId: string,
+  hint?: { readonly target_ref?: string },
+): Promise<CoordinatorStartup> {
+  const controlRef = deps.control_ref ?? COLLABORATION_CONTROL_REF;
+  const now = deps.now ?? (() => new Date().toISOString());
+  const read = () => readProjectState(deps, controlRef, projectId, hint?.target_ref);
+
+  // 1. Load the authoritative Git state; the projection hint only locates it.
+  const initial = await read();
+  if (initial.status === "failed") return { status: "blocked", failure: initial.failure };
+  let snapshot = initial.snapshot;
+
+  // 2. Revoke every lease still live on the wall clock, resource by resource.
+  const resourceIds = new Set<string>();
+  for (const record of snapshot.control_records) {
+    if (record.record_kind === "lease" && (record as LeaseRecord).resource_kind === "operation") {
+      resourceIds.add((record as LeaseRecord).resource_id);
+    }
+  }
+  for (const resourceId of resourceIds) {
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      if (attempt > 0) {
+        const fresh = await read();
+        if (fresh.status === "failed") return { status: "blocked", failure: fresh.failure };
+        snapshot = fresh.snapshot;
+      }
+      const history = snapshot.control_records.filter(
+        (record): record is LeaseRecord =>
+          record.record_kind === "lease" &&
+          (record as LeaseRecord).resource_kind === "operation" &&
+          (record as LeaseRecord).resource_id === resourceId,
+      );
+      const tip = history[history.length - 1];
+      const live =
+        tip !== undefined &&
+        (tip.state === "granted" || tip.state === "renewed") &&
+        tip.expires_at > now();
+      if (!live) break;
+      const holderDigest = latestSnapshotDigest(snapshot.control_records);
+      if (holderDigest === undefined) {
+        return {
+          status: "blocked",
+          failure: collaborationFailure(
+            "control_ref_invalid",
+            "cannot revoke a live lease: the control ref has no principal snapshot",
+          ),
+        };
+      }
+      const chain = snapshot.control_records;
+      const previous = chain[chain.length - 1];
+      const record = buildCollaborationRecord({
+        record_kind: "lease" as const,
+        control_sequence: chain.length + 1,
+        ...(previous === undefined
+          ? {}
+          : { previous_control_record_digest: previous.record_digest }),
+        ...leaseRevocationDraft(tip, now()),
+        holder_principal_snapshot_digest: holderDigest,
+        client_instance_id: tip.client_instance_id,
+      });
+      const appended = await deps.controlStore.appendControl({
+        project_id: projectId,
+        control_ref: controlRef,
+        ...(snapshot.control_head_oid === undefined
+          ? {}
+          : { expected_head_oid: snapshot.control_head_oid }),
+        record,
+      });
+      if (appended.status === "failed") {
+        if (appended.failure.code === "control_ref_cas_failed" && attempt === 0) continue;
+        return {
+          status: "blocked",
+          failure:
+            appended.failure.code === "control_ref_cas_failed"
+              ? collaborationFailure(
+                  "lease_unavailable",
+                  "control ref compare-and-swap was lost twice during startup revocation; retry the resume",
+                  true,
+                )
+              : appended.failure,
+        };
+      }
+      snapshot = {
+        control_head_oid: appended.head_oid,
+        control_records: [...chain, record],
+        ...(snapshot.latest_connection === undefined
+          ? {}
+          : { latest_connection: snapshot.latest_connection }),
+      };
+      break;
+    }
+  }
+
+  // 3. Rebuild the disposable projection from the authoritative state.
+  try {
+    await deps.projection.rebuild({
+      project_id: projectId,
+      ...(snapshot.latest_connection === undefined
+        ? {}
+        : { latest_connection: snapshot.latest_connection }),
+      control_records: snapshot.control_records,
+    });
+  } catch (error) {
+    return {
+      status: "blocked",
+      failure: collaborationFailure(
+        "projection_rebuild_required",
+        `coordinator projection rebuild failed at startup: ${error instanceof Error ? error.message : "unknown error"}`,
+        true,
+      ),
+    };
+  }
+  return { status: "ready" };
 }

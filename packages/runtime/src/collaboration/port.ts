@@ -65,6 +65,12 @@ export interface PublishOperationCandidateCommand extends CollaborationCommandBa
   readonly kind: "publish_operation_candidate";
   readonly operation_id: string;
   readonly candidate_commit: string;
+  /**
+   * The fencing token of the caller's live Lease; the Coordinator compares it
+   * against the authoritative chain tip and permanently rejects a stale token
+   * with `lease_fenced` before any Operation Ref compare-and-swap.
+   */
+  readonly fencing_token: number;
 }
 
 export interface SubmitRemoteApprovalCommand extends CollaborationCommandBase {
@@ -276,9 +282,14 @@ export interface ReadControlInput {
   readonly project_id: string;
   readonly control_ref: string;
   /**
-   * Target ref the connection is (or will be) frozen to; required when the
-   * caller needs Ledger state tied to a specific target, omitted by commands
-   * that only inspect the Control Ref and latest connection.
+   * Target ref the connection is frozen to. The latest connection record lives
+   * on the target ref's Ledger, so without a target ref the Adapter cannot
+   * locate it: the Coordinator passes the command's own target ref on connect,
+   * otherwise a hint taken from the projection's connection view. The hint is
+   * only a locator — authority stays with the Git read. When the caller passes
+   * no target ref, the Adapter falls back to the target ref its mirror
+   * remembered from earlier writes; with neither, `latest_connection` is
+   * absent (fail-closed on a cold start with an empty projection).
    */
   readonly target_ref?: string;
 }

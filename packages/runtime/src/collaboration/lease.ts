@@ -36,7 +36,7 @@ export interface LeaseDraft {
   readonly fencing_token: number;
   readonly issued_at: string;
   readonly expires_at: string;
-  readonly state: "granted" | "renewed" | "released" | "expired";
+  readonly state: "granted" | "renewed" | "released" | "expired" | "revoked";
   readonly command_id: string;
 }
 
@@ -86,6 +86,27 @@ function expiryDraft(tip: LeaseRecord, command: LeaseCommand, now: string): Leas
 
 function fenced(summary: string): LeaseTransition {
   return { kind: "rejected", failure: collaborationFailure("lease_fenced", summary) };
+}
+
+/**
+ * The record revoking a still-live lease at Coordinator startup (spec §10.1).
+ * The fencing token of the revoked epoch is permanently retired: the revoked
+ * tip closes the chain, and the next acquire opens a new epoch. The command id
+ * is derived from the revoked tip, so a repeated resume replays instead of
+ * appending duplicates.
+ */
+export function leaseRevocationDraft(tip: LeaseRecord, now: string): LeaseDraft {
+  return draftRecord({
+    lease_id: tip.lease_id,
+    previous_lease_record_digest: tip.record_digest,
+    resource_kind: "operation",
+    resource_id: tip.resource_id,
+    fencing_token: tip.fencing_token,
+    issued_at: now,
+    expires_at: tip.expires_at,
+    state: "revoked",
+    command_id: `command_resume-${contentDigest({ leaseId: tip.lease_id, tipDigest: tip.record_digest }).slice(0, 16)}`,
+  });
 }
 
 export function transitionLease(

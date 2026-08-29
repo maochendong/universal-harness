@@ -1113,6 +1113,7 @@ export {
 } from "./collaboration/errors.js";
 export {
   OPERATION_LEASE_DURATION_MS,
+  leaseRevocationDraft,
   transitionLease,
   type LeaseCommand,
   type LeaseDraft,
@@ -1125,7 +1126,9 @@ export {
 } from "./collaboration/sqlite-projection.js";
 export {
   createCollaborationCoordinator,
+  resumeCollaborationCoordinator,
   type CollaborationCoordinatorDependencies,
+  type CoordinatorStartup,
 } from "./collaboration/coordinator.js";
 export type {
   AcceptIntegrationCommand,

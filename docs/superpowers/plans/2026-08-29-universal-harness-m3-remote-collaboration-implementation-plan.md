@@ -347,6 +347,8 @@ git commit -m "feat(runtime): add remote collaboration coordinator interface"
 - Modify: `packages/runtime/src/collaboration/index.ts`
 - Modify: `packages/runtime/src/index.ts`
 
+Post-review hardening (cleanup commit `fix(collaboration): close lease fencing and read contract gaps`) additionally landed in this task's scope: the Coordinator startup/recovery routine `resumeCollaborationCoordinator` (spec §10.1) in `packages/runtime/src/collaboration/coordinator.ts`, the `fencing_token` on `PublishOperationCandidateCommand` in `packages/runtime/src/collaboration/port.ts`, the mirror-remembered target ref (`harness.target-ref`) and the fencing/baseline backstops in `adapters/vcs-git/src/control-store.ts`, and the real-Adapter integration coverage in `packages/runtime/test/collaboration/coordinator-git.test.ts`.
+
 **Interfaces:**
 - Consumes: `GitControlStorePort`, `CoordinatorProjectionPort`, Protocol 1.2 Control records.
 - Produces: `createGitControlStoreAdapter()`, `SqliteCoordinatorProjection`, `transitionLease()` and Coordinator lease commands.

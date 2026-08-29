@@ -32,7 +32,11 @@ import type {
   ReleaseLeaseCommand,
   RenewLeaseCommand,
 } from "../../src/collaboration/port.js";
-import { createCollaborationCoordinator } from "../../src/collaboration/coordinator.js";
+import {
+  createCollaborationCoordinator,
+  resumeCollaborationCoordinator,
+  type CollaborationCoordinatorDependencies,
+} from "../../src/collaboration/coordinator.js";
 
 const digest = (letter: string): string => letter.repeat(64);
 
@@ -502,17 +506,23 @@ function createFakeStore(seed: {
 interface FakeProjection {
   readonly port: CoordinatorProjectionPort;
   readonly applied: CollaborationProjectionRecord[];
+  readonly rebuilds: ProjectionRebuildInput[];
   failOnApply: boolean;
+  failOnRebuild: boolean;
 }
 
 function createFakeProjection(): FakeProjection {
   const applied: CollaborationProjectionRecord[] = [];
+  const rebuilds: ProjectionRebuildInput[] = [];
   const fake: FakeProjection = {
     applied,
+    rebuilds,
     failOnApply: false,
+    failOnRebuild: false,
     port: {
       rebuild(input: ProjectionRebuildInput) {
-        void input;
+        if (fake.failOnRebuild) return Promise.reject(new Error("sqlite rebuild failed"));
+        rebuilds.push(input);
         return Promise.resolve();
       },
       apply(record) {
@@ -799,12 +809,13 @@ describe("coordinator publish operation candidate", () => {
     );
   }
 
-  const publish = (command_id = "command_publish_1") => ({
+  const publish = (command_id = "command_publish_1", fencing_token = 1) => ({
     kind: "publish_operation_candidate" as const,
     command_id,
     project_id: "project_demo",
     operation_id: "op_1",
     candidate_commit: CANDIDATE,
+    fencing_token,
   });
 
   it("publishes with the current fencing token and expected head", async () => {
@@ -893,6 +904,20 @@ describe("coordinator publish operation candidate", () => {
     expect(store.calls.compareAndSwapOperation).toBe(0);
   });
 
+  it("permanently refuses to publish with a stale fencing token", async () => {
+    const { coordinator, store } = liveLeaseHarness();
+    const outcome = await coordinator.execute(
+      publish("command_publish_stale", 0),
+      session("principal_alice"),
+    );
+
+    expect(outcome).toMatchObject({
+      status: "failed",
+      failure: { code: "lease_fenced", retryable: false },
+    });
+    expect(store.calls.compareAndSwapOperation).toBe(0);
+  });
+
   it("surfaces operation_ref_drift from the store without losing the candidate", async () => {
     const { coordinator, store } = liveLeaseHarness();
     store.publishDrift = true;
@@ -903,5 +928,124 @@ describe("coordinator publish operation candidate", () => {
       failure: { code: "operation_ref_drift", retryable: true },
     });
     expect(store.calls.compareAndSwapOperation).toBe(1);
+  });
+});
+
+// --- Coordinator startup/recovery (spec §10.1) -------------------------------
+
+describe("resumeCollaborationCoordinator", () => {
+  function resumeHarness(
+    seed: Parameters<typeof createFakeStore>[0] = {},
+    clock: () => string = () => WITHIN_LEASE,
+  ) {
+    const store = createFakeStore(seed);
+    const projection = createFakeProjection();
+    const deps: CollaborationCoordinatorDependencies = {
+      platform: fakePlatform,
+      controlStore: store.port,
+      projection: projection.port,
+      now: clock,
+    };
+    return { store, projection, deps };
+  }
+
+  function liveLease(): LeaseRecord {
+    return materialize(
+      (() => {
+        const transition = transitionLease([], acquire(), NOW);
+        if (transition.kind !== "draft") throw new Error("expected draft");
+        return transition.draft;
+      })(),
+      2,
+      digest("s"),
+    );
+  }
+
+  it("revokes live leases and rebuilds the projection from Git", async () => {
+    const granted = liveLease();
+    const { store, projection, deps } = resumeHarness({
+      controlRecords: [snapshotFixture(), granted],
+      connection: connectionFixture(),
+    });
+
+    const startup = await resumeCollaborationCoordinator(deps, "project_demo");
+
+    expect(startup).toEqual({ status: "ready" });
+    expect(store.controlRecords).toHaveLength(3);
+    expect(store.controlRecords[2]).toMatchObject({
+      record_kind: "lease",
+      state: "revoked",
+      lease_id: granted.lease_id,
+      fencing_token: 1,
+      resource_id: "op_1",
+      expires_at: granted.expires_at,
+    });
+    expect(projection.rebuilds).toHaveLength(1);
+    expect(projection.rebuilds[0]?.control_records).toEqual(store.controlRecords);
+    expect(projection.rebuilds[0]?.latest_connection).toBeDefined();
+  });
+
+  it("blocks startup when the authoritative Git state cannot be read", async () => {
+    const { store, projection, deps } = resumeHarness({});
+    const failingStore: GitControlStorePort = {
+      ...store.port,
+      readControl: () =>
+        Promise.resolve({
+          status: "failed" as const,
+          failure: collaborationFailure("git_remote_unavailable", "remote offline", true),
+        }),
+    };
+
+    const startup = await resumeCollaborationCoordinator(
+      { ...deps, controlStore: failingStore },
+      "project_demo",
+    );
+
+    expect(startup).toMatchObject({
+      status: "blocked",
+      failure: { code: "git_remote_unavailable" },
+    });
+    expect(projection.rebuilds).toHaveLength(0);
+  });
+
+  it("blocks startup when the projection rebuild fails", async () => {
+    const { projection, deps } = resumeHarness({
+      controlRecords: [snapshotFixture()],
+      connection: connectionFixture(),
+    });
+    projection.failOnRebuild = true;
+
+    const startup = await resumeCollaborationCoordinator(deps, "project_demo");
+
+    expect(startup).toMatchObject({
+      status: "blocked",
+      failure: { code: "projection_rebuild_required", retryable: true },
+    });
+  });
+
+  it("appends nothing on a repeated resume and leaves expired leases untouched", async () => {
+    const granted = liveLease();
+    const { store, projection, deps } = resumeHarness({
+      controlRecords: [snapshotFixture(), granted],
+      connection: connectionFixture(),
+    });
+
+    const first = await resumeCollaborationCoordinator(deps, "project_demo");
+    const second = await resumeCollaborationCoordinator(deps, "project_demo");
+
+    expect(first).toEqual({ status: "ready" });
+    expect(second).toEqual({ status: "ready" });
+    // The revoked tip is not live, so the second resume appends nothing.
+    expect(store.controlRecords).toHaveLength(3);
+    expect(projection.rebuilds).toHaveLength(2);
+
+    // An already-expired lease lapses by wall clock; no record is appended.
+    const expiredHarness = resumeHarness(
+      { controlRecords: [snapshotFixture(), granted], connection: connectionFixture() },
+      () => AFTER_EXPIRY,
+    );
+    const expired = await resumeCollaborationCoordinator(expiredHarness.deps, "project_demo");
+    expect(expired).toEqual({ status: "ready" });
+    expect(expiredHarness.store.controlRecords).toHaveLength(2);
   });
 });
