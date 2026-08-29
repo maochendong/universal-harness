@@ -1,7 +1,7 @@
 # Universal Harness M3：远程协作正式设计
 
 日期：2026-08-29  
-状态：评审问题已修订，待复核<br>
+状态：设计复核通过，已进入实施计划<br>
 协议版本：Protocol 1.2  
 范围：单仓库、单 Coordinator、远程协作；不包含 Multi-Agent 调度
 
@@ -73,6 +73,7 @@ Protocol 1.2 Port Registry 中仅新增 `CollaborationCoordinatorPort`。不增�
 | 决策 | 选择 |
 |---|---|
 | 部署模型 | 薄 Coordinator + Git-native Ledger |
+| Coordinator 发现 | connect 显式提供 canonical HTTPS origin；不引入服务发现 |
 | 离线语义 | 可离线准备；权威写入 fail-closed |
 | 身份来源 | 自动发现 GitHub/GitLab/Gitee Remote，使用平台 OAuth/OIDC 与仓库权限 |
 | 项目平台绑定 | 无人工绑定；每次会话从已批准 Git Remote 解析 |
@@ -175,6 +176,7 @@ interface CollaborationCoordinatorPort {
 - `connect`；
 - `disconnect`；
 - `acquire_operation_lease`、`renew_operation_lease`、`release_operation_lease`；
+- `publish_operation_candidate`；
 - `submit_remote_approval`；
 - `prepare_integration`、`accept_integration`；
 - `sync_now`。
@@ -233,15 +235,18 @@ Profile、ProfileDefinition 和 CapabilityPlan 的 Schema、digest 与 Operation
 
 ```ts
 interface CollaborationConnectionRecord {
+  protocol_version: "1.2.0";
   record_kind: "collaboration_connection";
-  schema_version: 1;
   connection_id: string;
   project_id: string;
   revision: number;
   status: "active" | "disconnected";
   provider: "github" | "gitlab" | "gitee";
   repository_id: string;
+  canonical_remote: string;
   canonical_remote_digest: string;
+  coordinator_origin: string;
+  target_ref: string;
   control_ref: string;
   policy_digest: string;
   actor_principal_id: string;
@@ -249,14 +254,14 @@ interface CollaborationConnectionRecord {
   command_id: string;
   effective_at: string;
   supersedes_digest?: string;
-  digest: string;
+  record_digest: string;
 }
 ```
 
 启用规则：
 
-- 只有显式 `harness connect` 且 Remote、权限与 Control Ref 安全检查全部通过后，才追加
-  `active` revision；
+- 只有显式 `harness connect --coordinator <https-url>` 且 Remote、权限与 Control Ref 安全检查
+  全部通过后，才追加 `active` revision；
 - `harness disconnect` 追加 `disconnected` revision，不改写历史；
 - 相同输入的重复命令返回现有 revision，不生成重复事实；
 - 未启用时不创建 Control Ref、不调用 Coordinator、不查询平台权限，也不生成远程占位记录；
@@ -264,18 +269,20 @@ interface CollaborationConnectionRecord {
 
 ## 8. Git Remote 自动发现
 
-`harness connect` 从当前已批准仓库配置读取 canonical Remote：
+`harness connect` 从当前已批准仓库配置读取不含 credential/userinfo 的 canonical Remote 与
+当前目标分支，并从必填参数读取 canonical Coordinator HTTPS origin：
 
-1. 规范化 SSH/HTTPS Remote；
-2. 识别 host；
-3. 由 Adapter Registry 选择 GitHub、GitLab 或 Gitee Adapter；
-4. 解析当前单仓库 identity；
-5. 进行 OAuth/OIDC；
-6. 查询主体对当前仓库的权限；
-7. 在内存中生成 `PrincipalSnapshot` 候选；
-8. 按 §17.3 完成 Control Ref 安全检查；
-9. 以 Control Ref CAS 持久化 PrincipalSnapshot；
-10. 向项目 Ledger 追加 `active` CollaborationConnectionRecord。
+1. 规范化并验证 Coordinator origin；非 HTTPS 或带 userinfo/query/fragment 时拒绝；
+2. 规范化 SSH/HTTPS Remote；
+3. 识别 host；
+4. 由 Adapter Registry 选择 GitHub、GitLab 或 Gitee Adapter；
+5. 解析当前单仓库 identity；
+6. 进行 OAuth/OIDC；
+7. 查询主体对当前仓库的权限；
+8. 在内存中生成 `PrincipalSnapshot` 候选；
+9. 按 §17.3 完成 Control Ref 安全检查；
+10. 以 Control Ref CAS 持久化 PrincipalSnapshot；
+11. 向项目 Ledger 追加 `active` CollaborationConnectionRecord。
 
 不支持的 host、歧义 Remote、Remote 漂移或权限不足均阻止连接。项目不保存人工选择的
 平台绑定；每次会话都从当前批准 Remote 解析，解析结果及其 digest 进入本次命令 provenance。
@@ -303,8 +310,10 @@ Protocol 1.2 新增 `PrincipalSnapshot`：
 
 ```ts
 interface PrincipalSnapshot {
+  protocol_version: "1.2.0";
   record_kind: "principal_snapshot";
-  schema_version: 1;
+  control_sequence: number;
+  previous_control_record_digest?: string;
   snapshot_id: string;
   principal_id: string;
   provider: "github" | "gitlab" | "gitee";
@@ -315,7 +324,7 @@ interface PrincipalSnapshot {
   observed_at: string;
   expires_at: string;
   source_response_digest: string;
-  digest: string;
+  record_digest: string;
 }
 ```
 
@@ -404,12 +413,20 @@ target branch
 不同 Operation 可以并行。Operation Branch 只是候选传输和恢复点；即使被推送到 Git Remote，
 也不能直接改变目标分支或满足 completed Snapshot。
 
+Replica 可以离线生成本地 candidate commit，但只有持有有效 Operation Lease 时才能通过
+`publish_operation_candidate` 请求 Coordinator 以 expected Operation Ref OID 做 CAS。Coordinator
+必须同时验证 operation id、fencing token 与 candidate commit；CAS 漂移返回
+`operation_ref_drift`。用户或旧 Replica 的直接 push 仍只是不可信候选输入，不形成受管 Lease
+进展，也不能绕过最终 Integration 重验证。
+
 ### 11.1 LeaseRecord
 
 ```ts
 interface LeaseRecord {
+  protocol_version: "1.2.0";
   record_kind: "lease";
-  schema_version: 1;
+  control_sequence: number;
+  previous_control_record_digest?: string;
   lease_record_id: string;
   lease_id: string;
   previous_lease_record_digest?: string;
@@ -422,7 +439,7 @@ interface LeaseRecord {
   expires_at: string;
   state: "granted" | "renewed" | "released" | "expired" | "revoked";
   command_id: string;
-  digest: string;
+  record_digest: string;
 }
 ```
 
@@ -482,8 +499,10 @@ ApprovalRequest 出现在活动 Operation
 
 ```ts
 interface RemoteApprovalDecision {
+  protocol_version: "1.2.0";
   record_kind: "remote_approval_decision";
-  schema_version: 1;
+  control_sequence: number;
+  previous_control_record_digest?: string;
   remote_decision_id: string;
   request_id: string;
   operation_id: string;
@@ -495,7 +514,7 @@ interface RemoteApprovalDecision {
   required_permission: "write" | "maintain" | "admin";
   decided_at: string;
   command_id: string;
-  digest: string;
+  record_digest: string;
 }
 ```
 
@@ -565,8 +584,8 @@ canonical `IntegrationRecord`：
 
 ```ts
 interface IntegrationRecord {
+  protocol_version: "1.2.0";
   record_kind: "integration";
-  schema_version: 1;
   integration_id: string;
   operation_id: string;
   expected_target_commit: string;
@@ -582,7 +601,7 @@ interface IntegrationRecord {
   evidence_digests: readonly string[];
   approval_decision_digests: readonly string[];
   command_id: string;
-  digest: string;
+  record_digest: string;
 }
 ```
 
@@ -645,12 +664,16 @@ M3 至少提供以下类型化错误：
 | `coordinator_unavailable` | 远程写阻塞；本地准备可继续 |
 | `git_remote_unavailable` | 不更新 Control、Operation 或 Target Ref |
 | `unsupported_remote` | connect 阻塞，不猜测 Provider |
+| `invalid_coordinator_origin` | connect 阻塞，改用无 userinfo/query/fragment 的 HTTPS origin |
 | `authentication_required` | 要求重新 OAuth |
 | `permission_denied` | 不创建 Decision 或 Integration |
 | `permission_snapshot_stale` | 重新查询平台权限 |
+| `approval_binding_mismatch` | 不物化 Decision；按当前绑定重发 Request |
+| `approval_self_approval` | 拒绝 Decision，改由其他有权限主体处理 |
 | `lease_unavailable` | 等待、defer 或缩小 Operation；不抢写 |
 | `lease_expired` | 本地结果保持候选，重新申请 Lease |
 | `lease_fenced` | 永久拒绝旧 token 请求 |
+| `operation_ref_drift` | 重新读取 Operation Branch，保留本地 candidate 并重新发布 |
 | `control_ref_invalid` | Coordinator 进入只读阻塞，人工修复 |
 | `control_ref_unprotected` | connect 阻塞，修复平台 Ref 保护后重试 |
 | `remote_identity_drift` | 停用远程会话，重新执行 connect |
@@ -705,7 +728,7 @@ M3 不要求持久化用户 email、头像、display name 或平台 Token。审�
 
 M3 在现有命令面上增加或扩展：
 
-- `harness connect`：发现 Remote、OAuth、验证权限并启用远程协作模式；
+- `harness connect --coordinator <https-url>`：发现 Remote、OAuth、验证权限并启用远程协作模式；
 - `harness disconnect`：阻止新 Lease，释放或等待现有 Lease 过期，并追加 disconnected 连接记录；
 - `harness sync`：立即轮询和重建远程投影；
 - `harness status`：增加连接、Operation、Approval 和 Integration 摘要；
@@ -733,8 +756,12 @@ Dashboard 展示远程状态时必须区分 Git 权威事实与 SQLite 投影时
 - Protocol 1.2 Reader 必须读取 1.0/1.1；
 - 旧字符串 actor 投影为 `legacy_local`；
 - `legacy_local` 可以满足本地历史审计，但不能满足新的远程 Approval；
+- 承载任一 Protocol 1.2 权威 Artifact/Event 的 LedgerOperation 必须写
+  `required_reader_version: "1.2.0"`；普通 1.0/1.1 transaction 不写该字段；
 - 1.0/1.1 Reader 遇到会影响权威投影的 1.2 记录时必须 fail-closed，返回类型化
   `protocol_upgrade_required`，不得静默跳过；
+- 已发布且不认识该字段的旧严格 Schema 至少会拒绝该 manifest，不会把 1.2 Artifact 静默投影为
+  1.1 完成事实；
 - Control Ref 不属于未连接项目的本地读取路径，旧 Reader 不需要解析其记录；
 - 1.2 Writer 不改写历史记录，只追加新事实。
 
