@@ -254,7 +254,12 @@ export interface PlatformIdentityPort {
 export interface ReadControlInput {
   readonly project_id: string;
   readonly control_ref: string;
-  readonly target_ref: string;
+  /**
+   * Target ref the connection is (or will be) frozen to; required when the
+   * caller needs Ledger state tied to a specific target, omitted by commands
+   * that only inspect the Control Ref and latest connection.
+   */
+  readonly target_ref?: string;
 }
 
 /**
@@ -340,6 +345,12 @@ export type TargetCasResult =
   | { readonly status: "failed"; readonly failure: CollaborationFailure };
 
 export interface GitControlStorePort {
+  /**
+   * Read the authoritative coordinator state. The implementation owns
+   * read-time verification (spec §17.3): Control Ref fast-forward ancestry,
+   * Schema, sequence and digest are validated on every read, and any illegal
+   * chain fails closed with `control_ref_invalid`.
+   */
   readControl(input: ReadControlInput): Promise<ControlSnapshotResult>;
   appendControl(input: AppendControlInput): Promise<ControlAppendResult>;
   appendProjectRecord(input: AppendProjectRecordInput): Promise<ProjectRecordCommitResult>;

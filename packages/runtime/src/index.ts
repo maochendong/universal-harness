@@ -1159,6 +1159,7 @@ export type {
   PreparedGitCandidateResult,
   PrincipalSnapshotDraftResult,
   PrincipalSnapshotFacts,
+  ProjectRecordCommitResult,
   ProjectionRebuildInput,
   ProtectionResult,
   PublishOperationCandidateCommand,
@@ -1172,7 +1173,6 @@ export type {
   SyncNowCommand,
   TargetCasInput,
   TargetCasResult,
-  ProjectRecordCommitResult,
 } from "./collaboration/port.js";
 
 /**

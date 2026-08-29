@@ -612,6 +612,28 @@ describe("collaboration coordinator disconnect", () => {
     expect(controlStore.calls.appendProjectRecord).toBe(2);
   });
 
+  it("reports a no-op when disconnecting an already disconnected project", async () => {
+    const { coordinator, controlStore } = createHarness();
+    await coordinator.execute(connectCommand(), session("principal_alice"));
+    await coordinator.execute(
+      { kind: "disconnect", command_id: "command_disconnect_1", project_id: "project_demo" },
+      session("principal_alice"),
+    );
+
+    const outcome = await coordinator.execute(
+      { kind: "disconnect", command_id: "command_disconnect_2", project_id: "project_demo" },
+      session("principal_alice"),
+    );
+
+    // A no-op is not an idempotent replay: no new fact is appended.
+    expect(outcome).toMatchObject({
+      status: "disconnected",
+      replayed: false,
+      connection: { revision: 2, command_id: "command_disconnect_1" },
+    });
+    expect(controlStore.calls.appendProjectRecord).toBe(2);
+  });
+
   it("refuses to disconnect while a live lease exists", async () => {
     const controlStore = createFakeControlStore();
     const { coordinator } = createHarness({ controlStore });

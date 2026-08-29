@@ -62,16 +62,21 @@ export function createCollaborationCoordinator(
   const controlRef = deps.control_ref ?? COLLABORATION_CONTROL_REF;
   const now = deps.now ?? (() => new Date().toISOString());
 
+  /**
+   * Best-effort projection update after the authoritative Git append. Git
+   * stays authoritative: a projection failure is reported as
+   * `rebuild_required` and the append is never blindly retried.
+   */
   async function applyProjection(
     records: readonly Parameters<CoordinatorProjectionPort["apply"]>[0][],
-  ): Promise<boolean> {
+  ): Promise<{ rebuild_required: boolean }> {
     try {
       for (const record of records) {
         await deps.projection.apply(record);
       }
-      return false;
+      return { rebuild_required: false };
     } catch {
-      return true;
+      return { rebuild_required: true };
     }
   }
 
@@ -224,12 +229,12 @@ export function createCollaborationCoordinator(
     if (committed.status === "failed") return { status: "failed", failure: committed.failure };
 
     // 9. Update the rebuildable projection; Git stays authoritative on failure.
-    const rebuildRequired = await applyProjection([snapshot, connection]);
+    const projection = await applyProjection([snapshot, connection]);
     return {
       status: "connected",
       connection,
       replayed: false,
-      ...(rebuildRequired ? { projection_rebuild_required: true } : {}),
+      ...(projection.rebuild_required ? { projection_rebuild_required: true } : {}),
     };
   }
 
@@ -241,7 +246,6 @@ export function createCollaborationCoordinator(
     const state = await deps.controlStore.readControl({
       project_id: command.project_id,
       control_ref: controlRef,
-      target_ref: "",
     });
     if (state.status === "failed") return { status: "failed", failure: state.failure };
     const latest = state.snapshot.latest_connection;
@@ -257,7 +261,11 @@ export function createCollaborationCoordinator(
       };
     }
     if (latest.command_id === command.command_id) return connectionOutcome(latest, true);
-    if (latest.status === "disconnected") return connectionOutcome(latest, true);
+    if (latest.status === "disconnected") {
+      // No-op, not an idempotent replay: the project is already disconnected,
+      // so report the current state without appending a new fact.
+      return connectionOutcome(latest, false);
+    }
 
     // 3. Refuse while a live Lease exists; the caller waits or releases first.
     if (hasLiveLease(state.snapshot.control_records, now())) {
@@ -299,12 +307,12 @@ export function createCollaborationCoordinator(
     });
     if (committed.status === "failed") return { status: "failed", failure: committed.failure };
 
-    const rebuildRequired = await applyProjection([connection]);
+    const projection = await applyProjection([connection]);
     return {
       status: "disconnected",
       connection,
       replayed: false,
-      ...(rebuildRequired ? { projection_rebuild_required: true } : {}),
+      ...(projection.rebuild_required ? { projection_rebuild_required: true } : {}),
     };
   }
 
@@ -312,7 +320,6 @@ export function createCollaborationCoordinator(
     const state = await deps.controlStore.readControl({
       project_id: command.project_id,
       control_ref: controlRef,
-      target_ref: "",
     });
     if (state.status === "failed") return { status: "failed", failure: state.failure };
     if (state.snapshot.latest_connection?.status !== "active") {
