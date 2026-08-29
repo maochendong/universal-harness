@@ -35,7 +35,9 @@ const ControlRecordFields = {
   previous_control_record_digest: Type.Optional(DigestSchema),
 };
 
-const GitCommitSchema = Type.String({ minLength: 7, maxLength: 64, pattern: "^[a-f0-9]+$" });
+// Same SHA-1 commit shape as schema/runtime.ts (`baseline_commit` and
+// friends): 7-40 lowercase hex, never the looser 64-char digest length.
+const GitCommitSchema = Type.String({ pattern: "^[0-9a-f]{7,40}$" });
 
 export const COLLABORATION_CONNECTION_STATUSES = ["active", "disconnected"] as const;
 

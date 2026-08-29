@@ -44,6 +44,7 @@ import {
   UnsupportedAtomicity,
   buildManifest,
   manifestDigest,
+  requiredReaderVersionField,
   validateTransaction,
   type CommitHooks,
   type DurableBoundary,
@@ -369,9 +370,7 @@ export class LedgerRepository {
         event_file: context.eventFile,
         edge_file_digest: digests.edgeFileDigest,
         event_file_digest: digests.eventFileDigest,
-        ...(input.required_reader_version !== undefined
-          ? { required_reader_version: input.required_reader_version }
-          : {}),
+        ...requiredReaderVersionField(input.required_reader_version),
         committed_at: this.now(),
       });
       this.publishManifest(manifest, context);
@@ -406,9 +405,7 @@ export class LedgerRepository {
       event_file: existing.event_file,
       edge_file_digest: digests.edgeFileDigest,
       event_file_digest: digests.eventFileDigest,
-      ...(input.required_reader_version !== undefined
-        ? { required_reader_version: input.required_reader_version }
-        : {}),
+      ...requiredReaderVersionField(input.required_reader_version),
       committed_at: existing.committed_at,
     });
     if (candidateDigest === existing.digest) {

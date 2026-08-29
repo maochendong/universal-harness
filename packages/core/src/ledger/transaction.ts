@@ -140,27 +140,25 @@ export interface ManifestDraft {
 }
 
 export function manifestDigest(draft: ManifestDraft): string {
-  const content: Record<string, unknown> = { ...draft };
-  delete content.committed_at;
-  // Canonical JSON rejects undefined values; the optional reader gate must
-  // never serialize as a present-but-undefined key.
-  if (content.required_reader_version === undefined) delete content.required_reader_version;
+  const { committed_at, required_reader_version, ...content } = draft;
+  void committed_at;
   return contentDigest({
     protocol_version: PROTOCOL_VERSION,
     record_kind: "ledger_operation",
     ...content,
+    ...requiredReaderVersionField(required_reader_version),
   });
 }
 
 export function buildManifest(draft: ManifestDraft): LedgerOperation {
   // `persistedRecordProperties` widens protocol_version/record_kind away at
   // the type level; runtime schema validation is the enforcing layer.
-  const content = { ...draft };
-  if (content.required_reader_version === undefined) delete content.required_reader_version;
+  const { required_reader_version, ...content } = draft;
   return {
     protocol_version: PROTOCOL_VERSION,
     record_kind: "ledger_operation",
     ...content,
+    ...requiredReaderVersionField(required_reader_version),
     artifact_digests: [...draft.artifact_digests],
     digest: manifestDigest(draft),
   } as LedgerOperation;
@@ -179,19 +177,33 @@ const ARTIFACT_PATH_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._/-]*$/u;
 const RESERVED_ARTIFACT_PREFIXES = ["ledger/", "events/", "staging/", "locks/", "cache/"];
 
 /**
+ * Read a field off a parsed JSON value only when it is a plain object. Shared
+ * by every raw-payload sniff (artifact/event protocol detection and the
+ * manifest reader gate) so none of them trusts arrays, nulls or primitives.
+ */
+export function plainRecordField(value: unknown, field: string): unknown {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return undefined;
+  return (value as Record<string, unknown>)[field];
+}
+
+/**
+ * Canonical JSON rejects undefined values; the optional reader gate must
+ * never serialize as a present-but-undefined key. Include it only when set.
+ */
+export function requiredReaderVersionField(version: string | undefined): {
+  readonly required_reader_version?: string;
+} {
+  return version !== undefined ? { required_reader_version: version } : {};
+}
+
+/**
  * Protocol 1.2 detection: a transaction is an M3 transaction when any event
  * or JSON artifact carries `protocol_version: "1.2.0"`. Unparseable artifact
  * content is opaque bytes, never a 1.2 record.
  */
 function artifactCarriesProtocol12(content: string): boolean {
   try {
-    const parsed: unknown = JSON.parse(content);
-    return (
-      typeof parsed === "object" &&
-      parsed !== null &&
-      !Array.isArray(parsed) &&
-      (parsed as Record<string, unknown>).protocol_version === PROTOCOL_1_2_VERSION
-    );
+    return plainRecordField(JSON.parse(content), "protocol_version") === PROTOCOL_1_2_VERSION;
   } catch {
     return false;
   }
@@ -202,8 +214,7 @@ function transactionCarriesProtocol12(input: TransactionInput): boolean {
     // `persistedRecordProperties` widens protocol_version away at the type
     // level; the persisted record always carries it at runtime.
     (input.events ?? []).some(
-      (event) =>
-        (event as unknown as Record<string, unknown>).protocol_version === PROTOCOL_1_2_VERSION,
+      (event) => plainRecordField(event, "protocol_version") === PROTOCOL_1_2_VERSION,
     ) || (input.artifacts ?? []).some((artifact) => artifactCarriesProtocol12(artifact.content))
   );
 }

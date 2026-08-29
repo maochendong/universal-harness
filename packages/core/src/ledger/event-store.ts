@@ -6,14 +6,14 @@ import type { EdgeRecord } from "../schema/edge.js";
 import type { LifecycleEvent } from "../schema/event.js";
 import type { LedgerOperation } from "../schema/operation.js";
 import { validateSchema, type SchemaKey } from "../schema/registry.js";
-import { assertProtocolReaderCanProject } from "../collaboration/records.js";
-import { PROTOCOL_1_2_VERSION } from "../protocol.js";
+import { PROTOCOL_1_2_VERSION, assertProtocolReaderCanProject } from "../protocol.js";
 import { resolveHarnessPath } from "./layout.js";
 import {
   BaselineMismatch,
   LedgerConflict,
   LedgerCorruptionError,
   LedgerSequenceError,
+  plainRecordField,
   verifyManifestDigest,
 } from "./transaction.js";
 
@@ -57,15 +57,13 @@ function parseManifest(fileName: string, raw: string, readerVersion: string): Le
   // Inspect the raw reader gate before any domain validation or replay: an
   // older reader must surface protocol_upgrade_required instead of silently
   // skipping (or misprojecting) a Protocol 1.2 manifest.
-  if (typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)) {
-    const required = (parsed as Record<string, unknown>).required_reader_version;
-    if (typeof required === "string") {
-      assertProtocolReaderCanProject({
-        readerVersion,
-        recordVersion: required,
-        authoritative: true,
-      });
-    }
+  const required = plainRecordField(parsed, "required_reader_version");
+  if (typeof required === "string") {
+    assertProtocolReaderCanProject({
+      readerVersion,
+      recordVersion: required,
+      authoritative: true,
+    });
   }
   const result = validateSchema("ledger-operation", parsed);
   if (!result.valid) {

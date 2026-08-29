@@ -3,11 +3,14 @@ import type { CollaborationRecord, ControlRecord } from "../schema/collaboration
 import { sealRecordEnvelope } from "../schema/envelope.js";
 
 /**
- * Deterministic builders, semantic invariants and reader-version gates for
- * the five Protocol 1.2 collaboration records. Builders always seal the
- * envelope themselves: a caller-supplied `protocol_version` or
- * `record_digest` is recomputed, never trusted.
+ * Deterministic builders and semantic invariants for the five Protocol 1.2
+ * collaboration records. Builders always seal the envelope themselves: a
+ * caller-supplied `protocol_version` or `record_digest` is recomputed, never
+ * trusted. The reader-version gate is generic protocol machinery and lives
+ * in `protocol.js`; it is re-exported here so existing importers keep working.
  */
+export { ProtocolProjectionError, assertProtocolReaderCanProject } from "../protocol.js";
+
 export type CollaborationRecordDraft = {
   [K in CollaborationRecord["record_kind"]]: Omit<
     Extract<CollaborationRecord, { record_kind: K }>,
@@ -19,59 +22,6 @@ export function buildCollaborationRecord<T extends CollaborationRecordDraft>(
   draft: T,
 ): T & { readonly protocol_version: typeof PROTOCOL_1_2_VERSION; readonly record_digest: string } {
   return sealRecordEnvelope({ ...draft, protocol_version: PROTOCOL_1_2_VERSION });
-}
-
-/** Typed fail-closed error for readers that cannot project a newer record. */
-export class ProtocolProjectionError extends Error {
-  readonly kind = "protocol_upgrade_required" as const;
-
-  constructor(message: string) {
-    super(message);
-    this.name = "ProtocolProjectionError";
-  }
-}
-
-const SEMVER_PATTERN = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/u;
-
-function parseVersion(version: string): readonly [number, number, number] {
-  const match = SEMVER_PATTERN.exec(version);
-  if (match === null) {
-    throw new ProtocolProjectionError(
-      `protocol_upgrade_required: unparseable protocol version ${JSON.stringify(version)}`,
-    );
-  }
-  return [Number(match[1]), Number(match[2]), Number(match[3])];
-}
-
-function compareVersions(left: string, right: string): number {
-  const a = parseVersion(left);
-  const b = parseVersion(right);
-  for (let index = 0; index < 3; index += 1) {
-    const leftPart = a[index] as number;
-    const rightPart = b[index] as number;
-    if (leftPart !== rightPart) return leftPart < rightPart ? -1 : 1;
-  }
-  return 0;
-}
-
-/**
- * Reader gate for Protocol 1.2 compatibility (design §19.1): a reader always
- * projects records at or below its own version, and an older reader fails
- * closed with `protocol_upgrade_required` only when the newer record is
- * authoritative. Non-authoritative newer data (derived read models) never
- * blocks an old reader.
- */
-export function assertProtocolReaderCanProject(options: {
-  readonly readerVersion: string;
-  readonly recordVersion: string;
-  readonly authoritative: boolean;
-}): void {
-  if (!options.authoritative) return;
-  if (compareVersions(options.recordVersion, options.readerVersion) > 0) {
-    throw new ProtocolProjectionError(
-      `protocol_upgrade_required: record requires reader ${options.recordVersion}, active reader is ${options.readerVersion}`,
-    );
-  }
 }
 
 export class CollaborationChainError extends Error {

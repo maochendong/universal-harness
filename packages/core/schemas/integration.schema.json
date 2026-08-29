@@ -32,18 +32,8 @@
       "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
       "type": "string"
     },
-    "expected_target_commit": {
-      "minLength": 7,
-      "maxLength": 64,
-      "pattern": "^[a-f0-9]+$",
-      "type": "string"
-    },
-    "operation_commit": {
-      "minLength": 7,
-      "maxLength": 64,
-      "pattern": "^[a-f0-9]+$",
-      "type": "string"
-    },
+    "expected_target_commit": { "pattern": "^[0-9a-f]{7,40}$", "type": "string" },
+    "operation_commit": { "pattern": "^[0-9a-f]{7,40}$", "type": "string" },
     "lease_fencing_token": { "minimum": 1, "type": "integer" },
     "ledger_sequence_rewrites": {
       "type": "array",
