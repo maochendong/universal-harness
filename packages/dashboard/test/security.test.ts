@@ -99,4 +99,38 @@ describe("Dashboard security", () => {
     expect(crossOrigin.status).toBe(403);
     await expect(crossOrigin.json()).resolves.toMatchObject({ code: "origin_mismatch" });
   });
+
+  it("guards collaboration endpoints with the same session, Origin and CSRF policy", async () => {
+    const server = await startDashboardServer({ projectRoot: await project() });
+    servers.push(server);
+    const exchange = await fetch(server.bootstrapUrl, { redirect: "manual" });
+    const cookie = (exchange.headers.get("set-cookie") ?? "").split(";", 1)[0] ?? "";
+
+    const anonymous = await fetch(`${server.origin}/api/v1/collaboration/connection`);
+    expect(anonymous.status).toBe(401);
+    await expect(anonymous.json()).resolves.toMatchObject({ code: "authentication_required" });
+
+    const crossOriginRead = await fetch(`${server.origin}/api/v1/collaboration/connection`, {
+      headers: { cookie, origin: "https://evil.example" },
+    });
+    expect(crossOriginRead.status).toBe(403);
+    await expect(crossOriginRead.json()).resolves.toMatchObject({ code: "origin_mismatch" });
+
+    const path = "/api/v1/collaboration/approvals/approval_req_x/decision";
+    const noOrigin = await fetch(`${server.origin}${path}`, {
+      method: "POST",
+      headers: { cookie, "content-type": "application/json" },
+      body: JSON.stringify({ decision: "approve" }),
+    });
+    expect(noOrigin.status).toBe(403);
+    await expect(noOrigin.json()).resolves.toMatchObject({ code: "origin_mismatch" });
+
+    const noCsrf = await fetch(`${server.origin}${path}`, {
+      method: "POST",
+      headers: { cookie, origin: server.origin, "content-type": "application/json" },
+      body: JSON.stringify({ decision: "approve" }),
+    });
+    expect(noCsrf.status).toBe(403);
+    await expect(noCsrf.json()).resolves.toMatchObject({ code: "csrf_mismatch" });
+  });
 });

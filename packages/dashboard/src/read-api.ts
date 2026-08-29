@@ -29,6 +29,7 @@ import {
 } from "@universal-harness-internal/runtime";
 
 import { DashboardProblem } from "./problem.js";
+import { readLocalConnection } from "./collaboration-api.js";
 import {
   presentEdge,
   presentApproval,
@@ -169,7 +170,26 @@ export function createDashboardReadApi(projectRoot: string): DashboardReadApi {
     view === "artifact" ? ports.artifact : view === "execution" ? ports.execution : ports.graph;
 
   return {
-    project: () => collectProjectStatus(projectRoot),
+    project: () => {
+      const status = collectProjectStatus(projectRoot);
+      // M3 (design §18.2): the local Ledger's connection fact rides along so
+      // the Overview can render Connection Status without a second request.
+      // Never-connected projects keep the exact pre-M3 payload (§19.3).
+      const connection = readLocalConnection(projectRoot);
+      return {
+        ...status,
+        ...(connection === undefined
+          ? {}
+          : {
+              collaboration: {
+                authority: "project_ledger" as const,
+                status: connection.status,
+                connection_id: connection.connection_id,
+                coordinator_origin: connection.coordinator_origin,
+              },
+            }),
+      };
+    },
     nodes: (query) =>
       withPorts((ports) => {
         const { view, ...pageQuery } = query;

@@ -5,11 +5,17 @@ import {
   NODE_STATUSES,
   NODE_TYPES,
   RELATION_TYPES,
+  REMOTE_APPROVAL_DECISIONS,
   type EdgeRecord,
   type NodeRecord,
 } from "@universal-harness-internal/core";
 import type { TraversalDirection } from "@universal-harness-internal/graph";
-import type { EventStreamPort } from "@universal-harness-internal/runtime";
+import type {
+  EventStreamPort,
+  RemoteApprovalDecision,
+} from "@universal-harness-internal/runtime";
+
+import type { DashboardCollaborationApi } from "./collaboration-api.js";
 
 import {
   DashboardProblem,
@@ -45,6 +51,7 @@ export interface DashboardRouterOptions {
   readonly readApi: DashboardReadApi;
   readonly eventStream: EventStreamPort;
   readonly writeApi: DashboardWriteApi;
+  readonly collaborationApi: DashboardCollaborationApi;
   readonly shutdownSignal: AbortSignal;
 }
 
@@ -393,6 +400,42 @@ export function createDashboardRouter(options: DashboardRouterOptions) {
           );
           return;
         }
+        const collaborationApproval = /^\/api\/v1\/collaboration\/approvals\/(.+)\/decision$/u.exec(
+          url.pathname,
+        );
+        if (collaborationApproval !== null) {
+          bodyKeys(body, new Set(["decision"]));
+          const decision = bodyString(body, "decision");
+          if (!REMOTE_APPROVAL_DECISIONS.some((value) => value === decision)) {
+            throw new DashboardProblem(
+              400,
+              "invalid_write",
+              "Bad Request",
+              "decision must be approve, reject or defer",
+            );
+          }
+          sendJson(
+            response,
+            await options.collaborationApi.submitRemoteApproval({
+              requestId: decodedIdentifier(collaborationApproval[1] ?? "", "approval id"),
+              decision: decision as RemoteApprovalDecision,
+            }),
+          );
+          return;
+        }
+        const collaborationRetry = /^\/api\/v1\/collaboration\/integrations\/(.+)\/retry$/u.exec(
+          url.pathname,
+        );
+        if (collaborationRetry !== null) {
+          bodyKeys(body, new Set());
+          sendJson(
+            response,
+            await options.collaborationApi.retryIntegration({
+              integrationId: decodedIdentifier(collaborationRetry[1] ?? "", "integration id"),
+            }),
+          );
+          return;
+        }
         throw new DashboardProblem(
           404,
           "route_not_found",
@@ -639,6 +682,21 @@ export function createDashboardRouter(options: DashboardRouterOptions) {
             ...(limit === undefined ? {} : { limit }),
           }),
         );
+        return;
+      }
+      if (url.pathname === "/api/v1/collaboration/connection") {
+        queryKeys(url.searchParams, new Set());
+        sendJson(response, await options.collaborationApi.connection());
+        return;
+      }
+      if (url.pathname === "/api/v1/collaboration/approvals") {
+        queryKeys(url.searchParams, new Set());
+        sendJson(response, await options.collaborationApi.remoteApprovals());
+        return;
+      }
+      if (url.pathname === "/api/v1/collaboration/conflicts") {
+        queryKeys(url.searchParams, new Set());
+        sendJson(response, await options.collaborationApi.integrationConflicts());
         return;
       }
       throw new DashboardProblem(404, "route_not_found", "Not Found", "Dashboard route not found");

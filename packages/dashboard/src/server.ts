@@ -10,6 +10,11 @@ import {
 import { checkGraphCache, rebuildGraphCache } from "@universal-harness-internal/graph";
 import { FileEventStream, type EventStreamPort } from "@universal-harness-internal/runtime";
 
+import {
+  createDashboardCollaborationApi,
+  unavailableDashboardCollaborationApi,
+  type DashboardCollaborationApi,
+} from "./collaboration-api.js";
 import { DashboardProblem } from "./problem.js";
 import { createDashboardReadApi, type DashboardReadApi } from "./read-api.js";
 import { createDashboardRouter } from "./router.js";
@@ -24,6 +29,8 @@ export interface DashboardServerOptions {
   readonly port?: number;
   readonly eventStream?: EventStreamPort;
   readonly writeApi?: DashboardWriteApi;
+  /** M3 remote collaboration Adapter; defaults to the Ledger + HTTPS wiring. */
+  readonly collaborationApi?: DashboardCollaborationApi;
 }
 
 export interface DashboardServer {
@@ -133,6 +140,11 @@ export async function startDashboardServer(
     );
   }
   const startupProblem = prepareCache(options.projectRoot);
+  const collaborationApi =
+    startupProblem === undefined
+      ? (options.collaborationApi ??
+        createDashboardCollaborationApi({ projectRoot: options.projectRoot }))
+      : unavailableDashboardCollaborationApi(startupProblem);
   const sessions = new DashboardSessionStore();
   const shutdown = new AbortController();
   const routing: { handler?: ReturnType<typeof createDashboardRouter> } = {};
@@ -156,6 +168,7 @@ export async function startDashboardServer(
       startupProblem === undefined
         ? (options.writeApi ?? unavailableDashboardWriteApi())
         : unavailableDashboardWriteApi(),
+    collaborationApi,
     shutdownSignal: shutdown.signal,
   });
   let closed = false;

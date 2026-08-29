@@ -3,6 +3,17 @@ export {
   type DashboardServer,
   type DashboardServerOptions,
 } from "./server.js";
+export {
+  createDashboardCollaborationApi,
+  readLocalConnection,
+  unavailableDashboardCollaborationApi,
+  type DashboardCollaborationApi,
+  type DashboardCollaborationApiOptions,
+  type DashboardCollaborationConnectionView,
+  type DashboardIntegrationConflictList,
+  type DashboardRemoteApprovalInbox,
+  type DashboardRemoteConnectionObservation,
+} from "./collaboration-api.js";
 export { DashboardSessionStore, type DashboardSession } from "./session.js";
 export { DashboardProblem, type ProblemDetails } from "./problem.js";
 export { createDashboardReadApi, type DashboardPage, type DashboardReadApi } from "./read-api.js";

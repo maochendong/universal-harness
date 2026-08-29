@@ -1315,6 +1315,35 @@ h2 {
   color: var(--paper-muted);
   font: 0.7rem/1.7 var(--mono);
 }
+.remote-heading {
+  margin-top: 2.4rem;
+}
+.remote-heading[hidden] {
+  display: none;
+}
+.projection-note {
+  margin: 0.6rem 0 0;
+  color: var(--paper-muted);
+  font: 0.62rem/1.6 var(--mono);
+  letter-spacing: 0.04em;
+}
+/* M3: Control Ref/SQLite observations are deliberately not given the
+   authoritative amber treatment; a dashed teal frame marks 远程协调事实. */
+.remote-fact-card {
+  border-style: dashed;
+  border-top: 0.25rem solid var(--signal);
+  background:
+    linear-gradient(rgba(100, 226, 210, 0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(100, 226, 210, 0.03) 1px, transparent 1px), var(--ink-soft);
+  background-size: 1.4rem 1.4rem;
+}
+.remote-fact-card h4 {
+  margin: 0.4rem 0 0.8rem;
+  font: 400 1.2rem/1.2 var(--display);
+}
+.remote-fact-card .command {
+  margin-top: 1rem;
+}
 .state-line {
   min-height: 1.4rem;
   margin: 1.4rem 0 0;

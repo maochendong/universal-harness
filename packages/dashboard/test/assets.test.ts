@@ -54,6 +54,17 @@ describe("Dashboard assets", () => {
     expect(html).toContain('role="status"');
     expect(javascript).toContain("navigator.clipboard.writeText");
     expect(javascript).toContain("复制完整摘要");
+    // M3: the three approved remote-collaboration surfaces (plan Task 8).
+    expect(html).toContain('id="connection-card"');
+    expect(html).toContain('id="connection-state"');
+    expect(html).toContain('id="remote-inbox"');
+    expect(html).toContain('id="conflict-list"');
+    expect(html).toContain("远程协调事实");
+    expect(javascript).toContain("/api/v1/collaboration/connection");
+    expect(javascript).toContain("/api/v1/collaboration/approvals");
+    expect(javascript).toContain("/api/v1/collaboration/integrations/");
+    expect(css).toContain(".projection-note");
+    expect(css).toContain(".remote-fact-card");
     for (const component of [".business-heading", ".business-badges", ".audit-details"]) {
       expect(css).toContain(component);
     }

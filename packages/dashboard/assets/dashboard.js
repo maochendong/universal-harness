@@ -15,6 +15,9 @@ const model = {
   heartbeatByRun: new Map(),
   unknownRuns: new Set(),
   approvalById: new Map(),
+  // undefined = not loaded yet; null = unavailable. Active only when the
+  // project Ledger carries an active connection (design §19.3).
+  collaborationView: undefined,
 };
 
 function node(tag, className = "", text) {
@@ -174,10 +177,56 @@ function setText(selector, value) {
   if (element) element.textContent = String(value ?? "—");
 }
 
+function collaborationActive() {
+  return model.collaborationView?.status === "active";
+}
+
+async function ensureConnection() {
+  if (model.collaborationView === undefined) {
+    try {
+      model.collaborationView = await api("/api/v1/collaboration/connection");
+    } catch {
+      model.collaborationView = null;
+    }
+  }
+  return model.collaborationView;
+}
+
+function renderConnectionCard(view) {
+  const observed = $("#connection-observed");
+  if (!view || view.status === "not_connected") {
+    setText("#connection-state", "LOCAL");
+    setText("#connection-copy", "No remote coordinator is connected; this project is local-only.");
+    observed.hidden = true;
+    return;
+  }
+  if (view.status !== "active") {
+    setText("#connection-state", "DISCONNECTED");
+    setText(
+      "#connection-copy",
+      `Ledger records ${view.connection?.connection_id ?? "a connection"} as disconnected; remote history stays on the Control Ref.`,
+    );
+    observed.hidden = true;
+    return;
+  }
+  setText("#connection-state", "REMOTE");
+  setText(
+    "#connection-copy",
+    `Connected to ${view.connection?.coordinator_origin ?? "coordinator"} · target ${view.connection?.target_ref ?? "—"}`,
+  );
+  observed.hidden = false;
+  const remote = view.remote;
+  observed.textContent =
+    !remote || remote.status === "unreachable"
+      ? "协调器暂不可达；以上为项目 Ledger 权威事实。"
+      : `远程协调事实 · ${remote.status}${remote.stale ? " · 投影滞后于 Ledger" : ""} · 本地投影（observed_at ${remote.projection_observed_at}）`;
+}
+
 async function loadOverview() {
   status("overview", "Loading project summary…");
   try {
     const project = await api("/api/v1/project");
+    renderConnectionCard(await ensureConnection());
     setText("#project-name", project.name);
     setText("#repository-label", `REPOSITORY ${project.repository_id}`);
     setText("#project-next-action", project.next_action);
@@ -721,21 +770,36 @@ async function decideApproval(event, approval, options) {
   const submitter = event.submitter;
   const actor = new FormData(event.currentTarget).get("actor")?.toString().trim();
   if (!actor || !submitter?.value) return;
+  // M3: with an active Ledger connection the decision is submitted to the
+  // Coordinator (design §18.1); otherwise the local digest-bound path is kept.
+  const remote = collaborationActive();
   status(options.view, `Recording ${submitter.value} for ${approval.request_id}…`);
   try {
     const result = await apiWrite(
-      `/api/v1/approvals/${encodeURIComponent(approval.request_id)}/decision`,
-      {
-        decision: submitter.value,
-        expected_digest: approval.object_digest,
-        actor,
-      },
+      remote
+        ? `/api/v1/collaboration/approvals/${encodeURIComponent(approval.request_id)}/decision`
+        : `/api/v1/approvals/${encodeURIComponent(approval.request_id)}/decision`,
+      remote
+        ? { decision: submitter.value }
+        : { decision: submitter.value, expected_digest: approval.object_digest, actor },
     );
-    if (result.decision !== "defer") model.pendingApprovals.delete(approval.request_id);
+    const recorded = remote ? result.decision?.decision : result.decision;
+    if (recorded !== "defer") model.pendingApprovals.delete(approval.request_id);
     const card = options.card;
     clear(card);
-    card.append(node("p", "eyebrow", "DECISION RECORDED"), node("h4", "", result.decision));
-    if (result.decision === "approve" && result.workflow_digest) {
+    card.append(
+      node("p", "eyebrow", remote ? "远程协调事实" : "DECISION RECORDED"),
+      node("h4", "", recorded),
+    );
+    if (remote) {
+      card.append(
+        node(
+          "p",
+          "",
+          `已通过协调器提交 · 本地投影（observed_at ${result.projection_observed_at}）；物化进项目 Ledger 需等待 sync。`,
+        ),
+      );
+    } else if (result.decision === "approve" && result.workflow_digest) {
       const resume = node("button", "command", "RESUME WORKFLOW");
       resume.type = "button";
       resume.addEventListener(
@@ -750,9 +814,9 @@ async function decideApproval(event, approval, options) {
     } else {
       card.append(node("p", "", "Ledger readback accepted the actor and expected digest."));
     }
-    status(options.view, `Decision ${result.decision} committed by ${actor}`);
+    status(options.view, `Decision ${recorded} committed by ${actor}`);
     await loadOverview();
-    if (result.decision === "defer" && options.view === "approvals") await loadApprovals();
+    if (recorded === "defer" && options.view === "approvals") await loadApprovals();
   } catch (error) {
     status(
       options.view,
@@ -832,6 +896,128 @@ async function loadApprovals() {
     clear(queue);
     queue.append(node("p", "approval-load-error", error.message));
     status("approvals", error.message, "error");
+  }
+}
+
+function remoteDecisionCard(decision) {
+  const card = node("article", "approval-card approval-queue-card remote-fact-card");
+  card.append(
+    node("p", "eyebrow", "远程协调事实"),
+    node("h4", "", `${decision.decision ?? "—"} · ${decision.request_id ?? "unknown request"}`),
+    auditDetails(
+      {
+        ...technicalPresentation(
+          {
+            id: decision.remote_decision_id || decision.request_id || "remote_decision",
+            type: "RemoteApprovalDecision",
+            status: decision.decision || "recorded",
+          },
+          decision.object_digest,
+        ),
+        binding_digest: decision.object_digest || null,
+      },
+      [
+        ["REQUEST", decision.request_id],
+        ["OPERATION", decision.operation_id],
+        ["OBJECT", decision.object_id],
+        ["DECIDED AT", decision.decided_at],
+        ["REQUIRED PERMISSION", decision.required_permission],
+      ],
+    ),
+  );
+  return card;
+}
+
+async function loadRemoteInbox() {
+  const heading = $("#remote-inbox-heading");
+  const inbox = $("#remote-inbox");
+  clear(inbox);
+  if (!collaborationActive()) {
+    heading.hidden = true;
+    return;
+  }
+  heading.hidden = false;
+  setText("#remote-inbox-observed", "正在读取协调器投影…");
+  try {
+    const view = await api("/api/v1/collaboration/approvals");
+    setText("#remote-inbox-observed", `本地投影（observed_at ${view.projection_observed_at}）`);
+    if (!view.decisions.length) {
+      inbox.append(node("p", "projection-note", "协调器收件箱中没有远程审批决议。"));
+      return;
+    }
+    for (const decision of view.decisions) inbox.append(remoteDecisionCard(decision));
+  } catch (error) {
+    setText("#remote-inbox-observed", `协调器收件箱不可用：${error.message}`);
+  }
+}
+
+async function retryIntegration(integrationId, button) {
+  button.disabled = true;
+  status("approvals", `Retrying integration ${integrationId} after human resolution…`);
+  try {
+    const result = await apiWrite(
+      `/api/v1/collaboration/integrations/${encodeURIComponent(integrationId)}/retry`,
+      {},
+    );
+    status(
+      "approvals",
+      `Integration ${integrationId} accepted · target now at ${short(result.target_commit, 12)}`,
+    );
+    await loadConflicts();
+  } catch (error) {
+    button.disabled = false;
+    status("approvals", error.message, "error");
+  }
+}
+
+function conflictCard(conflict) {
+  const card = node("article", "approval-card approval-queue-card remote-fact-card");
+  card.append(
+    node("p", "eyebrow", "远程协调事实"),
+    node("h4", "", conflict.integration_id),
+    auditDetails(
+      technicalPresentation(
+        {
+          id: conflict.integration_id || "integration_unknown",
+          type: "IntegrationRecord",
+          status: "conflict",
+        },
+        null,
+      ),
+      [
+        ["OPERATION", conflict.operation_id],
+        ["EXPECTED TARGET", conflict.expected_target_commit],
+        ["OPERATION COMMIT", conflict.operation_commit],
+      ],
+    ),
+  );
+  const retry = node("button", "command", "RESOLVE MANUALLY THEN RETRY");
+  retry.type = "button";
+  retry.addEventListener("click", () => void retryIntegration(conflict.integration_id, retry));
+  card.append(retry);
+  return card;
+}
+
+async function loadConflicts() {
+  const heading = $("#conflict-heading");
+  const list = $("#conflict-list");
+  clear(list);
+  if (!collaborationActive()) {
+    heading.hidden = true;
+    return;
+  }
+  heading.hidden = false;
+  setText("#conflict-observed", "正在读取协调器投影…");
+  try {
+    const view = await api("/api/v1/collaboration/conflicts");
+    setText("#conflict-observed", `本地投影（observed_at ${view.projection_observed_at}）`);
+    if (!view.conflicts.length) {
+      list.append(node("p", "projection-note", "没有待人工解决的 Integration 冲突。"));
+      return;
+    }
+    for (const conflict of view.conflicts) list.append(conflictCard(conflict));
+  } catch (error) {
+    setText("#conflict-observed", `协调器冲突投影不可用：${error.message}`);
   }
 }
 
@@ -924,7 +1110,10 @@ const loaders = {
   evidence: loadEvidence,
   findings: loadFindings,
   live: async () => startLive(),
-  approvals: loadApprovals,
+  approvals: async () => {
+    await ensureConnection();
+    await Promise.all([loadApprovals(), loadRemoteInbox(), loadConflicts()]);
+  },
 };
 
 async function activate(view) {
@@ -959,7 +1148,9 @@ $("#evidence-controls").addEventListener("submit", (event) => {
 });
 $("#evidence-more").addEventListener("click", () => void loadEvidence({ append: true }));
 $("#finding-more").addEventListener("click", () => void loadFindings({ append: true }));
-$("#approval-refresh").addEventListener("click", () => void loadApprovals());
+$("#approval-refresh").addEventListener("click", () => {
+  void Promise.all([loadApprovals(), loadRemoteInbox(), loadConflicts()]);
+});
 window.addEventListener("hashchange", () => void activate(location.hash.slice(1) || "overview"));
 
 function tick() {

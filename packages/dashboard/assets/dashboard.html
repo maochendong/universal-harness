@@ -89,6 +89,13 @@
               <header><span>CONTROL</span><b id="control-level">—</b></header>
               <ol class="signal-list" id="project-signals"></ol>
             </article>
+            <article class="instrument" id="connection-card">
+              <header><span>CONNECTION</span><b id="connection-state">LOCAL</b></header>
+              <p id="connection-copy">
+                No remote coordinator is connected; this project is local-only.
+              </p>
+              <p class="projection-note" id="connection-observed" hidden></p>
+            </article>
           </div>
           <p class="state-line" data-state="overview" role="status">Loading project summary…</p>
         </section>
@@ -323,6 +330,22 @@
             <button class="command" id="approval-refresh" type="button">REFRESH LEDGER</button>
           </div>
           <div class="approval-queue" id="approval-queue" aria-live="polite"></div>
+          <div class="section-heading remote-heading" id="remote-inbox-heading" hidden>
+            <div>
+              <p class="eyebrow">CONTROL REF / 远程协调事实</p>
+              <h3>远程审批收件箱</h3>
+            </div>
+            <p class="projection-note" id="remote-inbox-observed"></p>
+          </div>
+          <div class="approval-queue" id="remote-inbox" aria-live="polite"></div>
+          <div class="section-heading remote-heading" id="conflict-heading" hidden>
+            <div>
+              <p class="eyebrow">CONTROL REF / 远程协调事实</p>
+              <h3>Integration conflicts</h3>
+            </div>
+            <p class="projection-note" id="conflict-observed"></p>
+          </div>
+          <div class="record-list" id="conflict-list"></div>
           <p class="state-line" data-state="approvals" role="status">
             Loading authoritative approvals…
           </p>
