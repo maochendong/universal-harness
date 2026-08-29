@@ -616,6 +616,26 @@ describe("inspectControlRefProtection", () => {
     }
   });
 
+  it("never reuses another repository's session token", async () => {
+    const { registry, requests } = githubRegistry({ body: githubProtectedBranch });
+    await authenticateGithub(registry);
+    const result = await registry.inspectControlRefProtection({
+      provider: "github",
+      host: "github.com",
+      repository_id: "Acme/Other",
+      control_ref: CONTROL_REF,
+    });
+    // The Acme/Demo token must not authorise an Acme/Other inspection.
+    expect(result.status).toBe("unprotected");
+    if (result.status === "unprotected") {
+      expect(result.failure.code).toBe("authentication_required");
+    }
+    expect(
+      requests.filter((request) => request.url.includes("Acme/Other")),
+      "no request for the foreign repository may be issued",
+    ).toEqual([]);
+  });
+
   const gitlabAuthenticateRoutes = {
     "POST https://gitlab.com/oauth/token": {
       body: { access_token: GITLAB_TOKEN, token_type: "Bearer" },

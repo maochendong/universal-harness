@@ -1112,6 +1112,38 @@ export {
   type CollaborationFailure,
 } from "./collaboration/errors.js";
 export {
+  DEFAULT_PLATFORM_HOSTS,
+  normalizeGitRemote,
+  REMOTE_DISCOVERY_ERROR_CODES,
+  RemoteDiscoveryError,
+  type NormalizedGitRemote,
+  type RemoteDiscoveryErrorCode,
+} from "./collaboration/remote-discovery.js";
+export {
+  createOAuthSessionStore,
+  OAUTH_SESSION_TTL_MS,
+  oauthCodeChallenge,
+  type ConsumeOAuthSessionResult,
+  type OAuthSession,
+  type OAuthSessionStore,
+  type OAuthSessionStoreOptions,
+} from "./collaboration/oauth-session.js";
+export {
+  createPlatformIdentityRegistry,
+  giteePermission,
+  githubPermission,
+  gitlabPermission,
+  PERMISSION_SNAPSHOT_TTL_MS,
+  PlatformAdapterError,
+  principalIdFor,
+  type AuthenticatedPlatformSession,
+  type PlatformAdapterConfig,
+  type PlatformFetch,
+  type PlatformHttpRequest,
+  type PlatformHttpResponse,
+  type PlatformIdentityRegistryDependencies,
+} from "./collaboration/platform-adapters.js";
+export {
   OPERATION_LEASE_DURATION_MS,
   leaseRevocationDraft,
   transitionLease,

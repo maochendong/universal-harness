@@ -75,7 +75,9 @@ function providerForHost(
 /**
  * Normalize an SSH (SCP-like or `ssh://`) or HTTPS Git Remote. The returned
  * `repository_path` keeps the platform's casing while `host` is canonical
- * lowercase; `canonical_remote` is the credential-free URL form of the input.
+ * lowercase; `canonical_remote` is rebuilt from the normalized parts (no
+ * `.git` suffix, no trailing slash), so equivalent spellings of one Remote
+ * share the same canonical form and digest.
  */
 export function normalizeGitRemote(
   remote: string,
@@ -97,7 +99,7 @@ export function normalizeGitRemote(
       provider,
       host,
       repository_path: repositoryPath,
-      canonical_remote: `ssh://${user}@${host}/${path}`,
+      canonical_remote: `ssh://${user}@${host}/${repositoryPath}`,
     };
   }
 
@@ -131,6 +133,6 @@ export function normalizeGitRemote(
     provider,
     host,
     repository_path: repositoryPath,
-    canonical_remote: `${url.protocol}//${userinfo}${host}${port}${url.pathname}`,
+    canonical_remote: `${url.protocol}//${userinfo}${host}${port}/${repositoryPath}`,
   };
 }

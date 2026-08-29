@@ -57,7 +57,7 @@ describe("normalizeGitRemote", () => {
       provider: "github",
       host: "github.com",
       repository_path: "Acme/Demo",
-      canonical_remote: "ssh://git@github.com/Acme/Demo.git",
+      canonical_remote: "ssh://git@github.com/Acme/Demo",
     });
   });
 
@@ -66,8 +66,25 @@ describe("normalizeGitRemote", () => {
       provider: "github",
       host: "github.com",
       repository_path: "acme/demo",
-      canonical_remote: "https://github.com/acme/demo.git",
+      canonical_remote: "https://github.com/acme/demo",
     });
+  });
+
+  it("gives equivalent remote spellings the same canonical form", () => {
+    const variants = [
+      "git@github.com:Acme/Demo.git",
+      "git@github.com:Acme/Demo",
+      "ssh://git@github.com/Acme/Demo.git",
+      "ssh://git@github.com/Acme/Demo",
+      "ssh://git@github.com/Acme/Demo/",
+    ];
+    const canonical = variants.map((remote) => normalizeGitRemote(remote).canonical_remote);
+    for (const value of canonical) {
+      expect(value).toBe("ssh://git@github.com/Acme/Demo");
+    }
+    expect(normalizeGitRemote("https://github.com/acme/demo.git/").canonical_remote).toBe(
+      "https://github.com/acme/demo",
+    );
   });
 
   it("rejects HTTPS remotes carrying credentials", () => {
@@ -89,7 +106,7 @@ describe("normalizeGitRemote", () => {
       provider: "gitlab",
       host: "gitlab.com",
       repository_path: "Acme/Team/Demo",
-      canonical_remote: "ssh://git@gitlab.com/Acme/Team/Demo.git",
+      canonical_remote: "ssh://git@gitlab.com/Acme/Team/Demo",
     });
   });
 
@@ -107,7 +124,7 @@ describe("normalizeGitRemote", () => {
       provider: "github",
       host: "github.com",
       repository_path: "Acme/Demo",
-      canonical_remote: "ssh://git@github.com/Acme/Demo.git",
+      canonical_remote: "ssh://git@github.com/Acme/Demo",
     });
     expect(normalizeGitRemote("https://GITLAB.com/acme/demo.git").host).toBe("gitlab.com");
   });
@@ -128,7 +145,7 @@ describe("normalizeGitRemote", () => {
       provider: "gitlab",
       host: "gitlab.acme.internal",
       repository_path: "team/demo",
-      canonical_remote: "ssh://git@gitlab.acme.internal/team/demo.git",
+      canonical_remote: "ssh://git@gitlab.acme.internal/team/demo",
     });
   });
 
@@ -156,7 +173,7 @@ describe("registry discover", () => {
       expect(result.identity.provider).toBe("github");
       expect(result.identity.host).toBe("github.com");
       expect(result.identity.repository_id).toBe("Acme/Demo");
-      expect(result.identity.canonical_remote).toBe("ssh://git@github.com/Acme/Demo.git");
+      expect(result.identity.canonical_remote).toBe("ssh://git@github.com/Acme/Demo");
       expect(result.identity.canonical_remote_digest).toMatch(/^[0-9a-f]{64}$/);
     }
   });

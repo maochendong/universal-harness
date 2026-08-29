@@ -246,19 +246,26 @@ export function createPlatformIdentityRegistry(
   // Access tokens, keyed by provider/host/repository; process memory only.
   const sessions = new Map<string, AuthenticatedPlatformSession>();
 
-  const failed = <T>(failure: CollaborationFailure): T => ({ status: "failed", failure }) as T;
+  const remoteDiscoveryFailed = (failure: CollaborationFailure): RemoteIdentityResult => ({
+    status: "failed",
+    failure,
+  });
+  const authenticationFailed = (failure: CollaborationFailure): PrincipalSnapshotDraftResult => ({
+    status: "failed",
+    failure,
+  });
 
-  function tokenFor(config: PlatformAdapterConfig): string | undefined {
-    for (const [key, session] of sessions) {
-      if (key.startsWith(`${config.provider}@${config.host}:`)) {
-        if (session.token_expires_at !== undefined && session.token_expires_at <= now()) {
-          sessions.delete(key);
-          continue;
-        }
-        return session.access_token;
-      }
+  /** Exact per-repository session lookup: a token minted for repository A is
+   * never used to inspect repository B, even on the same host. */
+  function tokenFor(config: PlatformAdapterConfig, repositoryId: string): string | undefined {
+    const key = `${config.provider}@${config.host}:${repositoryId}`;
+    const session = sessions.get(key);
+    if (session === undefined) return undefined;
+    if (session.token_expires_at !== undefined && session.token_expires_at <= now()) {
+      sessions.delete(key);
+      return undefined;
     }
-    return undefined;
+    return session.access_token;
   }
 
   async function discover(remote: string): Promise<RemoteIdentityResult> {
@@ -266,7 +273,7 @@ export function createPlatformIdentityRegistry(
       const normalized = normalizeGitRemote(remote, knownHosts);
       const config = byHost.get(normalized.host);
       if (config === undefined) {
-        return failed<RemoteIdentityResult>(
+        return remoteDiscoveryFailed(
           collaborationFailure(
             "unsupported_remote",
             `no platform adapter is configured for host ${normalized.host}`,
@@ -285,9 +292,7 @@ export function createPlatformIdentityRegistry(
       };
     } catch (error) {
       if (error instanceof RemoteDiscoveryError) {
-        return failed<RemoteIdentityResult>(
-          collaborationFailure("unsupported_remote", error.message),
-        );
+        return remoteDiscoveryFailed(collaborationFailure("unsupported_remote", error.message));
       }
       throw error;
     }
@@ -399,7 +404,7 @@ export function createPlatformIdentityRegistry(
   async function authenticate(input: OAuthRequest): Promise<PrincipalSnapshotDraftResult> {
     const config = byHost.get(input.host);
     if (config === undefined || config.provider !== input.provider) {
-      return failed<PrincipalSnapshotDraftResult>(
+      return authenticationFailed(
         collaborationFailure(
           "unsupported_remote",
           `no adapter for ${input.provider}@${input.host}`,
@@ -421,22 +426,22 @@ export function createPlatformIdentityRegistry(
     try {
       rawCallback = await deps.authorize(authorizeUrl.toString());
     } catch {
-      return failed<PrincipalSnapshotDraftResult>(
+      return authenticationFailed(
         collaborationFailure("authentication_required", "oauth authorization did not complete"),
       );
     }
     const callback = parseCallback(rawCallback, config);
     if ("failure" in callback) {
-      return failed<PrincipalSnapshotDraftResult>(callback.failure);
+      return authenticationFailed(callback.failure);
     }
     const consumed = deps.sessions.consume(callback.state, config.redirect_uri);
     if (consumed.status === "failed") {
-      return failed<PrincipalSnapshotDraftResult>(consumed.failure);
+      return authenticationFailed(consumed.failure);
     }
 
     const token = await exchangeCode(config, callback.code, consumed.session.code_verifier);
     if (token === undefined) {
-      return failed<PrincipalSnapshotDraftResult>(
+      return authenticationFailed(
         collaborationFailure("authentication_required", "oauth code exchange failed"),
       );
     }
@@ -444,7 +449,7 @@ export function createPlatformIdentityRegistry(
     const user = await apiGetWithToken(config, token.access_token, "/user");
     const subjectId = subjectIdOf(user.json);
     if (!user.ok || subjectId === undefined) {
-      return failed<PrincipalSnapshotDraftResult>(
+      return authenticationFailed(
         collaborationFailure(
           "authentication_required",
           `${config.provider} did not report a stable subject id`,
@@ -467,9 +472,7 @@ export function createPlatformIdentityRegistry(
       permission = permissionOf(config, repository.json);
     } catch (error) {
       if (error instanceof PlatformAdapterError) {
-        return failed<PrincipalSnapshotDraftResult>(
-          collaborationFailure(error.code, error.message),
-        );
+        return authenticationFailed(collaborationFailure(error.code, error.message));
       }
       throw error;
     }
@@ -620,7 +623,7 @@ export function createPlatformIdentityRegistry(
     if (config === undefined || config.provider !== input.provider) {
       return unprotected(`no adapter for ${input.provider}@${input.host}`);
     }
-    const token = tokenFor(config);
+    const token = tokenFor(config, input.repository_id);
     if (token === undefined) {
       return {
         status: "unprotected",
