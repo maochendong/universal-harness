@@ -198,6 +198,19 @@ export interface PublishedOperationOutcome {
   readonly replayed: boolean;
 }
 
+/**
+ * Successful remote approval submission; the appended (or, for a competitor
+ * after first-terminal-wins, the already authoritative) RemoteApprovalDecision
+ * carries the outcome. Materialization into the project Ledger is the Local
+ * Kernel's separate step (design §13.1).
+ */
+export interface RemoteApprovalOutcome {
+  readonly status: "remote_approval";
+  readonly decision: RemoteApprovalDecisionRecord;
+  readonly replayed: boolean;
+  readonly projection_rebuild_required?: boolean;
+}
+
 export interface CollaborationFailedOutcome {
   readonly status: "failed";
   readonly failure: CollaborationFailure;
@@ -208,6 +221,7 @@ export type CollaborationOutcome =
   | DisconnectedOutcome
   | LeaseOutcome
   | PublishedOperationOutcome
+  | RemoteApprovalOutcome
   | CollaborationFailedOutcome;
 
 export interface CollaborationCoordinatorPort {

@@ -56,6 +56,17 @@ export function reissueRequestSpec(
     createdAt: spec.createdAt,
     resumePhase: request.resume_phase,
     proposedBy: spec.proposedBy,
+    // A remote-bound request stays remote-bound across re-issue (design §9.3):
+    // the replacement carries the same first-class requester Principal.
+    ...(request.requester_principal_id === undefined ||
+    request.requester_principal_snapshot_digest === undefined
+      ? {}
+      : {
+          requesterPrincipal: {
+            principal_id: request.requester_principal_id,
+            principal_snapshot_digest: request.requester_principal_snapshot_digest,
+          },
+        }),
     supersedesRequestId: request.request_id,
   };
 }

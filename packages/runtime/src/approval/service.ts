@@ -1,5 +1,6 @@
 import {
   harnessRootFor,
+  PROTOCOL_1_2_VERSION,
   sha256Hex,
   ulid,
   type CommitHooks,
@@ -19,8 +20,10 @@ import {
   buildApprovalDecision,
   buildApprovalRequest,
   proposedByOf,
+  readApprovalDecisions,
   readPendingApprovalRequests,
   readApprovalRequests,
+  remoteDecisionDigestOf,
   type ApprovalDecision,
   type ApprovalDecisionRecord,
   type ApprovalRequestRecord,
@@ -34,6 +37,7 @@ import {
   type ApprovalRequiredOutcome,
 } from "./interaction.js";
 import { bindingDrift, reissueRequestSpec, type ApprovalBindingSnapshot } from "./invalidation.js";
+import { remoteApprovalMaterializedEvent } from "../orchestration/lifecycle-events.js";
 
 /**
  * Approval service (design 11.3). Every approval point persists the
@@ -78,6 +82,14 @@ export interface RequestApprovalInput {
   readonly resumePhase: string;
   /** Actor whose proposal is under approval; may never resolve the request. */
   readonly proposedBy: string;
+  /**
+   * First-class requester Principal binding for remote approval (design §9.3);
+   * required for any request a remote session may decide.
+   */
+  readonly requesterPrincipal?: {
+    readonly principal_id: string;
+    readonly principal_snapshot_digest: string;
+  };
 }
 
 export interface ResolveDecisionInput {
@@ -86,6 +98,29 @@ export interface ResolveDecisionInput {
   /** Exact digest of the controlled object; a mismatch is never approved. */
   readonly objectDigest: string;
   readonly actor: string;
+}
+
+/**
+ * Materialization input for one authoritative RemoteApprovalDecision (design
+ * §13.1). The actor is the approver's stable principal id and `decidedAt` is
+ * the remote decision's own timestamp — the materialized decision is evidence
+ * of a decision already made, not a new one.
+ */
+export interface ResolveRemoteDecisionInput {
+  readonly requestId: string;
+  readonly decision: ApprovalDecision;
+  /** Exact digest of the controlled object; a mismatch is never approved. */
+  readonly objectDigest: string;
+  readonly actor: string;
+  readonly decidedAt: string;
+  readonly remoteDecisionId: string;
+  readonly remoteDecisionDigest: string;
+}
+
+export interface RemoteDecisionResolution {
+  readonly decision: ApprovalDecisionRecord;
+  /** True when the remote decision was already materialized; nothing new committed. */
+  readonly replayed: boolean;
 }
 
 export type AwaitDecisionOutcome =
@@ -98,6 +133,18 @@ function nowOf(deps: ApprovalDependencies): string {
 
 function newIdOf(deps: ApprovalDependencies, kind: ApprovalIdKind): string {
   return (deps.newId ?? ((idKind) => `${idKind}_${ulid()}`))(kind);
+}
+
+/**
+ * Ledger pin for transactions carrying protocol 1.2 authoritative records
+ * (design §19.1); absent for plain 1.0/1.1 transactions.
+ */
+function readerVersionPin(record: { readonly protocol_version: string }): {
+  readonly requiredReaderVersion?: string;
+} {
+  return record.protocol_version === PROTOCOL_1_2_VERSION
+    ? { requiredReaderVersion: PROTOCOL_1_2_VERSION }
+    : {};
 }
 
 export class ApprovalService {
@@ -170,6 +217,7 @@ export class ApprovalService {
   private async persistRequest(request: ApprovalRequestRecord): Promise<void> {
     await this.engine().commitCheckpoint(request.workflow_operation_id, {
       boundary: "approval",
+      ...readerVersionPin(request),
       proposal: {
         phase: request.resume_phase,
         set_next_action: resumeCommandFor(request.workflow_operation_id),
@@ -220,6 +268,9 @@ export class ApprovalService {
       createdAt: nowOf(this.deps),
       resumePhase: input.resumePhase,
       proposedBy: input.proposedBy,
+      ...(input.requesterPrincipal === undefined
+        ? {}
+        : { requesterPrincipal: input.requesterPrincipal }),
     });
   }
 
@@ -323,7 +374,8 @@ export class ApprovalService {
     return record;
   }
 
-  private getRequestById(requestId: string): ApprovalRequestRecord {
+  /** One request by id across workflow operations, or a typed not-found error. */
+  getRequestById(requestId: string): ApprovalRequestRecord {
     const repository = ledgerRepositoryFor(this.workflowDeps());
     const harnessRoot = harnessRootFor(this.deps.projectRoot);
     const operations = repository.operations();
@@ -338,6 +390,101 @@ export class ApprovalService {
       if (found !== undefined) return found;
     }
     throw new ApprovalError("approval_request_not_found", `unknown approval request: ${requestId}`);
+  }
+
+  private decisions(workflowOperationId: string): ApprovalDecisionRecord[] {
+    return readApprovalDecisions(
+      harnessRootFor(this.deps.projectRoot),
+      ledgerRepositoryFor(this.workflowDeps()).operations(),
+      workflowOperationId,
+    );
+  }
+
+  /**
+   * Materialize one authoritative RemoteApprovalDecision into the existing
+   * ApprovalDecision chain (design §13.1). The request must carry the
+   * first-class requester Principal binding — a legacy request without it is
+   * never remotely decidable and must be re-issued under the current
+   * connection. Every binding is revalidated exactly like a local decision;
+   * the committed record binds the remote decision digest in its extension
+   * and keeps the remote `decided_at`. A retry after a lost response finds
+   * the already-materialized decision by that digest and replays it.
+   */
+  async resolveRemoteDecision(
+    input: ResolveRemoteDecisionInput,
+  ): Promise<RemoteDecisionResolution> {
+    const request = this.getRequestById(input.requestId);
+    const existing = this.decisions(request.workflow_operation_id).find(
+      (decision) => remoteDecisionDigestOf(decision) === input.remoteDecisionDigest,
+    );
+    if (existing !== undefined) return { decision: existing, replayed: true };
+    if (request.requester_principal_id === undefined) {
+      throw new ApprovalError(
+        "approval_binding_mismatch",
+        `approval request ${request.request_id} has no requester principal binding; re-issue it under the current connection before remote approval`,
+      );
+    }
+    this.requirePending(request);
+    if (!request.allowed_decisions.includes(input.decision)) {
+      throw new ApprovalError(
+        "approval_decision_not_allowed",
+        `decision ${input.decision} is not allowed for request ${input.requestId}`,
+      );
+    }
+    if (input.objectDigest !== request.object_digest) {
+      throw new ApprovalError(
+        "approval_binding_mismatch",
+        `decision binds object digest ${input.objectDigest} but request ${input.requestId} controls ${request.object_digest}`,
+      );
+    }
+    if (input.actor === proposedByOf(request) || input.actor === request.requester_principal_id) {
+      throw new ApprovalError(
+        "approval_self_approval",
+        `actor ${input.actor} may not resolve its own approval request ${input.requestId}`,
+      );
+    }
+    const current = this.currentBinding(request);
+    const drifted = bindingDrift(request, current);
+    if (drifted.length > 0) {
+      const reissued = await this.invalidateAndReissue(request, current, drifted);
+      throw new ApprovalError(
+        "approval_binding_drift",
+        `approval request ${request.request_id} bindings drifted (${drifted.join(", ")}); re-issued as ${reissued.request_id}`,
+        { new_request_id: reissued.request_id, changed: drifted },
+      );
+    }
+    const record = buildApprovalDecision({
+      approvalId: newIdOf(this.deps, "approval_decision"),
+      requestId: request.request_id,
+      actor: input.actor,
+      decision: input.decision,
+      objectDigest: input.objectDigest,
+      decidedAt: input.decidedAt,
+      remoteDecisionDigest: input.remoteDecisionDigest,
+    });
+    const artifact = approvalDecisionArtifact(record);
+    await this.engine().commitCheckpoint(request.workflow_operation_id, {
+      boundary: "approval",
+      ...readerVersionPin(record),
+      proposal: {
+        add_approval_digests: [sha256Hex(artifact.content)],
+        reconcile_blockers:
+          record.decision === "defer"
+            ? { pending_approval_ids: [request.request_id] }
+            : { resolved_approval_ids: [request.request_id] },
+      },
+      artifacts: [artifact],
+      events: [
+        remoteApprovalMaterializedEvent({
+          requestId: request.request_id,
+          approvalId: record.approval_id,
+          remoteDecisionId: input.remoteDecisionId,
+          remoteDecisionDigest: input.remoteDecisionDigest,
+          principalId: input.actor,
+        }),
+      ],
+    });
+    return { decision: record, replayed: false };
   }
 
   private currentBinding(request: ApprovalRequestRecord): ApprovalBindingSnapshot {
@@ -364,6 +511,7 @@ export class ApprovalService {
     );
     await this.engine().commitCheckpoint(request.workflow_operation_id, {
       boundary: "approval",
+      ...readerVersionPin(reissued),
       proposal: {
         phase: request.resume_phase,
         set_next_action: resumeCommandFor(request.workflow_operation_id),

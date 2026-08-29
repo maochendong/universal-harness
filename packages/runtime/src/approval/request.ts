@@ -1,4 +1,5 @@
 import {
+  PROTOCOL_1_2_VERSION,
   PROTOCOL_VERSION,
   canonicalizeJson,
   sha256Hex,
@@ -46,6 +47,8 @@ export interface ApprovalRequestRecord {
   readonly allowed_decisions: readonly ApprovalDecision[];
   readonly created_at: string;
   readonly resume_phase: string;
+  readonly requester_principal_id?: string;
+  readonly requester_principal_snapshot_digest?: string;
   readonly extensions?: Record<string, unknown>;
 }
 
@@ -101,6 +104,17 @@ export interface ApprovalRequestSpec {
   readonly resumePhase: string;
   /** Actor whose proposal is being approved; may never resolve the request. */
   readonly proposedBy: string;
+  /**
+   * First-class requester Principal binding for remote approval (design §9.3).
+   * When present the record is emitted at protocol 1.2 and carries
+   * `requester_principal_id` plus `requester_principal_snapshot_digest`;
+   * requests without it keep the local `proposed_by` semantics and can never
+   * be remotely approved.
+   */
+  readonly requesterPrincipal?: {
+    readonly principal_id: string;
+    readonly principal_snapshot_digest: string;
+  };
   /** Set when this request re-issues one whose bindings drifted. */
   readonly supersedesRequestId?: string;
 }
@@ -140,6 +154,12 @@ function requestFields(
     allowed_decisions: [...record.allowed_decisions],
     created_at: record.created_at,
     resume_phase: record.resume_phase,
+    ...(record.requester_principal_id === undefined
+      ? {}
+      : { requester_principal_id: record.requester_principal_id }),
+    ...(record.requester_principal_snapshot_digest === undefined
+      ? {}
+      : { requester_principal_snapshot_digest: record.requester_principal_snapshot_digest }),
     ...(record.extensions === undefined ? {} : { extensions: record.extensions }),
   };
 }
@@ -166,6 +186,12 @@ export function renderApprovalPreview(
     `Workflow Operation: ${record.workflow_operation_id}`,
     `Resume Phase: ${record.resume_phase}`,
     `Created At: ${record.created_at}`,
+    ...(record.requester_principal_id === undefined
+      ? []
+      : [`Requester Principal: ${record.requester_principal_id}`]),
+    ...(record.requester_principal_snapshot_digest === undefined
+      ? []
+      : [`Requester Snapshot Digest: ${record.requester_principal_snapshot_digest}`]),
   ].join("\n");
 }
 
@@ -183,7 +209,8 @@ function buildValidated(fields: Record<string, unknown>): ApprovalRequestRecord 
 /** Build a schema-valid request record; the preview digest binds the rendering. */
 export function buildApprovalRequest(spec: ApprovalRequestSpec): ApprovalRequestRecord {
   const withoutPreviewDigest: Omit<ApprovalRequestRecord, "preview_digest"> = {
-    protocol_version: PROTOCOL_VERSION,
+    protocol_version:
+      spec.requesterPrincipal === undefined ? PROTOCOL_VERSION : PROTOCOL_1_2_VERSION,
     record_kind: "approval_request",
     request_id: spec.requestId,
     workflow_operation_id: spec.workflowOperationId,
@@ -198,6 +225,12 @@ export function buildApprovalRequest(spec: ApprovalRequestSpec): ApprovalRequest
     allowed_decisions: [...spec.allowedDecisions],
     created_at: spec.createdAt,
     resume_phase: spec.resumePhase,
+    ...(spec.requesterPrincipal === undefined
+      ? {}
+      : {
+          requester_principal_id: spec.requesterPrincipal.principal_id,
+          requester_principal_snapshot_digest: spec.requesterPrincipal.principal_snapshot_digest,
+        }),
     extensions: {
       [APPROVAL_EXTENSION_KEY]: {
         proposed_by: spec.proposedBy,
@@ -244,6 +277,14 @@ export function approvalDecisionArtifact(record: ApprovalDecisionRecord): {
   };
 }
 
+/** Remote decision digest bound by a materialized decision, if any (stored in extensions). */
+export function remoteDecisionDigestOf(record: ApprovalDecisionRecord): string | undefined {
+  const extension = record.extensions?.[APPROVAL_EXTENSION_KEY];
+  if (typeof extension !== "object" || extension === null) return undefined;
+  const digest = (extension as { remote_decision_digest?: unknown }).remote_decision_digest;
+  return typeof digest === "string" ? digest : undefined;
+}
+
 /** Build a schema-valid approval decision record bound to one exact object digest. */
 export function buildApprovalDecision(spec: {
   readonly approvalId: string;
@@ -252,9 +293,16 @@ export function buildApprovalDecision(spec: {
   readonly decision: ApprovalDecision;
   readonly objectDigest: string;
   readonly decidedAt: string;
+  /**
+   * Digest of the authoritative RemoteApprovalDecision this decision
+   * materializes (design §13.1). When present the record is emitted at
+   * protocol 1.2 and the extension contains only this binding.
+   */
+  readonly remoteDecisionDigest?: string;
 }): ApprovalDecisionRecord {
   const fields = {
-    protocol_version: PROTOCOL_VERSION,
+    protocol_version:
+      spec.remoteDecisionDigest === undefined ? PROTOCOL_VERSION : PROTOCOL_1_2_VERSION,
     record_kind: "approval_decision",
     approval_id: spec.approvalId,
     request_id: spec.requestId,
@@ -262,6 +310,13 @@ export function buildApprovalDecision(spec: {
     decision: spec.decision,
     object_digest: spec.objectDigest,
     decided_at: spec.decidedAt,
+    ...(spec.remoteDecisionDigest === undefined
+      ? {}
+      : {
+          extensions: {
+            [APPROVAL_EXTENSION_KEY]: { remote_decision_digest: spec.remoteDecisionDigest },
+          },
+        }),
   };
   const validation = validateSchema("runtime", fields);
   if (!validation.valid) {

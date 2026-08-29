@@ -2,9 +2,18 @@ import type {
   CollaborationConnectionRecord,
   ControlRecord,
   LeaseRecord,
+  PrincipalSnapshotRecord,
+  RemoteApprovalDecisionRecord,
 } from "@universal-harness-internal/core";
 import { buildCollaborationRecord } from "@universal-harness-internal/core";
 
+import type { ApprovalRequestRecord } from "../approval/request.js";
+import {
+  remoteDecisionIdFor,
+  terminalRemoteDecision,
+  validateRemoteApprovalDecision,
+  type RemoteApprovalDecisionDraft,
+} from "./approval.js";
 import {
   COLLABORATION_CONTROL_REF,
   connectionIdFor,
@@ -37,6 +46,7 @@ import type {
   GitControlStorePort,
   PlatformIdentityPort,
   PublishOperationCandidateCommand,
+  SubmitRemoteApprovalCommand,
 } from "./port.js";
 
 /**
@@ -50,9 +60,11 @@ import type {
  * Lease decisions come from the pure `transitionLease` state machine over the
  * per-resource chain read from the Control Ref; a lost Control Ref CAS loops
  * once through a fresh read and semantic re-decision, and a second loss
- * answers `lease_unavailable`. Approval and Integration commands are
- * implemented by later tasks; this slice answers them with a typed
- * `coordinator_unavailable` failure.
+ * answers `lease_unavailable`. Remote approval submissions validate the
+ * committed request, the approver's fresh PrincipalSnapshot and the
+ * self-approval prohibition before the Control Ref CAS (design §13.1);
+ * Integration commands are implemented by later tasks and answered with a
+ * typed `coordinator_unavailable` failure.
  */
 export interface CollaborationCoordinatorDependencies {
   readonly platform: PlatformIdentityPort;
@@ -62,6 +74,16 @@ export interface CollaborationCoordinatorDependencies {
   readonly control_ref?: string;
   /** Injectable clock (ISO 8601 UTC) for deterministic tests. */
   readonly now?: () => string;
+  /**
+   * Committed ApprovalRequest lookup backing `submit_remote_approval` (design
+   * §13). The Coordinator validates and binds decisions against the exact
+   * committed request; without this source the command fails closed with
+   * `coordinator_unavailable`.
+   */
+  readonly readApprovalRequest?: (input: {
+    readonly project_id: string;
+    readonly request_id: string;
+  }) => Promise<ApprovalRequestRecord | undefined>;
 }
 
 function connectionOutcome(
@@ -398,6 +420,242 @@ export function createCollaborationCoordinator(
     };
   }
 
+  // --- Remote approval slice -------------------------------------------------
+
+  /** The latest PrincipalSnapshot on the chain, if any. */
+  function latestSnapshot(records: readonly ControlRecord[]): PrincipalSnapshotRecord | undefined {
+    for (let index = records.length - 1; index >= 0; index -= 1) {
+      const record = records[index] as ControlRecord;
+      if (record.record_kind === "principal_snapshot") return record as PrincipalSnapshotRecord;
+    }
+    return undefined;
+  }
+
+  /**
+   * Validate → authorize → CAS-append the approver's PrincipalSnapshot and the
+   * RemoteApprovalDecision (design §13, §13.1). The first legal non-`defer`
+   * decision that wins the Control Ref CAS is terminal; later competitors get
+   * the existing decision and `defer` never terminates the request. A lost
+   * CAS re-reads and re-decides once, mirroring the lease slice.
+   */
+  async function submitRemoteApproval(
+    command: SubmitRemoteApprovalCommand,
+    session: CollaborationSession,
+  ): Promise<CollaborationOutcome> {
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      const active = await requireActiveConnection(command.project_id, command.kind);
+      if (active.status === "failed") return { status: "failed", failure: active.failure };
+      const connection = active.snapshot.latest_connection as CollaborationConnectionRecord;
+      const records = active.snapshot.control_records;
+
+      // Idempotency and first-terminal-wins over the authoritative chain.
+      const replayed = records.find(
+        (record): record is RemoteApprovalDecisionRecord =>
+          record.record_kind === "remote_approval_decision" &&
+          (record as RemoteApprovalDecisionRecord).request_id === command.request_id &&
+          (record as RemoteApprovalDecisionRecord).command_id === command.command_id,
+      );
+      if (replayed !== undefined) {
+        return { status: "remote_approval", decision: replayed, replayed: true };
+      }
+      const terminal = terminalRemoteDecision(records, command.request_id);
+      if (terminal !== undefined) {
+        return { status: "remote_approval", decision: terminal, replayed: false };
+      }
+
+      // Resolve the committed request this decision binds.
+      if (deps.readApprovalRequest === undefined) {
+        return {
+          status: "failed",
+          failure: collaborationFailure(
+            "coordinator_unavailable",
+            "the coordinator has no approval request source; submit_remote_approval is not served",
+            true,
+          ),
+        };
+      }
+      const request = await deps.readApprovalRequest({
+        project_id: command.project_id,
+        request_id: command.request_id,
+      });
+      if (request === undefined) {
+        return {
+          status: "failed",
+          failure: collaborationFailure(
+            "approval_binding_mismatch",
+            `unknown approval request ${command.request_id}; only a committed request can be remotely approved`,
+          ),
+        };
+      }
+
+      // Authorize: OAuth the session principal and require a fresh snapshot.
+      const hostSnapshot = latestSnapshot(records);
+      if (hostSnapshot === undefined) {
+        return {
+          status: "failed",
+          failure: collaborationFailure(
+            "control_ref_invalid",
+            "the active connection has no principal snapshot on the control ref",
+          ),
+        };
+      }
+      const authentication = await deps.platform.authenticate({
+        provider: connection.provider,
+        host: hostSnapshot.host,
+        repository_id: connection.repository_id,
+        principal_id: session.principal_id,
+      });
+      if (authentication.status === "failed") {
+        return { status: "failed", failure: authentication.failure };
+      }
+      const facts = authentication.snapshot;
+      if (facts.principal_id !== session.principal_id) {
+        return {
+          status: "failed",
+          failure: collaborationFailure(
+            "permission_denied",
+            `authenticated principal ${facts.principal_id} does not own session principal ${session.principal_id}`,
+          ),
+        };
+      }
+      if (facts.expires_at <= now()) {
+        return {
+          status: "failed",
+          failure: collaborationFailure(
+            "permission_snapshot_stale",
+            "platform permission snapshot expired before the decision could be written",
+            true,
+          ),
+        };
+      }
+
+      // Validate the draft against the committed request and the snapshot.
+      const draft: RemoteApprovalDecisionDraft = {
+        request_id: request.request_id,
+        operation_id: request.workflow_operation_id,
+        object_id: request.object_id,
+        object_digest: request.object_digest,
+        policy_digest: request.policy_digest,
+        decision: command.decision,
+        // Spec §9.1 default: maintain or admin may take a terminal remote
+        // decision; a Project Policy downgrade is bound by its own digest.
+        required_permission: "maintain",
+        decided_at: now(),
+      };
+      const validation = validateRemoteApprovalDecision({
+        request,
+        snapshot: facts,
+        decision: draft,
+        now: now(),
+      });
+      if (validation.status === "blocked") {
+        return { status: "failed", failure: validation.failure };
+      }
+
+      // Append the approver's snapshot (reusing an identical one already on
+      // the chain, which a retry after a lost response observes) and then the
+      // decision, chaining each CAS on the previous head.
+      let headOid = active.snapshot.control_head_oid;
+      let chain: ControlRecord[] = [...records];
+      const appendedRecords: ControlRecord[] = [];
+      let casLost = false;
+
+      const snapshotId = snapshotIdFor(facts.principal_id, facts.repository_id, facts.observed_at);
+      let snapshot = chain.find(
+        (record): record is PrincipalSnapshotRecord =>
+          record.record_kind === "principal_snapshot" &&
+          (record as PrincipalSnapshotRecord).snapshot_id === snapshotId,
+      );
+      if (snapshot === undefined) {
+        const previous = chain[chain.length - 1];
+        const sealed = buildCollaborationRecord({
+          record_kind: "principal_snapshot" as const,
+          control_sequence: chain.length + 1,
+          ...(previous === undefined
+            ? {}
+            : { previous_control_record_digest: previous.record_digest }),
+          snapshot_id: snapshotId,
+          principal_id: facts.principal_id,
+          provider: facts.provider,
+          host: facts.host,
+          subject_id: facts.subject_id,
+          repository_id: facts.repository_id,
+          permission: facts.permission,
+          observed_at: facts.observed_at,
+          expires_at: facts.expires_at,
+          source_response_digest: facts.source_response_digest,
+        });
+        const appended = await deps.controlStore.appendControl({
+          project_id: command.project_id,
+          control_ref: controlRef,
+          ...(headOid === undefined ? {} : { expected_head_oid: headOid }),
+          record: sealed,
+        });
+        if (appended.status === "failed") {
+          if (appended.failure.code === "control_ref_cas_failed") continue;
+          return { status: "failed", failure: appended.failure };
+        }
+        headOid = appended.head_oid;
+        chain = [...chain, sealed];
+        appendedRecords.push(sealed);
+        snapshot = sealed;
+      }
+
+      const previous = chain[chain.length - 1];
+      const decision = buildCollaborationRecord({
+        record_kind: "remote_approval_decision" as const,
+        control_sequence: chain.length + 1,
+        ...(previous === undefined
+          ? {}
+          : { previous_control_record_digest: previous.record_digest }),
+        remote_decision_id: remoteDecisionIdFor(command.command_id),
+        ...draft,
+        principal_snapshot_digest: snapshot.record_digest,
+        command_id: command.command_id,
+      });
+      const appended = await deps.controlStore.appendControl({
+        project_id: command.project_id,
+        control_ref: controlRef,
+        ...(headOid === undefined ? {} : { expected_head_oid: headOid }),
+        record: decision,
+      });
+      if (appended.status === "failed") {
+        if (appended.failure.code === "control_ref_cas_failed") {
+          casLost = true;
+        } else {
+          return { status: "failed", failure: appended.failure };
+        }
+      }
+      if (casLost) continue;
+      if (appended.status !== "appended") {
+        return {
+          status: "failed",
+          failure: collaborationFailure(
+            "coordinator_unavailable",
+            "remote approval append ended in an unexpected state",
+          ),
+        };
+      }
+      appendedRecords.push(decision);
+
+      const projection = await applyProjection(appendedRecords);
+      return {
+        status: "remote_approval",
+        decision,
+        replayed: false,
+        ...(projection.rebuild_required ? { projection_rebuild_required: true } : {}),
+      };
+    }
+    return {
+      status: "failed",
+      failure: collaborationFailure(
+        "control_ref_cas_failed",
+        "control ref compare-and-swap was lost twice; re-read and retry the approval command",
+        true,
+      ),
+    };
+  }
+
   async function gatedRemoteCommand(command: CollaborationCommand): Promise<CollaborationOutcome> {
     const active = await requireActiveConnection(command.project_id, command.kind);
     if (active.status === "failed") return { status: "failed", failure: active.failure };
@@ -633,6 +891,8 @@ export function createCollaborationCoordinator(
           return leaseCommand(command, session);
         case "publish_operation_candidate":
           return publishOperationCandidate(command);
+        case "submit_remote_approval":
+          return submitRemoteApproval(command, session);
         default:
           return gatedRemoteCommand(command);
       }

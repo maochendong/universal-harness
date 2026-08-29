@@ -258,6 +258,7 @@ export {
   readApprovalDecisions,
   readPendingApprovalRequests,
   readApprovalRequests,
+  remoteDecisionDigestOf,
   renderApprovalPreview,
   supersededRequestId,
   type ApprovalDecision,
@@ -286,8 +287,10 @@ export {
   type ApprovalDependencies,
   type ApprovalIdKind,
   type AwaitDecisionOutcome,
+  type RemoteDecisionResolution,
   type RequestApprovalInput,
   type ResolveDecisionInput,
+  type ResolveRemoteDecisionInput,
 } from "./approval/service.js";
 export {
   PLAN_EXTENSION_KEY,
@@ -1022,8 +1025,10 @@ export {
 export {
   assertLifecycleOrder,
   phaseLifecycleEvents,
+  remoteApprovalMaterializedEvent,
   type PhaseLifecycleDetails,
   type PhaseLifecycleEventSpec,
+  type RemoteApprovalMaterializedDetails,
 } from "./orchestration/lifecycle-events.js";
 export {
   MODULE_STATUS_MAPPINGS,
@@ -1162,6 +1167,17 @@ export {
   type CollaborationCoordinatorDependencies,
   type CoordinatorStartup,
 } from "./collaboration/coordinator.js";
+export {
+  materializeRemoteApprovalDecision,
+  remoteDecisionIdFor,
+  terminalRemoteDecision,
+  validateRemoteApprovalDecision,
+  type MaterializeRemoteApprovalInput,
+  type RemoteApprovalDecisionDraft,
+  type RemoteApprovalMaterialization,
+  type RemoteApprovalSnapshot,
+  type RemoteApprovalValidation,
+} from "./collaboration/approval.js";
 export type {
   AcceptIntegrationCommand,
   AcquireLeaseCommand,
@@ -1215,6 +1231,7 @@ export type {
   ReadControlInput,
   ReleaseLeaseCommand,
   RemoteApprovalDecision,
+  RemoteApprovalOutcome,
   RemoteIdentity,
   RemoteIdentityResult,
   RenewLeaseCommand,

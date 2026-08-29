@@ -81,3 +81,46 @@ describe("buildApprovalRequest", () => {
     });
   });
 });
+
+describe("buildApprovalRequest requester principal binding (protocol 1.2)", () => {
+  const requesterPrincipal = {
+    principal_id: "principal_alice",
+    principal_snapshot_digest: "d".repeat(64),
+  };
+
+  it("binds the requester principal as first-class fields and emits protocol 1.2", () => {
+    const record = buildApprovalRequest(makeSpec({ requesterPrincipal }));
+
+    expect(record.requester_principal_id).toBe("principal_alice");
+    expect(record.requester_principal_snapshot_digest).toBe("d".repeat(64));
+    expect(record.protocol_version).toBe("1.2.0");
+    expect(validateSchema("runtime", record).valid).toBe(true);
+    expect(previewDigestMatches(record)).toBe(true);
+    // The local proposed_by extension is kept for 1.0/1.1 local compatibility.
+    expect(proposedByOf(record)).toBe("agent:harness");
+  });
+
+  it("omits the requester fields and keeps the local protocol version without a principal", () => {
+    const record = buildApprovalRequest(makeSpec());
+
+    expect(record.requester_principal_id).toBeUndefined();
+    expect(record.requester_principal_snapshot_digest).toBeUndefined();
+    expect(record.protocol_version).not.toBe("1.2.0");
+    expect(previewDigestMatches(record)).toBe(true);
+  });
+
+  it("binds the requester fields into the preview digest", () => {
+    const record = buildApprovalRequest(makeSpec({ requesterPrincipal }));
+
+    const tampered = { ...record, requester_principal_id: "principal_mallory" };
+    expect(previewDigestMatches(tampered)).toBe(false);
+    // Two requests that differ only in the requester binding have different
+    // preview digests.
+    const other = buildApprovalRequest(
+      makeSpec({
+        requesterPrincipal: { ...requesterPrincipal, principal_id: "principal_mallory" },
+      }),
+    );
+    expect(other.preview_digest).not.toBe(record.preview_digest);
+  });
+});

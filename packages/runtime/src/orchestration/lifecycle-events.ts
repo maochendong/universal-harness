@@ -1,3 +1,4 @@
+import { PROTOCOL_1_2_VERSION } from "@universal-harness-internal/core";
 import type { LifecycleEvent } from "@universal-harness-internal/core";
 
 /**
@@ -11,6 +12,42 @@ import type { LifecycleEvent } from "@universal-harness-internal/core";
 export interface PhaseLifecycleEventSpec {
   readonly eventType: LifecycleEvent["event_type"];
   readonly payload: Record<string, unknown>;
+  /**
+   * Authoritative protocol version of the emitted event record. Absent means
+   * the runtime default; M3 remote-collaboration events pin 1.2 so older
+   * readers fail closed with `protocol_upgrade_required` (design §19.1).
+   */
+  readonly protocolVersion?: string;
+}
+
+/** Facts a RemoteApprovalMaterialized event binds (design §13.1, §20). */
+export interface RemoteApprovalMaterializedDetails {
+  readonly requestId: string;
+  readonly approvalId: string;
+  readonly remoteDecisionId: string;
+  readonly remoteDecisionDigest: string;
+  readonly principalId: string;
+}
+
+/**
+ * The only M3 approval event that enters the project Ledger. It is emitted in
+ * the same atomic commit as the materialized ApprovalDecision, so the event
+ * never exists without the decision it reports.
+ */
+export function remoteApprovalMaterializedEvent(
+  details: RemoteApprovalMaterializedDetails,
+): PhaseLifecycleEventSpec {
+  return {
+    eventType: "RemoteApprovalMaterialized",
+    protocolVersion: PROTOCOL_1_2_VERSION,
+    payload: {
+      request_id: details.requestId,
+      approval_id: details.approvalId,
+      remote_decision_id: details.remoteDecisionId,
+      remote_decision_digest: details.remoteDecisionDigest,
+      principal_id: details.principalId,
+    },
+  };
 }
 
 /** Per-phase event payloads; each variant carries exactly what its events report. */

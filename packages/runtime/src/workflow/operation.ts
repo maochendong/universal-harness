@@ -140,7 +140,15 @@ export interface CommitCheckpointInput {
   readonly events?: readonly {
     readonly eventType: LifecycleEvent["event_type"];
     readonly payload: Record<string, unknown>;
+    /** Authoritative protocol version override; defaults to PROTOCOL_VERSION. */
+    readonly protocolVersion?: string;
   }[];
+  /**
+   * Pin when the transaction carries protocol 1.2 authoritative records
+   * (design §19.1). `validateTransaction` rejects any mismatch between this
+   * pin and the actual artifact/event protocol versions.
+   */
+  readonly requiredReaderVersion?: string;
 }
 
 export interface BlockOutcome {
@@ -237,9 +245,10 @@ function buildEvent(spec: {
   readonly sequence: number;
   readonly timestamp: string;
   readonly payload: Record<string, unknown>;
+  readonly protocolVersion?: string;
 }): LifecycleEvent {
   const event = {
-    protocol_version: PROTOCOL_VERSION,
+    protocol_version: spec.protocolVersion ?? PROTOCOL_VERSION,
     record_kind: "event",
     event_id: spec.eventId,
     event_type: spec.eventType,
@@ -467,6 +476,7 @@ async function commitWorkflowTransaction(
     readonly artifacts: readonly { readonly path: string; readonly content: string }[];
     readonly events: readonly LifecycleEvent[];
     readonly edges?: readonly EdgeRecord[];
+    readonly requiredReaderVersion?: string;
   },
 ): Promise<CommitResult> {
   try {
@@ -478,6 +488,9 @@ async function commitWorkflowTransaction(
       artifacts: input.artifacts,
       events: input.events,
       ...(input.edges === undefined ? {} : { edges: input.edges }),
+      ...(input.requiredReaderVersion === undefined
+        ? {}
+        : { required_reader_version: input.requiredReaderVersion }),
     });
   } catch (error) {
     if (error instanceof LedgerError) {
@@ -867,6 +880,9 @@ export class WorkflowEngine {
           sequence: firstSequence + 1 + offset,
           timestamp,
           payload: extra.payload,
+          ...(extra.protocolVersion === undefined
+            ? {}
+            : { protocolVersion: extra.protocolVersion }),
         }),
       ),
     ];
@@ -876,6 +892,9 @@ export class WorkflowEngine {
       attemptId: current.attempt_id,
       artifacts: [...(input.artifacts ?? []), ...checkpoint.files],
       events,
+      ...(input.requiredReaderVersion === undefined
+        ? {}
+        : { requiredReaderVersion: input.requiredReaderVersion }),
     });
     return checkpoint.record;
   }

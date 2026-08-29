@@ -6,6 +6,7 @@ import {
   ApprovalService,
   WorkflowEngine,
   approvalDecisionArtifact,
+  remoteDecisionDigestOf,
   resumeWorkflowOperation,
   type ApprovalDependencies,
   type ApprovalIdKind,
@@ -422,5 +423,147 @@ describe("ApprovalService.requestApprovalInteractively", () => {
     expect(outcome.required.resume_command).toBe(`harness resume ${workflowOperationId}`);
     expect(engine.getOperation(workflowOperationId)?.state).toBe("blocked");
     expect(service.pendingRequests(workflowOperationId)).toHaveLength(1);
+  });
+});
+
+describe("ApprovalService.resolveRemoteDecision", () => {
+  const REMOTE_DECISION_DIGEST = "e".repeat(64);
+  const REMOTE_DECIDED_AT = "2026-08-29T00:00:00.000Z";
+  const requesterPrincipal = {
+    principal_id: "principal_alice",
+    principal_snapshot_digest: "f".repeat(64),
+  };
+
+  function remoteInput(requestId: string, overrides?: Record<string, unknown>) {
+    return {
+      requestId,
+      decision: "approve" as const,
+      objectDigest: OBJECT_DIGEST,
+      actor: "principal_bob",
+      decidedAt: REMOTE_DECIDED_AT,
+      remoteDecisionId: "remote-decision_r01",
+      remoteDecisionDigest: REMOTE_DECISION_DIGEST,
+      ...overrides,
+    };
+  }
+
+  it("materializes a remote approve into a protocol 1.2 decision bound to the remote digest", async () => {
+    const { projectRoot, service, workflowOperationId, now } = await setup("ra");
+    const outcome = await service.requestApproval(
+      makeRequestInput(workflowOperationId, { requesterPrincipal }),
+    );
+    await resume(projectRoot, "ra", workflowOperationId, now);
+
+    const resolution = await service.resolveRemoteDecision(remoteInput(outcome.request_id));
+
+    expect(resolution.replayed).toBe(false);
+    expect(resolution.decision).toMatchObject({
+      protocol_version: "1.2.0",
+      record_kind: "approval_decision",
+      request_id: outcome.request_id,
+      actor: "principal_bob",
+      decision: "approve",
+      object_digest: OBJECT_DIGEST,
+      decided_at: REMOTE_DECIDED_AT,
+    });
+    expect(remoteDecisionDigestOf(resolution.decision)).toBe(REMOTE_DECISION_DIGEST);
+    expect(service.pendingRequests(workflowOperationId)).toEqual([]);
+
+    // The materialization event lands in the same ledger commit as the
+    // decision, at protocol 1.2, binding exactly the remote decision.
+    const replay = new LedgerRepository({ projectRoot, readBaseline: () => BASELINE }).replay();
+    const materialized = replay.events.find(
+      (event) => event.event_type === "RemoteApprovalMaterialized",
+    );
+    expect(materialized).toMatchObject({
+      protocol_version: "1.2.0",
+      payload: {
+        request_id: outcome.request_id,
+        approval_id: resolution.decision.approval_id,
+        remote_decision_id: "remote-decision_r01",
+        remote_decision_digest: REMOTE_DECISION_DIGEST,
+        principal_id: "principal_bob",
+      },
+    });
+  });
+
+  it("replays an already materialized remote decision without a second commit", async () => {
+    const { projectRoot, service, workflowOperationId, now } = await setup("rb");
+    const outcome = await service.requestApproval(
+      makeRequestInput(workflowOperationId, { requesterPrincipal }),
+    );
+    await resume(projectRoot, "rb", workflowOperationId, now);
+
+    const first = await service.resolveRemoteDecision(remoteInput(outcome.request_id));
+    const second = await service.resolveRemoteDecision(remoteInput(outcome.request_id));
+
+    expect(second.replayed).toBe(true);
+    expect(second.decision.approval_id).toBe(first.decision.approval_id);
+    const replay = new LedgerRepository({ projectRoot, readBaseline: () => BASELINE }).replay();
+    expect(
+      replay.events.filter((event) => event.event_type === "RemoteApprovalMaterialized"),
+    ).toHaveLength(1);
+  });
+
+  it("refuses a legacy request without requester principal binding; it must be re-issued", async () => {
+    const { projectRoot, service, workflowOperationId, now } = await setup("rc");
+    const outcome = await service.requestApproval(makeRequestInput(workflowOperationId));
+    await resume(projectRoot, "rc", workflowOperationId, now);
+
+    await expect(
+      service.resolveRemoteDecision(remoteInput(outcome.request_id)),
+    ).rejects.toMatchObject({ name: "ApprovalError", kind: "approval_binding_mismatch" });
+    expect(service.pendingRequests(workflowOperationId)).toHaveLength(1);
+  });
+
+  it("never lets the requester principal resolve its own request remotely", async () => {
+    const { projectRoot, service, workflowOperationId, now } = await setup("rd");
+    const outcome = await service.requestApproval(
+      makeRequestInput(workflowOperationId, { requesterPrincipal }),
+    );
+    await resume(projectRoot, "rd", workflowOperationId, now);
+
+    await expect(
+      service.resolveRemoteDecision(remoteInput(outcome.request_id, { actor: "principal_alice" })),
+    ).rejects.toMatchObject({ name: "ApprovalError", kind: "approval_self_approval" });
+    expect(service.pendingRequests(workflowOperationId)).toHaveLength(1);
+  });
+
+  it("re-issues the request and refuses the decision when the bindings drifted", async () => {
+    const projectRoot = makeProjectRoot();
+    const now = tickingClock();
+    const engine = new WorkflowEngine(makeDeps(projectRoot, { newId: phaseIds("opre"), now }));
+    const started = await engine.startOperation(makeStartInput());
+    const workflowOperationId = started.operation.workflow_operation_id;
+    await engine.advance(workflowOperationId, "awaiting_approval");
+
+    let policyDigest = "c".repeat(64);
+    const service = new ApprovalService(
+      makeApprovalDeps(projectRoot, "apre", now, {
+        readBinding: (request) => ({
+          objectDigest: request.object_digest,
+          baselineDigest: request.baseline_digest,
+          policyDigest,
+          impactPath: [...request.impact_path],
+        }),
+      }),
+    );
+    const outcome = await service.requestApproval(
+      makeRequestInput(workflowOperationId, { requesterPrincipal }),
+    );
+    await resume(projectRoot, "re", workflowOperationId, now);
+
+    policyDigest = "d".repeat(64);
+    const failure = await service
+      .resolveRemoteDecision(remoteInput(outcome.request_id))
+      .catch((error: unknown) => error);
+
+    expect(failure).toMatchObject({ name: "ApprovalError", kind: "approval_binding_drift" });
+    // The re-issued request carries the requester principal binding forward.
+    const pending = service.pendingRequests(workflowOperationId);
+    expect(pending).toHaveLength(1);
+    expect(pending[0]?.request_id).not.toBe(outcome.request_id);
+    expect(pending[0]?.requester_principal_id).toBe("principal_alice");
+    expect(pending[0]?.protocol_version).toBe("1.2.0");
   });
 });
