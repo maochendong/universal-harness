@@ -8,14 +8,17 @@
 import { execFileSync, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
+  appendFileSync,
+  chmodSync,
+  copyFileSync,
   cpSync,
   existsSync,
+  linkSync,
   mkdtempSync,
   mkdirSync,
   readFileSync,
   readdirSync,
   rmSync,
-  chmodSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -496,10 +499,34 @@ function writeAgentScript(path) {
 function writeRuntimeConfig(projectRoot, profile, providerMode, agentScript) {
   const configPath = join(projectRoot, ".harness", "runtime.json");
   const config = readJson(configPath);
-  const gatePath = join(projectRoot, "scripts", "dogfood-gate.sh");
+  // Command gates are spawned with shell:false. On POSIX a committed shell
+  // script runs directly; on Windows CreateProcess cannot execute scripts and
+  // .cmd shims throw EINVAL since Node 20.12, so the sandbox gets its own
+  // Node binary (hardlink, copy as fallback -- official Windows Node builds
+  // are statically linked, unlike shared POSIX builds) that runs the gate
+  // script. The binary is gitignored so the worktree stays clean.
+  const isWindows = process.platform === "win32";
+  const gateFile = isWindows ? "dogfood-gate.mjs" : "dogfood-gate.sh";
+  const gatePath = join(projectRoot, "scripts", gateFile);
   mkdirSync(dirname(gatePath), { recursive: true });
-  writeFileSync(gatePath, "#!/bin/sh\nexit 0\n", "utf8");
-  chmodSync(gatePath, 0o755);
+  let gateExecutable;
+  let gateArgs;
+  if (isWindows) {
+    writeFileSync(gatePath, "// deterministic dogfood gate: always pass\n", "utf8");
+    gateExecutable = "scripts/dogfood-node.exe";
+    gateArgs = [`scripts/${gateFile}`];
+    try {
+      linkSync(process.execPath, join(projectRoot, gateExecutable));
+    } catch {
+      copyFileSync(process.execPath, join(projectRoot, gateExecutable));
+    }
+    appendFileSync(join(projectRoot, ".gitignore"), `${gateExecutable}\n`, "utf8");
+  } else {
+    writeFileSync(gatePath, "#!/bin/sh\nexit 0\n", "utf8");
+    chmodSync(gatePath, 0o755);
+    gateExecutable = `scripts/${gateFile}`;
+    gateArgs = [];
+  }
   config.runtime_config_version = 3;
   config.agent = {
     provider: "dsh",
@@ -516,8 +543,8 @@ function writeRuntimeConfig(projectRoot, profile, providerMode, agentScript) {
       name: "Dogfood deterministic gate",
       mandatory: true,
       subject_id: "test_dogfood",
-      executable: "scripts/dogfood-gate.sh",
-      args: [],
+      executable: gateExecutable,
+      args: gateArgs,
       env_allowlist: ["HOME", "LANG", "PATH", "TMPDIR"],
       timeout_ms: 30000,
     },
@@ -537,9 +564,11 @@ function writeRuntimeConfig(projectRoot, profile, providerMode, agentScript) {
     ];
   }
   writeFileSync(configPath, `${JSON.stringify(config, null, 2)}\n`, "utf8");
-  execFileSync("git", ["add", ".harness/runtime.json", "scripts/dogfood-gate.sh"], {
-    cwd: projectRoot,
-  });
+  execFileSync(
+    "git",
+    ["add", ".harness/runtime.json", `scripts/${gateFile}`, ...(isWindows ? [".gitignore"] : [])],
+    { cwd: projectRoot },
+  );
   execFileSync("git", ["commit", "-m", "chore: configure dogfood runtime"], {
     cwd: projectRoot,
     stdio: "pipe",

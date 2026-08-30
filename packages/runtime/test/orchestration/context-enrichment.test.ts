@@ -64,7 +64,11 @@ async function approveOnce(
   return resumeIteration(deps, outcome.required.workflow_operation_id, undefined);
 }
 
-describe("context enrichment wiring", { timeout: 60000 }, () => {
+// Windows CI needs the same headroom as the orchestrator suite: observed
+// 60s+ for the enrichment loop there.
+const TEST_TIMEOUT_SCALE = process.platform === "win32" ? 4 : 1;
+
+describe("context enrichment wiring", { timeout: 60000 * TEST_TIMEOUT_SCALE }, () => {
   it("persists cited enrichments beside untouched bundles", async () => {
     const newId = sequentialIds();
     const outcome0 = await createNewProject(
