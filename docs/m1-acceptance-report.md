@@ -2,7 +2,7 @@
 
 本文件由 `scripts/generate-acceptance-report.mjs` 从各测试套件的结构化输出生成；结果区禁止人工改写（实施计划 Task 28）。验收标准原文引用自已批准的设计文档第 17 节。
 
-- 生成基线 commit：`5d32d90`
+- 生成基线 commit：`00886a6`
 - 输入套件：main, security, fault, performance, e2e（`.reports/acceptance/*.json`）
 - 汇总：27/28 通过；failed 0，blocked 0，not_verified 1，not_run 0
 
@@ -34,7 +34,7 @@
 | AC-22 | SQLite 被删除或损坏后可从 Git Ledger 恢复。 | `pnpm test && pnpm test:fault` | packages/graph/test/materializer.test.ts<br>tests/fault/sqlite-corruption.test.ts | passed | b1b9dd6 |
 | AC-23 | Manual/Command AgentAdapter 通过 Contract、Control-profile、Behavioral Evaluation 和 E2E Test；控制或可见性不足时始终阻止无人值守选择。 | `pnpm test` | packages/conformance/test/agent-adapters.conformance.test.ts | passed | 3d3847a |
 | AC-24 | Generic、Node、Python 和 Java Pack 通过各自 Fixture。 | `pnpm test` | packages/conformance/test/packs.conformance.test.ts<br>packs/generic/test/generic-pack.test.ts<br>packs/java/test/java-pack.test.ts<br>packs/node/test/node-pack.test.ts<br>packs/python/test/python-pack.test.ts | passed | c12831a |
-| AC-25 | Linux、macOS 和 Windows CI 通过。 | `pnpm verify` | .github/workflows/ci.yml<br>.reports/ci-platform/ubuntu-latest.json<br>.reports/ci-platform/macos-latest.json<br>.reports/ci-platform/windows-latest.json | not_verified | 8369492 |
+| AC-25 | Linux、macOS 和 Windows CI 通过。 | `pnpm verify` | .github/workflows/ci.yml<br>.reports/ci-platform/ubuntu-latest.json<br>.reports/ci-platform/macos-latest.json<br>.reports/ci-platform/windows-latest.json | not_verified | 938a40b |
 | AC-26 | Pack/CLI Upgrade 保留 Project Override，失败 Migration 回滚。 | `pnpm test` | packages/runtime/test/packs/migration.test.ts<br>packages/runtime/test/packs/resolver.test.ts<br>packages/runtime/test/packs/upgrade.test.ts | passed | c12831a |
 | AC-27 | Graph 与 Context Performance 硬阈值通过，并生成 Ledger Commit 与 Projection Generation 的可复现基线。 | `pnpm test:performance` | tests/performance/context-compile.test.ts<br>tests/performance/dataset.test.ts<br>tests/performance/impact.test.ts<br>tests/performance/ledger-commit.test.ts<br>tests/performance/m2-dashboard.test.ts<br>tests/performance/m2-finding-semantic.test.ts<br>tests/performance/m3-control-ref-rebuild.test.ts<br>tests/performance/projection-generation.test.ts<br>tests/performance/sqlite-rebuild.test.ts | passed | ca21e48 |
 | AC-28 | Repository Content、Package Metadata、Example、Fixture、Generated Provider Projection 和 Git History 保持独立，不包含原产品品牌、路径或业务领域示例；Provider Mirror 可复现、限定在受管路径且未经批准不覆盖用户配置。 | `pnpm verify` | scripts/check-standalone.mjs | passed | 279de98 |
@@ -43,15 +43,15 @@
 
 | Metric | p50 (ms) | p95 (ms) | max (ms) | 规模 | 环境 |
 |---|---|---|---|---|---|
-| ledger_transaction_commit | 28.35 | 31.7 | 32.66 | {"operations":40,"artifacts_per_operation":1,"edges_per_operation":1,"events_per_operation":1} | darwin ci=false |
-| m2_dashboard./api/v1/graph/nodes?limit=100 | 4.78 | 7.43 | 7.43 | {"nodes":10000,"edges":30000,"events":20000,"findings":1000} | darwin ci=false |
-| m2_dashboard./api/v1/graph/edges?limit=100 | 3.23 | 4.34 | 4.34 | {"nodes":10000,"edges":30000,"events":20000,"findings":1000} | darwin ci=false |
-| m2_dashboard./api/v1/graph/neighborhood/requirement_r00000?depth=2&direction=both | 3.06 | 4.01 | 4.01 | {"nodes":10000,"edges":30000,"events":20000,"findings":1000} | darwin ci=false |
-| m2_finding_groups | 1.37 | 2.57 | 2.72 | {"findings":1000,"groups":20} | darwin ci=false |
-| m2_semantic_top_k | 66.55 | 72.05 | 72.05 | {"indexed_nodes":10000,"top_k":10} | darwin ci=false |
-| projection_generation.architecture_full | 8408.21 | 13236.56 | 13236.56 | {"full":{"nodes":20000,"edges":100000,"renders":3},"affected_slice":{"nodes":2050,"edges":3722,"renders":15}} | darwin ci=false |
-| projection_generation.architecture_affected_slice | 7.67 | 9.37 | 9.37 | {"full":{"nodes":20000,"edges":100000,"renders":3},"affected_slice":{"nodes":2050,"edges":3722,"renders":15}} | darwin ci=false |
-| projection_generation.prd_full | 9.63 | 9.63 | 9.63 | {"full":{"nodes":20000,"edges":100000,"renders":3},"affected_slice":{"nodes":2050,"edges":3722,"renders":15}} | darwin ci=false |
+| ledger_transaction_commit | 29.29 | 32.6 | 33.54 | {"operations":40,"artifacts_per_operation":1,"edges_per_operation":1,"events_per_operation":1} | darwin ci=false |
+| m2_dashboard./api/v1/graph/nodes?limit=100 | 4.86 | 7.08 | 7.08 | {"nodes":10000,"edges":30000,"events":20000,"findings":1000} | darwin ci=false |
+| m2_dashboard./api/v1/graph/edges?limit=100 | 3.19 | 3.53 | 3.53 | {"nodes":10000,"edges":30000,"events":20000,"findings":1000} | darwin ci=false |
+| m2_dashboard./api/v1/graph/neighborhood/requirement_r00000?depth=2&direction=both | 3 | 3.87 | 3.87 | {"nodes":10000,"edges":30000,"events":20000,"findings":1000} | darwin ci=false |
+| m2_finding_groups | 1.38 | 2.01 | 2.87 | {"findings":1000,"groups":20} | darwin ci=false |
+| m2_semantic_top_k | 67.22 | 71.02 | 71.02 | {"indexed_nodes":10000,"top_k":10} | darwin ci=false |
+| projection_generation.architecture_full | 8543.31 | 13832 | 13832 | {"full":{"nodes":20000,"edges":100000,"renders":3},"affected_slice":{"nodes":2050,"edges":3722,"renders":15}} | darwin ci=false |
+| projection_generation.architecture_affected_slice | 7.51 | 9.29 | 9.29 | {"full":{"nodes":20000,"edges":100000,"renders":3},"affected_slice":{"nodes":2050,"edges":3722,"renders":15}} | darwin ci=false |
+| projection_generation.prd_full | 9.71 | 9.71 | 9.71 | {"full":{"nodes":20000,"edges":100000,"renders":3},"affected_slice":{"nodes":2050,"edges":3722,"renders":15}} | darwin ci=false |
 
 ## 发布声明
 
