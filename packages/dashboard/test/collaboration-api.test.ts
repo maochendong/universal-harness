@@ -1,6 +1,6 @@
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 
 import { afterEach, describe, expect, it } from "vitest";
 
@@ -55,7 +55,7 @@ function connectionRecord(
   status: "active" | "disconnected" = "active",
   options: { readonly connectionId?: string; readonly effectiveAt?: string } = {},
 ): CollaborationConnectionRecord {
-  const projectId = `project_${projectRoot.split("/").pop() ?? "fixture"}`;
+  const projectId = `project_${basename(projectRoot)}`;
   return buildCollaborationRecord({
     record_kind: "collaboration_connection",
     connection_id: options.connectionId ?? "connection_dashboard_fixture",
@@ -631,7 +631,7 @@ describe("Dashboard collaboration API", () => {
         if (kind !== "connection_status") throw new Error(`unexpected query ${kind}`);
         return {
           kind: "connection_status",
-          project_id: `project_${projectRoot.split("/").pop() ?? "fixture"}`,
+          project_id: `project_${basename(projectRoot)}`,
           status: "active",
         };
       },

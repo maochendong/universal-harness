@@ -566,7 +566,12 @@ describe("collaboration runtime routing", () => {
       actor_principal_id: "principal_alice",
     });
     // The cache can carry the Coordinator session credential: owner-only 0600.
-    expect(statSync(join(projectRoot, CLIENT_CACHE_RELATIVE)).mode & 0o777).toBe(0o600);
+    // POSIX permission bits do not exist on Windows (chmod is a no-op there and
+    // the mode reads back 0666), so the mode check only applies elsewhere; the
+    // file's existence and content are asserted above on every platform.
+    if (process.platform !== "win32") {
+      expect(statSync(join(projectRoot, CLIENT_CACHE_RELATIVE)).mode & 0o777).toBe(0o600);
+    }
   });
 
   it("keeps a failed connect outcome local: no cache, typed failure", async () => {

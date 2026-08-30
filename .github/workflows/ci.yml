@@ -26,6 +26,12 @@ jobs:
           node-version-file: .node-version
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - name: Configure git identity for tests
+        # Runners have no ambient git identity; tests that create commits fail
+        # with "fatal: empty ident name" without it.
+        run: |
+          git config --global user.name "Harness CI"
+          git config --global user.email "ci@harness.invalid"
       - name: Verify
         id: verify
         continue-on-error: true
@@ -66,6 +72,10 @@ jobs:
       # Cross-package imports resolve through package exports to dist/, so a
       # clean checkout must build before the vitest gates run.
       - run: pnpm build
+      - name: Configure git identity for tests
+        run: |
+          git config --global user.name "Harness CI"
+          git config --global user.email "ci@harness.invalid"
       - run: pnpm test:security
       - run: pnpm test:fault
       - run: pnpm test:performance
@@ -90,6 +100,10 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
+      - name: Configure git identity for tests
+        run: |
+          git config --global user.name "Harness CI"
+          git config --global user.email "ci@harness.invalid"
       - name: M3 conformance, e2e, security and fault gates
         run: >-
           pnpm exec vitest run --config vitest.workspace.ts
@@ -127,6 +141,10 @@ jobs:
           path: .reports/ci-platform
           merge-multiple: true
       - run: pnpm build
+      - name: Configure git identity for tests
+        run: |
+          git config --global user.name "Harness CI"
+          git config --global user.email "ci@harness.invalid"
       - run: pnpm test
       - run: pnpm pack:smoke
       - run: pnpm test:release
