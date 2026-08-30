@@ -338,7 +338,11 @@ test.describe("Dashboard read-only journey", () => {
       await route.fulfill({ response, json: body });
     });
 
+    // The heading renders before the intercepted nodes fetch resolves under
+    // CI load; wait for the response so firstRecord is actually populated.
+    const nodesResponse = page.waitForResponse("**/api/v1/graph/nodes*");
     await page.getByRole("link", { name: /Graph/u }).click();
+    await nodesResponse;
     await expect(page.getByRole("heading", { name: "Artifact graph" })).toBeVisible();
     expect(firstRecord).toBeDefined();
     const fallbackCard = page

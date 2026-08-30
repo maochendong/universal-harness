@@ -38,10 +38,12 @@ jobs:
         run: pnpm verify
       - name: Write same-commit platform Evidence
         if: always()
+        # Quoted '0': in GitHub expressions the number 0 is falsy, so
+        # `cond && 0 || 1` would always yield 1.
         run: >-
           node scripts/write-ci-platform-evidence.mjs
           --platform ${{ matrix.os }}
-          --exit-status ${{ steps.verify.outcome == 'success' && 0 || 1 }}
+          --exit-status ${{ steps.verify.outcome == 'success' && '0' || '1' }}
           --output .reports/ci-platform/${{ matrix.os }}.json
       - name: Upload platform Evidence
         if: always()
