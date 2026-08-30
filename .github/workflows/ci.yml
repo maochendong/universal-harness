@@ -150,3 +150,16 @@ jobs:
       - run: pnpm test
       - run: pnpm pack:smoke
       - run: pnpm test:release
+      # The authoritative reports can only be generated here: the full
+      # evidence set (CI platform artifacts, dogfood and performance outputs)
+      # exists only on the runner. Upload them so they can be committed.
+      - name: Upload acceptance reports
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: acceptance-reports
+          path: |
+            docs/m1-acceptance-report.md
+            docs/m2-acceptance-report.md
+            docs/evidence/m3-remote-collaboration-completion.md
+          if-no-files-found: error
