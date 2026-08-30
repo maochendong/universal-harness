@@ -494,7 +494,7 @@ expect(normalizeGitRemote("git@github.com:Acme/Demo.git")).toEqual({
   provider: "github",
   host: "github.com",
   repository_path: "Acme/Demo",
-  canonical_remote: "ssh://git@github.com/Acme/Demo.git",
+  canonical_remote: "ssh://github.com/Acme/Demo",
 });
 expect(() => normalizeGitRemote("https://token@github.com/acme/demo.git"))
   .toThrowErrorMatchingObject({ code: "remote_contains_credentials" });

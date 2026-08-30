@@ -475,6 +475,48 @@ describe("collaboration HTTP transport security", () => {
     }
   });
 
+  it("rejects media types that only carry an application/json prefix", async () => {
+    const running = await startServer(createHarness());
+    try {
+      for (const contentType of [
+        "application/jsonx",
+        "application/json-seq",
+        "application/JSONP",
+      ]) {
+        const response = await https("POST", `${running.origin}/api/v1/collaboration/commands`, {
+          headers: { "content-type": contentType },
+          body: "{}",
+        });
+        expect(response.status, contentType).toBe(415);
+        expect(JSON.parse(response.body)).toMatchObject({
+          type: "error",
+          error: "unsupported_media_type",
+        });
+      }
+    } finally {
+      await running.close();
+    }
+  });
+
+  it("accepts application/json with parameters or case variants", async () => {
+    const running = await startServer(createHarness());
+    try {
+      for (const contentType of ["application/json; charset=utf-8", "Application/JSON"]) {
+        const response = await https("POST", `${running.origin}/api/v1/collaboration/commands`, {
+          headers: { "content-type": contentType },
+          body: JSON.stringify({ command: connectCommand(), session: session("principal_alice") }),
+        });
+        expect(response.status, contentType).toBe(200);
+        expect(JSON.parse(response.body)).toMatchObject({
+          type: "outcome",
+          outcome: { status: "connected" },
+        });
+      }
+    } finally {
+      await running.close();
+    }
+  });
+
   it("rejects oversized bodies", async () => {
     const running = await startServer(createHarness());
     try {

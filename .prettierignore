@@ -7,3 +7,5 @@ pnpm-lock.yaml
 # Golden Markdown projections must stay byte-exact; Prettier reflow would
 # silently change the pinned output.
 tests/golden/projections/
+# Untracked course material under local authorship; not part of the release surface.
+teach/

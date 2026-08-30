@@ -10,10 +10,7 @@ import {
   type NodeRecord,
 } from "@universal-harness-internal/core";
 import type { TraversalDirection } from "@universal-harness-internal/graph";
-import type {
-  EventStreamPort,
-  RemoteApprovalDecision,
-} from "@universal-harness-internal/runtime";
+import type { EventStreamPort, RemoteApprovalDecision } from "@universal-harness-internal/runtime";
 
 import type { DashboardCollaborationApi } from "./collaboration-api.js";
 

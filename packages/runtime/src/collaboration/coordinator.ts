@@ -16,6 +16,7 @@ import {
   validateRemoteApprovalDecision,
   type RemoteApprovalDecisionDraft,
 } from "./approval.js";
+import { resolveRequiredPermission } from "./approval-policy.js";
 import {
   COLLABORATION_CONTROL_REF,
   connectionIdFor,
@@ -556,9 +557,12 @@ export function createCollaborationCoordinator(
         object_digest: request.object_digest,
         policy_digest: request.policy_digest,
         decision: command.decision,
-        // Spec §9.1 default: maintain or admin may take a terminal remote
-        // decision; a Project Policy downgrade is bound by its own digest.
-        required_permission: "maintain",
+        // Spec §9.1: maintain or admin may take a terminal remote decision by
+        // default; a maintain/admin-approved Project Policy may downgrade a
+        // named object scope to write, bound by the policy digest already on
+        // the request. M3 carries no Policy document past its digest, so the
+        // resolution point sees no Policy view and fails closed to maintain.
+        required_permission: resolveRequiredPermission(undefined, request.object_id),
         decided_at: now(),
       };
       const validation = validateRemoteApprovalDecision({
@@ -910,7 +914,8 @@ export function createCollaborationCoordinator(
   /**
    * Shared authorization for the Integration commands (design §9.1, §15.2):
    * an active connection, a fresh session-owned PrincipalSnapshot from the
-   * platform, and at least the maintain rank.
+   * platform, and at least the resolved required rank (fail-closed maintain;
+   * a Policy downgrade to write would resolve per operation scope).
    */
   async function authorizeIntegrationActor(
     command: PrepareIntegrationCommand | AcceptIntegrationCommand,
@@ -948,12 +953,18 @@ export function createCollaborationCoordinator(
       staleSummary,
     );
     if (auth.status === "failed") return { status: "failed", failure: auth.failure };
-    if (!permissionSatisfies(auth.facts.permission, "maintain")) {
+    // The object scope is the command's own target: the operation being
+    // prepared, or the prepared integration being accepted.
+    const requiredPermission = resolveRequiredPermission(
+      undefined,
+      command.kind === "prepare_integration" ? command.operation_id : command.integration_id,
+    );
+    if (!permissionSatisfies(auth.facts.permission, requiredPermission)) {
       return {
         status: "failed",
         failure: collaborationFailure(
           "permission_denied",
-          `principal ${auth.facts.principal_id} holds ${auth.facts.permission} but integration requires maintain`,
+          `principal ${auth.facts.principal_id} holds ${auth.facts.permission} but integration requires ${requiredPermission}`,
         ),
       };
     }

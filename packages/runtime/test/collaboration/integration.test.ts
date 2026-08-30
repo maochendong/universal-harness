@@ -7,15 +7,23 @@ import {
   buildCollaborationRecord,
   buildManifest,
   canonicalizeJson,
+  contentDigest,
   edgeShardRelativePath,
   eventShardRelativePath,
   harnessRootFor,
   replayLedger,
   sha256Hex,
   shardMonthFor,
+  type EdgeRecord,
   type IntegrationRecord,
   type LedgerOperation,
+  type NodeRecord,
 } from "@universal-harness-internal/core";
+import {
+  freezeImpactSet,
+  generateImpactSet,
+  readImpactSetContent,
+} from "@universal-harness-internal/graph";
 import { beforeEach, describe, expect, it } from "vitest";
 
 import { COLLABORATION_CONTROL_REF } from "../../src/collaboration/connection.js";
@@ -134,9 +142,14 @@ function makeManifest(input: {
   baseline: string;
   committedAt: string;
   artifacts?: Readonly<Record<string, string>>;
+  edges?: readonly EdgeRecord[];
   includeShards?: boolean;
 }): { manifest: LedgerOperation; files: Record<string, string> } {
   const artifacts = input.artifacts ?? {};
+  const edgeContent =
+    input.edges === undefined || input.edges.length === 0
+      ? ""
+      : `${input.edges.map((edge) => JSON.stringify(edge)).join("\n")}\n`;
   const month = shardMonthFor(input.committedAt);
   const manifest = buildManifest({
     ledger_operation_id: input.id,
@@ -149,7 +162,7 @@ function makeManifest(input: {
       .sort(),
     edge_file: edgeShardRelativePath(month, input.id),
     event_file: eventShardRelativePath(month, input.id),
-    edge_file_digest: sha256Hex(""),
+    edge_file_digest: sha256Hex(edgeContent),
     event_file_digest: sha256Hex(""),
     committed_at: input.committedAt,
   });
@@ -157,7 +170,7 @@ function makeManifest(input: {
     [`.harness/ledger/operations/${input.id}.json`]: `${canonicalizeJson(manifest)}\n`,
   };
   if (input.includeShards !== false) {
-    files[`.harness/${manifest.edge_file}`] = "";
+    files[`.harness/${manifest.edge_file}`] = edgeContent;
     files[`.harness/${manifest.event_file}`] = "";
   }
   for (const [path, content] of Object.entries(artifacts)) {
@@ -178,6 +191,7 @@ function gateEvidenceArtifact(input: {
   provisional?: boolean;
   policyDigest?: string;
   codeDigests?: readonly string[];
+  artifactDigests?: readonly string[];
 }): Record<string, string> {
   const record = {
     protocol_version: "1.0.0",
@@ -199,7 +213,7 @@ function gateEvidenceArtifact(input: {
         log_summary: "log",
         artifact_hashes: {},
         bindings: {
-          artifact_digests: [],
+          artifact_digests: [...(input.artifactDigests ?? [])],
           code_digests: [...(input.codeDigests ?? [])],
           gate_digest: digest("g"),
           evaluation_case_digests: [],
@@ -233,18 +247,23 @@ function codeDigestOf(files: Readonly<Record<string, string>>): string {
 function approvalRequestArtifact(input: {
   id: string;
   policyDigest?: string;
+  objectId?: string;
+  objectType?: string;
+  objectDigest?: string;
+  baselineDigest?: string;
+  impactPath?: readonly string[];
 }): Record<string, string> {
   const record = {
     protocol_version: "1.0.0",
     record_kind: "approval_request",
     request_id: input.id,
     workflow_operation_id: "workflow_approval_1",
-    object_id: "object_policy_1",
-    object_type: "policy",
-    object_digest: digest("o"),
-    baseline_digest: digest("b"),
+    object_id: input.objectId ?? "object_policy_1",
+    object_type: input.objectType ?? "policy",
+    object_digest: input.objectDigest ?? digest("o"),
+    baseline_digest: input.baselineDigest ?? digest("b"),
     policy_digest: input.policyDigest ?? POLICY_DIGEST,
-    impact_path: ["policy"],
+    impact_path: [...(input.impactPath ?? ["policy"])],
     risk: "high",
     reason: "remote approval fixture",
     allowed_decisions: ["approve", "reject"],
@@ -311,6 +330,216 @@ function seedForkedBranches(store: IntegrationFakeStore): {
   );
   store.moveRef(operationRefFor("operation_b"), operationTip);
   return { forkPoint: fork, targetTip, operationTip, operationId: "operation_b" };
+}
+
+// --- Graph-carrying fixtures for the candidate revalidation chain ----------
+
+const ITERATION_TARGET = "iteration_a";
+const ITERATION_DRIFT = "iteration_c";
+const ITERATION_BRANCH = "iteration_b";
+
+interface GraphNodeFixture {
+  readonly path: string;
+  readonly content: string;
+  readonly node: NodeRecord;
+}
+
+function graphNodeFixture(input: {
+  id: string;
+  type: NodeRecord["type"];
+  iterationId: string;
+  revision?: number;
+  status?: NodeRecord["status"];
+  extensions?: Record<string, unknown>;
+}): GraphNodeFixture {
+  const record = {
+    protocol_version: "1.0.0",
+    record_kind: "node",
+    id: input.id,
+    type: input.type,
+    revision: input.revision ?? 1,
+    status: input.status ?? "accepted",
+    source: "workflow",
+    provenance: { iteration_id: input.iterationId, actor: "fixture", timestamp: T0 },
+    confidence: 1,
+    ...(input.extensions === undefined ? {} : { extensions: input.extensions }),
+  };
+  const node = { ...record, digest: contentDigest(record) } as unknown as NodeRecord;
+  return {
+    path: `artifacts/graph/${input.id}-r${String(node.revision)}.json`,
+    content: `${canonicalizeJson(node)}\n`,
+    node,
+  };
+}
+
+function edgeFixture(input: {
+  id: string;
+  type: EdgeRecord["type"];
+  sourceId: string;
+  targetId: string;
+  iterationId: string;
+}): EdgeRecord {
+  const record = {
+    protocol_version: "1.0.0",
+    record_kind: "edge",
+    id: input.id,
+    type: input.type,
+    source_id: input.sourceId,
+    target_id: input.targetId,
+    status: "accepted",
+    source: "workflow",
+    provenance: { iteration_id: input.iterationId, actor: "fixture", timestamp: T0 },
+    confidence: 1,
+  };
+  return { ...record, digest: contentDigest(record) } as unknown as EdgeRecord;
+}
+
+function impactSetFiles(proposed: NodeRecord, frozen: NodeRecord): Record<string, string> {
+  return {
+    [`artifacts/impact-sets/${proposed.id}/1.json`]: `${canonicalizeJson(proposed)}\n`,
+    [`artifacts/impact-sets/${frozen.id}/2.json`]: `${canonicalizeJson(frozen)}\n`,
+  };
+}
+
+/** A ledger-vouched requirement baseline document carrying `digest` internally. */
+function baselineDocumentFile(baselineDigest: string): Record<string, string> {
+  const document = {
+    protocol_version: "1.0.0",
+    record_kind: "requirement_baseline",
+    digest: baselineDigest,
+  };
+  return {
+    [`artifacts/requirement-baselines/${baselineDigest}.json`]: `${canonicalizeJson(document)}\n`,
+  };
+}
+
+/** An ExecutionPlan node artifact pinning one frozen ImpactSet. */
+function planNodeFixture(input: {
+  id: string;
+  impactSetId: string;
+  impactSetDigest: string;
+}): GraphNodeFixture {
+  const planDigest = contentDigest({ plan_of: input.impactSetId });
+  return graphNodeFixture({
+    id: input.id,
+    type: "ExecutionPlan",
+    iterationId: ITERATION_BRANCH,
+    extensions: {
+      "harness.plan": {
+        content_digest: planDigest,
+        impact_set_id: input.impactSetId,
+        impact_set_digest: input.impactSetDigest,
+      },
+    },
+  });
+}
+
+const IMPACT_SEED = {
+  id: "seed_requirement_1",
+  nodeId: "requirement_1",
+  kind: "content-change",
+  iterationKind: "feature",
+  reason: "fixture seed",
+} as const;
+
+/**
+ * Fork with one Requirement on the target; the operation branch freezes an
+ * ImpactSet over the fork graph, binds an approval request to its content
+ * digest and pins the set in its ExecutionPlan. The target then advances with
+ * a clean, ledger-only drift commit whose blast radius depends on `drift`:
+ * "reachable" adds a Test plus a VERIFIES edge into the frozen set's seed,
+ * "unrelated" adds an unconnected Test.
+ */
+function seedImpactBranches(
+  store: IntegrationFakeStore,
+  drift: "reachable" | "unrelated",
+): {
+  targetTip: string;
+  operationId: string;
+} {
+  const requirement = graphNodeFixture({
+    id: "requirement_1",
+    type: "Requirement",
+    iterationId: ITERATION_TARGET,
+  });
+  const fork = store.commitTree(
+    [],
+    makeManifest({
+      id: "operation_a_1",
+      sequence: 1,
+      baseline: digest("a"),
+      committedAt: T0,
+      artifacts: { [requirement.path]: requirement.content },
+    }).files,
+  );
+
+  const proposed = generateImpactSet([{ ...IMPACT_SEED }], [requirement.node], [], {
+    iterationId: ITERATION_BRANCH,
+    actor: "fixture",
+    timestamp: T0,
+  });
+  const frozen = freezeImpactSet(proposed, digest("d"));
+  const impactContent = readImpactSetContent(frozen);
+  const plan = planNodeFixture({
+    id: `plan_${contentDigest({ set: frozen.id }).slice(0, 16)}`,
+    impactSetId: frozen.id,
+    impactSetDigest: impactContent.content_digest,
+  });
+  const request = approvalRequestArtifact({
+    id: "request_impact_1",
+    objectId: frozen.id,
+    objectType: "ImpactSet",
+    objectDigest: impactContent.content_digest,
+    baselineDigest: digest("b"),
+    impactPath: [],
+  });
+  const operationTip = store.commitTree(
+    [fork],
+    makeManifest({
+      id: "operation_b_1",
+      sequence: 2,
+      baseline: fork,
+      committedAt: T2,
+      artifacts: mergeFiles(
+        impactSetFiles(proposed, frozen),
+        baselineDocumentFile(digest("b")),
+        { [plan.path]: plan.content },
+        request,
+      ),
+    }).files,
+  );
+  store.moveRef(operationRefFor("operation_b"), operationTip);
+
+  const driftNode = graphNodeFixture({
+    id: "test_1",
+    type: "Test",
+    iterationId: ITERATION_DRIFT,
+  });
+  const driftEdges =
+    drift === "reachable"
+      ? [
+          edgeFixture({
+            id: "edge_verify_1",
+            type: "VERIFIES",
+            sourceId: "test_1",
+            targetId: "requirement_1",
+            iterationId: ITERATION_DRIFT,
+          }),
+        ]
+      : [];
+  const targetTip = store.commitTree(
+    [fork],
+    makeManifest({
+      id: "operation_a_2",
+      sequence: 2,
+      baseline: fork,
+      committedAt: T1,
+      artifacts: { [driftNode.path]: driftNode.content },
+      edges: driftEdges,
+    }).files,
+  );
+  store.moveRef(TARGET_REF, targetTip);
+  return { targetTip, operationId: "operation_b" };
 }
 
 function prepared(outcome: CollaborationOutcome) {
@@ -686,6 +915,221 @@ describe("integration commands", () => {
     );
 
     expect(outcome.failure.code).toBe("approval_binding_mismatch");
+  });
+
+  it("rejects a candidate whose frozen impact set no longer covers the drifted target graph", async () => {
+    const store = createIntegrationFakeStore();
+    const { operationId } = seedImpactBranches(store, "reachable");
+    const harness = createHarness(store);
+    await connect(harness);
+
+    const outcome = failed(
+      await harness.coordinator.execute(prepareCommand(operationId), session("principal_alice")),
+    );
+
+    expect(outcome.failure.code).toBe("baseline_drift");
+    expect(outcome.failure.summary).toContain("impact");
+    expect(store.tip(TARGET_REF)).not.toBeUndefined();
+  });
+
+  it("prepares when target drift stays outside the frozen impact set's blast radius", async () => {
+    const store = createIntegrationFakeStore();
+    const { operationId } = seedImpactBranches(store, "unrelated");
+    const harness = createHarness(store);
+    await connect(harness);
+
+    const outcome = await harness.coordinator.execute(
+      prepareCommand(operationId),
+      session("principal_alice"),
+    );
+
+    expect(outcome.status).toBe("prepared");
+  });
+
+  it("revalidates only the frozen impact set the current plan pins, never superseded ones", async () => {
+    const store = createIntegrationFakeStore();
+    // The branch froze a first impact set over the fork graph, then re-froze a
+    // second set that already accounts for the target drift and pinned it in
+    // the current plan; the stale first set must not fail the candidate.
+    const requirement = graphNodeFixture({
+      id: "requirement_1",
+      type: "Requirement",
+      iterationId: ITERATION_TARGET,
+    });
+    const fork = store.commitTree(
+      [],
+      makeManifest({
+        id: "operation_a_1",
+        sequence: 1,
+        baseline: digest("a"),
+        committedAt: T0,
+        artifacts: { [requirement.path]: requirement.content },
+      }).files,
+    );
+    const driftNode = graphNodeFixture({
+      id: "test_1",
+      type: "Test",
+      iterationId: ITERATION_DRIFT,
+    });
+    const driftEdge = edgeFixture({
+      id: "edge_verify_1",
+      type: "VERIFIES",
+      sourceId: "test_1",
+      targetId: "requirement_1",
+      iterationId: ITERATION_DRIFT,
+    });
+    const targetTip = store.commitTree(
+      [fork],
+      makeManifest({
+        id: "operation_a_2",
+        sequence: 2,
+        baseline: fork,
+        committedAt: T1,
+        artifacts: { [driftNode.path]: driftNode.content },
+        edges: [driftEdge],
+      }).files,
+    );
+    store.moveRef(TARGET_REF, targetTip);
+
+    const staleProposed = generateImpactSet([{ ...IMPACT_SEED }], [requirement.node], [], {
+      iterationId: ITERATION_BRANCH,
+      actor: "fixture",
+      timestamp: T0,
+    });
+    const staleFrozen = freezeImpactSet(staleProposed, digest("d"));
+    const firstTip = store.commitTree(
+      [fork],
+      makeManifest({
+        id: "operation_b_1",
+        sequence: 2,
+        baseline: fork,
+        committedAt: T2,
+        artifacts: impactSetFiles(staleProposed, staleFrozen),
+      }).files,
+    );
+    const currentProposed = generateImpactSet(
+      [{ ...IMPACT_SEED }],
+      [requirement.node, driftNode.node],
+      [driftEdge],
+      { iterationId: ITERATION_BRANCH, actor: "fixture", timestamp: T2 },
+    );
+    const currentFrozen = freezeImpactSet(currentProposed, digest("e"));
+    const currentContent = readImpactSetContent(currentFrozen);
+    const plan = planNodeFixture({
+      id: `plan_${contentDigest({ set: currentFrozen.id }).slice(0, 16)}`,
+      impactSetId: currentFrozen.id,
+      impactSetDigest: currentContent.content_digest,
+    });
+    const request = approvalRequestArtifact({
+      id: "request_impact_2",
+      objectId: currentFrozen.id,
+      objectType: "ImpactSet",
+      objectDigest: currentContent.content_digest,
+      baselineDigest: digest("b"),
+      impactPath: [],
+    });
+    const operationTip = store.commitTree(
+      [firstTip],
+      makeManifest({
+        id: "operation_b_2",
+        sequence: 3,
+        baseline: fork,
+        committedAt: "2026-08-29T00:03:00.000Z",
+        artifacts: mergeFiles(
+          impactSetFiles(currentProposed, currentFrozen),
+          baselineDocumentFile(digest("b")),
+          { [plan.path]: plan.content },
+          request,
+        ),
+      }).files,
+    );
+    store.moveRef(operationRefFor("operation_b"), operationTip);
+    const harness = createHarness(store);
+    await connect(harness);
+
+    const outcome = await harness.coordinator.execute(
+      prepareCommand("operation_b"),
+      session("principal_alice"),
+    );
+
+    expect(outcome.status).toBe("prepared");
+  });
+
+  it("blocks mandatory gate evidence whose bound artifact is missing from the candidate tree", async () => {
+    const store = createIntegrationFakeStore();
+    const fork = store.commitTree(
+      [],
+      mergeFiles(
+        makeManifest({ id: "operation_a_1", sequence: 1, baseline: digest("a"), committedAt: T0 })
+          .files,
+        { "src/a.txt": "A\n" },
+      ),
+    );
+    store.moveRef(TARGET_REF, fork);
+    const evidence = gateEvidenceArtifact({
+      id: "evidence_orphan_1",
+      mandatory: true,
+      passed: true,
+      codeDigests: [codeDigestOf({ "src/a.txt": "A\n" })],
+      // The digest this evidence binds is not any artifact the candidate
+      // ledger vouches for: the merge can never resurrect it.
+      artifactDigests: [digest("7")],
+    });
+    const operationTip = store.commitTree(
+      [fork],
+      makeManifest({
+        id: "operation_b_1",
+        sequence: 2,
+        baseline: fork,
+        committedAt: T2,
+        artifacts: evidence,
+      }).files,
+    );
+    store.moveRef(operationRefFor("operation_b"), operationTip);
+    const harness = createHarness(store);
+    await connect(harness);
+
+    const outcome = failed(
+      await harness.coordinator.execute(prepareCommand("operation_b"), session("principal_alice")),
+    );
+
+    expect(outcome.failure.code).toBe("integration_gate_failed");
+    expect(outcome.failure.summary).toContain("artifact");
+  });
+
+  it("rejects an approval request whose bound object is missing from the candidate tree", async () => {
+    const store = createIntegrationFakeStore();
+    const fork = store.commitTree(
+      [],
+      makeManifest({ id: "operation_a_1", sequence: 1, baseline: digest("a"), committedAt: T0 })
+        .files,
+    );
+    store.moveRef(TARGET_REF, fork);
+    const request = approvalRequestArtifact({
+      id: "request_orphan_1",
+      objectDigest: digest("o"),
+      baselineDigest: digest("b"),
+    });
+    const operationTip = store.commitTree(
+      [fork],
+      makeManifest({
+        id: "operation_b_1",
+        sequence: 2,
+        baseline: fork,
+        committedAt: T2,
+        artifacts: mergeFiles(request, baselineDocumentFile(digest("b"))),
+      }).files,
+    );
+    store.moveRef(operationRefFor("operation_b"), operationTip);
+    const harness = createHarness(store);
+    await connect(harness);
+
+    const outcome = failed(
+      await harness.coordinator.execute(prepareCommand("operation_b"), session("principal_alice")),
+    );
+
+    expect(outcome.failure.code).toBe("approval_binding_mismatch");
+    expect(outcome.failure.summary).toContain("object_digest");
   });
 
   it("denies prepare when the actor's platform permission dropped below maintain", async () => {

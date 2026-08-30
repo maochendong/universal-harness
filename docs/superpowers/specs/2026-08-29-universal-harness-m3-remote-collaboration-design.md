@@ -550,10 +550,17 @@ snapshot 在 Decision 写入后到期不属于漂移；object、policy、baselin
 6. 只生成候选 merge commit；
 7. 在候选 commit 上重新运行：
    - Graph reconcile；
-   - Impact；
-   - Evidence freshness；
+   - Impact（用冻结 ImpactSet 自带的 seeds 对"新 baseline + 冻结前 branch 操作"图重算，
+     爆炸半径扩大即拒绝）；
+   - Evidence freshness（候选 tree 中可寻址的绑定维度全部重算）；
    - Mandatory Gate；
    - 受 baseline 影响的 Approval 失效检查。
+
+   重算以候选 tree 中可寻址的内容为准。两个维度在 Coordinator 侧不存在重算 oracle：
+   `gate_digest`（Gate 定义是 Coordinator 配置，从不入 Ledger）与 Approval 的
+   `impact_path`（全代码库恒绑定空集，无重算来源）；二者保持绑定值比对，等效防线是
+   Replica 同步后用本地 Gate 定义与既有 Snapshot 规则复核。除此之外的维度不得
+   verbatim 回放原 digest。
 
 ### 14.2 Ledger sequence 重排
 

@@ -475,7 +475,10 @@ export async function startCollaborationCoordinatorServer(
       return undefined;
     }
     const contentType = request.headers["content-type"];
-    if (typeof contentType !== "string" || !contentType.startsWith("application/json")) {
+    // Media type is case-insensitive and may carry parameters; a bare prefix
+    // match would both reject `Application/JSON` and accept `application/jsonx`.
+    const mediaType = contentType?.split(";")[0]?.trim().toLowerCase();
+    if (mediaType !== "application/json") {
       sendTransportError(response, 415, "unsupported_media_type");
       return undefined;
     }

@@ -16,6 +16,25 @@ export default tseslint.config(
       },
     },
   },
+  {
+    // teach*/ assets are browser scripts, not Node scripts.
+    files: ["teach/**/*.js", "teach-v2/**/*.js"],
+    languageOptions: {
+      globals: {
+        document: "readonly",
+        IntersectionObserver: "readonly",
+        localStorage: "readonly",
+        navigator: "readonly",
+        requestAnimationFrame: "readonly",
+        window: "readonly",
+      },
+    },
+    rules: {
+      // Course scripts intentionally bind unused catch params as `_error`.
+      "no-unused-vars": ["error", { caughtErrorsIgnorePattern: "^_" }],
+      "@typescript-eslint/no-unused-vars": ["error", { caughtErrorsIgnorePattern: "^_" }],
+    },
+  },
   ...tseslint.configs.recommended,
   {
     files: ["**/*.ts"],

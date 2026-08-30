@@ -57,7 +57,7 @@ describe("normalizeGitRemote", () => {
       provider: "github",
       host: "github.com",
       repository_path: "Acme/Demo",
-      canonical_remote: "ssh://git@github.com/Acme/Demo",
+      canonical_remote: "ssh://github.com/Acme/Demo",
     });
   });
 
@@ -80,11 +80,26 @@ describe("normalizeGitRemote", () => {
     ];
     const canonical = variants.map((remote) => normalizeGitRemote(remote).canonical_remote);
     for (const value of canonical) {
-      expect(value).toBe("ssh://git@github.com/Acme/Demo");
+      expect(value).toBe("ssh://github.com/Acme/Demo");
     }
     expect(normalizeGitRemote("https://github.com/acme/demo.git/").canonical_remote).toBe(
       "https://github.com/acme/demo",
     );
+  });
+
+  it("strips SSH userinfo so different deploy users share one canonical remote", () => {
+    const variants = [
+      "git@github.com:Acme/Demo.git",
+      "deploy@github.com:Acme/Demo.git",
+      "ssh://git@github.com/Acme/Demo.git",
+      "ssh://deploy@github.com/Acme/Demo.git",
+    ];
+    const canonical = variants.map((remote) => normalizeGitRemote(remote).canonical_remote);
+    for (const value of canonical) {
+      // The canonical remote never carries userinfo (plan Global Constraint 23).
+      expect(value).toBe("ssh://github.com/Acme/Demo");
+      expect(value).not.toContain("@");
+    }
   });
 
   it("rejects HTTPS remotes carrying credentials", () => {
@@ -106,7 +121,7 @@ describe("normalizeGitRemote", () => {
       provider: "gitlab",
       host: "gitlab.com",
       repository_path: "Acme/Team/Demo",
-      canonical_remote: "ssh://git@gitlab.com/Acme/Team/Demo",
+      canonical_remote: "ssh://gitlab.com/Acme/Team/Demo",
     });
   });
 
@@ -124,7 +139,7 @@ describe("normalizeGitRemote", () => {
       provider: "github",
       host: "github.com",
       repository_path: "Acme/Demo",
-      canonical_remote: "ssh://git@github.com/Acme/Demo",
+      canonical_remote: "ssh://github.com/Acme/Demo",
     });
     expect(normalizeGitRemote("https://GITLAB.com/acme/demo.git").host).toBe("gitlab.com");
   });
@@ -145,7 +160,7 @@ describe("normalizeGitRemote", () => {
       provider: "gitlab",
       host: "gitlab.acme.internal",
       repository_path: "team/demo",
-      canonical_remote: "ssh://git@gitlab.acme.internal/team/demo",
+      canonical_remote: "ssh://gitlab.acme.internal/team/demo",
     });
   });
 
@@ -173,7 +188,7 @@ describe("registry discover", () => {
       expect(result.identity.provider).toBe("github");
       expect(result.identity.host).toBe("github.com");
       expect(result.identity.repository_id).toBe("Acme/Demo");
-      expect(result.identity.canonical_remote).toBe("ssh://git@github.com/Acme/Demo");
+      expect(result.identity.canonical_remote).toBe("ssh://github.com/Acme/Demo");
       expect(result.identity.canonical_remote_digest).toMatch(/^[0-9a-f]{64}$/);
     }
   });
@@ -199,6 +214,18 @@ describe("registry discover", () => {
     expect(driftedTransport.identity.canonical_remote_digest).not.toBe(
       original.identity.canonical_remote_digest,
     );
+  });
+
+  it("gives SSH user variants the same identity and digest", async () => {
+    const registry = discoverRegistry();
+    const scp = await registry.discover("git@github.com:Acme/Demo.git");
+    const otherUser = await registry.discover("ssh://deploy@github.com/Acme/Demo.git");
+    if (scp.status !== "resolved" || otherUser.status !== "resolved") {
+      throw new Error("expected both discoveries to resolve");
+    }
+    // Userinfo never enters the authoritative identity (plan Global Constraint 23).
+    expect(otherUser.identity.canonical_remote).toBe("ssh://github.com/Acme/Demo");
+    expect(otherUser.identity.canonical_remote_digest).toBe(scp.identity.canonical_remote_digest);
   });
 
   it("fails closed on unsupported hosts and credential-bearing remotes", async () => {

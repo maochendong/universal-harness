@@ -5,7 +5,10 @@ import type { CollaborationProvider } from "@universal-harness-internal/core";
  * collaboration flow in canonical, credential-free form: the SCP-style SSH
  * shorthand becomes an explicit `ssh://` URL, hosts are lowercased for
  * provider selection, and any userinfo on an HTTP(S) remote, query, fragment
- * or ambiguous repository path fails closed. No I/O lives here.
+ * or ambiguous repository path fails closed. SSH userinfo (`git@` or a deploy
+ * user) is accepted but never enters the canonical remote or its digest — the
+ * authoritative CollaborationConnectionRecord must stay userinfo-free (plan
+ * Global Constraint 23). No I/O lives here.
  */
 
 export const REMOTE_DISCOVERY_ERROR_CODES = [
@@ -76,8 +79,8 @@ function providerForHost(
  * Normalize an SSH (SCP-like or `ssh://`) or HTTPS Git Remote. The returned
  * `repository_path` keeps the platform's casing while `host` is canonical
  * lowercase; `canonical_remote` is rebuilt from the normalized parts (no
- * `.git` suffix, no trailing slash), so equivalent spellings of one Remote
- * share the same canonical form and digest.
+ * userinfo, no `.git` suffix, no trailing slash), so equivalent spellings of
+ * one Remote share the same canonical form and digest.
  */
 export function normalizeGitRemote(
   remote: string,
@@ -99,7 +102,7 @@ export function normalizeGitRemote(
       provider,
       host,
       repository_path: repositoryPath,
-      canonical_remote: `ssh://${user}@${host}/${repositoryPath}`,
+      canonical_remote: `ssh://${host}/${repositoryPath}`,
     };
   }
 
@@ -127,12 +130,11 @@ export function normalizeGitRemote(
   const host = url.hostname.toLowerCase();
   const provider = providerForHost(host, hosts);
   const repositoryPath = normalizeRepositoryPath(url.pathname);
-  const userinfo = url.protocol === "ssh:" && url.username !== "" ? `${url.username}@` : "";
   const port = url.port === "" ? "" : `:${url.port}`;
   return {
     provider,
     host,
     repository_path: repositoryPath,
-    canonical_remote: `${url.protocol}//${userinfo}${host}${port}/${repositoryPath}`,
+    canonical_remote: `${url.protocol}//${host}${port}/${repositoryPath}`,
   };
 }

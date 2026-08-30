@@ -1,3 +1,6 @@
+import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { join } from "node:path";
+
 import {
   buildCollaborationRecord,
   buildManifest,
@@ -8,18 +11,30 @@ import {
   harnessRootFor,
   mergeCommittedOperations,
   replayLedger,
+  resolveHarnessPath,
   sha256Hex,
   shardMonthFor,
   validateSchema,
   type CollaborationConnectionRecord,
+  type CommittedOperation,
   type ControlRecord,
+  type EdgeRecord,
   type IntegrationRecord,
   type LeaseRecord,
   type LedgerOperation,
+  type NodeRecord,
   type PrincipalSnapshotRecord,
   type ReplayResult,
 } from "@universal-harness-internal/core";
-import { materializeLedger } from "@universal-harness-internal/graph";
+import {
+  ImpactError,
+  RISK_LEVELS,
+  assertApprovedImpactSet,
+  generateImpactSet,
+  materializeLedger,
+  readImpactSetContent,
+  type ImpactSetContent,
+} from "@universal-harness-internal/graph";
 
 import { bindingDrift } from "../approval/invalidation.js";
 import type { ApprovalRequestRecord } from "../approval/request.js";
@@ -29,6 +44,7 @@ import {
   type GateEvidenceRecord,
 } from "../gates/evidence.js";
 import { evidenceStalenessReasons } from "../gates/freshness.js";
+import { readExecutionPlanContent } from "../planning/execution-plan.js";
 import { hashWorktreeCode } from "../snapshot/anchor.js";
 import { snapshotIdFor } from "./connection.js";
 import { collaborationFailure, type CollaborationFailure } from "./errors.js";
@@ -79,25 +95,45 @@ import type {
  * Target CAS accepts the candidate, which is what makes it an accepted fact
  * rather than a claim (design §20).
  *
- * Validation scope (honest gaps in design §14.1 step 7): the Coordinator
- * recomputes the policy digest binding and the candidate code digest
- * (`hashWorktreeCode` over the candidate worktree) for Gate evidence
- * freshness. It cannot recompute:
+ * Validation scope (design §14.1 step 7): every dimension of the authority
+ * chain that is addressable from the candidate tree is recomputed on it —
+ * never replayed verbatim:
  *
- * - Impact: the impact machinery needs the planning phase's seeds and frozen
- *   impact-set approval context; no standalone impact check runs on a
- *   materialized graph, so the candidate is only required to materialize
- *   cleanly (Graph reconcile above);
- * - the evidence artifact / context-bundle / gate / evaluation-case bindings:
- *   the bindings store digests only, never paths, so the current set cannot
- *   be rebuilt from the tree;
- * - the approval object / baseline / impact-path bindings: those digests are
- *   minted from replica planning state (e.g. the proposed content digest, the
- *   captured baseline), not from anything addressable in the candidate tree.
+ * - Impact: a frozen ImpactSet embeds its planning seeds and entries, so the
+ *   Coordinator re-runs `generateImpactSet` for the set the branch's current
+ *   ExecutionPlan pins over the reconstructed baseline graph (all Target-side
+ *   operations plus the incoming operations up to the freeze). Clean Target
+ *   drift that widens the blast radius of the approved seeds — new reachable
+ *   nodes, stronger classifications, higher risk — flips the recomputation
+ *   and rejects the candidate with `baseline_drift`. Advisory-merged entries
+ *   (`seed_id === "advisory"`) are not re-derivable by construction, so the
+ *   comparison is entry-wise: deterministic entries must reproduce exactly,
+ *   advisory entries are trusted as approved, and any recomputed entry absent
+ *   from the frozen set is drift.
+ * - Evidence freshness: the code digest (`hashWorktreeCode` over the
+ *   candidate worktree) and the policy digest (the connection's) are
+ *   recomputed directly. Every other bound digest (artifact set, context
+ *   bundle, evaluation cases) is a content digest of a Ledger artifact, so it
+ *   is re-resolved against the candidate's materialized artifact store: a
+ *   bound digest no vouched candidate artifact carries makes the evidence
+ *   stale (`integration_gate_failed`). The gate definition digest is the one
+ *   dimension with no tree addressing: gate definitions are Coordinator
+ *   configuration (`createDefaultGateSuite` / `deps.gates`,
+ *   kernel-coordinator.ts), never Ledger records, so nothing in the tree can
+ *   reproduce the digest; the replica's own Snapshot completion rules
+ *   re-check it (`completionBlockers` with `currentFor`) once the accepted
+ *   Target syncs back.
+ * - Approval bindings: policy is recomputed from the connection; an
+ *   ImpactSet object binding is re-verified against the candidate graph with
+ *   the planning guard itself (`assertApprovedImpactSet`); any other object
+ *   or baseline digest must resolve to a Ledger-vouched candidate artifact.
+ *   `impact_path` stays bound-as-minted: the only request-minting call site
+ *   (orchestration/approval-runtime.ts) always binds `[]`, and the local
+ *   ApprovalService itself has no recomputation oracle for it
+ *   (`currentBinding` echoes the request when no `readBinding` is injected),
+ *   so there is nothing to recompute against.
  *
- * These dimensions bind domain state that the replica's existing Snapshot
- * rules re-check after the accepted Target syncs back; here they are replayed
- * verbatim so the checks still fail closed when the branch itself drifted.
+ * Anything the candidate cannot disprove fails closed with a typed §16 error.
  */
 
 export interface IntegrationDeps {
@@ -192,6 +228,8 @@ function parseArtifact(content: string): Record<string, unknown> | undefined {
 
 interface ApprovalRequestShape {
   readonly request_id: string;
+  readonly object_id: string;
+  readonly object_type: string;
   readonly object_digest: string;
   readonly baseline_digest: string;
   readonly policy_digest: string;
@@ -202,6 +240,8 @@ function approvalRequestShapeOf(parsed: Record<string, unknown>): ApprovalReques
   const candidate = parsed as Partial<ApprovalRequestShape>;
   if (
     typeof candidate.request_id !== "string" ||
+    typeof candidate.object_id !== "string" ||
+    typeof candidate.object_type !== "string" ||
     typeof candidate.object_digest !== "string" ||
     typeof candidate.baseline_digest !== "string" ||
     typeof candidate.policy_digest !== "string" ||
@@ -236,6 +276,302 @@ function collectProofDigests(artifacts: readonly CandidateArtifact[]): {
     evidence_digests: [...evidence].sort(),
     approval_decision_digests: [...approvals].sort(),
   };
+}
+
+// --- Candidate materialized state (design §14.1 step 7 revalidation) -------
+
+const HEX_DIGEST = /^[a-f0-9]{64}$/u;
+
+/**
+ * The candidate's Ledger-vouched artifact store, indexed for binding
+ * revalidation: which committed operation vouches each artifact, the content
+ * digests those artifacts provably carry, and the parsed graph nodes.
+ */
+interface CandidateLedgerState {
+  /** Candidate operations in replay order (Target history + incoming + final). */
+  readonly operations: readonly CommittedOperation[];
+  /** Candidate operations the accepted Target history does not contain. */
+  readonly incoming: readonly CommittedOperation[];
+  /**
+   * Every digest a vouched candidate artifact provably commits to: the file's
+   * own sha256, its top-level `digest`/`content_digest`/`record_digest`, and
+   * (for node records) the `content_digest` of each extension payload.
+   */
+  readonly digestUniverse: ReadonlySet<string>;
+  /** Parsed vouched node artifacts, keyed by artifact file sha256. */
+  readonly nodesByDigest: ReadonlyMap<string, NodeRecord>;
+  /** Artifact file sha256 -> ids of the candidate operations vouching it. */
+  readonly vouchers: ReadonlyMap<string, readonly string[]>;
+}
+
+function listArtifactPaths(artifactsRoot: string): string[] {
+  if (!existsSync(artifactsRoot)) return [];
+  const results: string[] = [];
+  const walk = (directory: string): void => {
+    for (const entry of readdirSync(directory, { withFileTypes: true })) {
+      const absolute = join(directory, entry.name);
+      if (entry.isDirectory()) walk(absolute);
+      else if (entry.isFile()) results.push(absolute);
+    }
+  };
+  walk(artifactsRoot);
+  return results.sort();
+}
+
+function candidateLedgerState(
+  candidateRoot: string,
+  replay: ReplayResult,
+  targetOperations: readonly LedgerOperation[],
+): CandidateLedgerState {
+  const targetIds = new Set(targetOperations.map((manifest) => manifest.ledger_operation_id));
+  const incoming = replay.operations.filter(
+    (operation) => !targetIds.has(operation.manifest.ledger_operation_id),
+  );
+  const vouchers = new Map<string, string[]>();
+  for (const operation of replay.operations) {
+    for (const digest of operation.manifest.artifact_digests) {
+      const list = vouchers.get(digest) ?? [];
+      list.push(operation.manifest.ledger_operation_id);
+      vouchers.set(digest, list);
+    }
+  }
+  const digestUniverse = new Set<string>();
+  const nodesByDigest = new Map<string, NodeRecord>();
+  const artifactsRoot = resolveHarnessPath(harnessRootFor(candidateRoot), "artifacts");
+  for (const absolute of listArtifactPaths(artifactsRoot)) {
+    const content = readFileSync(absolute, "utf8");
+    const digest = sha256Hex(content);
+    // Orphan bytes no committed manifest vouches for are not authoritative.
+    if (!vouchers.has(digest)) continue;
+    digestUniverse.add(digest);
+    const parsed = parseArtifact(content);
+    if (parsed === undefined) continue;
+    for (const key of ["digest", "content_digest", "record_digest"] as const) {
+      const value = parsed[key];
+      if (typeof value === "string" && HEX_DIGEST.test(value)) digestUniverse.add(value);
+    }
+    if (parsed.record_kind !== "node") continue;
+    // Graph reconcile above already schema-validated every vouched node.
+    const node = parsed as unknown as NodeRecord;
+    nodesByDigest.set(digest, node);
+    for (const extension of Object.values(node.extensions ?? {})) {
+      if (typeof extension !== "object" || extension === null) continue;
+      const extensionDigest = (extension as { content_digest?: unknown }).content_digest;
+      if (typeof extensionDigest === "string" && HEX_DIGEST.test(extensionDigest)) {
+        digestUniverse.add(extensionDigest);
+      }
+    }
+  }
+  return { operations: replay.operations, incoming, digestUniverse, nodesByDigest, vouchers };
+}
+
+/**
+ * Edge records of one candidate operation's shard. `replayLedger` already
+ * verified the shard bytes against the manifest digest, so this only parses.
+ */
+function operationEdges(harnessRoot: string, operation: CommittedOperation): EdgeRecord[] {
+  const content = readFileSync(
+    resolveHarnessPath(harnessRoot, operation.manifest.edge_file),
+    "utf8",
+  );
+  return content
+    .split("\n")
+    .filter((line) => line !== "")
+    .map((line) => JSON.parse(line) as EdgeRecord);
+}
+
+interface FrozenImpactSet {
+  readonly node: NodeRecord;
+  readonly content: ImpactSetContent;
+  /** Candidate sequence of the latest incoming operation vouching the frozen revision. */
+  readonly frozenAtSequence: number;
+}
+
+/**
+ * Entry-wise drift between a frozen ImpactSet and its recomputation on the
+ * candidate baseline. Advisory-merged entries (`seed_id === "advisory"`) are
+ * approved facts the deterministic engine cannot re-derive, so they are
+ * trusted; every deterministic entry must reproduce, and any recomputed entry
+ * the frozen set does not cover — or covers at a weaker classification or
+ * lower risk — is drift the approval never saw.
+ */
+function impactEntryDrift(
+  frozen: ImpactSetContent,
+  recomputed: ImpactSetContent,
+): readonly string[] {
+  const frozenByNode = new Map(frozen.entries.map((entry) => [entry.node_id, entry] as const));
+  const recomputedNodes = new Set(recomputed.entries.map((entry) => entry.node_id));
+  const drift: string[] = [];
+  for (const entry of recomputed.entries) {
+    const approved = frozenByNode.get(entry.node_id);
+    if (approved === undefined) {
+      drift.push(
+        `node ${entry.node_id} is reachable from the approved seeds but the frozen set does not cover it`,
+      );
+      continue;
+    }
+    if (approved.classification !== entry.classification) {
+      drift.push(
+        `node ${entry.node_id} reclassifies ${approved.classification} -> ${entry.classification}`,
+      );
+      continue;
+    }
+    if (RISK_LEVELS.indexOf(entry.risk) > RISK_LEVELS.indexOf(approved.risk)) {
+      drift.push(`node ${entry.node_id} risk rises ${approved.risk} -> ${entry.risk}`);
+    }
+  }
+  for (const entry of frozen.entries) {
+    if (entry.seed_id === "advisory") continue;
+    if (!recomputedNodes.has(entry.node_id)) {
+      drift.push(
+        `approved entry ${entry.node_id} is no longer reproducible on the candidate baseline`,
+      );
+    }
+  }
+  return drift;
+}
+
+/**
+ * Impact revalidation (design §14.1 step 7): re-run the approved seeds of the
+ * ImpactSet the branch's current ExecutionPlan pins over the reconstructed
+ * baseline graph — every Target-side operation plus the incoming operations
+ * up to the freeze. The merge is append-only on the Target side, so the
+ * recomputation differs from the frozen entries exactly when clean Target
+ * drift widened the blast radius the approval covered.
+ */
+function validateCandidateImpact(
+  harnessRoot: string,
+  state: CandidateLedgerState,
+): CollaborationFailure | undefined {
+  const incomingIds = new Set(
+    state.incoming.map((operation) => operation.manifest.ledger_operation_id),
+  );
+  const sequenceOf = new Map(
+    state.operations.map(
+      (operation) => [operation.manifest.ledger_operation_id, operation.manifest.sequence] as const,
+    ),
+  );
+
+  // Frozen (approved) ImpactSets carried by the incoming branch, grouped by
+  // iteration; Target-side sets were revalidated by their own integrations.
+  const byIteration = new Map<string, FrozenImpactSet[]>();
+  for (const [digest, node] of state.nodesByDigest) {
+    if (node.type !== "ImpactSet" || node.status !== "accepted") continue;
+    let content: ImpactSetContent;
+    try {
+      content = readImpactSetContent(node);
+    } catch (error) {
+      return collaborationFailure(
+        "baseline_drift",
+        `impact set ${node.id} carried by the candidate is unreadable: ${errorMessage(error)}`,
+      );
+    }
+    if (content.approval_digest === undefined) continue; // proposed, never frozen
+    const vouching = (state.vouchers.get(digest) ?? []).filter((id) => incomingIds.has(id));
+    if (vouching.length === 0) continue; // accepted Target history
+    const frozenAtSequence = Math.max(...vouching.map((id) => sequenceOf.get(id) as number));
+    const group = byIteration.get(node.provenance.iteration_id) ?? [];
+    group.push({ node, content, frozenAtSequence });
+    byIteration.set(node.provenance.iteration_id, group);
+  }
+
+  for (const [iterationId, sets] of byIteration) {
+    // The set the branch's current plan pins is authoritative; superseded
+    // sets are history and must not fail the candidate. The selection mirrors
+    // loadPlan: highest revision first.
+    const plans = [...state.nodesByDigest.values()]
+      .filter(
+        (node) => node.type === "ExecutionPlan" && node.provenance.iteration_id === iterationId,
+      )
+      .sort((left, right) => right.revision - left.revision);
+    let selected: FrozenImpactSet;
+    if (plans.length > 0) {
+      let pinnedId: string;
+      let pinnedDigest: string;
+      try {
+        const planContent = readExecutionPlanContent(plans[0] as NodeRecord);
+        pinnedId = planContent.impact_set_id;
+        pinnedDigest = planContent.impact_set_digest;
+      } catch (error) {
+        return collaborationFailure(
+          "baseline_drift",
+          `the candidate's current execution plan for iteration ${iterationId} is unreadable: ${errorMessage(error)}`,
+        );
+      }
+      const pinned = sets.find((entry) => entry.node.id === pinnedId);
+      if (pinned === undefined) {
+        return collaborationFailure(
+          "baseline_drift",
+          `the current plan of iteration ${iterationId} pins impact set ${pinnedId}, which the candidate does not carry as a frozen, approved set`,
+        );
+      }
+      if (pinned.content.content_digest !== pinnedDigest) {
+        return collaborationFailure(
+          "baseline_drift",
+          `the current plan of iteration ${iterationId} pins impact digest ${pinnedDigest} but the frozen set digests to ${pinned.content.content_digest}`,
+        );
+      }
+      selected = pinned;
+    } else {
+      selected = sets.reduce((latest, entry) =>
+        entry.frozenAtSequence > latest.frozenAtSequence ? entry : latest,
+      );
+    }
+
+    const graphOperationIds = new Set(
+      state.operations
+        .filter(
+          (operation) =>
+            !incomingIds.has(operation.manifest.ledger_operation_id) ||
+            operation.manifest.sequence <= selected.frozenAtSequence,
+        )
+        .map((operation) => operation.manifest.ledger_operation_id),
+    );
+    const nodesById = new Map<string, NodeRecord>();
+    for (const [digest, node] of state.nodesByDigest) {
+      if (!(state.vouchers.get(digest) ?? []).some((id) => graphOperationIds.has(id))) continue;
+      const current = nodesById.get(node.id);
+      if (current === undefined || node.revision > current.revision) nodesById.set(node.id, node);
+    }
+    const edgesById = new Map<string, EdgeRecord>();
+    for (const operation of state.operations) {
+      if (!graphOperationIds.has(operation.manifest.ledger_operation_id)) continue;
+      for (const edge of operationEdges(harnessRoot, operation)) {
+        edgesById.set(edge.id, edge);
+      }
+    }
+    let recomputed: ImpactSetContent;
+    try {
+      recomputed = readImpactSetContent(
+        generateImpactSet(
+          selected.content.seeds,
+          [...nodesById.values()],
+          [...edgesById.values()],
+          {
+            iterationId,
+            actor: "integration-recheck",
+            timestamp: selected.node.provenance.timestamp,
+          },
+        ),
+      );
+    } catch (error) {
+      if (error instanceof ImpactError) {
+        return collaborationFailure(
+          "baseline_drift",
+          `the approved impact seeds of ${selected.node.id} no longer resolve on the merged target baseline: ${error.message}`,
+        );
+      }
+      throw error;
+    }
+    const drift = impactEntryDrift(selected.content, recomputed);
+    if (drift.length > 0) {
+      return collaborationFailure(
+        "baseline_drift",
+        `frozen impact set ${selected.node.id} no longer covers the merged target baseline: ${drift.join("; ")}`,
+      );
+    }
+  }
+  return undefined;
 }
 
 /**
@@ -446,10 +782,23 @@ export function validateCandidateTree(input: {
     );
   }
 
+  // The candidate's vouched artifact store and graph, indexed once for the
+  // Impact, Evidence and Approval revalidation below.
+  const state = candidateLedgerState(input.candidate_root, replay, input.target_operations);
+
+  // Impact: re-run the approved seeds of the plan-pinned frozen ImpactSet
+  // over the reconstructed baseline graph (design §14.1 step 7).
+  const impactFailure = validateCandidateImpact(harnessRoot, state);
+  if (impactFailure !== undefined) return impactFailure;
+
   // Mandatory Gate evidence carried by the incoming branch. The code binding
   // is recomputable here: the candidate root is a Git worktree, so its code
   // digest is recomputed exactly the way the replica binds it (any code the
   // merge added beyond what the evidence covered makes the binding stale).
+  // Every other bound digest is a Ledger artifact content digest and is
+  // re-resolved against the candidate's vouched artifact store; the gate
+  // definition digest is the only dimension with no tree addressing (see the
+  // module header).
   let candidateCode: string[] | undefined;
   const currentCodeDigests = (): string[] => {
     candidateCode ??= [hashWorktreeCode(input.candidate_root)];
@@ -474,9 +823,25 @@ export function validateCandidateTree(input: {
         `${gate} is provisional and can never satisfy integration`,
       );
     }
-    // The policy and code bindings are recomputable by the Coordinator (see
-    // the module header); every other bound digest is replayed verbatim so
-    // the check still fails closed on those bindings drifting on the branch.
+    // Recompute the artifact bindings against the candidate's vouched store:
+    // a bound digest no committed candidate operation carries can never be
+    // resurrected by the merge, so the evidence is stale on the candidate.
+    const unresolvable = [
+      ...extension.bindings.artifact_digests.filter((digest) => !state.digestUniverse.has(digest)),
+      ...extension.bindings.evaluation_case_digests.filter(
+        (digest) => !state.digestUniverse.has(digest),
+      ),
+      ...(extension.bindings.context_bundle_digest !== undefined &&
+      !state.digestUniverse.has(extension.bindings.context_bundle_digest)
+        ? [extension.bindings.context_bundle_digest]
+        : []),
+    ];
+    if (unresolvable.length > 0) {
+      return collaborationFailure(
+        "integration_gate_failed",
+        `${gate} binds digests no vouched candidate artifact carries: ${unresolvable.join(", ")}`,
+      );
+    }
     let staleness: readonly string[];
     try {
       staleness = evidenceStalenessReasons(record, {
@@ -515,7 +880,9 @@ export function validateCandidateTree(input: {
         "an incoming approval request artifact is malformed; re-issue it before integrating",
       );
     }
-    // As with evidence, only the policy binding is recomputable here.
+    // The policy digest recomputes from the connection; object, baseline and
+    // impact path are re-resolved against the candidate's materialized state
+    // below (the module header documents the impact_path scope).
     const drift = bindingDrift(request as unknown as ApprovalRequestRecord, {
       objectDigest: request.object_digest,
       baselineDigest: request.baseline_digest,
@@ -526,6 +893,36 @@ export function validateCandidateTree(input: {
       return collaborationFailure(
         "approval_binding_mismatch",
         `approval request ${request.request_id} bindings drifted: ${drift.join(", ")}`,
+      );
+    }
+    if (request.object_type === "ImpactSet") {
+      // Re-verify the binding with the planning guard itself: the bound
+      // revision must be the candidate's latest for its id, still frozen and
+      // still digesting to exactly what was approved.
+      const bound = [...state.nodesByDigest.values()]
+        .filter((node) => node.id === request.object_id && node.type === "ImpactSet")
+        .sort((left, right) => right.revision - left.revision)[0];
+      try {
+        if (bound === undefined) {
+          throw new ImpactError(`no ImpactSet node ${request.object_id} in the candidate graph`);
+        }
+        assertApprovedImpactSet(bound, request.object_digest);
+      } catch (error) {
+        return collaborationFailure(
+          "approval_binding_mismatch",
+          `approval request ${request.request_id} binds impact set ${request.object_id} at ${request.object_digest}, which does not verify on the candidate: ${errorMessage(error)}`,
+        );
+      }
+    } else if (!state.digestUniverse.has(request.object_digest)) {
+      return collaborationFailure(
+        "approval_binding_mismatch",
+        `approval request ${request.request_id} binds object_digest ${request.object_digest}, which no vouched candidate artifact carries; re-issue it against current bindings`,
+      );
+    }
+    if (!state.digestUniverse.has(request.baseline_digest)) {
+      return collaborationFailure(
+        "approval_binding_mismatch",
+        `approval request ${request.request_id} binds baseline_digest ${request.baseline_digest}, which no vouched candidate artifact carries; re-issue it against current bindings`,
       );
     }
   }

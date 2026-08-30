@@ -147,7 +147,7 @@ describe("semanticConnectionEqual", () => {
 });
 
 describe("hasLiveLease", () => {
-  const lease = (state: string, expiresAt: string) =>
+  const lease = (state: string, expiresAt: string, overrides: Record<string, unknown> = {}) =>
     ({
       protocol_version: "1.2.0",
       record_kind: "lease",
@@ -165,6 +165,7 @@ describe("hasLiveLease", () => {
       state,
       command_id: "command_lease_1",
       record_digest: digest("l"),
+      ...overrides,
     }) as const;
 
   it("detects a granted or renewed lease that has not expired", () => {
@@ -177,5 +178,61 @@ describe("hasLiveLease", () => {
     expect(hasLiveLease([lease("released", LATER)], NOW)).toBe(false);
     expect(hasLiveLease([lease("expired", LATER)], NOW)).toBe(false);
     expect(hasLiveLease([], NOW)).toBe(false);
+  });
+
+  it("reduces a granted → released chain to its released tip", () => {
+    const granted = lease("granted", LATER);
+    const released = lease("released", LATER, {
+      control_sequence: 3,
+      lease_record_id: "lease-record_02",
+      record_digest: digest("m"),
+    });
+    expect(hasLiveLease([granted, released], NOW)).toBe(false);
+    // Chain order on the Control Ref is append order; the tip wins regardless
+    // of the caller's array order.
+    expect(hasLiveLease([released, granted], NOW)).toBe(false);
+  });
+
+  it("reduces a granted → renewed chain to the renewed tip and its expiry", () => {
+    const granted = lease("granted", NOW);
+    const renewed = lease("renewed", LATER, {
+      control_sequence: 3,
+      lease_record_id: "lease-record_02",
+      record_digest: digest("m"),
+    });
+    expect(hasLiveLease([granted, renewed], NOW)).toBe(true);
+    const lapsed = lease("expired", NOW, {
+      control_sequence: 4,
+      lease_record_id: "lease-record_03",
+      record_digest: digest("n"),
+    });
+    expect(hasLiveLease([granted, renewed, lapsed], NOW)).toBe(false);
+  });
+
+  it("reduces a granted → revoked chain to its revoked tip", () => {
+    const granted = lease("granted", LATER);
+    const revoked = lease("revoked", LATER, {
+      control_sequence: 3,
+      lease_record_id: "lease-record_02",
+      record_digest: digest("m"),
+    });
+    expect(hasLiveLease([granted, revoked], NOW)).toBe(false);
+  });
+
+  it("judges each resource by its own tip", () => {
+    const releasedTip = lease("released", LATER, {
+      control_sequence: 3,
+      lease_record_id: "lease-record_02",
+      record_digest: digest("m"),
+    });
+    const otherResource = lease("granted", LATER, {
+      control_sequence: 4,
+      lease_record_id: "lease-record_03",
+      lease_id: "lease_02",
+      resource_id: "operation_02",
+      record_digest: digest("n"),
+    });
+    // operation_01 closed, operation_02 still live.
+    expect(hasLiveLease([lease("granted", LATER), releasedTip, otherResource], NOW)).toBe(true);
   });
 });

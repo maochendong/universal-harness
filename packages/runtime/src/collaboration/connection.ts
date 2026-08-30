@@ -89,12 +89,27 @@ function isLeaseRecord(record: ControlRecord): record is LeaseRecord {
   return record.record_kind === "lease";
 }
 
-/** A lease is live while granted/renewed and not yet past its expiry. */
+/**
+ * A lease is live while granted/renewed and not yet past its expiry. The
+ * history is first reduced per resource to its chain tip — the record with
+ * the highest control_sequence for that resource — because a closed tip
+ * (released/expired/revoked) retires the whole epoch even though the older
+ * granted record still sits on the chain.
+ */
 export function hasLiveLease(controlRecords: readonly ControlRecord[], now: string): boolean {
-  return controlRecords.some(
-    (record) =>
-      isLeaseRecord(record) &&
-      (record.state === "granted" || record.state === "renewed") &&
-      record.expires_at > now,
-  );
+  const tips = new Map<string, LeaseRecord>();
+  for (const record of controlRecords) {
+    if (!isLeaseRecord(record)) continue;
+    const key = `${record.resource_kind}:${record.resource_id}`;
+    const current = tips.get(key);
+    if (current === undefined || record.control_sequence > current.control_sequence) {
+      tips.set(key, record);
+    }
+  }
+  for (const tip of tips.values()) {
+    if ((tip.state === "granted" || tip.state === "renewed") && tip.expires_at > now) {
+      return true;
+    }
+  }
+  return false;
 }
