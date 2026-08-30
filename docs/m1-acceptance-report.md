@@ -2,7 +2,7 @@
 
 本文件由 `scripts/generate-acceptance-report.mjs` 从各测试套件的结构化输出生成；结果区禁止人工改写（实施计划 Task 28）。验收标准原文引用自已批准的设计文档第 17 节。
 
-- 生成基线 commit：`ee9d47a`
+- 生成基线 commit：`5d32d90`
 - 输入套件：main, security, fault, performance, e2e（`.reports/acceptance/*.json`）
 - 汇总：27/28 通过；failed 0，blocked 0，not_verified 1，not_run 0
 
@@ -30,28 +30,28 @@
 | AC-18 | 可复用失败可以产生 Evaluation、Knowledge 或 Engineering ImprovementCandidate；未经批准不得 Promotion。 | `pnpm test` | packages/eval/test/feedback/analysis.test.ts<br>packages/eval/test/feedback/finding.test.ts<br>packages/eval/test/feedback/golden.test.ts<br>packages/eval/test/feedback/improvement.test.ts<br>packages/eval/test/feedback/promotion.test.ts<br>packages/eval/test/feedback/rca.test.ts<br>packages/eval/test/feedback/router.test.ts | passed | cb41768 |
 | AC-19 | 当前 Repair Evidence 可以关闭 Finding；Stale Evidence 不可以。 | `pnpm test` | packages/eval/test/feedback/analysis.test.ts<br>packages/eval/test/feedback/finding.test.ts<br>packages/eval/test/feedback/golden.test.ts<br>packages/eval/test/feedback/improvement.test.ts<br>packages/eval/test/feedback/promotion.test.ts<br>packages/eval/test/feedback/rca.test.ts<br>packages/eval/test/feedback/router.test.ts<br>tests/integration/feedback-cascade.test.ts | passed | cb41768 |
 | AC-20 | Artifact、Code、Context Source、Gate、Evaluation 或 Policy 变化会按适用范围使绑定 Approval、ContextBundle 和 Evidence 失效；进行中的原子调用只产生 provisional Evidence，下一个 Step 或权威提交前重新编译并校验。 | `pnpm test && pnpm test:fault` | packages/runtime/test/approval/interaction.test.ts<br>packages/runtime/test/approval/invalidation.test.ts<br>packages/runtime/test/approval/request.test.ts<br>packages/runtime/test/approval/service.test.ts<br>tests/fault/approval-cascade-invalidation.test.ts<br>tests/fault/expired-approval.test.ts | passed | 7e6296e |
-| AC-21 | Completed Snapshot 包含 Final Commit、Plan、Adapter Control Profile、Outcome、Trajectory/Coverage Summary、Budget Use、Approval、Current Evidence、未解决非阻塞项和 Improvement Status；可恢复失败生成带 Resume Phase 的 `blocked`，只有显式取消或类型化不可恢复原因生成 `aborted`。 | `pnpm test` | packages/runtime/test/snapshot/anchor.test.ts<br>packages/runtime/test/snapshot/builder.test.ts<br>tests/e2e/delegated-agent-vertical-loop.test.ts<br>tests/e2e/documentation-examples.test.ts<br>tests/e2e/generic-adopt.test.ts<br>tests/e2e/generic-iterate.test.ts<br>tests/e2e/generic-new.test.ts<br>tests/e2e/generic-resume.test.ts<br>tests/e2e/graph-model-documentation.test.ts<br>tests/e2e/java-adopt.test.ts<br>tests/e2e/java-iterate.test.ts<br>tests/e2e/java-new.test.ts<br>tests/e2e/m2-vertical-loop.test.ts<br>tests/e2e/node-adopt.test.ts<br>tests/e2e/node-iterate.test.ts<br>tests/e2e/node-new.test.ts<br>tests/e2e/python-adopt.test.ts<br>tests/e2e/python-iterate.test.ts<br>tests/e2e/python-new.test.ts<br>tests/e2e/three-profile-real-loop.test.ts | passed | 8d352a1 |
+| AC-21 | Completed Snapshot 包含 Final Commit、Plan、Adapter Control Profile、Outcome、Trajectory/Coverage Summary、Budget Use、Approval、Current Evidence、未解决非阻塞项和 Improvement Status；可恢复失败生成带 Resume Phase 的 `blocked`，只有显式取消或类型化不可恢复原因生成 `aborted`。 | `pnpm test` | packages/runtime/test/snapshot/anchor.test.ts<br>packages/runtime/test/snapshot/builder.test.ts<br>tests/e2e/delegated-agent-vertical-loop.test.ts<br>tests/e2e/documentation-examples.test.ts<br>tests/e2e/generic-adopt.test.ts<br>tests/e2e/generic-iterate.test.ts<br>tests/e2e/generic-new.test.ts<br>tests/e2e/generic-resume.test.ts<br>tests/e2e/graph-model-documentation.test.ts<br>tests/e2e/java-adopt.test.ts<br>tests/e2e/java-iterate.test.ts<br>tests/e2e/java-new.test.ts<br>tests/e2e/m2-vertical-loop.test.ts<br>tests/e2e/m3-remote-collaboration.test.ts<br>tests/e2e/node-adopt.test.ts<br>tests/e2e/node-iterate.test.ts<br>tests/e2e/node-new.test.ts<br>tests/e2e/python-adopt.test.ts<br>tests/e2e/python-iterate.test.ts<br>tests/e2e/python-new.test.ts<br>tests/e2e/three-profile-real-loop.test.ts | passed | 8d352a1 |
 | AC-22 | SQLite 被删除或损坏后可从 Git Ledger 恢复。 | `pnpm test && pnpm test:fault` | packages/graph/test/materializer.test.ts<br>tests/fault/sqlite-corruption.test.ts | passed | b1b9dd6 |
 | AC-23 | Manual/Command AgentAdapter 通过 Contract、Control-profile、Behavioral Evaluation 和 E2E Test；控制或可见性不足时始终阻止无人值守选择。 | `pnpm test` | packages/conformance/test/agent-adapters.conformance.test.ts | passed | 3d3847a |
 | AC-24 | Generic、Node、Python 和 Java Pack 通过各自 Fixture。 | `pnpm test` | packages/conformance/test/packs.conformance.test.ts<br>packs/generic/test/generic-pack.test.ts<br>packs/java/test/java-pack.test.ts<br>packs/node/test/node-pack.test.ts<br>packs/python/test/python-pack.test.ts | passed | c12831a |
 | AC-25 | Linux、macOS 和 Windows CI 通过。 | `pnpm verify` | .github/workflows/ci.yml<br>.reports/ci-platform/ubuntu-latest.json<br>.reports/ci-platform/macos-latest.json<br>.reports/ci-platform/windows-latest.json | not_verified | 8369492 |
 | AC-26 | Pack/CLI Upgrade 保留 Project Override，失败 Migration 回滚。 | `pnpm test` | packages/runtime/test/packs/migration.test.ts<br>packages/runtime/test/packs/resolver.test.ts<br>packages/runtime/test/packs/upgrade.test.ts | passed | c12831a |
-| AC-27 | Graph 与 Context Performance 硬阈值通过，并生成 Ledger Commit 与 Projection Generation 的可复现基线。 | `pnpm test:performance` | tests/performance/context-compile.test.ts<br>tests/performance/dataset.test.ts<br>tests/performance/impact.test.ts<br>tests/performance/ledger-commit.test.ts<br>tests/performance/m2-dashboard.test.ts<br>tests/performance/m2-finding-semantic.test.ts<br>tests/performance/projection-generation.test.ts<br>tests/performance/sqlite-rebuild.test.ts | passed | ca21e48 |
+| AC-27 | Graph 与 Context Performance 硬阈值通过，并生成 Ledger Commit 与 Projection Generation 的可复现基线。 | `pnpm test:performance` | tests/performance/context-compile.test.ts<br>tests/performance/dataset.test.ts<br>tests/performance/impact.test.ts<br>tests/performance/ledger-commit.test.ts<br>tests/performance/m2-dashboard.test.ts<br>tests/performance/m2-finding-semantic.test.ts<br>tests/performance/m3-control-ref-rebuild.test.ts<br>tests/performance/projection-generation.test.ts<br>tests/performance/sqlite-rebuild.test.ts | passed | ca21e48 |
 | AC-28 | Repository Content、Package Metadata、Example、Fixture、Generated Provider Projection 和 Git History 保持独立，不包含原产品品牌、路径或业务领域示例；Provider Mirror 可复现、限定在受管路径且未经批准不覆盖用户配置。 | `pnpm verify` | scripts/check-standalone.mjs | passed | 279de98 |
 
 ## 性能基线（AC-27）
 
 | Metric | p50 (ms) | p95 (ms) | max (ms) | 规模 | 环境 |
 |---|---|---|---|---|---|
-| ledger_transaction_commit | 29.52 | 36.59 | 46.86 | {"operations":40,"artifacts_per_operation":1,"edges_per_operation":1,"events_per_operation":1} | darwin ci=false |
-| m2_dashboard./api/v1/graph/nodes?limit=100 | 5.17 | 7.84 | 7.84 | {"nodes":10000,"edges":30000,"events":20000,"findings":1000} | darwin ci=false |
-| m2_dashboard./api/v1/graph/edges?limit=100 | 3.18 | 4.27 | 4.27 | {"nodes":10000,"edges":30000,"events":20000,"findings":1000} | darwin ci=false |
-| m2_dashboard./api/v1/graph/neighborhood/requirement_r00000?depth=2&direction=both | 3.19 | 4.18 | 4.18 | {"nodes":10000,"edges":30000,"events":20000,"findings":1000} | darwin ci=false |
-| m2_finding_groups | 1.32 | 2.34 | 2.42 | {"findings":1000,"groups":20} | darwin ci=false |
-| m2_semantic_top_k | 66.21 | 72.3 | 72.3 | {"indexed_nodes":10000,"top_k":10} | darwin ci=false |
-| projection_generation.architecture_full | 7668.12 | 12093.7 | 12093.7 | {"full":{"nodes":20000,"edges":100000,"renders":3},"affected_slice":{"nodes":2050,"edges":3722,"renders":15}} | darwin ci=false |
-| projection_generation.architecture_affected_slice | 7.85 | 9.48 | 9.48 | {"full":{"nodes":20000,"edges":100000,"renders":3},"affected_slice":{"nodes":2050,"edges":3722,"renders":15}} | darwin ci=false |
-| projection_generation.prd_full | 9.07 | 9.07 | 9.07 | {"full":{"nodes":20000,"edges":100000,"renders":3},"affected_slice":{"nodes":2050,"edges":3722,"renders":15}} | darwin ci=false |
+| ledger_transaction_commit | 28.35 | 31.7 | 32.66 | {"operations":40,"artifacts_per_operation":1,"edges_per_operation":1,"events_per_operation":1} | darwin ci=false |
+| m2_dashboard./api/v1/graph/nodes?limit=100 | 4.78 | 7.43 | 7.43 | {"nodes":10000,"edges":30000,"events":20000,"findings":1000} | darwin ci=false |
+| m2_dashboard./api/v1/graph/edges?limit=100 | 3.23 | 4.34 | 4.34 | {"nodes":10000,"edges":30000,"events":20000,"findings":1000} | darwin ci=false |
+| m2_dashboard./api/v1/graph/neighborhood/requirement_r00000?depth=2&direction=both | 3.06 | 4.01 | 4.01 | {"nodes":10000,"edges":30000,"events":20000,"findings":1000} | darwin ci=false |
+| m2_finding_groups | 1.37 | 2.57 | 2.72 | {"findings":1000,"groups":20} | darwin ci=false |
+| m2_semantic_top_k | 66.55 | 72.05 | 72.05 | {"indexed_nodes":10000,"top_k":10} | darwin ci=false |
+| projection_generation.architecture_full | 8408.21 | 13236.56 | 13236.56 | {"full":{"nodes":20000,"edges":100000,"renders":3},"affected_slice":{"nodes":2050,"edges":3722,"renders":15}} | darwin ci=false |
+| projection_generation.architecture_affected_slice | 7.67 | 9.37 | 9.37 | {"full":{"nodes":20000,"edges":100000,"renders":3},"affected_slice":{"nodes":2050,"edges":3722,"renders":15}} | darwin ci=false |
+| projection_generation.prd_full | 9.63 | 9.63 | 9.63 | {"full":{"nodes":20000,"edges":100000,"renders":3},"affected_slice":{"nodes":2050,"edges":3722,"renders":15}} | darwin ci=false |
 
 ## 发布声明
 
