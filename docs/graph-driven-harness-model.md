@@ -439,7 +439,18 @@ ModelInvocationPlanned
 
 读取 Dashboard 时，服务可以把 Ledger 生命周期事实、SQLite 查询结果、受管模型用量/来源和 Live Spool 观察合并为一个视图。这个合并只发生在 Read API，不会把实时观察、模型摘要或缓存状态写回权威账本。Approval 卡片可优先展示 `approval_brief`，但必须同时保留 Harness 从 canonical object 确定性生成的对象、风险、范围和 digest。
 
-## 6. 代码权威来源
+## 6. 远程协作（可选模式）
+
+M3 为同一仓库的多个 Replica 提供可选的远程协作模式；未启用时不产生任何远程调用、记录或副作用，单机闭环语义完全不变。启用后，权威边界在原有 Ledger 之上增加两类 Git 事实：
+
+- **受保护的 Control Ref**：每个项目一条追加式 Control 链，承载 Principal Snapshot、Operation Lease（含 fencing token）、远程 Approval Decision 等 Control Record；平台必须可证明地限制只有 Coordinator 身份能推送该 Ref，无法证明时 connect 类型化失败且不写入任何记录。
+- **候选-only 重排**：两个 Replica 可以并行持有不同 Operation 的 Lease 并各自推进候选；Integration 只在候选分支内确定性重排 Ledger sequence 分叉，Target 始终以 CAS 提交，文本冲突、Gate 失败、权限撤销或 Target 漂移都会阻止错误 CAS。
+
+身份来自平台而非手工配置：从批准的 Git Remote 自动识别 GitHub / GitLab / Gitee，OAuth 主体派生稳定 Principal，Token 只存在于进程内会话，不进入任何持久化记录、投影或日志。Coordinator 侧的 SQLite 投影是可丢弃物化——删除后从 Control 链与连接记录确定性重建，旧 Lease 不复活。CLI 与 Dashboard 对连接状态、Approval 收件箱与 Integration Conflict 呈现同一投影的三个视图。
+
+该模式不引入跨仓库协作、多 Agent 并发自治、多 Coordinator 或任何新的 CapabilityPlan 激活路径；Agent 与模型语句依旧不能作为完成真相，所有远程事实都是 Git 或类型化记录事实。
+
+## 7. 代码权威来源
 
 - [Node Schema](../packages/core/src/schema/node.ts)：`NODE_TYPES`
 - [Edge Schema](../packages/core/src/schema/edge.ts)：`RELATION_TYPES`
@@ -454,5 +465,6 @@ ModelInvocationPlanned
 - [可证明 TDD 事件与 Evidence](superpowers/specs/2026-08-18-provable-tdd-protocol-design.md)
 - [模型建议 Adapter 与 Grounded Synthesis](superpowers/specs/2026-08-19-model-advisory-adapters-design.md)
 - [Protocol 1.1 统一 19-task 计划](superpowers/plans/2026-08-18-protocol-1.1-unified-implementation-plan.md)
+- [M3 远程协作设计](superpowers/specs/2026-08-29-universal-harness-m3-remote-collaboration-design.md)
 
 `RELATION_COMPATIBILITY` 决定某种 Edge 允许连接哪些 source / target Node 类型；`PROPAGATION_RULES` 决定 Impact Engine 是否以及怎样穿越其中 18 种关系。Capability registry 决定本次 Operation 是否物化 Impact、Design、Evaluation、Strict TDD、Audit 与对应模型 slot。合法端点不等于允许传播，模型建议也不等于 accepted Graph fact；关系注册表、CapabilityPlan、领域 Validator 与批准记录必须一起阅读。

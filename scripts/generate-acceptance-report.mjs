@@ -18,6 +18,7 @@
  * criterion text enters the report only as quoted design content.
  */
 import { execFileSync, spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { existsSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -227,10 +228,12 @@ if (baselines.length === 0 && merged.get("AC-27").status === "passed") {
 
 function lastCommitFor(evidencePath) {
   try {
-    return execFileSync("git", ["log", "-1", "--format=%h", "--", evidencePath], {
-      cwd: repositoryRoot,
-      encoding: "utf8",
-    }).trim();
+    return (
+      execFileSync("git", ["log", "-1", "--format=%h", "--", evidencePath], {
+        cwd: repositoryRoot,
+        encoding: "utf8",
+      }).trim() || "-"
+    );
   } catch {
     return "-";
   }
@@ -539,11 +542,260 @@ const m2Lines = [
 ];
 writeFileSync(m2ReportPath, m2Lines.join("\n"), "utf8");
 
-if (counts.passed !== CRITERION_COUNT || m2Passed !== m2Results.length) {
+// --- M3 acceptance matrix (plan M3 Task 9 step 5) -----------------------------
+
+const m3DesignPath = join(
+  repositoryRoot,
+  "docs",
+  "superpowers",
+  "specs",
+  "2026-08-29-universal-harness-m3-remote-collaboration-design.md",
+);
+const m3ReportPath = join(
+  repositoryRoot,
+  "docs",
+  "evidence",
+  "m3-remote-collaboration-completion.md",
+);
+
+function m3Statements() {
+  const design = readFileSync(m3DesignPath, "utf8");
+  const section = design.split("## 22. ")[1]?.split("## 23.")[0];
+  if (section === undefined) fail("M3 design section 22 not found");
+  return section
+    .split(/\r?\n/u)
+    .map((line) => line.split("|").map((cell) => cell.trim()))
+    .filter((cells) => cells.length >= 3 && /^M3-AC-\d+$/u.test(cells[1] ?? ""))
+    .map((cells) => ({ id: cells[1], statement: cells[2] }));
+}
+
+const M3_DOGFOOD_PROVIDERS = ["github", "gitlab", "gitee"];
+const m3DogfoodBundles = new Map();
+for (const provider of M3_DOGFOOD_PROVIDERS) {
+  const path = join(repositoryRoot, "docs", "evidence", `m3-dogfood-${provider}.json`);
+  if (existsSync(path)) {
+    m3DogfoodBundles.set(provider, JSON.parse(readFileSync(path, "utf8")));
+  }
+}
+const m3DogfoodPassed = M3_DOGFOOD_PROVIDERS.every((provider) => {
+  const bundle = m3DogfoodBundles.get(provider);
+  return bundle?.status === "passed" && bundle?.commit === currentCommit;
+});
+
+const m3Matrix = [
+  {
+    command: "pnpm test",
+    evidence: [
+      "packages/runtime/test/collaboration/remote-discovery.test.ts",
+      "packages/conformance/test/collaboration.conformance.test.ts",
+    ],
+  },
+  {
+    command: "pnpm test && pnpm test:security",
+    evidence: [
+      "packages/runtime/test/collaboration/oauth-session.test.ts",
+      "packages/runtime/test/collaboration/platform-adapters.test.ts",
+      "packages/runtime/test/collaboration/sqlite-projection.test.ts",
+      "tests/security/m3-collaboration-boundary.test.ts",
+      "tests/security/m3-dogfood-redaction.test.ts",
+    ],
+  },
+  {
+    command: "pnpm test && pnpm test:e2e",
+    evidence: [
+      "tests/e2e/m3-remote-collaboration.test.ts",
+      "packages/runtime/test/collaboration/lease.test.ts",
+      "packages/runtime/test/collaboration/coordinator-git.test.ts",
+    ],
+  },
+  {
+    command: "pnpm test && pnpm test:e2e",
+    evidence: [
+      "packages/runtime/test/collaboration/lease.test.ts",
+      "tests/e2e/m3-remote-collaboration.test.ts",
+    ],
+  },
+  {
+    command: "pnpm test && pnpm test:e2e",
+    evidence: [
+      "tests/e2e/m3-remote-collaboration.test.ts",
+      "packages/runtime/test/collaboration/coordinator-git.test.ts",
+    ],
+  },
+  {
+    command: "pnpm test && pnpm test:fault && pnpm test:security && pnpm test:e2e",
+    evidence: [
+      "packages/runtime/test/collaboration/remote-approval.test.ts",
+      "tests/fault/remote-approval-materialization.test.ts",
+      "tests/security/m3-collaboration-boundary.test.ts",
+      "tests/e2e/m3-remote-collaboration.test.ts",
+    ],
+  },
+  {
+    command: "pnpm test && pnpm test:e2e",
+    evidence: [
+      "tests/integration/m3-ledger-sequence-fork.test.ts",
+      "packages/runtime/test/collaboration/ledger-resequence.test.ts",
+      "packages/runtime/test/collaboration/integration.test.ts",
+      "tests/e2e/m3-remote-collaboration.test.ts",
+    ],
+  },
+  {
+    command: "pnpm test",
+    evidence: ["packages/runtime/test/collaboration/integration.test.ts"],
+  },
+  {
+    command: "pnpm test:fault",
+    evidence: ["tests/fault/integration-cas-recovery.test.ts"],
+  },
+  {
+    command: "pnpm test && pnpm test:performance",
+    evidence: [
+      "packages/runtime/test/collaboration/sqlite-projection.test.ts",
+      "tests/performance/m3-control-ref-rebuild.test.ts",
+      "packages/runtime/test/collaboration/coordinator-git.test.ts",
+    ],
+  },
+  {
+    command: "pnpm test",
+    evidence: [
+      "packages/core/test/protocol/protocol-1.2.test.ts",
+      "packages/core/test/protocol/registry.test.ts",
+      "packages/cli/test/collaboration-commands.test.ts",
+    ],
+  },
+  {
+    command: "pnpm test && pnpm test:e2e:dashboard",
+    evidence: [
+      "packages/cli/test/collaboration-commands.test.ts",
+      "tests/e2e/dashboard-m3-collaboration.test.ts",
+    ],
+    playwright: true,
+  },
+  {
+    command: "pnpm test && node scripts/dogfood-m3-platform.mjs --provider github|gitlab|gitee",
+    evidence: [
+      "packages/conformance/test/collaboration.conformance.test.ts",
+      "scripts/dogfood-m3-platform.mjs",
+      "scripts/dogfood-m3-redaction.mjs",
+      "docs/evidence/m3-dogfood-github.json",
+      "docs/evidence/m3-dogfood-gitlab.json",
+      "docs/evidence/m3-dogfood-gitee.json",
+    ],
+    dogfood: true,
+  },
+  {
+    command: "pnpm test:release",
+    evidence: ["scripts/generate-acceptance-report.mjs"],
+    releaseGate: true,
+  },
+];
+
+const m3DesignStatements = m3Statements();
+if (m3DesignStatements.length !== m3Matrix.length) {
   fail(
-    `reports written but release criteria are incomplete (M1 ${String(counts.passed)}/${String(CRITERION_COUNT)}, M2 ${String(m2Passed)}/${String(m2Results.length)})`,
+    `M3 design section 22 must list ${String(m3Matrix.length)} rows, found ${String(m3DesignStatements.length)}`,
+  );
+}
+
+/** Short sha256 of an evidence file's current bytes; "-" when absent. */
+function evidenceDigest(path) {
+  const absolute = join(repositoryRoot, path);
+  if (!existsSync(absolute)) return "-";
+  return createHash("sha256").update(readFileSync(absolute)).digest("hex").slice(0, 12);
+}
+
+/**
+ * The exit code the evidence command last produced for one M3 criterion;
+ * "-" when nothing ran. Suite-backed rows derive from the merged status
+ * (passed → 0, failed → 1); the dogfood row reads the real per-provider
+ * bundle outcomes (passed → 0, blocked → 2, failed → 1, worst wins) once
+ * all three bundles exist.
+ */
+function m3ExitCode(entry) {
+  if (
+    entry.dogfood === true &&
+    M3_DOGFOOD_PROVIDERS.every((provider) => m3DogfoodBundles.has(provider))
+  ) {
+    const codes = M3_DOGFOOD_PROVIDERS.map((provider) => {
+      const status = m3DogfoodBundles.get(provider).status;
+      return status === "passed" ? 0 : status === "blocked" ? 2 : 1;
+    });
+    return String(Math.max(...codes));
+  }
+  if (entry.status === "passed") return "0";
+  if (entry.status === "failed") return "1";
+  return "-";
+}
+
+const m3Results = m3Matrix.map((entry, index) => {
+  const missing = entry.evidence.filter((path) => {
+    if (path.startsWith("scripts/")) return false;
+    if (path.startsWith("docs/")) return !existsSync(join(repositoryRoot, path));
+    if (path.startsWith("tests/e2e/dashboard-")) return false;
+    return executedFiles.get(path) !== "pass";
+  });
+  const failed = entry.evidence.some((path) => executedFiles.get(path) === "fail");
+  const externalMissing =
+    (entry.playwright === true && !playwrightPassed) ||
+    (entry.dogfood === true && !m3DogfoodPassed) ||
+    (entry.releaseGate === true &&
+      (!allSuitesGreen || counts.passed !== CRITERION_COUNT || m2Passed !== m2Results.length));
+  return {
+    ...m3DesignStatements[index],
+    ...entry,
+    status: failed ? "failed" : missing.length > 0 || externalMissing ? "not_run" : "passed",
+  };
+});
+const m3Passed = m3Results.filter((entry) => entry.status === "passed").length;
+const m3Lines = [
+  "# M3 远程协作完成证据",
+  "",
+  "本文件由 `scripts/generate-acceptance-report.mjs` 从测试、Playwright、性能与真实平台 dogfood 的结构化输出生成；验收语句引用自 M3 设计第 22 节，结果区禁止人工改写。",
+  "",
+  `- 生成基线 commit：\`${currentCommit}\``,
+  `- 汇总：${String(m3Passed)}/${String(m3Results.length)} 通过`,
+  "",
+  "| AC | 必须证明的结果（设计第 22 节） | 命令 | Exit | Evidence（sha256 前 12 位） | 结果 | Commit |",
+  "|---|---|---|---|---|---|---|",
+  ...m3Results.map((entry) => {
+    const evidence = entry.evidence
+      .map((path) => `${path} (\`${evidenceDigest(path)}\`)`)
+      .join("<br>");
+    const commit = entry.evidence.length > 0 ? lastCommitFor(entry.evidence[0]) : "-";
+    return `| ${entry.id} | ${entry.statement} | \`${entry.command}\` | ${m3ExitCode(entry)} | ${evidence} | ${entry.status} | ${commit} |`;
+  }),
+  "",
+  "## 三平台真实 dogfood（M3-AC-13）",
+  "",
+  ...M3_DOGFOOD_PROVIDERS.map((provider) => {
+    const bundle = m3DogfoodBundles.get(provider);
+    if (bundle === undefined) {
+      return `- ${provider}：缺少 \`docs/evidence/m3-dogfood-${provider}.json\`。`;
+    }
+    const commitMatch =
+      bundle.commit === currentCommit
+        ? "与基线 commit 一致"
+        : `commit 漂移（${String(bundle.commit)}）`;
+    return `- ${provider}：${String(bundle.status)}（${commitMatch}）。`;
+  }),
+  "",
+  m3Passed === m3Results.length
+    ? "M3 验收矩阵全部具有当前运行证据，发布退出门禁通过。"
+    : "M3 尚有缺失或失败证据，发布退出门禁未通过。",
+  "",
+];
+writeFileSync(m3ReportPath, `${m3Lines.join("\n")}`, "utf8");
+
+if (
+  counts.passed !== CRITERION_COUNT ||
+  m2Passed !== m2Results.length ||
+  m3Passed !== m3Results.length
+) {
+  fail(
+    `reports written but release criteria are incomplete (M1 ${String(counts.passed)}/${String(CRITERION_COUNT)}, M2 ${String(m2Passed)}/${String(m2Results.length)}, M3 ${String(m3Passed)}/${String(m3Results.length)})`,
   );
 }
 console.log(
-  `Acceptance reports written: M1 28/28 and M2 ${String(m2Passed)}/${String(m2Results.length)}.`,
+  `Acceptance reports written: M1 28/28, M2 ${String(m2Passed)}/${String(m2Results.length)}, M3 ${String(m3Passed)}/${String(m3Results.length)}.`,
 );

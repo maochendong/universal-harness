@@ -184,6 +184,7 @@ flowchart TB
 - **主动审计**：快照相位自动重跑确定性图审计（可追溯性、freshness、图健康、设计/决策文档覆盖度、Task↔Requirement 挂接、合同条目覆盖、任务证据时效），缺口按内容派生 id 幂等落账为 Finding 并进入人审核级联；`harness status` 以 blockers / warnings 分级呈现；迭代自动增量重扫工作区文档入图。
 - **知识投影**：PRD 从 AcceptedPrdRecord 重建，Architecture/Specification 从 accepted DesignSet、Decision、Component、DesignArtifact 和关系边重建，Plan 显示 DesignSet/Assertion/Task 绑定，Snapshot 显示 TDD proof 与带来源的 iteration narrative；所有 Markdown 投影受管写入、漂移自动重生成，不反向成为权威源。
 - **发布工程**：Ubuntu / macOS / Windows 三平台 CI matrix 与同 commit 工件聚合；security / fault / property / performance 发布门禁；28 条验收标准自动追溯；自包含 npm 包（离线可安装）。缺少任一平台工件时 AC25 保持 `not_verified` 并阻止发布，不能用 workflow 文件存在或本地结果代替。
+- **远程协作（M3，可选模式）**：从批准的 Git Remote 自动识别 GitHub / GitLab / Gitee 主体身份，无人工平台绑定；受保护的 Control Ref 承载追加式 Control 链（Principal Snapshot、Operation Lease、fencing token、远程 Approval Decision），Token 不进入任何持久化记录或日志；两个 Replica 可并行推进不同 Operation，Integration 只在候选侧确定性重排 Ledger sequence，Target 以 CAS 提交；CLI 与 Dashboard 对连接、Approval 收件箱与 Conflict 呈现一致视图。未启用时零远程副作用。
 
 ## 文档
 
@@ -196,6 +197,7 @@ flowchart TB
 - [dsh headless 本机契约](docs/dsh-headless-contract.md)
 - [M1 验收报告](docs/m1-acceptance-report.md)
 - [M2 验收报告](docs/m2-acceptance-report.md)
+- [M3 远程协作完成证据](docs/evidence/m3-remote-collaboration-completion.md)
 - [全量评审修复完成证据](docs/evidence/full-review-remediation-completion.md)
 
 ## 设计文档
@@ -205,6 +207,8 @@ flowchart TB
 - [M2–M3 范围决策](docs/superpowers/specs/2026-08-15-m2-m3-scope-decisions.md)
 - [已完成的 M2 设计](docs/superpowers/specs/2026-08-16-universal-harness-m2-design.md)
 - [已完成的 M2 实施计划](docs/superpowers/plans/2026-08-16-universal-harness-m2-implementation-plan.md)
+- [M3 远程协作设计](docs/superpowers/specs/2026-08-29-universal-harness-m3-remote-collaboration-design.md)
+- [M3 远程协作实施计划](docs/superpowers/plans/2026-08-29-universal-harness-m3-remote-collaboration-implementation-plan.md)
 - [SpecKit 对照设计与任务卡](docs/speckit-comparative-design.md)
 - [dsh 执行后端对照设计与任务卡](docs/dsh-execution-backend.md)
 - [Slim Profiles 与 Capability Kernel](docs/superpowers/specs/2026-08-18-harness-slim-profiles-design.md)

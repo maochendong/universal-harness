@@ -962,6 +962,8 @@ git commit -m "feat(dashboard): show remote collaboration state"
 - Create: `tests/security/m3-collaboration-boundary.test.ts`
 - Create: `tests/performance/m3-control-ref-rebuild.test.ts`
 - Create: `scripts/dogfood-m3-platform.mjs`
+- Create: `scripts/dogfood-m3-redaction.mjs`
+- Create: `tests/security/m3-dogfood-redaction.test.ts`
 - Create: `docs/evidence/m3-remote-collaboration-completion.md`
 - Modify: `scripts/generate-acceptance-report.mjs`
 - Modify: `.github/workflows/ci.yml`
@@ -997,13 +999,20 @@ connect → two Operation Leases → parallel candidate work → fenced candidat
 
 Assert both operations remain reachable, Target Ledger replays contiguously, old fencing tokens fail, and no model or Agent statement is used as Evidence.
 
+**§21.3 scenario coverage map (review addendum):** this step intentionally narrows the e2e to the happy-path chain — parallel operations, deterministic re-sequencing with a replayable Target, fenced stale tokens, offline preparation, delayed Remote Approval materialization past snapshot validity, disconnect semantics and the SQLite rebuild. The remaining §21.3 scenarios are pinned at the unit/fault layer by design:
+
+- same-Operation Lease mutual exclusion and fencing-token expiry: `packages/runtime/test/collaboration/lease.test.ts` (the e2e adds the fenced-publish leg over real Git);
+- Target drift re-validation, and text conflict / Gate failure / permission revocation blocking the CAS: `packages/runtime/test/collaboration/integration.test.ts` and `tests/integration/m3-ledger-sequence-fork.test.ts`;
+- CAS succeeded but the response was lost (idempotent retry): `tests/fault/integration-cas-recovery.test.ts`;
+- Remote Approval invalidation boundaries: `packages/runtime/test/collaboration/remote-approval.test.ts` and `tests/fault/remote-approval-materialization.test.ts`.
+
 - [ ] **Step 3: Add security, fault and performance gates**
 
 Security covers OAuth state/PKCE, CSRF/Origin, credential-bearing Remote rejection, command injection, token/log scanning, self-approval and unprotected Control Ref. Fault coverage kills the Coordinator at every Git/SQLite/CAS boundary and proves idempotent recovery. Performance coverage rebuilds exactly 10,000 Control records and asserts complete output/digest equality, not machine-specific timing.
 
 - [ ] **Step 4: Add real-platform dogfood with explicit prerequisites**
 
-`scripts/dogfood-m3-platform.mjs --provider github|gitlab|gitee` consumes host environment credentials, creates or uses a disposable repository, verifies Control Ref protection, runs the AC flow and writes only a redacted Evidence bundle. If a platform/tier cannot prove exclusive Control Ref protection, record `blocked: control_ref_unprotected`; never mark that provider complete.
+`scripts/dogfood-m3-platform.mjs --provider github|gitlab|gitee` consumes host environment credentials, creates or uses a disposable repository, verifies Control Ref protection, runs the AC flow and writes only a redacted Evidence bundle. The flow runs two parallel operations so that B's integration demonstrates the deterministic Ledger re-sequence (§21.4 "clean Integration / Ledger sequence 重排", 2 → 4), not only a no-rewrite integration. Every bundle passes through `scripts/dogfood-m3-redaction.mjs` so a failing git child process cannot leak the PAT. If a platform/tier cannot prove exclusive Control Ref protection, record `blocked: control_ref_unprotected`; never mark that provider complete.
 
 - [ ] **Step 5: Bind M3 acceptance to the release report and CI**
 
