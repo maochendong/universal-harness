@@ -22,6 +22,9 @@ export default defineConfig({
     // Vitest's eight-worker default. Cap concurrency so the release gate stays
     // below the tests' intentional 5s/30s operation timeouts on developer Macs.
     maxWorkers: 4,
+    // Windows runners have a 2-3x slower filesystem; raise the default 5s
+    // per-test timeout there only, leaving POSIX behavior untouched.
+    testTimeout: process.platform === "win32" ? 20_000 : 5_000,
     passWithNoTests: false,
     // Plan Task 28: every run also emits the structured acceptance evidence
     // consumed by scripts/generate-acceptance-report.mjs.

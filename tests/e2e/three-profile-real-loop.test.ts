@@ -12,7 +12,11 @@ const KERNEL_NODES = [
   "snapshot",
 ] as const;
 
-describe("packaged CLI three-profile vertical loop", { timeout: 300_000 }, () => {
+// Windows runners have a 2-3x slower filesystem, so scale the explicit suite
+// timeout there just like the global default in vitest.workspace.ts.
+const SUITE_TIMEOUT = 300_000 * (process.platform === "win32" ? 4 : 1);
+
+describe("packaged CLI three-profile vertical loop", { timeout: SUITE_TIMEOUT }, () => {
   it("completes Lite, Standard and Governed with profile-appropriate evidence", async () => {
     const report = await runThreeProfileLoop({ providerMode: "fake" });
 

@@ -177,7 +177,9 @@ try {
     "utf8",
   );
   const install = spawnSync(
-    "npm",
+    // Windows exposes npm only as a .cmd shim, which spawnSync cannot resolve
+    // without a shell.
+    process.platform === "win32" ? "npm.cmd" : "npm",
     ["install", "--no-audit", "--no-fund", "--no-save", "--offline", tarball],
     { cwd: sandbox, env: harnessEnv, encoding: "utf8", timeout: 180_000 },
   );
@@ -398,5 +400,7 @@ try {
       "harness new and harness adopt completed their loops.",
   );
 } finally {
-  rmSync(sandbox, { recursive: true, force: true });
+  // A just-exited harness child can keep sandbox files locked briefly on
+  // Windows; retry instead of racing it.
+  rmSync(sandbox, { recursive: true, force: true, maxRetries: 10, retryDelay: 500 });
 }

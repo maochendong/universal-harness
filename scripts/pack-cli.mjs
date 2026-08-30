@@ -246,7 +246,10 @@ writeFileSync(
 
 const tarballName = `${cliManifest.name}-${cliManifest.version}.tgz`;
 rmSync(join(packRoot, tarballName), { force: true });
-execFileSync("npm", ["pack", "--pack-destination", packRoot], {
+// Windows exposes npm only as a .cmd shim, which execFileSync cannot resolve
+// without a shell.
+const NPM = process.platform === "win32" ? "npm.cmd" : "npm";
+execFileSync(NPM, ["pack", "--pack-destination", packRoot], {
   cwd: stagingRoot,
   stdio: "pipe",
 });

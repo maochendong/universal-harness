@@ -348,73 +348,80 @@ describe("commitAdoption", () => {
   });
 
   // Two full adoption commits exceed the default 5s timeout when the full
-  // suite runs in parallel, hence the explicit per-test timeout.
-  it("commits byte-identical baselines for identical repositories", async () => {
-    // Pin git timestamps so user and harness commit hashes — and the
-    // recorded baseline binding — are reproducible for identical inputs.
-    const savedAuthorDate = process.env.GIT_AUTHOR_DATE;
-    const savedCommitterDate = process.env.GIT_COMMITTER_DATE;
-    process.env.GIT_AUTHOR_DATE = "2026-08-12T00:00:00Z";
-    process.env.GIT_COMMITTER_DATE = "2026-08-12T00:00:00Z";
-    try {
-      const rootA = makeFixtureRepo();
-      const rootB = makeFixtureRepo();
-      expect(headOf(rootA)).toBe(headOf(rootB));
-      const preparedA = await prepareAdoption({ projectRoot: rootA, intent: "x" }, makeDeps());
-      const preparedB = await prepareAdoption({ projectRoot: rootB, intent: "x" }, makeDeps());
-      expect(preparedA.ok && preparedB.ok).toBe(true);
-      if (!preparedA.ok || !preparedB.ok) return;
-      expect(preparedA.value.previewDigest).toBe(preparedB.value.previewDigest);
+  // suite runs in parallel, hence the explicit per-test timeout. Windows
+  // runners have a 2-3x slower filesystem, so scale it there just like the
+  // global default in vitest.workspace.ts.
+  const COMMIT_TIMEOUT = 30000 * (process.platform === "win32" ? 4 : 1);
+  it(
+    "commits byte-identical baselines for identical repositories",
+    async () => {
+      // Pin git timestamps so user and harness commit hashes — and the
+      // recorded baseline binding — are reproducible for identical inputs.
+      const savedAuthorDate = process.env.GIT_AUTHOR_DATE;
+      const savedCommitterDate = process.env.GIT_COMMITTER_DATE;
+      process.env.GIT_AUTHOR_DATE = "2026-08-12T00:00:00Z";
+      process.env.GIT_COMMITTER_DATE = "2026-08-12T00:00:00Z";
+      try {
+        const rootA = makeFixtureRepo();
+        const rootB = makeFixtureRepo();
+        expect(headOf(rootA)).toBe(headOf(rootB));
+        const preparedA = await prepareAdoption({ projectRoot: rootA, intent: "x" }, makeDeps());
+        const preparedB = await prepareAdoption({ projectRoot: rootB, intent: "x" }, makeDeps());
+        expect(preparedA.ok && preparedB.ok).toBe(true);
+        if (!preparedA.ok || !preparedB.ok) return;
+        expect(preparedA.value.previewDigest).toBe(preparedB.value.previewDigest);
 
-      const committedA = await commitAdoption(
-        {
-          projectRoot: rootA,
-          stagingOperationId: preparedA.value.stagingOperationId,
-          approval: {
-            decision: "approve",
-            previewDigest: preparedA.value.previewDigest,
-            actor: "r",
+        const committedA = await commitAdoption(
+          {
+            projectRoot: rootA,
+            stagingOperationId: preparedA.value.stagingOperationId,
+            approval: {
+              decision: "approve",
+              previewDigest: preparedA.value.previewDigest,
+              actor: "r",
+            },
           },
-        },
-        makeDeps(),
-      );
-      const committedB = await commitAdoption(
-        {
-          projectRoot: rootB,
-          stagingOperationId: preparedB.value.stagingOperationId,
-          approval: {
-            decision: "approve",
-            previewDigest: preparedB.value.previewDigest,
-            actor: "r",
+          makeDeps(),
+        );
+        const committedB = await commitAdoption(
+          {
+            projectRoot: rootB,
+            stagingOperationId: preparedB.value.stagingOperationId,
+            approval: {
+              decision: "approve",
+              previewDigest: preparedB.value.previewDigest,
+              actor: "r",
+            },
           },
-        },
-        makeDeps(),
-      );
-      expect(committedA.ok && committedB.ok).toBe(true);
-      if (!committedA.ok || !committedB.ok) return;
-      expect(committedA.value.repositoryNodeId).toBe(committedB.value.repositoryNodeId);
-      expect(committedA.value.nodeCount).toBe(committedB.value.nodeCount);
-      expect(committedA.value.headCommit).toBe(committedB.value.headCommit);
+          makeDeps(),
+        );
+        expect(committedA.ok && committedB.ok).toBe(true);
+        if (!committedA.ok || !committedB.ok) return;
+        expect(committedA.value.repositoryNodeId).toBe(committedB.value.repositoryNodeId);
+        expect(committedA.value.nodeCount).toBe(committedB.value.nodeCount);
+        expect(committedA.value.headCommit).toBe(committedB.value.headCommit);
 
-      const readTree = (root: string): Record<string, string> => {
-        const result: Record<string, string> = {};
-        const walk = (directory: string, prefix: string): void => {
-          for (const entry of readdirSync(directory, { withFileTypes: true })) {
-            const relative = prefix.length === 0 ? entry.name : `${prefix}/${entry.name}`;
-            const absolute = join(directory, entry.name);
-            if (entry.isDirectory()) walk(absolute, relative);
-            else if (entry.isFile()) result[relative] = readFileSync(absolute, "utf8");
-          }
+        const readTree = (root: string): Record<string, string> => {
+          const result: Record<string, string> = {};
+          const walk = (directory: string, prefix: string): void => {
+            for (const entry of readdirSync(directory, { withFileTypes: true })) {
+              const relative = prefix.length === 0 ? entry.name : `${prefix}/${entry.name}`;
+              const absolute = join(directory, entry.name);
+              if (entry.isDirectory()) walk(absolute, relative);
+              else if (entry.isFile()) result[relative] = readFileSync(absolute, "utf8");
+            }
+          };
+          walk(join(root, ".harness"), "");
+          return result;
         };
-        walk(join(root, ".harness"), "");
-        return result;
-      };
-      expect(readTree(rootA)).toEqual(readTree(rootB));
-    } finally {
-      if (savedAuthorDate === undefined) delete process.env.GIT_AUTHOR_DATE;
-      else process.env.GIT_AUTHOR_DATE = savedAuthorDate;
-      if (savedCommitterDate === undefined) delete process.env.GIT_COMMITTER_DATE;
-      else process.env.GIT_COMMITTER_DATE = savedCommitterDate;
-    }
-  }, 30000);
+        expect(readTree(rootA)).toEqual(readTree(rootB));
+      } finally {
+        if (savedAuthorDate === undefined) delete process.env.GIT_AUTHOR_DATE;
+        else process.env.GIT_AUTHOR_DATE = savedAuthorDate;
+        if (savedCommitterDate === undefined) delete process.env.GIT_COMMITTER_DATE;
+        else process.env.GIT_COMMITTER_DATE = savedCommitterDate;
+      }
+    },
+    COMMIT_TIMEOUT,
+  );
 });

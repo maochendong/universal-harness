@@ -382,7 +382,11 @@ async function approveAndResume(
   return resumed;
 }
 
-describe("phase orchestrator", { timeout: 30000 }, () => {
+// Windows runners have a 2-3x slower filesystem, so scale the explicit suite
+// timeout there just like the global default in vitest.workspace.ts.
+const TEST_TIMEOUT_SCALE = process.platform === "win32" ? 4 : 1;
+
+describe("phase orchestrator", { timeout: 30000 * TEST_TIMEOUT_SCALE }, () => {
   it("binds conflict-aware approval decisions to the expected digest and keeps defer resumable", async () => {
     const newId = sequentialIds();
     const projectRoot = await bootstrapProject("orch-web-approval", newId);

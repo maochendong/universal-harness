@@ -78,7 +78,11 @@ async function bootstrap(name: string, newId: (kind: string) => string): Promise
   return outcome.value.projectRoot;
 }
 
-describe("iteration narrative wiring", { timeout: 60000 }, () => {
+// Windows runners have a 2-3x slower filesystem, so scale the explicit suite
+// timeout there just like the global default in vitest.workspace.ts.
+const TEST_TIMEOUT_SCALE = process.platform === "win32" ? 4 : 1;
+
+describe("iteration narrative wiring", { timeout: 60000 * TEST_TIMEOUT_SCALE }, () => {
   it("persists a cited narrative after the snapshot commits", async () => {
     const newId = sequentialIds();
     const projectRoot = await bootstrap("narrative-clean", newId);

@@ -14,8 +14,10 @@ const createdDirectories: string[] = [];
 export function cleanupDirectories(): void {
   while (createdDirectories.length > 0) {
     const directory = createdDirectories.pop();
+    // Git child processes and virus scanners can keep files locked briefly on
+    // Windows; 5x200ms proved too short in CI, so retry generously.
     if (directory !== undefined)
-      rmSync(directory, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+      rmSync(directory, { recursive: true, force: true, maxRetries: 10, retryDelay: 500 });
   }
 }
 
