@@ -246,12 +246,14 @@ writeFileSync(
 
 const tarballName = `${cliManifest.name}-${cliManifest.version}.tgz`;
 rmSync(join(packRoot, tarballName), { force: true });
-// Windows exposes npm only as a .cmd shim, which execFileSync cannot resolve
-// without a shell.
+// Windows exposes npm only as a .cmd shim. Since Node 20.12 (CVE-2024-27980)
+// spawning a .cmd without a shell throws EINVAL, so Windows must go through
+// cmd.exe.
 const NPM = process.platform === "win32" ? "npm.cmd" : "npm";
 execFileSync(NPM, ["pack", "--pack-destination", packRoot], {
   cwd: stagingRoot,
   stdio: "pipe",
+  shell: process.platform === "win32",
 });
 
 console.log(`Packed ${tarballName} with ${String(staged.size)} bundled dependencies into .pack/.`);

@@ -160,6 +160,7 @@ if (stagedCli.license !== "Apache-2.0" || stagedCli.repository?.url === undefine
 
 // --- Clean offline install ------------------------------------------------------
 
+const IS_WINDOWS = process.platform === "win32";
 const sandbox = mkdtempSync(join(tmpdir(), "harness-pack-smoke-"));
 const harnessEnv = {
   ...process.env,
@@ -177,11 +178,12 @@ try {
     "utf8",
   );
   const install = spawnSync(
-    // Windows exposes npm only as a .cmd shim, which spawnSync cannot resolve
-    // without a shell.
+    // Windows exposes npm only as a .cmd shim. Since Node 20.12
+    // (CVE-2024-27980) spawning a .cmd without a shell throws EINVAL, so
+    // Windows must go through cmd.exe.
     process.platform === "win32" ? "npm.cmd" : "npm",
     ["install", "--no-audit", "--no-fund", "--no-save", "--offline", tarball],
-    { cwd: sandbox, env: harnessEnv, encoding: "utf8", timeout: 180_000 },
+    { cwd: sandbox, env: harnessEnv, encoding: "utf8", timeout: 180_000, shell: IS_WINDOWS },
   );
   if (install.status !== 0) {
     fail(`offline install failed:\n${install.stdout}\n${install.stderr}`);
@@ -197,6 +199,7 @@ try {
       env: harnessEnv,
       encoding: "utf8",
       timeout: 180_000,
+      shell: IS_WINDOWS,
     });
     if (result.error !== undefined)
       fail(`harness ${args.join(" ")} errored: ${result.error.message}`);
@@ -213,6 +216,7 @@ try {
     cwd: sandbox,
     env: harnessEnv,
     encoding: "utf8",
+    shell: IS_WINDOWS,
   });
   if (version.status !== 0 || !/^universal-harness \d+\.\d+\.\d+\s*$/u.test(version.stdout)) {
     fail(`harness --version misbehaved: ${version.stdout} ${version.stderr}`);
@@ -221,6 +225,7 @@ try {
     cwd: sandbox,
     env: harnessEnv,
     encoding: "utf8",
+    shell: IS_WINDOWS,
   });
   if (help.status !== 0 || !help.stdout.includes("Usage: harness")) {
     fail("harness --help misbehaved");

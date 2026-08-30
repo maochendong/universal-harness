@@ -24,10 +24,12 @@ import { fileURLToPath } from "node:url";
 
 const REPOSITORY_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const HOST_FLAG = "--installed-host";
-// Windows exposes pnpm/npm only as .cmd shims, which execFileSync/spawnSync
-// cannot resolve without a shell.
+// Windows exposes pnpm/npm only as .cmd shims. Since Node 20.12
+// (CVE-2024-27980) spawning a .cmd without a shell throws EINVAL, so Windows
+// must go through cmd.exe.
 const PNPM = process.platform === "win32" ? "pnpm.cmd" : "pnpm";
 const NPM = process.platform === "win32" ? "npm.cmd" : "npm";
+const NEEDS_SHELL = process.platform === "win32";
 const MODEL_SLOTS = [
   "prd_proposal",
   "prd_review",
@@ -788,7 +790,7 @@ async function installedHost(input) {
 }
 
 function buildAndInstall(sandbox) {
-  execFileSync(PNPM, ["build"], { cwd: REPOSITORY_ROOT, stdio: "pipe" });
+  execFileSync(PNPM, ["build"], { cwd: REPOSITORY_ROOT, stdio: "pipe", shell: NEEDS_SHELL });
   execFileSync(process.execPath, [join(REPOSITORY_ROOT, "scripts", "pack-cli.mjs")], {
     cwd: REPOSITORY_ROOT,
     stdio: "pipe",
@@ -802,7 +804,7 @@ function buildAndInstall(sandbox) {
   const install = spawnSync(
     NPM,
     ["install", "--no-audit", "--no-fund", "--no-save", "--offline", tarball],
-    { cwd: sandbox, encoding: "utf8", timeout: 180000 },
+    { cwd: sandbox, encoding: "utf8", timeout: 180000, shell: NEEDS_SHELL },
   );
   if (install.status !== 0) {
     throw new Error(`offline packaged CLI install failed:\n${install.stdout}\n${install.stderr}`);

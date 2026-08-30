@@ -22,6 +22,10 @@ import { createNewProject } from "../../packages/runtime/src/index.js";
 const roots: string[] = [];
 const servers: DashboardServer[] = [];
 
+// Windows CI rebuilds the cache and boots the server well past the global
+// 20s timeout (observed 21-23s), so give this journey extra headroom there.
+const CACHE_REBUILD_TIMEOUT = process.platform === "win32" ? 60_000 : 20_000;
+
 async function project(): Promise<string> {
   const parent = mkdtempSync(join(tmpdir(), "harness-dashboard-recovery-"));
   roots.push(parent);
@@ -72,6 +76,7 @@ describe("Dashboard cache and Ledger recovery", () => {
       expect(nodes.status).toBe(200);
       expect(checkGraphCache(databasePath).status).toBe("ok");
     },
+    CACHE_REBUILD_TIMEOUT,
   );
 
   it("serves stable 503s and disables writes when the authoritative Ledger is corrupt", async () => {

@@ -781,149 +781,153 @@ describe("phase orchestrator", { timeout: 30000 * TEST_TIMEOUT_SCALE }, () => {
     }
   });
 
-  it("rescans worktree documentation into the graph and supersedes resolved findings", async () => {
-    const newId = sequentialIds();
-    const parent = makeTempDir("harness-orch-rescan-");
-    const bootstrapped = await createNewProject(
-      { parentDirectory: parent, name: "orch-rescan", intent: INTENT },
-      { vcs: createGitVcsAdapter(), now: () => FIXED_NOW, newId: (kind) => newId(kind) },
-    );
-    if (!bootstrapped.ok) throw new Error(bootstrapped.error.message);
-    const projectRoot = bootstrapped.value.projectRoot;
-    const deps = makeDeps(projectRoot, newId, { execute: recordingExecutor().executor });
-
-    const driveToCompletion = async (
-      intent: string,
-      iterationId?: string,
-    ): Promise<OrchestrationOutcome> => {
-      let outcome = await runIteration(deps, {
-        intent,
-        ...(iterationId === undefined ? {} : { iterationId }),
-      });
-      while (outcome.status === "approval_required") {
-        outcome = await approveAndResume(deps, outcome);
-      }
-      return outcome;
-    };
-
-    const findingNodesRoot = join(projectRoot, ".harness", "artifacts", "finding-nodes");
-    const apiContractFindingId = (): string | undefined => {
-      const findingsRoot = join(projectRoot, ".harness", "artifacts", "findings");
-      for (const entry of readdirSync(findingsRoot).sort()) {
-        if (!entry.startsWith("finding_audit-missing-design-artifact-")) continue;
-        const proposed = JSON.parse(
-          readFileSync(join(findingsRoot, entry, "proposed.json"), "utf8"),
-        ) as { summary?: string };
-        if (proposed.summary?.includes("domain: api-contract") === true) return entry;
-      }
-      return undefined;
-    };
-
-    // First iteration without an API contract: the gap is committed.
-    const first = await driveToCompletion(INTENT, bootstrapped.value.iterationId);
-    expect(first.status).toBe("completed");
-    const findingId = apiContractFindingId();
-    expect(findingId).toBeDefined();
-    if (findingId === undefined) return;
-
-    // The user writes the document between iterations; the next completing
-    // snapshot rescans it into the graph and the resolved gap is superseded.
-    mkdirSync(join(projectRoot, "docs"), { recursive: true });
-    writeFileSync(
-      join(projectRoot, "docs", "api-contract.md"),
-      "# API Contract\n\n- POST /retrieve -- retrieval endpoint\n",
-    );
-    git(projectRoot, "add", "docs/api-contract.md");
-    git(projectRoot, "commit", "-m", "docs: add API contract baseline");
-    const second = await driveToCompletion("add the second capability");
-    expect(second.status).toBe("completed");
-
-    const revisions = readdirSync(join(findingNodesRoot, findingId)).sort();
-    expect(revisions).toEqual(["1.json", "2.json"]);
-    const superseded = JSON.parse(
-      readFileSync(join(findingNodesRoot, findingId, "2.json"), "utf8"),
-    ) as { status?: string };
-    expect(superseded.status).toBe("superseded");
-    const decayEventsAfterRepair = new LedgerRepository({
-      projectRoot,
-      readBaseline: () => headOf(projectRoot),
-    })
-      .replay()
-      .events.filter(
-        (event) =>
-          event.event_type === "FindingSuperseded" && event.payload["finding_id"] === findingId,
+  it(
+    "rescans worktree documentation into the graph and supersedes resolved findings",
+    async () => {
+      const newId = sequentialIds();
+      const parent = makeTempDir("harness-orch-rescan-");
+      const bootstrapped = await createNewProject(
+        { parentDirectory: parent, name: "orch-rescan", intent: INTENT },
+        { vcs: createGitVcsAdapter(), now: () => FIXED_NOW, newId: (kind) => newId(kind) },
       );
-    expect(decayEventsAfterRepair).toEqual([
-      expect.objectContaining({
-        event_type: "FindingSuperseded",
-        payload: expect.objectContaining({
-          finding_id: findingId,
-          actor: "workflow-engine",
-          cause: "predicate_resolved",
+      if (!bootstrapped.ok) throw new Error(bootstrapped.error.message);
+      const projectRoot = bootstrapped.value.projectRoot;
+      const deps = makeDeps(projectRoot, newId, { execute: recordingExecutor().executor });
+
+      const driveToCompletion = async (
+        intent: string,
+        iterationId?: string,
+      ): Promise<OrchestrationOutcome> => {
+        let outcome = await runIteration(deps, {
+          intent,
+          ...(iterationId === undefined ? {} : { iterationId }),
+        });
+        while (outcome.status === "approval_required") {
+          outcome = await approveAndResume(deps, outcome);
+        }
+        return outcome;
+      };
+
+      const findingNodesRoot = join(projectRoot, ".harness", "artifacts", "finding-nodes");
+      const apiContractFindingId = (): string | undefined => {
+        const findingsRoot = join(projectRoot, ".harness", "artifacts", "findings");
+        for (const entry of readdirSync(findingsRoot).sort()) {
+          if (!entry.startsWith("finding_audit-missing-design-artifact-")) continue;
+          const proposed = JSON.parse(
+            readFileSync(join(findingsRoot, entry, "proposed.json"), "utf8"),
+          ) as { summary?: string };
+          if (proposed.summary?.includes("domain: api-contract") === true) return entry;
+        }
+        return undefined;
+      };
+
+      // First iteration without an API contract: the gap is committed.
+      const first = await driveToCompletion(INTENT, bootstrapped.value.iterationId);
+      expect(first.status).toBe("completed");
+      const findingId = apiContractFindingId();
+      expect(findingId).toBeDefined();
+      if (findingId === undefined) return;
+
+      // The user writes the document between iterations; the next completing
+      // snapshot rescans it into the graph and the resolved gap is superseded.
+      mkdirSync(join(projectRoot, "docs"), { recursive: true });
+      writeFileSync(
+        join(projectRoot, "docs", "api-contract.md"),
+        "# API Contract\n\n- POST /retrieve -- retrieval endpoint\n",
+      );
+      git(projectRoot, "add", "docs/api-contract.md");
+      git(projectRoot, "commit", "-m", "docs: add API contract baseline");
+      const second = await driveToCompletion("add the second capability");
+      expect(second.status).toBe("completed");
+
+      const revisions = readdirSync(join(findingNodesRoot, findingId)).sort();
+      expect(revisions).toEqual(["1.json", "2.json"]);
+      const superseded = JSON.parse(
+        readFileSync(join(findingNodesRoot, findingId, "2.json"), "utf8"),
+      ) as { status?: string };
+      expect(superseded.status).toBe("superseded");
+      const decayEventsAfterRepair = new LedgerRepository({
+        projectRoot,
+        readBaseline: () => headOf(projectRoot),
+      })
+        .replay()
+        .events.filter(
+          (event) =>
+            event.event_type === "FindingSuperseded" && event.payload["finding_id"] === findingId,
+        );
+      expect(decayEventsAfterRepair).toEqual([
+        expect.objectContaining({
+          event_type: "FindingSuperseded",
+          payload: expect.objectContaining({
+            finding_id: findingId,
+            actor: "workflow-engine",
+            cause: "predicate_resolved",
+          }),
         }),
-      }),
-    ]);
+      ]);
 
-    // The scanned document is a graph CodeArtifact and the audit agrees the
-    // domain is covered; no new finding replaces the superseded one.
-    const { database } = materializeLedger({ projectRoot, databasePath: ":memory:" });
-    try {
-      const nodes: NodeRecord[] = [];
-      let cursor: string | undefined;
-      do {
-        const page = pageNodes(database, {
-          limit: 500,
-          ...(cursor === undefined ? {} : { cursor }),
+      // The scanned document is a graph CodeArtifact and the audit agrees the
+      // domain is covered; no new finding replaces the superseded one.
+      const { database } = materializeLedger({ projectRoot, databasePath: ":memory:" });
+      try {
+        const nodes: NodeRecord[] = [];
+        let cursor: string | undefined;
+        do {
+          const page = pageNodes(database, {
+            limit: 500,
+            ...(cursor === undefined ? {} : { cursor }),
+          });
+          nodes.push(...page.items);
+          cursor = page.nextCursor;
+        } while (cursor !== undefined);
+        const doc = nodes.find(
+          (node) => node.type === "CodeArtifact" && node.locator?.endsWith("docs/api-contract.md"),
+        );
+        expect(doc).toBeDefined();
+        expect(doc?.extensions?.["harness.scan"]).toMatchObject({
+          classification: "documentation",
+          api_entries: ["API Contract", "POST /retrieve"],
         });
-        nodes.push(...page.items);
-        cursor = page.nextCursor;
-      } while (cursor !== undefined);
-      const doc = nodes.find(
-        (node) => node.type === "CodeArtifact" && node.locator?.endsWith("docs/api-contract.md"),
-      );
-      expect(doc).toBeDefined();
-      expect(doc?.extensions?.["harness.scan"]).toMatchObject({
-        classification: "documentation",
-        api_entries: ["API Contract", "POST /retrieve"],
-      });
-      const edges: EdgeRecord[] = [];
-      let edgeCursor: string | undefined;
-      do {
-        const page = pageEdges(database, {
-          limit: 500,
-          ...(edgeCursor === undefined ? {} : { cursor: edgeCursor }),
-        });
-        edges.push(...page.items);
-        edgeCursor = page.nextCursor;
-      } while (edgeCursor !== undefined);
-      const report = auditGraph({ nodes, edges });
-      expect(
-        report.findings.some(
-          (finding) =>
-            finding.kind === "missing_design_artifact" &&
-            finding.summary.includes("domain: api-contract"),
-        ),
-      ).toBe(false);
-    } finally {
-      database.close();
-    }
+        const edges: EdgeRecord[] = [];
+        let edgeCursor: string | undefined;
+        do {
+          const page = pageEdges(database, {
+            limit: 500,
+            ...(edgeCursor === undefined ? {} : { cursor: edgeCursor }),
+          });
+          edges.push(...page.items);
+          edgeCursor = page.nextCursor;
+        } while (edgeCursor !== undefined);
+        const report = auditGraph({ nodes, edges });
+        expect(
+          report.findings.some(
+            (finding) =>
+              finding.kind === "missing_design_artifact" &&
+              finding.summary.includes("domain: api-contract"),
+          ),
+        ).toBe(false);
+      } finally {
+        database.close();
+      }
 
-    // A later snapshot observes the already-superseded Finding and does not
-    // append another revision or lifecycle event for the repaired predicate.
-    const third = await driveToCompletion("add the third capability");
-    expect(third.status).toBe("completed");
-    expect(readdirSync(join(findingNodesRoot, findingId)).sort()).toEqual(["1.json", "2.json"]);
-    const decayEventsAfterThird = new LedgerRepository({
-      projectRoot,
-      readBaseline: () => headOf(projectRoot),
-    })
-      .replay()
-      .events.filter(
-        (event) =>
-          event.event_type === "FindingSuperseded" && event.payload["finding_id"] === findingId,
-      );
-    expect(decayEventsAfterThird).toHaveLength(1);
-  }, 60_000);
+      // A later snapshot observes the already-superseded Finding and does not
+      // append another revision or lifecycle event for the repaired predicate.
+      const third = await driveToCompletion("add the third capability");
+      expect(third.status).toBe("completed");
+      expect(readdirSync(join(findingNodesRoot, findingId)).sort()).toEqual(["1.json", "2.json"]);
+      const decayEventsAfterThird = new LedgerRepository({
+        projectRoot,
+        readBaseline: () => headOf(projectRoot),
+      })
+        .replay()
+        .events.filter(
+          (event) =>
+            event.event_type === "FindingSuperseded" && event.payload["finding_id"] === findingId,
+        );
+      expect(decayEventsAfterThird).toHaveLength(1);
+    },
+    60_000 * TEST_TIMEOUT_SCALE,
+  );
 
   it("regenerates the tasks.md projection at snapshot and refuses hand edits", async () => {
     const newId = sequentialIds();
