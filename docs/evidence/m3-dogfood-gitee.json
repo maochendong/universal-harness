@@ -1,0 +1,23 @@
+{
+  "provider": "gitee",
+  "status": "blocked",
+  "reason": "control_ref_unprotected",
+  "commit": "bade20d1c5311cc66aa51dfa550f5ba32bdfb7ed",
+  "generated_at": "2026-08-31T05:34:45.530Z",
+  "protection": {
+    "status": "unprotected",
+    "failure": {
+      "code": "control_ref_unprotected",
+      "summary": "gitee returned no usable branch protection surface",
+      "retryable": false
+    }
+  },
+  "steps": [
+    {
+      "name": "authenticate",
+      "status": "authenticated",
+      "permission": "admin",
+      "observed_at": "2026-08-31T05:34:44.526Z"
+    }
+  ]
+}
