@@ -714,6 +714,11 @@ Coordinator 对 Git 的 fetch/push 凭据通过现有受信 host secret 注入�
 
 - connect 必须通过平台 Adapter 读取并验证 Control Ref 保护规则：只有 Coordinator credential
   identity 可以更新，普通 Replica 不能直接写入、force push 或删除；
+- GitHub 的排他写入证明有两种等价形态：组织仓库使用 classic branch protection 的
+  `restrictions`（推送者恰为 Coordinator 且无 team/app）；个人仓库不支持 push restrictions
+  （API 拒绝为组织专属），改用所有权证明——仓库 owner 即 Coordinator identity、协作者列表中
+  不存在任何其他身份，且 `enforce_admins`、禁 force push、禁删除全部成立。两种形态之外
+  一律 fail closed；
 - Adapter 无法证明平台规则可强制执行时返回 `control_ref_unprotected` 并拒绝连接；不得以本地
   约定或文档声明代替平台保护；
 - Coordinator 每次读取都验证 Control Ref fast-forward ancestry、Schema、sequence 与 digest；

@@ -117,6 +117,8 @@ function githubRoutes(script: PlatformScript): Record<string, { status?: number;
     },
     "GET https://api.github.com/user": { body: { id: Number(script.subject_id) } },
     "GET https://api.github.com/repos/acme/demo": { body: repository },
+    // Both GitHub proof forms require provably read-only deploy keys.
+    "GET https://api.github.com/repos/acme/demo/keys?per_page=100": { body: [] },
     "GET https://api.github.com/repos/acme/demo/branches/harness%2Fcontrol/protection":
       script.protection === "absent" ? { status: 404, body: {} } : { body: protection },
   };

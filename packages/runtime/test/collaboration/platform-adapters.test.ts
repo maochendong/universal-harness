@@ -562,6 +562,9 @@ describe("inspectControlRefProtection", () => {
     "GET https://api.github.com/repos/Acme/Demo": {
       body: { id: 777, permissions: { admin: true, maintain: true, push: true, pull: true } },
     },
+    // Both GitHub proof forms require provably read-only deploy keys; an
+    // empty list is the happy path.
+    "GET https://api.github.com/repos/Acme/Demo/keys?per_page=100": { body: [] },
   } satisfies Record<string, Route>;
 
   const githubProtectedBranch = {
@@ -609,10 +612,164 @@ describe("inspectControlRefProtection", () => {
     expect(protectionRequest?.headers.authorization).toBe(`Bearer ${GITHUB_TOKEN}`);
   });
 
+  it("accepts a personal repository when the coordinator is the only writer", async () => {
+    // Personal repositories cannot carry push restrictions (the API rejects
+    // them as organization-only), so ownership is the proof: owner is the
+    // coordinator and the collaborator list names nobody else.
+    const { registry } = makeRegistry({
+      routes: {
+        ...githubAuthenticateRoutes,
+        "GET https://api.github.com/repos/Acme/Demo": {
+          body: {
+            id: 777,
+            permissions: { admin: true, maintain: true, push: true, pull: true },
+            owner: { login: "harness-coordinator" },
+          },
+        },
+        "GET https://api.github.com/repos/Acme/Demo/branches/harness%2Fcontrol/protection": {
+          body: {
+            enforce_admins: { enabled: true },
+            allow_force_pushes: { enabled: false },
+            allow_deletions: { enabled: false },
+          },
+        },
+        "GET https://api.github.com/repos/Acme/Demo/collaborators?per_page=100": {
+          body: [{ login: "harness-coordinator" }],
+        },
+      },
+    });
+    await authenticateGithub(registry);
+    const result = await registry.inspectControlRefProtection({
+      provider: "github",
+      host: "github.com",
+      repository_id: "Acme/Demo",
+      control_ref: CONTROL_REF,
+    });
+    expect(result).toEqual({ status: "protected" });
+  });
+
+  it("fails closed on a personal repository with other writers or an unprovable owner", async () => {
+    const personalBranch = {
+      enforce_admins: { enabled: true },
+      allow_force_pushes: { enabled: false },
+      allow_deletions: { enabled: false },
+    };
+    const protectionRoute = {
+      [`GET https://api.github.com/repos/Acme/Demo/branches/harness%2Fcontrol/protection`]: {
+        body: personalBranch,
+      },
+    };
+    const ownedRepo = {
+      body: {
+        id: 777,
+        permissions: { admin: true, maintain: true, push: true, pull: true },
+        owner: { login: "harness-coordinator" },
+      },
+    };
+    const variants: Record<string, Record<string, Route>> = {
+      extra_collaborator: {
+        "GET https://api.github.com/repos/Acme/Demo": ownedRepo,
+        ...protectionRoute,
+        "GET https://api.github.com/repos/Acme/Demo/collaborators?per_page=100": {
+          body: [{ login: "harness-coordinator" }, { login: "bob" }],
+        },
+      },
+      owner_mismatch: {
+        "GET https://api.github.com/repos/Acme/Demo": {
+          body: {
+            id: 777,
+            permissions: { admin: true, maintain: true, push: true, pull: true },
+            owner: { login: "someone-else" },
+          },
+        },
+        ...protectionRoute,
+        "GET https://api.github.com/repos/Acme/Demo/collaborators?per_page=100": {
+          body: [{ login: "harness-coordinator" }],
+        },
+      },
+      collaborators_unprovable: {
+        "GET https://api.github.com/repos/Acme/Demo": ownedRepo,
+        ...protectionRoute,
+        // No collaborators route: the fetch fails and the proof must fail closed.
+      },
+      collaborator_page_full: {
+        "GET https://api.github.com/repos/Acme/Demo": ownedRepo,
+        ...protectionRoute,
+        // A full per_page=100 page may hide further collaborators, so even an
+        // all-coordinator page must fail closed.
+        "GET https://api.github.com/repos/Acme/Demo/collaborators?per_page=100": {
+          body: Array.from({ length: 100 }, () => ({ login: "harness-coordinator" })),
+        },
+      },
+    };
+    for (const [name, routes] of Object.entries(variants)) {
+      const { registry } = makeRegistry({ routes: { ...githubAuthenticateRoutes, ...routes } });
+      await authenticateGithub(registry);
+      const result = await registry.inspectControlRefProtection({
+        provider: "github",
+        host: "github.com",
+        repository_id: "Acme/Demo",
+        control_ref: CONTROL_REF,
+      });
+      expect(result.status, name).toBe("unprotected");
+      if (result.status === "unprotected") {
+        expect(result.failure.code, name).toBe("control_ref_unprotected");
+        expect(result.failure.summary, name).not.toContain(GITHUB_TOKEN);
+      }
+    }
+  });
+
+  it("fails closed when a deploy key is not read-only", async () => {
+    // A write-capable deploy key bypasses both the restrictions proof and the
+    // ownership proof, so it must fail the inspection even on an otherwise
+    // perfectly protected branch.
+    const variants: Record<string, Route> = {
+      write_deploy_key: {
+        body: [{ id: 1, key: "ssh-rsa AAAA", read_only: false }],
+      },
+      deploy_keys_unprovable: {
+        // Overridden below by removing the route entirely.
+        body: [],
+      },
+      deploy_key_page_full: {
+        body: Array.from({ length: 100 }, (_, index) => ({ id: index, read_only: true })),
+      },
+    };
+    for (const [name, keysRoute] of Object.entries(variants)) {
+      const routes: Record<string, Route> = {
+        ...githubAuthenticateRoutes,
+        "GET https://api.github.com/repos/Acme/Demo/branches/harness%2Fcontrol/protection": {
+          body: githubProtectedBranch,
+        },
+        "GET https://api.github.com/repos/Acme/Demo/keys?per_page=100": keysRoute,
+      };
+      if (name === "deploy_keys_unprovable") {
+        // No keys route: the fetch fails and the proof must fail closed.
+        delete routes["GET https://api.github.com/repos/Acme/Demo/keys?per_page=100"];
+      }
+      const { registry } = makeRegistry({ routes });
+      await authenticateGithub(registry);
+      const result = await registry.inspectControlRefProtection({
+        provider: "github",
+        host: "github.com",
+        repository_id: "Acme/Demo",
+        control_ref: CONTROL_REF,
+      });
+      expect(result.status, name).toBe("unprotected");
+      if (result.status === "unprotected") {
+        expect(result.failure.code, name).toBe("control_ref_unprotected");
+        expect(result.failure.summary, name).not.toContain(GITHUB_TOKEN);
+      }
+    }
+  });
+
   it("fails closed when GitHub protection is absent or incomplete", async () => {
     const variants: Record<string, Route> = {
       not_protected: { status: 404, body: { message: "Branch not protected" } },
       no_restrictions: {
+        // Without restrictions the payload takes the personal-repository
+        // proof path; the shared repo fixture names no owner, so the proof
+        // must fail closed.
         body: { ...githubProtectedBranch, restrictions: undefined },
       },
       extra_writer: {

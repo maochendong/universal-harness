@@ -579,18 +579,21 @@ export function createPlatformIdentityRegistry(
     };
   }
 
-  /** GitHub proof: push restrictions limited to the Coordinator identity,
-   * admins enforced, force-push and deletion disabled. */
-  function githubProtectionReason(protection: JsonObject | undefined, coordinator: string): string {
-    if (protection === undefined) return "no branch protection payload";
+  /** GitHub flags shared by both proof forms: admins enforced, force-push
+   * and deletion disabled. */
+  function githubProtectionFlagsReason(protection: JsonObject): string {
     const enforceAdmins = asObject(protection.enforce_admins);
     if (enforceAdmins?.enabled !== true) return "admins can bypass the protection rules";
     const allowForcePushes = asObject(protection.allow_force_pushes);
     if (allowForcePushes?.enabled !== false) return "force push is not proven disabled";
     const allowDeletions = asObject(protection.allow_deletions);
     if (allowDeletions?.enabled !== false) return "branch deletion is not proven disabled";
-    const restrictions = asObject(protection.restrictions);
-    if (restrictions === undefined) return "no push restrictions limit writes to the coordinator";
+    return "";
+  }
+
+  /** GitHub organization proof: push restrictions limited to the
+   * Coordinator identity. */
+  function githubRestrictionsReason(restrictions: JsonObject, coordinator: string): string {
     const users = Array.isArray(restrictions.users) ? restrictions.users : [];
     const logins = users.map((user) => asObject(user)?.login);
     if (logins.length !== 1 || logins[0] !== coordinator) {
@@ -600,6 +603,73 @@ export function createPlatformIdentityRegistry(
     const apps = Array.isArray(restrictions.apps) ? restrictions.apps : [];
     if (teams.length !== 0 || apps.length !== 0) {
       return "push restrictions include teams or apps beyond the coordinator identity";
+    }
+    return "";
+  }
+
+  /** A write-capable deploy key bypasses both the organization restrictions
+   * proof and the personal-repository ownership proof, so every deploy key
+   * must be provably read-only. Anything unprovable fails closed. */
+  async function githubWriteDeployKeyReason(
+    config: PlatformAdapterConfig,
+    token: string,
+    repository: string,
+  ): Promise<string> {
+    const outcome = await apiGetWithToken(config, token, `/repos/${repository}/keys?per_page=100`);
+    let keys: unknown;
+    try {
+      keys = JSON.parse(outcome.raw ?? "");
+    } catch {
+      keys = undefined;
+    }
+    if (!outcome.ok || !Array.isArray(keys) || keys.length >= 100) {
+      return "deploy keys are not provably read-only";
+    }
+    const writable = keys.filter((key) => asObject(key)?.read_only !== true);
+    if (writable.length > 0) {
+      return "a deploy key that is not read-only bypasses the control ref protection";
+    }
+    return "";
+  }
+
+  /** GitHub personal-repository proof. Personal repositories cannot carry
+   * push restrictions at all (the API rejects them as organization-only), so
+   * the equivalent proof of "only the Coordinator can write" is ownership:
+   * the repository owner is the Coordinator identity and the collaborator
+   * list names nobody else. Anything unprovable fails closed. */
+  async function githubPersonalRepositoryReason(
+    config: PlatformAdapterConfig,
+    token: string,
+    repository: string,
+    coordinator: string,
+  ): Promise<string> {
+    const repoOutcome = await apiGetWithToken(config, token, `/repos/${repository}`);
+    const owner = asObject(repoOutcome.json?.owner)?.login;
+    if (!repoOutcome.ok || owner !== coordinator) {
+      return "repository owner is not provably the coordinator identity";
+    }
+    const collabOutcome = await apiGetWithToken(
+      config,
+      token,
+      `/repos/${repository}/collaborators?per_page=100`,
+    );
+    let collaborators: unknown;
+    try {
+      collaborators = JSON.parse(collabOutcome.raw ?? "");
+    } catch {
+      collaborators = undefined;
+    }
+    if (!collabOutcome.ok || !Array.isArray(collaborators)) {
+      return "collaborator list is not provable";
+    }
+    // per_page caps the page at 100 entries; a full page may hide further
+    // collaborators, so fail closed instead of trusting a truncated list.
+    if (collaborators.length >= 100) {
+      return "collaborator list is not provable";
+    }
+    const others = collaborators.filter((entry) => asObject(entry)?.login !== coordinator);
+    if (others.length > 0) {
+      return "collaborators beyond the coordinator identity may push";
     }
     return "";
   }
@@ -681,8 +751,33 @@ export function createPlatformIdentityRegistry(
             `github returned no usable protection rule (status ${outcome.httpStatus ?? "unknown"})`,
           );
         }
-        const reason = githubProtectionReason(outcome.json, config.coordinator_identity);
-        return reason === "" ? { status: "protected" } : unprotected(reason);
+        // Two proof forms: organization repositories carry exclusive push
+        // restrictions; personal repositories cannot (the API rejects them),
+        // so they prove ownership instead -- owner is the Coordinator and no
+        // other collaborator exists. Both forms first require the shared
+        // protection flags and provably read-only deploy keys.
+        if (outcome.json === undefined) return unprotected("no branch protection payload");
+        const flagsReason = githubProtectionFlagsReason(outcome.json);
+        if (flagsReason !== "") return unprotected(flagsReason);
+        const deployKeyReason = await githubWriteDeployKeyReason(config, token, repository);
+        if (deployKeyReason !== "") return unprotected(deployKeyReason);
+        const restrictions = asObject(outcome.json.restrictions);
+        if (restrictions !== undefined) {
+          const restrictionsReason = githubRestrictionsReason(
+            restrictions,
+            config.coordinator_identity,
+          );
+          return restrictionsReason === ""
+            ? { status: "protected" }
+            : unprotected(restrictionsReason);
+        }
+        const personalReason = await githubPersonalRepositoryReason(
+          config,
+          token,
+          repository,
+          config.coordinator_identity,
+        );
+        return personalReason === "" ? { status: "protected" } : unprotected(personalReason);
       }
       case "gitlab": {
         const outcome = await apiGetWithToken(
