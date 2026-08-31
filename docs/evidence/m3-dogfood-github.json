@@ -1,0 +1,108 @@
+{
+  "provider": "github",
+  "status": "passed",
+  "commit": "232e91af02cc3916c6d0a7cb4d66377150ca4131",
+  "generated_at": "2026-08-31T08:48:18.520Z",
+  "deviations": [
+    "browser OAuth replaced by a PAT via token-endpoint interception; identity, permission and protection queries hit the real platform API",
+    "remote approval request is an in-memory fixture with a distinct fixture requester (the Local Kernel side is covered by the e2e suite)",
+    "host clock advanced 6 minutes before disconnect instead of sleeping out the lease TTL",
+    "a lease closed by the expiry transition (real-platform latency outlasted the TTL) is accepted as the released equivalent; the observed states are recorded on the release step"
+  ],
+  "steps": [
+    {
+      "name": "authenticate",
+      "status": "authenticated",
+      "permission": "admin",
+      "observed_at": "2026-08-31T08:42:41.028Z"
+    },
+    {
+      "name": "control_ref_protection",
+      "status": "protected"
+    },
+    {
+      "name": "seed",
+      "status": "pushed",
+      "baseline": "1655ef65bdd94c8244bcf584a75c6422e9a64f04"
+    },
+    {
+      "name": "connect",
+      "status": "connected",
+      "replayed": false
+    },
+    {
+      "name": "acquire_leases",
+      "status": "granted",
+      "fencing_tokens": [
+        1,
+        1
+      ]
+    },
+    {
+      "name": "stale_token_fenced",
+      "status": "failed",
+      "code": "lease_fenced"
+    },
+    {
+      "name": "publish_candidates",
+      "status": "published",
+      "head_a": "3796fa157046d0ca0f1514fe6623e48182c9f0e0",
+      "head_b": "859680a660af6e5f4a67a2ee3c39a2c3b828bd2c"
+    },
+    {
+      "name": "remote_approval",
+      "status": "remote_approval",
+      "decision": "approve"
+    },
+    {
+      "name": "integration_a",
+      "status": "accepted",
+      "integration_id": "integration_2d041a170f1cfca5a24383d1",
+      "ledger_sequence_rewrites": []
+    },
+    {
+      "name": "integration_b_resequenced",
+      "status": "accepted",
+      "integration_id": "integration_c4c8adf2be9f3b5eb1ba7a8d",
+      "ledger_sequence_rewrites": [
+        {
+          "ledger_operation_id": "operation_dogfood_b2",
+          "old_sequence": 2,
+          "old_manifest_digest": "4db0bce723fa96601cc95ec0e46eb79194b00a7023789f20b5226e944ac0d75e",
+          "new_sequence": 4,
+          "new_manifest_digest": "f9b18380211495813a39a35e3a17859ad16f4998be79bbc8da7853d7f32f9b6c"
+        }
+      ]
+    },
+    {
+      "name": "target_audit",
+      "status": "contiguous",
+      "sequences": [
+        1,
+        2,
+        3,
+        4,
+        5
+      ]
+    },
+    {
+      "name": "release_leases",
+      "status": "released",
+      "observed_states": [
+        "released",
+        "released"
+      ]
+    },
+    {
+      "name": "disconnect",
+      "status": "disconnected",
+      "clock_advanced_ms": 360000
+    },
+    {
+      "name": "projection_rebuild",
+      "status": "ready",
+      "projection_digest": "1bff7f642fc556f5ad84b58e86c5d08ae4390fd0cc055d843e1084a6d71fab8c",
+      "control_records": 13
+    }
+  ]
+}
