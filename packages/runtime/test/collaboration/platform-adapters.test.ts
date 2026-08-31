@@ -203,8 +203,17 @@ describe("pure permission mappings", () => {
     expect(giteePermission({ permission: "read" })).toBe("read");
   });
 
+  it("normalizes the real Gitee v5 boolean-flag permission object", () => {
+    // Real API v5 responses carry {pull, push, admin} booleans, not a string;
+    // a fake shaped as a string is what let this drift slip through.
+    expect(giteePermission({ permission: { pull: true, push: true, admin: true } })).toBe("admin");
+    expect(giteePermission({ permission: { pull: true, push: true, admin: false } })).toBe("write");
+    expect(giteePermission({ permission: { pull: true, push: false, admin: false } })).toBe("read");
+  });
+
   it("fails closed on unknown or missing Gitee permissions", () => {
     expectDenied(() => giteePermission({ permission: "unknown" }));
+    expectDenied(() => giteePermission({ permission: { pull: false, push: false } }));
     expectDenied(() => giteePermission({}));
   });
 });
@@ -777,7 +786,10 @@ describe("inspectControlRefProtection", () => {
       body: { access_token: GITEE_TOKEN, token_type: "bearer" },
     },
     "GET https://gitee.com/api/v5/user": { body: { id: 888 } },
-    "GET https://gitee.com/api/v5/repos/acme/demo": { body: { id: 321, permission: "admin" } },
+    "GET https://gitee.com/api/v5/repos/acme/demo": {
+      // Real API v5 shape: booleans, not a string.
+      body: { id: 321, permission: { pull: true, push: true, admin: true } },
+    },
   } satisfies Record<string, Route>;
 
   function giteeRegistry(extraRoutes: Record<string, Route>) {

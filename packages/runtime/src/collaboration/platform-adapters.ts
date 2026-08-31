@@ -199,11 +199,20 @@ export function gitlabPermission(project: unknown): CollaborationPermission {
   return best;
 }
 
-/** Gitee repository `permission` field: admin/write/read. */
+/** Gitee repository `permission` field: admin/write/read. Real API v5
+ * responses instead report an object of booleans
+ * (`{pull, push, admin}`); accept both shapes, mapping to the strongest
+ * proven capability. Anything else fails closed. */
 export function giteePermission(repository: unknown): CollaborationPermission {
   const permission = asObject(repository)?.permission;
   if (permission === "admin" || permission === "write" || permission === "read") {
     return permission;
+  }
+  const flags = asObject(permission);
+  if (flags !== undefined) {
+    if (flags.admin === true) return "admin";
+    if (flags.push === true) return "write";
+    if (flags.pull === true) return "read";
   }
   throw permissionDenied(`gitee repository permission ${String(permission)} is unknown`);
 }
