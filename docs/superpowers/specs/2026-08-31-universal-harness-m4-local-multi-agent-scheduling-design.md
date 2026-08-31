@@ -1,7 +1,7 @@
 # Universal Harness M4 本地 Multi-Agent 调度正式设计
 
 - 日期：2026-08-31
-- 状态：评审问题已修订，待最终复核
+- 状态：设计已复核并批准实施
 - 目标协议：Protocol 1.3（development；当前 stable 仍为 1.0.0）
 - 范围：单仓库、单 Coordinator、单机同构 Agent Adapter 并发池
 
