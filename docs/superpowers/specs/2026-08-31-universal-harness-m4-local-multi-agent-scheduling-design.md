@@ -1,9 +1,9 @@
 # Universal Harness M4 本地 Multi-Agent 调度正式设计
 
-日期：2026-08-31  
-状态：设计章节已确认，待正式文档复核  
-目标协议：Protocol 1.3  
-范围：单仓库、单 Coordinator、单机同构 Agent Adapter 并发池  
+- 日期：2026-08-31
+- 状态：评审问题已修订，待最终复核
+- 目标协议：Protocol 1.3（development；当前 stable 仍为 1.0.0）
+- 范围：单仓库、单 Coordinator、单机同构 Agent Adapter 并发池
 
 依据：
 
@@ -29,19 +29,22 @@ M4 不重新规划 Task，不让 Agent 共享可变状态，不引入远程 Work
 
 1. 首版使用本机同一 Agent Adapter 的并发池，不支持远程 Worker。
 2. M4 只调度已批准 Plan 中的 Task，不在运行时拆分、合并或改写 DAG。
-3. `DEPENDS_ON` 是唯一权威依赖；Plan Compiler 生成 digest-bound `parallel_waves`。
-4. 每个 Task 使用独立 Git worktree；Harness 是唯一集成者。
-5. 首次集成冲突在最新基线上受控重调度一次；再次冲突阻塞。
-6. Lite 保持单槽位；Standard 默认两个本地槽位；Governed 在 Policy 约束下并行。
+3. `TaskSpecification.dependencies` 是唯一依赖语义输入；Plan Compiler 原子投影 `DEPENDS_ON` 并生成
+   digest-bound `parallel_waves`。
+4. 非 Strict TDD Task 使用独立 Git worktree；Strict TDD Task 复用既有相位工作区链；Harness 是唯一集成者。
+5. Task patch 首次应用候选树失败可在最新已集成基线上受控重调度一次；目标 ref 漂移不自动重试。
+6. `parallel_task_execution` 是正式 Capability Module：Lite 为 `disabled`，Standard/Governed 为 `required`。
 7. Task Lease 权威事实进入项目 Ledger；PID、心跳和 output tail 进入本地 SQLite。
 8. Scheduler 使用确定性、不可抢占的 Plan 顺序，不使用模型排序。
 9. Task 必须声明最小 `write_paths` 和必要的 `exclusive_resources`。
-10. 不新增固定审批次数；只有 Policy 实际返回 `requires_approval` 时才请求人工审批。
-11. 验证分为 Task worktree、候选集成树和 wave Mandatory Gates 三层。
-12. Agent 瞬时失败和集成冲突各最多自动恢复一次，且共享原 Task 预算。
+10. 不新增固定审批次数；只有 Policy 实际返回 `requires_approval` 时才请求人工审批；`deny` 与
+    `block` 均不能被 Approval 覆盖。
+11. 验证分为 Task execution workspace、候选集成树和 wave Mandatory Gates 三层。
+12. Agent 瞬时失败和 Task patch apply conflict 各最多自动恢复一次，且共享原 Task 预算。
 13. 用户设置 Project 默认预算和 Iteration 总上限；Planner 在 Plan 中分配 Task 预算。
 14. Dashboard 在现有 Observatory 内增加 Scheduler 视图，不建设第二套前端。
 15. M4 采用 Workflow Engine 内嵌深模块，不增加本地 HTTP Scheduler 服务。
+16. 同一 Operation 同时只允许一个本地驱动者；CLI 与 Dashboard 共用 operation-scoped Driver Lock。
 
 ## 3. 目标与非目标
 
@@ -102,6 +105,12 @@ Orchestrator / Workflow Engine（唯一权威写入者）
 `harness run`、`harness resume` 或用户从 Dashboard 显式恢复后运行。驱动进程退出时执行停止，
 下一次 `resume` 从 Ledger 恢复；不存在隐藏的后台守护进程。
 
+进入调度循环前必须取得 operation-scoped Driver Lock。该锁使用独立于 Ledger transaction lock 的
+本地原子目录实现，按 `operation_id` 区分，记录 PID/host/driver kind/acquired_at，并可回收已死亡
+进程留下的锁。`harness serve` 可以与 CLI 同时提供只读能力，但 Dashboard 恢复与 CLI run/resume
+不能同时驱动同一 Operation；获取失败返回 `driver_lock_unavailable`，不写新的领域记录。连接 M3
+时还必须持有有效 Operation Lease；本地 Driver Lock 不能代替远程所有权。
+
 ### 4.2 `LocalAgentPool`
 
 Pool 只管理同一 Adapter 的独立进程实例、槽位和本地瞬时观测。它不读取 Plan，不判断 Task
@@ -116,8 +125,16 @@ M4 不新增第二套 Workspace 公共端口。`TaskWorkspaceManager` 是 runtim
 - `createGitWorktreeWorkspacePort`；
 - `createInMemoryWorkspacePort`。
 
-它负责 Task worktree、规范化 diff、Task commit、候选集成树和终态清理；它不拥有 Task 状态、
-Policy 或 Ledger。
+它负责 Task execution workspace、规范化 diff、Task commit、候选集成树和终态清理；它不拥有
+Task 状态、Policy 或 Ledger。
+
+Protocol 1.3 只把现有 workspace purpose 内部联合类型扩展一个 `task_execution`，供非 Strict TDD
+Task 使用。Strict TDD 激活时不创建外层 Task worktree，Slot 直接调用现有
+`StrictTddExecutionPort`，由它从该 wave 冻结的 base commit 创建既有
+`baseline/test_authoring/red_verification/implementation/refactor` 相位工作区。通过的最终实现 patch
+由其已接受的 `implementation_revision` 定位，再由 `TaskWorkspaceManager` 读取、规范化并封装为
+Task commit；无法解析或与 TDD Cycle/Evidence 不一致时阻塞。无需扩展
+`StrictTddExecutionPort` 返回未经验证的额外 patch；禁止 worktree 嵌套。
 
 ### 4.4 `SchedulerProjectionStore`
 
@@ -126,23 +143,32 @@ SQLite 保存 PID、心跳、槽位、输出 tail 和本地 worktree 定位信�
 
 ## 5. Port 契约
 
-M4 正式落实 M1 中只以兼容名称保留的两个 Interface。
+M4 首次实现 M1 中只以兼容名称保留的两个 Interface；它们目前尚无 runtime 代码，不得在实施计划
+中作为“既有实现复用”。两个 Interface 都留在 runtime 内部，不扩大插件公共 SDK。
 
 ### 5.1 `TaskDagPort`
 
 职责：读取批准后的 Plan、Task、Dependency、资源声明、波次和执行投影。它不修改 Plan，不
-接受 Agent 自述，也不直接写 Checkpoint。提供 Ledger 实现和 InMemory conformance 实现。
+接受 Agent 自述，也不直接写 Checkpoint。首次实施提供包装现有 Workflow Engine/Ledger reader 的
+生产 Adapter 和 InMemory conformance Adapter。两个 Adapter 都必须校验 Plan 内 Task/Dependency
+语义与 Task Node/Edge Graph 投影一致，不允许调用者选择其中一份作为替代真相。
 
 ### 5.2 `PolicyDecisionPort`
 
 职责：对规范化 `dispatch_task`、`retry_task` 和 `integrate_wave` Action 返回：
 
 ```text
-allow | deny | requires_approval
+allow | deny | requires_approval | block
 ```
 
-它不执行副作用。`deny` 不能被 Approval 覆盖；`requires_approval` 只允许绑定当前精确对象的
-批准满足，不产生一般授权。
+这三个 Action kind 作为 Protocol 1.3 对现有 `POLICY_ACTION_KINDS` 的显式扩展；旧 Reader 不得
+将未知 Action 降级为 `propose_state`。生产 Adapter 包装既有 deterministic policy evaluator，
+InMemory Adapter 用于 conformance 和故障注入。
+
+它不执行副作用。`deny` 表示明确禁止；`block` 表示 Policy 冲突、缺失或无法形成可靠决策；两者
+均阻止 Lease/集成且不能被 Approval 覆盖。`requires_approval` 只允许绑定当前精确对象的批准满足，
+不产生一般授权。判别式字面量统一使用代码中的 `requires_approval`；自然语言可写“requires-approval”，
+但不得作为协议值。
 
 ### 5.3 复用接口
 
@@ -184,13 +210,20 @@ interface TaskSpecification {
 }
 ```
 
+批准后的 `ExecutionPlanContent.tasks` 是 Task 规划语义的唯一权威载体；M4 字段继续内嵌于该
+Plan，不增加独立 `TaskRecord`。同一 Plan 事务仍从每个已验证 `TaskSpecification` 确定性生成 Task
+Node、`CONTAINS` 和 `DEPENDS_ON` Edge，作为 Graph 投影。Plan content 与投影必须原子提交且逐 Task
+semantic digest 一致；投影不能独立编辑，读取时发现不一致必须 fail-closed。因而 M4 新增的权威
+领域记录仍只有 `TaskLeaseRecord` 和 `WaveIntegrationRecord`。
+
 `write_paths` 必须使用已规范化的仓库相对路径或目录范围。`.git`、Harness 权威目录、绝对路径、
 路径穿越和以仓库根目录掩盖未知范围的声明均被拒绝。`exclusive_resources` 使用项目内稳定资源键，
 例如 `database-schema`、`service-port:8080` 或 `generated-client`。
 
 ### 6.2 权威依赖与波次
 
-`dependencies` 及其 `DEPENDS_ON` 边是唯一权威依赖。ExecutionPlan 增加：
+`TaskSpecification.dependencies` 是唯一依赖语义输入；`DEPENDS_ON` 是同事务确定性 Graph 投影，
+必须逐边完全一致，不是第二份可编辑真相。ExecutionPlan 增加：
 
 ```ts
 readonly iteration_budget: {
@@ -210,16 +243,21 @@ ceiling 内提出，经 Plan Approval 后冻结并进入 Plan digest。运行时
 
 Plan Compiler 按以下步骤确定性生成波次：
 
-1. 校验所有依赖存在且 DAG 无环；
-2. 按依赖计算拓扑层级；
-3. 在同层中拆分重叠写路径和相同独占资源；
-4. 使用 Plan 中 Task 声明顺序作为稳定 tie-break；
+1. 校验所有依赖存在；使用稳定 Kahn 算法验证 DAG 无环，拓扑 frontier 始终按 Plan 中 Task 声明
+   顺序选择；
+2. 对拓扑序中的每个 Task 计算 `earliest_wave`：无依赖为 `0`，否则为所有依赖实际 wave 最大值
+   加 `1`；
+3. 从 `earliest_wave` 开始向后扫描，将 Task 放入首个不存在 `write_paths` 重叠或相同
+   `exclusive_resources` 的 wave；不存在则创建新 wave；
+4. 冲突 Task 因此按声明顺序确定谁先进入较早 wave。被后移 Task 的依赖者无需特殊“跟随”或
+   报错，它们处理时会从该 Task 的实际 wave 重新计算自己的 `earliest_wave`；
 5. 重算结果必须与持久化 `parallel_waves` 完全一致；
 6. `parallel_waves` 进入 Plan semantic digest，但不允许被独立编辑。
 
-只读访问不形成资源锁。同一 wave 的所有 Task 都读取同一个冻结 base commit；如果一个 Task
-需要另一个 Task 的新输出，Plan 必须显式建立 `DEPENDS_ON`，而不能依赖并行执行的完成先后。
-write/write 路径重叠和相同独占资源一定不能进入同一 wave。
+只读访问不形成资源锁。同一 wave 的所有 Task 都读取同一个冻结 base commit：wave 0 使用 Plan
+批准时的 baseline commit；wave N 使用 wave N-1 成功推进后的 operation-local integration ref
+commit。如果一个 Task 需要另一个 Task 的新输出，Plan 必须显式建立 `DEPENDS_ON`，而不能依赖
+并行执行的完成先后。write/write 路径重叠和相同独占资源一定不能进入同一 wave。
 
 ### 6.3 旧 Plan
 
@@ -270,7 +308,8 @@ running / verifying / integration_queued
 - `blocked`：需要人工处理或回到上游阶段；
 - `cancelled`：用户取消且副作用已完成对账。
 
-不增加稳定 `failed` 状态：可恢复失败进入 `retry_pending`，不可恢复失败进入 `blocked`。
+不增加稳定 `failed` 状态：可恢复失败进入 `retry_pending`，不可恢复失败进入 `blocked`。这条规则
+只约束 M4 Task 调度投影；M1 已有 Run Outcome 的 `failed` 及其不可变证据语义保持不变。
 
 ## 8. Task Lease 与预算预留
 
@@ -292,6 +331,8 @@ granted
 
 ```ts
 interface TaskLeaseRecord {
+  readonly protocol_version: "1.3.0";
+  readonly record_kind: "task_lease";
   readonly operation_id: string;
   readonly iteration_id: string;
   readonly plan_digest: Digest;
@@ -304,8 +345,9 @@ interface TaskLeaseRecord {
   readonly policy_digest: Digest;
   readonly approval_digests: readonly Digest[];
 
+  readonly task_lease_record_id: string;
   readonly lease_id: string;
-  readonly previous_lease_digest?: Digest;
+  readonly previous_lease_record_digest?: Digest;
   readonly fencing_token: number;
   readonly state: "granted" | "released" | "expired" | "revoked";
 
@@ -317,11 +359,17 @@ interface TaskLeaseRecord {
   readonly issued_at: Timestamp;
   readonly expires_at: Timestamp;
   readonly command_id: string;
+  readonly record_digest: Digest;
 }
 ```
 
 同一 Task 的 `fencing_token` 单调递增。只有当前 token 对应的 Run 能进入验证或候选集成；旧进程
 产生的输出只能作为 provisional Evidence。
+
+Schema 必须通过 `recordEnvelopeSchemaFor(PROTOCOL_1_3_VERSION, "task_lease", ...)` 构造；
+`record_digest` 覆盖除自身外的全部 canonical 字段。每次状态迁移产生新的
+`task_lease_record_id`，并通过 `previous_lease_record_digest` 链接同一 `lease_id` 的前一条记录；
+`command_id` 是命令幂等身份，`lease_id` 是资源租约身份，三者不能互换。
 
 ### 8.3 Lease 生命周期的细化
 
@@ -410,17 +458,35 @@ coverage 和 resume semantics 的 delegated Adapter。manual 或不能满足 una
 delegated Adapter 强制退化为单槽位监督执行。无法满足某个 Task 的 Adapter 不会被动态替换，
 Scheduler 在写 Lease 前阻塞并生成可操作 Finding。
 
-### 10.2 Profile
+### 10.2 `parallel_task_execution` Capability Module
 
-新增 Capability：
+M4 将 `parallel_task_execution` 增加到 Protocol 1.3 `CAPABILITY_IDS`，并按 Slim Module Contract
+完整注册，不把它实现成脱离 Capability Compiler 的布尔开关：
 
-```text
-parallel_task_execution
-```
+| Module 字段 | Protocol 1.3 定义 |
+| --- | --- |
+| `capability_id` | `parallel_task_execution` |
+| `depends_on` | `[]`；依赖 Evidence Kernel，不强制启用可选 `strict_tdd` |
+| `required_providers` | `isolated_workspace_provider`、`structured_gate_provider` |
+| `input_bindings` | `execution_plan`、`context_bundle` |
+| `output_bindings` | Protocol 1.3 新增的 `wave_integration`；`gate_evidence` 仍只由 Kernel `verify` 产生 |
+| `checkpoint_boundary` | `execute` |
+| `invalidated_by` | `execution_plan`、`context_bundle` |
+| `approval_objects` | `[]`；调度 Action 只按 Policy 按需产生精确 ApprovalRequest，不新增固定审批对象 |
 
-- Lite：inactive，有效并发为 1；
-- Standard：active，默认本地槽位为 2；
-- Governed：active，默认本地槽位为 2，高风险、共享资源或需批准 Task 按 Policy 串行。
+未启用时不得调用 `TaskDagPort`/`PolicyDecisionPort`/Agent Pool，不写 Task Lease、WaveIntegration 或
+M4 Event；Read API 返回 `inactive_by_profile`。Profile mode 与编译后的 resolution 严格映射：
+
+- Lite：`disabled` → `inactive_by_profile`，有效并发为 1，继续走既有顺序执行；
+- Standard：`required` → `active`，默认本地槽位为 2；
+- Governed：`required` → `active`，默认本地槽位为 2，高风险、共享资源或需批准 Task 按 Policy 串行。
+
+Capability Compiler 将该 Module 贡献到既有 Kernel `execute` 节点，不增加新的全局 phase：Protocol
+1.3 把 execute `subgraph` 判别值扩展为 `strict_tdd | parallel_task_execution`。当并行 Module 激活
+时，外层唯一值为 `parallel_task_execution`，需要 Strict TDD 的 Task 在 Scheduler 内调用既有
+`StrictTddExecutionPort`；当并行 Module 未启用而 Strict TDD 单独激活时，仍使用原
+`strict_tdd` subgraph。这样不引入通用嵌套 subgraph Schema，也不让 `parallel_task_execution` 与
+Kernel `verify` 重复生产 `gate_evidence`。
 
 本地 `.harness/runtime.json` 只保存期望槽位：
 
@@ -450,6 +516,9 @@ retry kind、Approval digest 和 Effective Policy digest。
 - 任一绑定漂移都使 Approval 失效；
 - Agent 或 Model 只能提供 brief，不能批准。
 
+`block` 必须生成可操作的 Policy Finding 并阻止当前 Action；它不是 `deny` 的别名，也不能通过补充
+Approval 转为 `allow`。只有重新形成无冲突且 digest-bound 的 Effective Policy 后才能重试。
+
 ## 12. 资源锁与写集治理
 
 Plan 资源声明是权威输入，runtime 锁只提供执行保护。锁键确定性生成：
@@ -466,17 +535,34 @@ exclusive:<resource-key>
 Agent 实际 Git diff 必须完全位于批准 `write_paths`。未声明写入、`.git`、Harness 权威目录、
 绝对路径、路径穿越或 symlink 逃逸会终止 Run 并产生 Finding；Scheduler 不动态扩权。
 
+Strict TDD Task 的有效写集按每次相位执行取交集：
+
+```text
+effective_write_set
+  = Task.write_paths
+  ∩ Task CapabilityGrant.write_paths
+  ∩ tddPhaseWriteScopes(current phase, TddContract.path_policy)
+  ∩ current PhaseGrant.write_paths
+```
+
+任何集合为空、越过测试/生产路径相位限制或最终 diff 超出交集都会阻塞；外层 Scheduler Grant 不能
+扩大 TDD Phase Grant，TDD Phase Grant 也不能扩大已批准 Task 写集。
+
 ## 13. Worktree 与候选集成
 
 ### 13.1 Task Worktree
 
-同一 wave 的 Task 从同一个冻结 base commit 创建独立 detached Git worktree。Agent 只在该
-worktree 中执行，不获得主工作区、迭代分支或 Ledger 写权限。Task 结束后，Harness 规范化 diff、
-验证写集并封装 Task commit；Agent 自己产生的 commit metadata 不作为权威输入。
+未激活 Strict TDD 的同一 wave Task 从同一个冻结 base commit 创建独立 detached Git worktree。
+Agent 只在该 worktree 中执行，不获得主工作区、迭代分支或 Ledger 写权限。Task 结束后，Harness
+规范化 diff、验证写集并封装 Task commit；Agent 自己产生的 commit metadata 不作为权威输入。
+
+本段的单一 worktree 只适用于未激活 Strict TDD 的 Task。Strict TDD Task 按 §4.3 使用相位级兄弟
+worktree，从同一 wave base commit 开始，不把一个 worktree 建在另一个 worktree 内；其最终通过
+的实现 patch 仍按本节规则封装为唯一 Task commit。
 
 ### 13.2 三层验证
 
-1. Task worktree 内运行 Assertions 和 Required Gates；
+1. Task execution workspace 内运行 Assertions 和 Required Gates；
 2. Task commit 应用到最新候选集成树后重跑相关 Gate；
 3. wave 全部 `candidate_validated` 后运行项目 Mandatory Gates。
 
@@ -503,14 +589,22 @@ wave Mandatory Gates
 WaveIntegrationRecord
 ```
 
-wave Gate 失败时权威 ref 不移动；候选树可以重建；Task branch、Evidence 和 Finding 保留。后继
-Task 依赖的是前置 Task 的 `integrated`，不是 Agent completion claim。
+wave Gate 失败时权威 ref 不移动；候选树可以重建；Task branch、Evidence 和 Finding 保留。已
+`candidate_validated` 的 Task 不回到 `retry_pending`，也不进行同 Task 自动重试；恢复路径只能进入
+反馈/影响分析/Plan 修订并生成显式修复 Task。旧 Plan 被 supersede 后，其未集成 Task 投影为
+`blocked`，不能被新 Plan 静默继承。后继 Task 依赖的是前置 Task 的 `integrated`，不是 Agent
+completion claim。
 
 ### 13.4 最终 CAS
 
 推进前必须再次验证 Plan/Task、Policy/Approval、Gate definition、Evidence freshness、最新 Lease
 token 和目标 ref。目标不再等于 wave `base_commit` 时，不 force push，也不自动重放整个 wave；
-生成 `baseline_drift` blocking Finding并返回 Impact/Plan 重新确认。
+生成 `baseline_drift` blocking Finding 并返回 Impact/Plan 重新确认。
+
+`integration_conflict` 只表示一个 Task patch 无法应用到当前 operation-local candidate tree；首次可
+按 §15.1 在最新已集成 commit 上创建新的 Task execution workspace。文本可应用但行为不兼容属于
+语义冲突，只能由 candidate/wave Gate 暴露并进入反馈闭环，不走 `integration_retry`。目标 ref 或
+wave base OID 变化始终是 `baseline_drift`，不消耗 integration retry 配额，也绝不自动 rebase/replay。
 
 Git ref 和 Ledger 必须通过现有 staged transaction/CAS 机制一次接受，不能出现“代码已推进但
 Ledger 未记录”。
@@ -522,6 +616,9 @@ M4 只增加两个权威领域记录：`TaskLeaseRecord` 和 `WaveIntegrationRec
 
 ```ts
 interface WaveIntegrationRecord {
+  readonly protocol_version: "1.3.0";
+  readonly record_kind: "wave_integration";
+  readonly wave_integration_id: string;
   readonly operation_id: string;
   readonly iteration_id: string;
   readonly plan_digest: Digest;
@@ -539,13 +636,17 @@ interface WaveIntegrationRecord {
 
   readonly policy_digest: Digest;
   readonly approval_digests: readonly Digest[];
+  readonly command_id: string;
   readonly integrated_at: Timestamp;
+  readonly record_digest: Digest;
 }
 ```
 
 `accepted_source_tree_digest` 只计算项目源树，不包含承载本记录的 Ledger 内容，从而避免让记录
 引用包含自身的 Git commit。最终 Git commit 由 Ledger manifest 和 CAS 结果定位。该记录是 wave
-内 Task 进入 `integrated` 的唯一新增依据。
+内 Task 进入 `integrated` 的唯一新增依据。Schema 必须通过
+`recordEnvelopeSchemaFor(PROTOCOL_1_3_VERSION, "wave_integration", ...)` 构造；`command_id` 提供
+幂等重放身份，不能用时间戳代替。
 
 ## 15. 重试、失败与取消
 
@@ -555,8 +656,8 @@ interface WaveIntegrationRecord {
 
 - `executor_retry`：Agent 进程崩溃或临时超时；仍须有剩余 Task/Iteration 预算；支持 resume 的
   Adapter 可使用显式 ResumeContext，否则创建新 Run；
-- `integration_retry`：首次集成冲突；保留原分支/Evidence，基于最新已集成 commit 创建新
-  worktree 并重新生成所有基线相关 Evidence。
+- `integration_retry`：Task patch 首次应用当前 candidate tree 失败；保留原分支/Evidence，基于
+  最新已集成 commit 创建新 worktree，并重新生成所有基线相关 Evidence。
 
 Task 内现有 execute/verify 修复循环不计入 Scheduler Retry，但消耗同一 Task 预算。
 
@@ -565,7 +666,7 @@ Task 内现有 execute/verify 修复循环不计入 Scheduler Retry，但消耗�
 
 ### 15.2 取消
 
-取消会停止新 Lease、请求终止活动 Slot、对账外部副作用、撤销活动 Lease并保留分支/Evidence。
+取消会停止新 Lease、请求终止活动 Slot、对账外部副作用、撤销活动 Lease 并保留分支/Evidence。
 无法确认终止的外部动作按现有 uncertain 语义处理。未集成 Task 投影为 `cancelled`，不自动删除
 诊断工作区。
 
@@ -578,11 +679,15 @@ Task 内现有 execute/verify 修复循环不计入 Scheduler Retry，但消耗�
 3. 尝试终止孤儿进程并对账输出；
 4. 将未正常结束的旧 Lease 写为 `revoked`；
 5. 丢弃未接受的候选集成树；
-6. 保留 Task branch、Run、Transcript 和 provisional Evidence；
+6. 将所有绑定被丢弃 candidate commit 的 Evidence 降级为 provisional，保留 Task branch、Run、
+   Transcript 和诊断材料；
 7. 根据失败类型、剩余预算和重试次数进入 `retry_pending` 或 `blocked`；
 8. 新执行取得更高 fencing token。
 
-旧进程即使仍产生输出，也无法通过新 token 的验证和集成检查。
+仅当不存在开放的 `wave_gate_failed`/Plan drift blocking Finding 时，恢复才从当前 wave 的权威 base
+commit 从头重建 candidate tree，按 Plan 顺序重新应用仍有效的 Task commit，并重跑 Task candidate
+Gate 与 wave Mandatory Gates；旧 candidate Evidence 不能直接恢复 `candidate_validated`。否则
+`resume` 保持阻塞并指向反馈/Plan 修订。旧进程即使仍产生输出，也无法通过新 token 的验证和集成检查。
 
 ## 17. Digest 与失效
 
@@ -686,7 +791,8 @@ Evidence。
 - `harness status`：展示 wave、Task、Slot、Budget、Approval 和 Finding；
 - `harness watch`：展示 M4 Event；
 - `harness abort`：取消并对账；
-- `harness serve`：提供 Scheduler UI；用户显式恢复后可在 serve 进程内驱动。
+- `harness serve`：提供 Scheduler UI；用户显式恢复后必须先取得与 CLI 共用的 Driver Lock，才可在
+  serve 进程内驱动。
 
 增加本次运行降权/选项：
 
@@ -727,12 +833,17 @@ M3 Operation Lease
 - 必须先持有有效 M3 Operation Lease；
 - Task Lease 仍只进入项目 Ledger，不进入 Control Ref；
 - Task 只能在当前 Operation holder 所在机器并行；
-- M4 wave 只推进 operation-local integration ref；
+- operation-local integration ref 精确映射为 M3 `refs/heads/operation/<operation-id>`；M4 wave 只对
+  该本地 ref 做 expected-OID CAS；
+- 只有有效 M3 Operation Lease holder 才能通过既有 `publish_operation_candidate` CAS 发布其远程
+  同名 Operation Branch；M4 不把它当作远程目标分支；
 - 全部 wave 完成后，由 M3 Integration Lease 和 prepare/accept 发布远程目标；
 - Remote Approval 先由 M3 materialize，再进入同一 ApprovalService；
 - M4 不直接写远程目标分支。
 
-未连接 M3 时，operation-local integration ref 最终通过现有本地 CAS 推进项目目标分支。
+M3 prepare 冻结该 Operation Branch head 为 `operation_commit`。未连接 M3 时仍使用相同本地
+`refs/heads/operation/<operation-id>` 命名和 wave CAS 语义；全部 wave 完成后，再通过现有本地
+CAS 一次推进项目目标分支。
 
 M4 本地实现不依赖三平台 Dogfood，因此可在 M3 代码门禁稳定后实施；Protocol 1.3 必须通过全部
 Protocol 1.2 回归。M3 AC-01～14 和 M4 AC-01～20 未全部完成前，不能声明整体 1.0 完成。
@@ -745,17 +856,17 @@ TaskVerdict。
 ### 23.1 纯函数与属性测试
 
 - DAG 无环/缺失依赖；
-- wave、Task 顺序和规范化确定性；
+- 稳定 Kahn 排序、earliest-wave 放置、Task 顺序和规范化确定性；
 - write path/exclusive resource 冲突；
 - Ready Task 选择；
 - fencing token 单调性；
--预算预留、归还和 Retry 消耗；
--相同输入的调度结果一致。
+- 预算预留、归还和 Retry 消耗；
+- 相同输入的调度结果一致。
 
 ### 23.2 Port Conformance
 
-- Ledger/InMemory `TaskDagPort`；
--真实 Policy Evaluator/InMemory `PolicyDecisionPort`；
+- Workflow Engine/Ledger 与 InMemory `TaskDagPort`；
+- 真实 Policy Evaluator 与 InMemory `PolicyDecisionPort`，覆盖四种 Decision outcome 和三个新增 Action；
 - Git/InMemory `IsolatedWorkspacePort`；
 - SQLite/InMemory Scheduler Projection；
 - managed/delegated/manual Agent Adapter fixture。
@@ -764,17 +875,18 @@ TaskVerdict。
 
 覆盖 Lease 后/进程前、进程后/PID 前、Agent 后/Evidence 前、Task Gate 后/队列前、Task commit
 后/Candidate Gate 前、Wave Gate 后/CAS 前、CAS 准备后/Ledger transaction 前、Approval 到达
-前后及 Coordinator 重启。每处必须证明无重复集成、无旧 token 接受、无预算错误返还、无假成功。
+前后、Driver Lock 竞争及 Coordinator 重启。每处必须证明无重复驱动、无重复集成、无旧 token
+接受、无预算错误返还、无假成功。
 
 ### 23.4 真实 Git 集成测试
 
-验证真实并行、路径/资源串行、独立 worktree、Plan 顺序候选集成、wave 原子性、一次冲突恢复、
-第二次阻塞、baseline drift 和未声明写入拒绝。
+验证真实并行、路径/资源串行、非 TDD 独立 worktree、Strict TDD 相位工作区组合、Plan 顺序候选
+集成、wave 原子性、一次 patch apply conflict 恢复、第二次阻塞、baseline drift 和未声明写入拒绝。
 
 ### 23.5 Dashboard/CLI
 
 Playwright 和 CLI golden 覆盖 DAG/wave/slot/detail、中文描述、三类状态、Approval、Budget、Retry、
-SQLite 丢失降级、360px/desktop、`--json` stdout 和 SSE 恢复。
+SQLite 丢失降级、CLI/Dashboard 单驱动互斥、360px/desktop、`--json` stdout 和 SSE 恢复。
 
 ### 23.6 真实 Dogfood
 
@@ -784,25 +896,30 @@ Task、两个可并行 Task 和两个 wave，最终完成 Evaluate/Snapshot。Do
 
 ## 24. 验收标准
 
-- **AC-01**：Plan 明确生成全部 `DEPENDS_ON` 和 digest-bound waves。
-- **AC-02**：循环、缺失依赖和不一致 wave 被拒绝。
+- **AC-01**：Plan 是 Task 规划语义唯一权威源，并原子生成全部 `DEPENDS_ON` 和 digest-bound waves。
+- **AC-02**：循环、缺失依赖、不一致 wave 及不确定拆分被拒绝。
 - **AC-03**：写路径与独占资源冲突被机械串行化。
-- **AC-04**：Lite=1，Standard/Governed 按有效上限并行。
+- **AC-04**：`parallel_task_execution` 满足完整 Module Contract；Lite disabled，Standard/Governed
+  required 并按有效上限并行。
 - **AC-05**：不合格 Adapter 不能无人值守并行。
 - **AC-06**：至少两个真实 Task 在隔离槽位并行。
-- **AC-07**：Context、Budget、Run、worktree 和隐藏历史互不共享。
-- **AC-08**：Task Lease、fencing 和重启恢复无重复接受。
+- **AC-07**：Context、Budget、Run、worktree 和隐藏历史互不共享；Strict TDD 无嵌套 worktree 且
+  四层写集取交集。
+- **AC-08**：Task Lease、fencing、Protocol Envelope 和重启恢复无重复接受。
 - **AC-09**：并发预算预留不突破 Iteration 总上限。
-- **AC-10**：Policy deny、requires-approval 和 Approval 漂移正确生效。
+- **AC-10**：三个调度 Action 及 Policy `allow/deny/requires_approval/block` 四态、Approval 漂移正确生效。
 - **AC-11**：三层 Gate 与 wave 原子集成成立。
-- **AC-12**：executor retry 和 integration retry 均最多一次。
+- **AC-12**：executor retry 和 patch-apply integration retry 均最多一次；语义冲突与 baseline drift
+  不进入 retry。
 - **AC-13**：第二次失败、越权写入和预算耗尽正确阻塞。
 - **AC-14**：baseline drift 不会自动 force/rebase。
-- **AC-15**：Evidence 绑定 Task、Run、Lease token 和实际基线。
+- **AC-15**：Evidence 绑定 Task、Run、Lease token 和实际基线；丢弃 candidate 后旧 Evidence
+  provisional 且完整重验。
 - **AC-16**：Dashboard 展示完整调度与恢复状态。
-- **AC-17**：CLI run/resume/status/watch/abort 形成闭环。
+- **AC-17**：CLI run/resume/status/watch/abort 形成闭环，CLI 与 Dashboard 对同一 Operation 保持
+  单驱动。
 - **AC-18**：SQLite 删除后可从 Ledger 恢复权威状态。
-- **AC-19**：M1/M2/M3 与顺序执行回归全部通过。
+- **AC-19**：Protocol 1.3 Envelope/Reader/`required_reader_version`、M1/M2/M3 与顺序执行回归全部通过。
 - **AC-20**：真实 Dogfood 完成并生成绑定当前提交的验收报告。
 
 M4 必须 20/20 才能声明完成。
@@ -821,9 +938,14 @@ M4 必须 20/20 才能声明完成。
 
 ## 26. Lifecycle Event 与 Record 版本
 
-Protocol 1.3 Reader 必须读取 1.0–1.3；旧 Reader 遇到 1.3 权威记录 fail-closed。未启用 M4 的项目
-继续使用原顺序路径，不写 M4 Record。Reader/Schema、canonical JSON、digest golden、domain
-registry、transaction version pin 和 downgrade refusal 必须作为实施首个切片完成。
+当前稳定协议为 1.0.0，1.1.0/1.2.0 均为 development；M4 把 1.3.0 注册为 development，不能把
+“通过 1.2 回归”表述成 1.2 已稳定发布。Protocol 1.3 Reader 必须读取 1.0–1.3；旧 Reader 遇到 1.3
+权威记录 fail-closed。未启用 M4 的项目继续使用原顺序路径，不写 M4 Record。
+
+Reader/Schema、canonical JSON、digest golden、domain registry、`required_reader_version` transaction
+pin 和 downgrade refusal 必须作为实施首个切片完成。任何包含 Protocol 1.3 权威 Record/Event 的
+Ledger transaction 都必须写 `required_reader_version: "1.3.0"`；不得引入第二个“transaction
+version pin”字段。
 
 ## 27. 建议实施顺序
 
@@ -832,11 +954,13 @@ registry、transaction version pin 和 downgrade refusal 必须作为实施首�
 ```text
 Protocol 1.3 Schema / Reader
   ↓
-Plan resource claims + parallel_waves + budgets
+Capability Module + TaskDagPort / PolicyDecisionPort + Policy Action vocabulary
+  ↓
+Plan authority + resource claims + parallel_waves + budgets
   ↓
 Task Lease + Budget reservation + deterministic scheduler
   ↓
-Agent Pool + IsolatedWorkspacePort extension
+Operation Driver Lock + Agent Pool + Workspace/TDD composition
   ↓
 Candidate integration + wave gates + recovery
   ↓
