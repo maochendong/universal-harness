@@ -408,6 +408,11 @@ describe("generateExecutionPlan protocol 1.3", () => {
     capability_plan_digest: "d".repeat(64),
   } as const;
 
+  // Protocol 1.3 write-path validation runs against the real repository
+  // root so symlink escapes are rejected at plan time.
+  const REPO_ROOT = join(goldenDirectory, "../../..");
+  const PROTOCOL13_CONSTRAINTS = { ...PLAN_CONSTRAINTS, repository_root: REPO_ROOT } as const;
+
   const BUDGETS = {
     task_ceiling: { steps: 100, tokens: 100_000, duration_ms: 600_000 },
     iteration_ceiling: { steps: 1_000, tokens: 1_000_000, duration_ms: 3_600_000 },
@@ -421,7 +426,7 @@ describe("generateExecutionPlan protocol 1.3", () => {
       hasExistingGraph: true,
       deterministicWork: false,
       shared: PROTOCOL13_SHARED,
-      constraints: PLAN_CONSTRAINTS,
+      constraints: PROTOCOL13_CONSTRAINTS,
       protocol: "protocol13",
       budgets: BUDGETS,
       proposal: [
@@ -577,6 +582,18 @@ describe("generateExecutionPlan protocol 1.3", () => {
       edges: records.edges,
     });
     expect(content.iteration_budget).toEqual({ steps: 6, tokens: 3_000, duration_ms: 90_000 });
+  });
+
+  it("requires a repository root so write-path symlink escapes are checked", () => {
+    const { impactSet, approvedDigest, input } = generateProtocol13();
+    expect(() =>
+      generateExecutionPlan(
+        impactSet,
+        approvedDigest,
+        { ...input, constraints: PLAN_CONSTRAINTS },
+        PLAN_CONTEXT,
+      ),
+    ).toThrowError(expect.objectContaining({ kind: "invalid_specification" }));
   });
 
   it("rejects a 1.3 proposal missing mandatory task fields", () => {

@@ -53,11 +53,17 @@ export class PlanningError extends Error {
 /**
  * Bounds the proposal may not exceed: the capabilities the approved baseline
  * and policy authorize, plus the registered Harness tools and gates.
+ * `repository_root` is mandatory for protocol 1.3 proposals: every declared
+ * write path is then resolved against the real filesystem so a symlink can
+ * never smuggle a write claim outside the repository at plan time (execution
+ * still re-checks through policy/path-boundary as defense in depth). Legacy
+ * proposals never use it and keep their purely lexical validation.
  */
 export interface PlannerConstraints {
   readonly allowedCapabilities: readonly string[];
   readonly knownTools: readonly string[];
   readonly knownGates: readonly string[];
+  readonly repository_root?: string;
 }
 
 /**
@@ -294,6 +300,7 @@ function readTaskSpecification(
   raw: unknown,
   index: number,
   mode: PlanProtocolMode,
+  repositoryRoot: string | undefined,
 ): TaskSpecification {
   const position = `task[${String(index)}]`;
   if (!isPlainObject(raw)) {
@@ -381,7 +388,12 @@ function readTaskSpecification(
     );
   }
   const writePaths = readResourceClaims(raw, "write_paths", id, mode, (value) =>
-    normalizeTaskWritePath(value),
+    // Protocol 1.3 claims are resolved against the real repository so a
+    // symlink cannot escape it; legacy plans keep lexical-only validation.
+    normalizeTaskWritePath(
+      value,
+      mode === "protocol13" ? { repositoryRoot: repositoryRoot as string } : undefined,
+    ),
   );
   const exclusiveResources = readResourceClaims(raw, "exclusive_resources", id, mode, (value) =>
     normalizeExclusiveResourceKey(value),
@@ -535,7 +547,8 @@ function assertAcyclic(tasks: readonly TaskSpecification[]): void {
  * in the authoritative graph. `mode` selects the protocol contract: legacy
  * proposals keep the pre-1.3 shape and stay sequential-only, while
  * `protocol13` proposals must declare duration budgets, write paths and
- * exclusive resource claims on every task.
+ * exclusive resource claims on every task, and `constraints.repository_root`
+ * must be set so write paths are verified against the real filesystem.
  */
 export function validatePlanProposal(
   rawTasks: unknown,
@@ -548,8 +561,16 @@ export function validatePlanProposal(
       "a plan proposal requires at least one task specification",
     );
   }
+  if (mode === "protocol13" && constraints.repository_root === undefined) {
+    throw new PlanningError(
+      "invalid_specification",
+      "protocol 1.3 plan validation requires constraints.repository_root so write-path symlink escapes can be rejected",
+    );
+  }
   assertNoEmbeddedCommands(rawTasks, "proposal");
-  const tasks = rawTasks.map((raw, index) => readTaskSpecification(raw, index, mode));
+  const tasks = rawTasks.map((raw, index) =>
+    readTaskSpecification(raw, index, mode, constraints.repository_root),
+  );
   const ids = new Set<string>();
   for (const task of tasks) {
     if (ids.has(task.id)) {

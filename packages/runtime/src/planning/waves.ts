@@ -17,6 +17,12 @@ import {
  * carries no write/write overlap and no shared exclusive resource. The result
  * is a deterministic projection stored on the Plan; persisted drift fails
  * closed through {@link assertParallelWaves}.
+ *
+ * The compiler is intentionally pure: it re-checks claims lexically, while
+ * filesystem-level symlink verification happens at proposal validation —
+ * the generateExecutionPlan() protocol 1.3 flow always passes a repository
+ * root into validatePlanProposal(), so every specification reaching this
+ * compiler has already been resolved against the real repository.
  */
 export interface ParallelWave {
   readonly wave_index: number;

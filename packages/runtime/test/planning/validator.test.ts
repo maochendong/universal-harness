@@ -1,4 +1,8 @@
-import { describe, expect, it } from "vitest";
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import {
   PlanningError,
@@ -179,6 +183,28 @@ describe("validatePlanProposal", () => {
 });
 
 describe("validatePlanProposal protocol 1.3 mode", () => {
+  // A temporary repository root with one symlink escaping it and one symlink
+  // staying inside, so write-path validation exercises the real filesystem.
+  let repoRoot: string;
+  let outsideRoot: string;
+
+  beforeEach(() => {
+    repoRoot = mkdtempSync(join(tmpdir(), "harness-p13-repo-"));
+    outsideRoot = mkdtempSync(join(tmpdir(), "harness-p13-outside-"));
+    symlinkSync(outsideRoot, join(repoRoot, "link-escape"), "dir");
+    mkdirSync(join(repoRoot, "inside"));
+    symlinkSync("inside", join(repoRoot, "link-inside"), "dir");
+  });
+
+  afterEach(() => {
+    rmSync(repoRoot, { recursive: true, force: true });
+    rmSync(outsideRoot, { recursive: true, force: true });
+  });
+
+  function protocol13Constraints(): PlannerConstraints {
+    return { ...CONSTRAINTS, repository_root: repoRoot };
+  }
+
   function protocol13Task(overrides?: Record<string, unknown>): Record<string, unknown> {
     return validTask({
       write_paths: ["packages/runtime/src/scheduling"],
@@ -194,7 +220,7 @@ describe("validatePlanProposal protocol 1.3 mode", () => {
     mode: "legacy" | "protocol13" = "protocol13",
   ): void {
     try {
-      validatePlanProposal(proposal, CONSTRAINTS, mode);
+      validatePlanProposal(proposal, protocol13Constraints(), mode);
       expect.unreachable(`expected a PlanningError of kind ${kind}`);
     } catch (error) {
       expect(error).toBeInstanceOf(PlanningError);
@@ -203,17 +229,47 @@ describe("validatePlanProposal protocol 1.3 mode", () => {
   }
 
   it("accepts a fully declared protocol 1.3 task", () => {
-    const tasks = validatePlanProposal([protocol13Task()], CONSTRAINTS, "protocol13");
+    const tasks = validatePlanProposal([protocol13Task()], protocol13Constraints(), "protocol13");
     const task = tasks[0];
     expect(task?.write_paths).toEqual(["packages/runtime/src/scheduling"]);
     expect(task?.exclusive_resources).toEqual(["generated-client"]);
     expect(task?.budget).toEqual({ steps: 12, tokens: 8_000, duration_ms: 300_000 });
   });
 
+  it("requires a repository root for protocol 1.3 proposals", () => {
+    try {
+      validatePlanProposal([protocol13Task()], CONSTRAINTS, "protocol13");
+      expect.unreachable("expected protocol 1.3 validation to require a repository root");
+    } catch (error) {
+      expect(error).toBeInstanceOf(PlanningError);
+      expect((error as PlanningError).kind).toBe("invalid_specification");
+    }
+  });
+
+  it("rejects write paths escaping the repository through a symlink", () => {
+    expectProtocol13Error(
+      [protocol13Task({ write_paths: ["link-escape/secret.ts"] })],
+      "invalid_specification",
+    );
+    expectProtocol13Error(
+      [protocol13Task({ write_paths: ["link-escape"] })],
+      "invalid_specification",
+    );
+  });
+
+  it("accepts write paths whose symlinks stay inside the repository", () => {
+    const tasks = validatePlanProposal(
+      [protocol13Task({ write_paths: ["link-inside/outcome.ts"] })],
+      protocol13Constraints(),
+      "protocol13",
+    );
+    expect(tasks[0]?.write_paths).toEqual(["link-inside/outcome.ts"]);
+  });
+
   it("accepts empty write paths and resource claims when declared explicitly", () => {
     const tasks = validatePlanProposal(
       [protocol13Task({ write_paths: [], exclusive_resources: [] })],
-      CONSTRAINTS,
+      protocol13Constraints(),
       "protocol13",
     );
     expect(tasks[0]?.write_paths).toEqual([]);
@@ -314,7 +370,7 @@ describe("validatePlanProposal protocol 1.3 mode", () => {
     expect(
       validatePlanProposal(
         [protocol13Task({ exclusive_resources: ["database-schema", "service-port:8080"] })],
-        CONSTRAINTS,
+        protocol13Constraints(),
         "protocol13",
       )[0]?.exclusive_resources,
     ).toEqual(["database-schema", "service-port:8080"]);
