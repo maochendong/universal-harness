@@ -4,6 +4,7 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 
 import { collaborationFailure } from "./errors.js";
 import { OAUTH_SESSION_TTL_MS } from "./oauth-session.js";
+import { REMOTE_APPROVAL_DECISIONS } from "@universal-harness-internal/core";
 import type {
   CollaborationCommand,
   CollaborationCoordinatorPort,
@@ -299,6 +300,14 @@ function isValidCommand(value: unknown): value is CollaborationCommand {
   if (
     value["kind"] === "publish_operation_candidate" &&
     typeof value["fencing_token"] !== "number"
+  ) {
+    return false;
+  }
+  if (
+    value["kind"] === "submit_remote_approval" &&
+    !REMOTE_APPROVAL_DECISIONS.includes(
+      value["decision"] as (typeof REMOTE_APPROVAL_DECISIONS)[number],
+    )
   ) {
     return false;
   }

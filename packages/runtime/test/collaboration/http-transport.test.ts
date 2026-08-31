@@ -461,6 +461,34 @@ describe("collaboration HTTP transport security", () => {
     }
   });
 
+  it("rejects a remote approval decision outside the protocol enum", async () => {
+    const running = await startServer(createHarness());
+    try {
+      for (const decision of ["yes", "", "APPROVE"]) {
+        const response = await https("POST", `${running.origin}/api/v1/collaboration/commands`, {
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            command: {
+              kind: "submit_remote_approval",
+              command_id: "command_decision_probe",
+              project_id: "project_demo",
+              request_id: "request_demo",
+              decision,
+            },
+            session: session("principal_alice"),
+          }),
+        });
+        expect(response.status, decision).toBe(400);
+        expect(JSON.parse(response.body), decision).toMatchObject({
+          type: "error",
+          error: "bad_request",
+        });
+      }
+    } finally {
+      await running.close();
+    }
+  });
+
   it("rejects non-JSON content types", async () => {
     const running = await startServer(createHarness());
     try {
