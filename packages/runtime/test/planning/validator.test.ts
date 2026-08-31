@@ -177,3 +177,168 @@ describe("validatePlanProposal", () => {
     );
   });
 });
+
+describe("validatePlanProposal protocol 1.3 mode", () => {
+  function protocol13Task(overrides?: Record<string, unknown>): Record<string, unknown> {
+    return validTask({
+      write_paths: ["packages/runtime/src/scheduling"],
+      exclusive_resources: ["generated-client"],
+      budget: { steps: 12, tokens: 8_000, duration_ms: 300_000 },
+      ...overrides,
+    });
+  }
+
+  function expectProtocol13Error(
+    proposal: readonly unknown[],
+    kind: string,
+    mode: "legacy" | "protocol13" = "protocol13",
+  ): void {
+    try {
+      validatePlanProposal(proposal, CONSTRAINTS, mode);
+      expect.unreachable(`expected a PlanningError of kind ${kind}`);
+    } catch (error) {
+      expect(error).toBeInstanceOf(PlanningError);
+      expect((error as PlanningError).kind).toBe(kind);
+    }
+  }
+
+  it("accepts a fully declared protocol 1.3 task", () => {
+    const tasks = validatePlanProposal([protocol13Task()], CONSTRAINTS, "protocol13");
+    const task = tasks[0];
+    expect(task?.write_paths).toEqual(["packages/runtime/src/scheduling"]);
+    expect(task?.exclusive_resources).toEqual(["generated-client"]);
+    expect(task?.budget).toEqual({ steps: 12, tokens: 8_000, duration_ms: 300_000 });
+  });
+
+  it("accepts empty write paths and resource claims when declared explicitly", () => {
+    const tasks = validatePlanProposal(
+      [protocol13Task({ write_paths: [], exclusive_resources: [] })],
+      CONSTRAINTS,
+      "protocol13",
+    );
+    expect(tasks[0]?.write_paths).toEqual([]);
+    expect(tasks[0]?.exclusive_resources).toEqual([]);
+  });
+
+  it("requires duration, write paths and resource claims in protocol 1.3 mode", () => {
+    expectProtocol13Error(
+      [validTask({ write_paths: ["src/a"], exclusive_resources: [] })],
+      "invalid_specification",
+    ); // no duration_ms
+    expectProtocol13Error([protocol13Task({ write_paths: undefined })], "invalid_specification");
+    expectProtocol13Error(
+      [protocol13Task({ exclusive_resources: undefined })],
+      "invalid_specification",
+    );
+  });
+
+  it("rejects non-positive or non-integer duration", () => {
+    expectProtocol13Error(
+      [protocol13Task({ budget: { steps: 4, tokens: 100, duration_ms: 0 } })],
+      "invalid_specification",
+    );
+    expectProtocol13Error(
+      [protocol13Task({ budget: { steps: 4, tokens: 100, duration_ms: -5 } })],
+      "invalid_specification",
+    );
+    expectProtocol13Error(
+      [protocol13Task({ budget: { steps: 4, tokens: 100, duration_ms: 1.5 } })],
+      "invalid_specification",
+    );
+  });
+
+  it("rejects absolute paths and dot segments", () => {
+    expectProtocol13Error(
+      [protocol13Task({ write_paths: ["/etc/passwd"] })],
+      "invalid_specification",
+    );
+    expectProtocol13Error(
+      [protocol13Task({ write_paths: ["C:/repo/src"] })],
+      "invalid_specification",
+    );
+    expectProtocol13Error(
+      [protocol13Task({ write_paths: ["src/../secret"] })],
+      "invalid_specification",
+    );
+    expectProtocol13Error([protocol13Task({ write_paths: ["./src/a"] })], "invalid_specification");
+    expectProtocol13Error([protocol13Task({ write_paths: ["src//a"] })], "invalid_specification");
+  });
+
+  it("rejects .git and .harness authoritative directories", () => {
+    expectProtocol13Error([protocol13Task({ write_paths: [".git"] })], "invalid_specification");
+    expectProtocol13Error(
+      [protocol13Task({ write_paths: [".git/refs"] })],
+      "invalid_specification",
+    );
+    expectProtocol13Error(
+      [protocol13Task({ write_paths: ["packages/.git"] })],
+      "invalid_specification",
+    );
+    expectProtocol13Error([protocol13Task({ write_paths: [".harness"] })], "invalid_specification");
+    expectProtocol13Error(
+      [protocol13Task({ write_paths: [".harness/ledger"] })],
+      "invalid_specification",
+    );
+  });
+
+  it("rejects empty and root-masking write path declarations", () => {
+    expectProtocol13Error([protocol13Task({ write_paths: [""] })], "invalid_specification");
+    expectProtocol13Error([protocol13Task({ write_paths: ["."] })], "invalid_specification");
+    expectProtocol13Error([protocol13Task({ write_paths: ["/"] })], "invalid_specification");
+  });
+
+  it("rejects duplicate and non-canonical write paths", () => {
+    expectProtocol13Error(
+      [protocol13Task({ write_paths: ["src/a", "src/a"] })],
+      "invalid_specification",
+    );
+    expectProtocol13Error([protocol13Task({ write_paths: ["src\\a"] })], "invalid_specification");
+    expectProtocol13Error([protocol13Task({ write_paths: ["src/a/"] })], "invalid_specification");
+  });
+
+  it("rejects invalid and duplicate exclusive resource keys", () => {
+    expectProtocol13Error(
+      [protocol13Task({ exclusive_resources: ["Database Schema"] })],
+      "invalid_specification",
+    );
+    expectProtocol13Error(
+      [protocol13Task({ exclusive_resources: ["db::schema"] })],
+      "invalid_specification",
+    );
+    expectProtocol13Error([protocol13Task({ exclusive_resources: [""] })], "invalid_specification");
+    expectProtocol13Error(
+      [protocol13Task({ exclusive_resources: ["generated-client", "generated-client"] })],
+      "invalid_specification",
+    );
+    // valid keys keep working
+    expect(
+      validatePlanProposal(
+        [protocol13Task({ exclusive_resources: ["database-schema", "service-port:8080"] })],
+        CONSTRAINTS,
+        "protocol13",
+      )[0]?.exclusive_resources,
+    ).toEqual(["database-schema", "service-port:8080"]);
+  });
+
+  it("legacy mode keeps accepting the old two-field budget as sequential-only", () => {
+    const tasks = validatePlanProposal([validTask()], CONSTRAINTS, "legacy");
+    expect(tasks[0]?.budget).toEqual({ steps: 8, tokens: 4000 });
+    expect(tasks[0]?.write_paths).toBeUndefined();
+    expect(tasks[0]?.exclusive_resources).toBeUndefined();
+  });
+
+  it("legacy mode still validates declared duration when present", () => {
+    expect(
+      validatePlanProposal(
+        [validTask({ budget: { steps: 8, tokens: 4000, duration_ms: 60_000 } })],
+        CONSTRAINTS,
+        "legacy",
+      )[0]?.budget,
+    ).toEqual({ steps: 8, tokens: 4000, duration_ms: 60_000 });
+    expectProtocol13Error(
+      [validTask({ budget: { steps: 8, tokens: 4000, duration_ms: 0 } })],
+      "invalid_specification",
+      "legacy",
+    );
+  });
+});

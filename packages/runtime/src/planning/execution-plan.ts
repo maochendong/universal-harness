@@ -1,5 +1,6 @@
 import {
   PROTOCOL_VERSION,
+  canonicalizeJson,
   contentDigest,
   type EdgeRecord,
   type NodeRecord,
@@ -19,9 +20,22 @@ import {
   type ExecutionMode,
   type IntentShape,
 } from "./mode-selector.js";
-import type { TaskSpecification } from "./task.js";
+import {
+  taskSemanticDigest,
+  type IterationBudget,
+  type Protocol13TaskBudget,
+  type Protocol13TaskSpecification,
+  type TaskSpecification,
+} from "./task.js";
 import { assessTaskSize, assertAgentPlanSize } from "./task-sizing.js";
-import { PlanningError, validatePlanProposal, type PlannerConstraints } from "./validator.js";
+import {
+  PlanningError,
+  assertProtocol13TaskSpecification,
+  validatePlanProposal,
+  type PlanProtocolMode,
+  type PlannerConstraints,
+} from "./validator.js";
+import { compileParallelWaves, type ParallelWave } from "./waves.js";
 
 /**
  * ExecutionPlan compilation (design 9 step 6 and 10.1; completion rule 8).
@@ -39,6 +53,13 @@ export interface PlanSharedContext {
   readonly goal: string;
   readonly requirement_baseline_digest: string;
   readonly policy_digest: string;
+  /**
+   * Protocol 1.3 bindings (M4 design 6.2/17): the frozen baseline commit wave
+   * 0 reads from, and the approved CapabilityPlan digest. Mandatory for
+   * protocol 1.3 plans; legacy plans never carry them.
+   */
+  readonly baseline_commit?: string;
+  readonly capability_plan_digest?: string;
 }
 
 /** Canonical, metadata-free ExecutionPlan content. */
@@ -53,12 +74,36 @@ export interface ExecutionPlanContent {
   readonly impact_set_digest: string;
   readonly shared_context: PlanSharedContext;
   readonly tasks: readonly TaskSpecification[];
+  /**
+   * Protocol 1.3 only: the runtime aggregate budget authority for this
+   * iteration, proposed within the approved ceiling and frozen into the Plan
+   * digest (M4 design 6.2). Never synthesized for legacy plans.
+   */
+  readonly iteration_budget?: IterationBudget;
+  /**
+   * Protocol 1.3 only: the deterministic parallel wave projection compiled
+   * from `tasks`. Not independently editable; readers recompile and compare.
+   */
+  readonly parallel_waves?: readonly ParallelWave[];
 }
 
 export interface PlanContext {
   readonly iterationId: string;
   readonly actor: string;
   readonly timestamp: string;
+}
+
+/**
+ * Approved budget ceilings and the proposed iteration aggregate (M4 design
+ * 6.2). Required for protocol 1.3 plans: every Task budget must stay within
+ * `task_ceiling` and the proposed `iteration` aggregate within
+ * `iteration_ceiling`. The aggregate is the runtime authority; it is never
+ * rejected merely because the sum of Task maxima is larger.
+ */
+export interface PlanBudgetBinding {
+  readonly task_ceiling: Protocol13TaskBudget;
+  readonly iteration_ceiling: IterationBudget;
+  readonly iteration: IterationBudget;
 }
 
 export interface PlanGenerationInput {
@@ -70,6 +115,10 @@ export interface PlanGenerationInput {
   /** Untrusted planner output; validated before anything is planned. */
   readonly proposal: readonly unknown[];
   readonly constraints: PlannerConstraints;
+  /** Proposal contract; defaults to `legacy` (sequential-only plans). */
+  readonly protocol?: PlanProtocolMode;
+  /** Approved ceilings plus proposed iteration aggregate (protocol 1.3 only). */
+  readonly budgets?: PlanBudgetBinding;
   readonly governance?: {
     /** Only paths independently approved by the control plane may set `approved`. */
     readonly forecastPaths?: readonly PathForecast[];
@@ -229,8 +278,101 @@ function edgeRecord(
   return { ...record, digest: contentDigest(record) } as unknown as EdgeRecord;
 }
 
-/** Read the canonical content of an ExecutionPlan node, or throw. */
-export function readExecutionPlanContent(plan: NodeRecord): ExecutionPlanContent {
+/** The deterministic Graph projection of a plan: its Task nodes and edges. */
+export interface ExecutionPlanGraphProjection {
+  readonly tasks: readonly NodeRecord[];
+  readonly edges: readonly EdgeRecord[];
+}
+
+function assertProtocol13PlanConsistency(
+  planId: string,
+  content: ExecutionPlanContent,
+  projection: ExecutionPlanGraphProjection | undefined,
+): void {
+  const waves = content.parallel_waves;
+  const iterationBudget = content.iteration_budget;
+  if (waves === undefined || iterationBudget === undefined) {
+    // Both fields appear together or not at all; a half-bound plan is drift.
+    throw new PlanningError(
+      "plan_projection_drift",
+      `execution plan ${planId} carries only part of the protocol 1.3 authority fields`,
+    );
+  }
+  const tasks = content.tasks.map((task) => {
+    assertProtocol13TaskSpecification(task);
+    return task;
+  });
+  // Waves are a deterministic projection: a fresh compilation must
+  // byte-match the persisted layout.
+  if (canonicalizeJson(compileParallelWaves(tasks)) !== canonicalizeJson(waves)) {
+    throw new PlanningError(
+      "wave_drift",
+      `execution plan ${planId} persisted parallel waves differ from a fresh compilation`,
+    );
+  }
+  if (projection === undefined) {
+    throw new PlanningError(
+      "invalid_specification",
+      `reading approved protocol 1.3 plan ${planId} requires its graph projection`,
+    );
+  }
+  // Task nodes must byte-match the deterministic per-task projection,
+  // including the recomputed semantic digest.
+  const nodesById = new Map(projection.tasks.map((node) => [node.id, node]));
+  if (nodesById.size !== tasks.length) {
+    throw new PlanningError(
+      "plan_projection_drift",
+      `execution plan ${planId} graph projection carries a different task set`,
+    );
+  }
+  for (const task of tasks) {
+    const node = nodesById.get(task.id);
+    if (node === undefined || node.type !== "Task") {
+      throw new PlanningError(
+        "plan_projection_drift",
+        `execution plan ${planId} is missing the task node for ${task.id}`,
+      );
+    }
+    const expected = canonicalizeJson({ ...task, semantic_digest: taskSemanticDigest(task) });
+    if (canonicalizeJson(node.extensions?.[PLAN_EXTENSION_KEY] ?? null) !== expected) {
+      throw new PlanningError(
+        "plan_projection_drift",
+        `task node ${task.id} of plan ${planId} differs from the approved specification`,
+      );
+    }
+  }
+  // CONTAINS and DEPENDS_ON are exact deterministic edge sets — a missing,
+  // extra or reversed edge is drift, never a second editable truth.
+  const edgeKey = (type: string, source: string, target: string): string =>
+    `${type}|${source}|${target}`;
+  const expectedEdges = [
+    ...tasks.map((task) => edgeKey("CONTAINS", planId, task.id)),
+    ...tasks.flatMap((task) =>
+      task.dependencies.map((dependency) => edgeKey("DEPENDS_ON", task.id, dependency)),
+    ),
+  ].sort();
+  const actualEdges = projection.edges
+    .map((edge) => edgeKey(edge.type, edge.source_id, edge.target_id))
+    .sort();
+  if (canonicalizeJson(actualEdges) !== canonicalizeJson(expectedEdges)) {
+    throw new PlanningError(
+      "plan_projection_drift",
+      `execution plan ${planId} graph edges differ from the approved task dependencies`,
+    );
+  }
+}
+
+/**
+ * Read the canonical content of an ExecutionPlan node, or throw. Legacy
+ * (pre-1.3) plans return as stored and never gain inferred resource claims.
+ * A protocol 1.3 snapshot is only returned after its persisted waves are
+ * recompiled and byte-compared, and its Task/CONTAINS/DEPENDS_ON graph
+ * projection is byte-compared against the deterministic re-projection.
+ */
+export function readExecutionPlanContent(
+  plan: NodeRecord,
+  projection?: ExecutionPlanGraphProjection,
+): ExecutionPlanContent {
   if (plan.type !== "ExecutionPlan") {
     throw new PlanningError(
       "invalid_specification",
@@ -244,7 +386,12 @@ export function readExecutionPlanContent(plan: NodeRecord): ExecutionPlanContent
       `execution plan ${plan.id} carries no ${PLAN_EXTENSION_KEY} content`,
     );
   }
-  return content as ExecutionPlanContent;
+  const planContent = content as ExecutionPlanContent;
+  if (planContent.parallel_waves === undefined && planContent.iteration_budget === undefined) {
+    return planContent;
+  }
+  assertProtocol13PlanConsistency(plan.id, planContent, projection);
+  return planContent;
 }
 
 /**
@@ -285,13 +432,79 @@ export function generateKernelExecutionPlan(
   );
 }
 
+/**
+ * Bind the protocol 1.3 plan authority (M4 design 6.2): shared-context
+ * baseline/capability-plan digests must be present, every Task budget and the
+ * proposed iteration aggregate must stay within the approved ceilings, and
+ * the deterministic waves are compiled from the final task list. The
+ * iteration aggregate is the runtime authority — the plan is never rejected
+ * merely because the sum of Task maxima exceeds it.
+ */
+function bindProtocol13Authority(
+  input: PlanGenerationInput,
+  tasks: readonly TaskSpecification[],
+): { readonly iterationBudget: IterationBudget; readonly parallelWaves: readonly ParallelWave[] } {
+  if (typeof input.shared.baseline_commit !== "string" || input.shared.baseline_commit === "") {
+    throw new PlanningError(
+      "invalid_specification",
+      "protocol 1.3 plans require a baseline_commit shared-context binding",
+    );
+  }
+  if (
+    typeof input.shared.capability_plan_digest !== "string" ||
+    input.shared.capability_plan_digest === ""
+  ) {
+    throw new PlanningError(
+      "invalid_specification",
+      "protocol 1.3 plans require a capability_plan_digest shared-context binding",
+    );
+  }
+  const budgets = input.budgets;
+  if (budgets === undefined) {
+    throw new PlanningError(
+      "invalid_specification",
+      "protocol 1.3 plans require the approved budget binding",
+    );
+  }
+  const assertWithinCeiling = (
+    budget: Protocol13TaskBudget,
+    ceiling: Protocol13TaskBudget,
+    label: string,
+  ): void => {
+    for (const field of ["steps", "tokens", "duration_ms"] as const) {
+      if (!Number.isInteger(budget[field]) || budget[field] < 1) {
+        throw new PlanningError(
+          "invalid_specification",
+          `${label} requires a positive integer ${field}`,
+        );
+      }
+      if (budget[field] > ceiling[field]) {
+        throw new PlanningError(
+          "invalid_specification",
+          `${label} ${field} exceeds the approved ceiling ${String(ceiling[field])}`,
+        );
+      }
+    }
+  };
+  for (const task of tasks) {
+    assertProtocol13TaskSpecification(task);
+    assertWithinCeiling(task.budget, budgets.task_ceiling, `task ${task.id} budget`);
+  }
+  assertWithinCeiling(budgets.iteration, budgets.iteration_ceiling, "iteration budget");
+  return {
+    iterationBudget: budgets.iteration,
+    parallelWaves: compileParallelWaves(tasks as readonly Protocol13TaskSpecification[]),
+  };
+}
+
 function compileExecutionPlan(
   impactSet: NodeRecord,
   impactSetDigest: string,
   input: PlanGenerationInput,
   context: PlanContext,
 ): ExecutionPlanRecords {
-  const validatedTasks = validatePlanProposal(input.proposal, input.constraints);
+  const protocol = input.protocol ?? "legacy";
+  const validatedTasks = validatePlanProposal(input.proposal, input.constraints, protocol);
   const impactContent = readImpactSetContent(impactSet);
   const forecasts = input.governance?.forecastPaths ?? [];
   const impactCoverage = assessImpactCoverage({
@@ -346,6 +559,7 @@ function compileExecutionPlan(
     deterministicWork: input.deterministicWork,
     taskCount: tasks.length,
   });
+  const protocol13 = protocol === "protocol13" ? bindProtocol13Authority(input, tasks) : undefined;
   const base = {
     execution_kind: input.executionKind,
     impact_coverage: impactCoverage,
@@ -356,6 +570,12 @@ function compileExecutionPlan(
     impact_set_digest: impactSetDigest,
     shared_context: input.shared,
     tasks,
+    ...(protocol13 === undefined
+      ? {}
+      : {
+          iteration_budget: protocol13.iterationBudget,
+          parallel_waves: protocol13.parallelWaves,
+        }),
   };
   const content: ExecutionPlanContent = { ...base, content_digest: digestContent(base) };
   const planId = `plan_${content.content_digest.slice(0, 16)}`;
@@ -368,7 +588,10 @@ function compileExecutionPlan(
     nodeRecord(context, {
       id: task.id,
       type: "Task",
-      extensions: task as unknown as Record<string, unknown>,
+      extensions:
+        protocol13 === undefined
+          ? (task as unknown as Record<string, unknown>)
+          : ({ ...task, semantic_digest: taskSemanticDigest(task) } as Record<string, unknown>),
     }),
   );
   const edges: EdgeRecord[] = [

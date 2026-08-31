@@ -1,7 +1,13 @@
+import { existsSync, realpathSync } from "node:fs";
+import { dirname, resolve, sep } from "node:path";
+
+import { normalizeLocatorPath } from "@universal-harness-internal/core";
+
 import {
   TASK_RISKS,
   hasIndependentValue,
   independentValueSignature,
+  type Protocol13TaskSpecification,
   type TaskAcceptanceCriterion,
   type TaskAcceptanceAssertion,
   type TaskSpecification,
@@ -28,6 +34,8 @@ export const PLANNING_ERROR_KINDS = [
   "uncovered_test",
   "task_too_large",
   "dag_limit_exceeded",
+  "wave_drift",
+  "plan_projection_drift",
 ] as const;
 
 export type PlanningErrorKind = (typeof PLANNING_ERROR_KINDS)[number];
@@ -50,6 +58,140 @@ export interface PlannerConstraints {
   readonly allowedCapabilities: readonly string[];
   readonly knownTools: readonly string[];
   readonly knownGates: readonly string[];
+}
+
+/**
+ * Proposal validation mode (M4 design 6.1/6.3). `protocol13` requires the
+ * full 1.3 Task shape — duration bound, write paths and exclusive resource
+ * claims must be declared, even when empty. `legacy` keeps accepting the
+ * pre-1.3 two-field budget and never synthesizes resource claims; such plans
+ * stay sequential-only.
+ */
+export type PlanProtocolMode = "legacy" | "protocol13";
+
+/**
+ * Stable project resource keys (M4 design 6.1): lowercase segments joined by
+ * at most one colon level, e.g. `database-schema` or `service-port:8080`.
+ */
+export const RESOURCE_KEY_PATTERN = "^[a-z0-9][a-z0-9-]*(?::[a-z0-9][a-z0-9-]*)*$";
+const RESOURCE_KEY_REGEX = new RegExp(RESOURCE_KEY_PATTERN);
+
+/** Normalize an exclusive resource key, or throw when it is not canonical. */
+export function normalizeExclusiveResourceKey(input: string): string {
+  const normalized = input.normalize("NFC");
+  if (normalized !== input || !RESOURCE_KEY_REGEX.test(normalized)) {
+    throw new PlanningError(
+      "invalid_specification",
+      `exclusive resource key ${JSON.stringify(input)} must match ${RESOURCE_KEY_PATTERN}`,
+    );
+  }
+  return normalized;
+}
+
+/** Segments that name authoritative stores and may never be write claims. */
+const FORBIDDEN_WRITE_SEGMENTS = new Set([".git"]);
+const FORBIDDEN_WRITE_ROOTS = new Set([".harness"]);
+
+/**
+ * Normalize a declared Task write path to its canonical repository-relative
+ * form (M4 design 6.1). Rejects absolute paths, drive prefixes, dot segments,
+ * empty segments, `.git`, the `.harness` authoritative root, root-masking
+ * declarations and any input that is not already in canonical form. When a
+ * repository root is supplied, every existing ancestor is resolved through
+ * realpath so a symlink can never smuggle the claim outside the repository.
+ */
+export function normalizeTaskWritePath(
+  input: string,
+  options?: { readonly repositoryRoot?: string },
+): string {
+  let normalized: string;
+  try {
+    normalized = normalizeLocatorPath(input);
+  } catch (error) {
+    throw new PlanningError(
+      "invalid_specification",
+      `write path ${JSON.stringify(input)} is not a legal repository-relative path: ${
+        error instanceof Error ? error.message : String(error)
+      }`,
+    );
+  }
+  if (normalized !== input) {
+    throw new PlanningError(
+      "invalid_specification",
+      `write path ${JSON.stringify(input)} is not canonical; use ${JSON.stringify(normalized)}`,
+    );
+  }
+  const segments = normalized.split("/");
+  if (segments.some((segment) => FORBIDDEN_WRITE_SEGMENTS.has(segment))) {
+    throw new PlanningError(
+      "invalid_specification",
+      `write path ${normalized} may not name the .git authoritative store`,
+    );
+  }
+  if (FORBIDDEN_WRITE_ROOTS.has(segments[0] as string)) {
+    throw new PlanningError(
+      "invalid_specification",
+      `write path ${normalized} may not name the .harness authoritative root`,
+    );
+  }
+  if (options?.repositoryRoot !== undefined) {
+    let rootReal: string;
+    try {
+      rootReal = realpathSync(options.repositoryRoot);
+    } catch {
+      throw new PlanningError(
+        "invalid_specification",
+        `repository root ${options.repositoryRoot} cannot be resolved`,
+      );
+    }
+    const candidate = resolve(rootReal, normalized);
+    let probe = candidate;
+    while (!existsSync(probe)) {
+      const parent = dirname(probe);
+      if (parent === probe) {
+        throw new PlanningError(
+          "invalid_specification",
+          `write path ${normalized} has no existing ancestor under the repository root`,
+        );
+      }
+      probe = parent;
+    }
+    const probeReal = realpathSync(probe);
+    if (probeReal !== rootReal && !probeReal.startsWith(`${rootReal}${sep}`)) {
+      throw new PlanningError(
+        "invalid_specification",
+        `write path ${normalized} escapes the repository boundary through a symlink ` +
+          `(resolves to ${probeReal})`,
+      );
+    }
+  }
+  return normalized;
+}
+
+/**
+ * Narrow a validated specification to the Protocol 1.3 shape before
+ * scheduling. Legacy tasks fail closed here instead of being silently
+ * widened with inferred resource claims (M4 design 6.3).
+ */
+export function assertProtocol13TaskSpecification(
+  task: TaskSpecification,
+): asserts task is Protocol13TaskSpecification {
+  if (
+    typeof task.budget.duration_ms !== "number" ||
+    !Number.isInteger(task.budget.duration_ms) ||
+    task.budget.duration_ms < 1
+  ) {
+    throw new PlanningError(
+      "invalid_specification",
+      `task ${task.id} lacks the mandatory protocol 1.3 duration budget`,
+    );
+  }
+  if (task.write_paths === undefined || task.exclusive_resources === undefined) {
+    throw new PlanningError(
+      "invalid_specification",
+      `task ${task.id} lacks protocol 1.3 resource claims; legacy plans run sequentially`,
+    );
+  }
 }
 
 /**
@@ -105,7 +247,54 @@ function readStringList(value: unknown, field: string, taskId: string): readonly
   return value as readonly string[];
 }
 
-function readTaskSpecification(raw: unknown, index: number): TaskSpecification {
+/**
+ * Read a resource-claim array. Protocol 1.3 proposals must declare the field
+ * explicitly (an empty array is a declaration); legacy proposals may omit it,
+ * in which case no claim is synthesized. Entries are normalized and must be
+ * unique.
+ */
+function readResourceClaims(
+  raw: Record<string, unknown>,
+  field: "write_paths" | "exclusive_resources",
+  taskId: string,
+  mode: PlanProtocolMode,
+  normalize: (value: string) => string,
+): readonly string[] | undefined {
+  const value = raw[field];
+  if (value === undefined) {
+    if (mode === "protocol13") {
+      throw new PlanningError(
+        "invalid_specification",
+        `task ${taskId}: protocol 1.3 requires an explicit ${field} declaration`,
+      );
+    }
+    return undefined;
+  }
+  if (!Array.isArray(value) || value.some((item) => typeof item !== "string" || item === "")) {
+    throw new PlanningError(
+      "invalid_specification",
+      `task ${taskId}: ${field} must be an array of non-empty strings`,
+    );
+  }
+  const normalized = (value as readonly string[]).map((item) => normalize(item));
+  const seen = new Set<string>();
+  for (const item of normalized) {
+    if (seen.has(item)) {
+      throw new PlanningError(
+        "invalid_specification",
+        `task ${taskId}: duplicate ${field} entry ${item}`,
+      );
+    }
+    seen.add(item);
+  }
+  return normalized;
+}
+
+function readTaskSpecification(
+  raw: unknown,
+  index: number,
+  mode: PlanProtocolMode,
+): TaskSpecification {
   const position = `task[${String(index)}]`;
   if (!isPlainObject(raw)) {
     throw new PlanningError("invalid_specification", `${position} must be an object`);
@@ -176,6 +365,27 @@ function readTaskSpecification(raw: unknown, index: number): TaskSpecification {
       `task ${id}: budget requires positive integer steps and tokens`,
     );
   }
+  if (
+    budget.duration_ms !== undefined &&
+    (!Number.isInteger(budget.duration_ms) || (budget.duration_ms as number) < 1)
+  ) {
+    throw new PlanningError(
+      "invalid_specification",
+      `task ${id}: budget duration_ms must be a positive integer`,
+    );
+  }
+  if (mode === "protocol13" && budget.duration_ms === undefined) {
+    throw new PlanningError(
+      "invalid_specification",
+      `task ${id}: protocol 1.3 requires an explicit duration_ms budget`,
+    );
+  }
+  const writePaths = readResourceClaims(raw, "write_paths", id, mode, (value) =>
+    normalizeTaskWritePath(value),
+  );
+  const exclusiveResources = readResourceClaims(raw, "exclusive_resources", id, mode, (value) =>
+    normalizeExclusiveResourceKey(value),
+  );
   const requiredGates = readStringList(raw.required_gates, "required_gates", id);
   if (requiredGates.length === 0) {
     throw new PlanningError("missing_gate", `task ${id}: every task requires at least one gate`);
@@ -256,7 +466,13 @@ function readTaskSpecification(raw: unknown, index: number): TaskSpecification {
     tools: readStringList(raw.tools ?? [], "tools", id),
     dependencies: readStringList(raw.dependencies ?? [], "dependencies", id),
     risk: raw.risk as TaskSpecification["risk"],
-    budget: { steps: budget.steps as number, tokens: budget.tokens as number },
+    budget: {
+      steps: budget.steps as number,
+      tokens: budget.tokens as number,
+      ...(budget.duration_ms === undefined ? {} : { duration_ms: budget.duration_ms as number }),
+    },
+    ...(writePaths === undefined ? {} : { write_paths: writePaths }),
+    ...(exclusiveResources === undefined ? {} : { exclusive_resources: exclusiveResources }),
     acceptance: (raw.acceptance as readonly TaskAcceptanceCriterion[]).map((criterion) => ({
       description: criterion.description,
       verification: criterion.verification,
@@ -316,11 +532,15 @@ function assertAcyclic(tasks: readonly TaskSpecification[]): void {
  * Validate a raw planner proposal against the planner constraints and return
  * the canonical declarative specifications, sorted by task id. Throws a typed
  * PlanningError on the first violation; a rejected proposal leaves no trace
- * in the authoritative graph.
+ * in the authoritative graph. `mode` selects the protocol contract: legacy
+ * proposals keep the pre-1.3 shape and stay sequential-only, while
+ * `protocol13` proposals must declare duration budgets, write paths and
+ * exclusive resource claims on every task.
  */
 export function validatePlanProposal(
   rawTasks: unknown,
   constraints: PlannerConstraints,
+  mode: PlanProtocolMode = "legacy",
 ): readonly TaskSpecification[] {
   if (!Array.isArray(rawTasks) || rawTasks.length === 0) {
     throw new PlanningError(
@@ -329,7 +549,7 @@ export function validatePlanProposal(
     );
   }
   assertNoEmbeddedCommands(rawTasks, "proposal");
-  const tasks = rawTasks.map((raw, index) => readTaskSpecification(raw, index));
+  const tasks = rawTasks.map((raw, index) => readTaskSpecification(raw, index, mode));
   const ids = new Set<string>();
   for (const task of tasks) {
     if (ids.has(task.id)) {
