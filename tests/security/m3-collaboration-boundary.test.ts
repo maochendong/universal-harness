@@ -161,6 +161,8 @@ function createFakeControlStore(): FakeControlStore {
       prepareCandidate: () => Promise.reject(new Error("not used in the security boundary tests")),
       readCandidate: () => Promise.resolve({ status: "missing" as const }),
       readIntegrationRecord: () => Promise.resolve({ status: "missing" as const }),
+      listIntegrationRecords: () =>
+        Promise.resolve({ status: "ok" as const, staged: [], accepted: [] }),
       compareAndSwapTarget: () =>
         Promise.reject(new Error("not used in the security boundary tests")),
     },
@@ -223,6 +225,8 @@ function createRegistryHarness(options: {
         permissions: { admin: true, maintain: false, push: false, triage: false, pull: false },
       },
     },
+    // Both GitHub protection proof forms require provably read-only deploy keys.
+    "GET https://api.github.com/repos/acme/demo/keys?per_page=100": { body: [] },
     "GET https://api.github.com/repos/acme/demo/branches/harness%2Fcontrol/protection": {
       ...(options.protectionStatus === undefined ? {} : { status: options.protectionStatus }),
       body: options.protection ?? PROTECTED_PAYLOAD,

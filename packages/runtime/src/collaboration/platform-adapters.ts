@@ -553,7 +553,12 @@ export function createPlatformIdentityRegistry(
       response = await deps.fetch({
         method: "GET",
         url: `${config.api_base_url}${path}`,
-        headers: { authorization: `Bearer ${token}`, accept: "application/json" },
+        headers: {
+          authorization: `Bearer ${token}`,
+          accept: "application/json",
+          // GitHub forbids API requests without a User-Agent header.
+          "user-agent": "universal-harness",
+        },
       });
     } catch {
       return { ok: false };
