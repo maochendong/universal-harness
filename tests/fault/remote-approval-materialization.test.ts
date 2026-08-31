@@ -136,6 +136,9 @@ function createFakeControlStore(): FakeControlStore {
       readIntegrationRecord() {
         throw new Error("not used in the approval fault tests");
       },
+      listIntegrationRecords() {
+        throw new Error("not used in the approval fault tests");
+      },
     },
   };
   return store;
@@ -392,6 +395,7 @@ function chainStore(records: readonly ControlRecord[]): GitControlStorePort {
     compareAndSwapTarget: () => Promise.reject(new Error("unused")),
     readCandidate: () => Promise.reject(new Error("unused")),
     readIntegrationRecord: () => Promise.reject(new Error("unused")),
+    listIntegrationRecords: () => Promise.reject(new Error("unused")),
   };
 }
 

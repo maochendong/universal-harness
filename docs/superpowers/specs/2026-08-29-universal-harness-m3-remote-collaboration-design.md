@@ -478,6 +478,8 @@ SQLite 保存：
 
 SQLite 数据可以删除并从 Git 重建。OAuth access token 只允许存在于受控进程内存，不得进入
 SQLite。SQLite Schema 迁移失败必须阻止 Coordinator 启动写模式，不得创建第二套真相。
+重建还必须从候选暂存 ref（`harness/candidate/<integration_id>`）与已接受的 Target 树
+（`.harness/artifacts/integrations/`）恢复 IntegrationRecord，使投影始终是 Git 状态的纯函数。
 
 ## 13. 远程 Approval
 

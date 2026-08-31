@@ -510,6 +510,9 @@ function createFakeStore(seed: {
           failure: collaborationFailure("coordinator_unavailable", "not implemented in slice"),
         });
       },
+      listIntegrationRecords() {
+        return Promise.resolve({ status: "ok" as const, staged: [], accepted: [] });
+      },
     },
   };
   return store;

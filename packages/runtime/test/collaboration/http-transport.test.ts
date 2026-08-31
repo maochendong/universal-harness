@@ -182,6 +182,9 @@ function createFakeControlStore(): GitControlStorePort & {
         failure: collaborationFailure("coordinator_unavailable", "unused in transport tests"),
       });
     },
+    listIntegrationRecords() {
+      return Promise.resolve({ status: "ok" as const, staged: [], accepted: [] });
+    },
     compareAndSwapTarget() {
       return Promise.resolve({
         status: "failed" as const,

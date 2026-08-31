@@ -234,6 +234,30 @@ export type IntegrationRecordReadOutcome =
   | { readonly status: "missing" }
   | { readonly status: "failed"; readonly failure: GitControlStoreFailure };
 
+export interface IntegrationRecordListRequest {
+  readonly project_id: string;
+  /**
+   * Target ref whose tree carries the accepted records; omitted on a cold
+   * start with no connection, in which case `accepted` is empty.
+   */
+  readonly target_ref?: string;
+}
+
+/**
+ * Every IntegrationRecord recoverable from Git: `staged` are the prepared
+ * records on the candidate staging refs (operation-candidate refs share the
+ * namespace but carry no record file and are skipped), `accepted` are the
+ * records that landed on the Target tree. The Coordinator merges them
+ * staged-first so an accepted record overwrites its stale staged twin.
+ */
+export type IntegrationRecordListOutcome =
+  | {
+      readonly status: "ok";
+      readonly staged: readonly IntegrationRecord[];
+      readonly accepted: readonly IntegrationRecord[];
+    }
+  | { readonly status: "failed"; readonly failure: GitControlStoreFailure };
+
 export interface TargetCasRequest {
   readonly project_id: string;
   readonly target_ref: string;
@@ -259,6 +283,9 @@ export interface GitControlStoreAdapter {
   prepareCandidate(input: CandidatePrepareRequest): Promise<CandidatePrepareOutcome>;
   readCandidate(input: CandidateReadRequest): Promise<CandidateReadOutcome>;
   readIntegrationRecord(input: IntegrationRecordReadRequest): Promise<IntegrationRecordReadOutcome>;
+  listIntegrationRecords(
+    input: IntegrationRecordListRequest,
+  ): Promise<IntegrationRecordListOutcome>;
   compareAndSwapTarget(input: TargetCasRequest): Promise<TargetCasOutcome>;
 }
 
@@ -1777,6 +1804,131 @@ export function createGitControlStoreAdapter(
     return { status: "found", commit, record: record.record };
   }
 
+  /**
+   * Enumerate the IntegrationRecords the Coordinator needs for a
+   * deterministic projection rebuild (design §12): staged records are read
+   * from the candidate staging refs, accepted records from the Target tree.
+   * Both namespaces are re-fetched on every call, so a rebuilt projection is
+   * a pure function of the current remote state.
+   */
+  async function listIntegrationRecords(
+    input: IntegrationRecordListRequest,
+  ): Promise<IntegrationRecordListOutcome> {
+    const prepared = await ensureMirror();
+    if (prepared !== undefined) return { status: "failed", failure: prepared };
+
+    // Fetch the whole staging namespace with prune so vanished remote
+    // staging refs disappear locally. A wildcard refspec matching nothing on
+    // the remote exits 0 — an empty namespace is not an error.
+    const fetched = await run("listIntegrationRecords", mirror, [
+      "fetch",
+      "--no-tags",
+      "--prune",
+      remote,
+      `+${CANDIDATE_STAGING_PREFIX}/*:${MIRROR_CANDIDATE_PREFIX}/*`,
+    ]);
+    if (!fetched.ok) {
+      return { status: "failed", failure: remoteFailure("fetch", fetched.error.stderr) };
+    }
+    const listed = await run("listIntegrationRecords", mirror, [
+      "for-each-ref",
+      "--format=%(refname) %(objectname)",
+      `${MIRROR_CANDIDATE_PREFIX}/`,
+    ]);
+    if (!listed.ok) {
+      return { status: "failed", failure: remoteFailure("for-each-ref", listed.error.stderr) };
+    }
+
+    const staged: IntegrationRecord[] = [];
+    for (const line of listed.value.stdout.split("\n")) {
+      const trimmed = line.trim();
+      if (trimmed.length === 0) continue;
+      const [ref, oid] = trimmed.split(" ");
+      const integrationId = ref?.slice(`${MIRROR_CANDIDATE_PREFIX}/`.length);
+      // The staging namespace also holds operation-candidate refs pushed by
+      // the CLI publish flow; anything without a well-formed integration id
+      // or without the record file is not a staged integration.
+      if (
+        integrationId === undefined ||
+        !REF_COMPONENT_PATTERN.test(integrationId) ||
+        oid === undefined
+      ) {
+        continue;
+      }
+      const present = await run("listIntegrationRecords", mirror, [
+        "cat-file",
+        "-e",
+        `${oid}:${integrationRecordPath(integrationId)}`,
+      ]);
+      if (!present.ok) continue;
+      const record = await readRecordAt(
+        "listIntegrationRecords",
+        oid,
+        integrationId,
+        "control_ref_invalid",
+      );
+      if ("failure" in record) return { status: "failed", failure: record.failure };
+      staged.push(record.record);
+    }
+
+    const accepted: IntegrationRecord[] = [];
+    if (input.target_ref !== undefined) {
+      const fetchedTarget = await run("listIntegrationRecords", mirror, [
+        "fetch",
+        "--no-tags",
+        remote,
+        `+${input.target_ref}:${MIRROR_TARGET_REF}`,
+      ]);
+      if (!fetchedTarget.ok) {
+        return { status: "failed", failure: remoteFailure("fetch", fetchedTarget.error.stderr) };
+      }
+      const head = await run("listIntegrationRecords", mirror, [
+        "rev-parse",
+        "--verify",
+        MIRROR_TARGET_REF,
+      ]);
+      if (!head.ok) {
+        return { status: "failed", failure: remoteFailure("rev-parse", head.error.stderr) };
+      }
+      const commit = head.value.stdout.trim();
+      // Records are append-only, so the head tree carries every accepted
+      // record (design §14.4); a missing directory is an empty listing.
+      const listedAccepted = await run("listIntegrationRecords", mirror, [
+        "ls-tree",
+        "--name-only",
+        commit,
+        "--",
+        ".harness/artifacts/integrations/",
+      ]);
+      if (!listedAccepted.ok) {
+        return { status: "failed", failure: remoteFailure("ls-tree", listedAccepted.error.stderr) };
+      }
+      for (const line of listedAccepted.value.stdout.split("\n")) {
+        const path = line.trim();
+        if (path.length === 0) continue;
+        // The Target history is authoritative: an unexpected file there is
+        // damage and fails closed instead of being skipped.
+        const match = /^\.harness\/artifacts\/integrations\/([^/]+)\.json$/u.exec(path);
+        if (match === null || !REF_COMPONENT_PATTERN.test(match[1] as string)) {
+          return {
+            status: "failed",
+            failure: failure("control_ref_invalid", `unexpected integration file: ${path}`),
+          };
+        }
+        const record = await readRecordAt(
+          "listIntegrationRecords",
+          commit,
+          match[1] as string,
+          "control_ref_invalid",
+        );
+        if ("failure" in record) return { status: "failed", failure: record.failure };
+        accepted.push(record.record);
+      }
+    }
+
+    return { status: "ok", staged, accepted };
+  }
+
   async function compareAndSwapTarget(input: TargetCasRequest): Promise<TargetCasOutcome> {
     for (const [label, oid] of [
       ["expected commit", input.expected_commit],
@@ -1887,6 +2039,7 @@ export function createGitControlStoreAdapter(
     prepareCandidate,
     readCandidate,
     readIntegrationRecord,
+    listIntegrationRecords,
     compareAndSwapTarget,
   };
 }

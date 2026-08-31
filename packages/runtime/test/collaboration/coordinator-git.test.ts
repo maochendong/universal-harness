@@ -1,9 +1,18 @@
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 
 import { createGitControlStoreAdapter } from "@universal-harness-internal/adapter-vcs-git";
+import {
+  buildManifest,
+  canonicalizeJson,
+  edgeShardRelativePath,
+  eventShardRelativePath,
+  sha256Hex,
+  shardMonthFor,
+  type LedgerOperation,
+} from "@universal-harness-internal/core";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { COLLABORATION_CONTROL_REF } from "../../src/collaboration/connection.js";
@@ -114,7 +123,62 @@ function pushCandidate(remote: string, file: string, operationId = "op_1"): stri
   return candidate;
 }
 
-function createStack() {
+/** One fixture LedgerOperation manifest plus every ledger byte it references. */
+function ledgerOpFiles(input: {
+  id: string;
+  sequence: number;
+  baseline: string;
+}): Record<string, string> {
+  const month = shardMonthFor(NOW);
+  const manifest: LedgerOperation = buildManifest({
+    ledger_operation_id: input.id,
+    workflow_operation_id: `workflow_${input.id}`,
+    attempt_id: `attempt_${input.id}`,
+    baseline_commit: input.baseline,
+    sequence: input.sequence,
+    artifact_digests: [],
+    edge_file: edgeShardRelativePath(month, input.id),
+    event_file: eventShardRelativePath(month, input.id),
+    edge_file_digest: sha256Hex(""),
+    event_file_digest: sha256Hex(""),
+    committed_at: NOW,
+  });
+  return {
+    [`.harness/ledger/operations/${input.id}.json`]: `${canonicalizeJson(manifest)}\n`,
+    [`.harness/${manifest.edge_file}`]: "",
+    [`.harness/${manifest.event_file}`]: "",
+  };
+}
+
+function writeFiles(root: string, files: Readonly<Record<string, string>>): void {
+  for (const [path, content] of Object.entries(files)) {
+    const absolute = join(root, ...path.split("/"));
+    mkdirSync(dirname(absolute), { recursive: true });
+    writeFileSync(absolute, content);
+  }
+}
+
+/**
+ * Commit `files` on top of `parentRef` in a fresh clone and push the
+ * untrusted staging ref the Coordinator's publish fetches.
+ */
+function stageLedgerCandidate(
+  remote: string,
+  parentRef: string,
+  operationId: string,
+  files: Readonly<Record<string, string>>,
+): string {
+  const clone = cloneRemote(remote);
+  git(clone, "checkout", "-b", `work-${operationId}`, parentRef);
+  writeFiles(clone, files);
+  git(clone, "add", "-A");
+  git(clone, "commit", "-m", `candidate ${operationId}`);
+  const head = git(clone, "rev-parse", "HEAD").trim();
+  git(clone, "push", "origin", `HEAD:refs/heads/harness/candidate/${operationId}`);
+  return head;
+}
+
+function createStack(projectionPath = ":memory:") {
   const remote = tempDir("harness-coordinator-remote-");
   git(remote, "init", "--bare", "-b", "main");
   const seed = tempDir("harness-coordinator-seed-");
@@ -132,7 +196,7 @@ function createStack() {
     remote,
     mirror_root: join(tempDir("harness-coordinator-mirror-"), "mirror"),
   });
-  const projection = new SqliteCoordinatorProjection(":memory:");
+  const projection = new SqliteCoordinatorProjection(projectionPath);
   const deps: CollaborationCoordinatorDependencies = {
     platform,
     controlStore,
@@ -326,6 +390,110 @@ describe("coordinator against the real git control store", () => {
       ).toHaveLength(2);
 
       projection.close();
+    },
+  );
+
+  it(
+    "restores the accepted integration records on a delete/rebuild so the projection digest does not drift",
+    { timeout: 60_000 },
+    async () => {
+      const projectionPath = join(tempDir("harness-coordinator-db-"), "coordinator.sqlite");
+      const { remote, projection, deps, coordinator } = createStack(projectionPath);
+      const lease = await connectAndAcquire(coordinator);
+
+      // Seed the target Ledger, then publish an operation branch carrying the
+      // next Ledger operation.
+      const baselineSeed = git(remote, "rev-parse", "main").trim();
+      const seeding = cloneRemote(remote);
+      writeFiles(
+        seeding,
+        ledgerOpFiles({ id: "operation_base_1", sequence: 1, baseline: baselineSeed }),
+      );
+      git(seeding, "add", "-A");
+      git(seeding, "commit", "-m", "baseline ledger");
+      git(seeding, "push", "origin", "main");
+      const forkPoint = git(remote, "rev-parse", "main").trim();
+      const candidate = stageLedgerCandidate(
+        remote,
+        forkPoint,
+        "op_1",
+        ledgerOpFiles({ id: "operation_1_2", sequence: 2, baseline: baselineSeed }),
+      );
+      const published = await coordinator.execute(
+        {
+          kind: "publish_operation_candidate",
+          command_id: "command_publish_1",
+          project_id: PROJECT_ID,
+          operation_id: "op_1",
+          candidate_commit: candidate,
+          fencing_token: lease.fencing_token,
+        },
+        session,
+      );
+      expect(published).toMatchObject({ status: "published", head_oid: candidate });
+
+      // Release the operation lease so the resume below has nothing to revoke
+      // and the rebuilt chain is byte-identical to the live one.
+      const released = await coordinator.execute(
+        {
+          kind: "release_operation_lease",
+          command_id: "command_release_1",
+          project_id: PROJECT_ID,
+          lease_id: lease.lease_id,
+        },
+        session,
+      );
+      expect(released).toMatchObject({ status: "lease", lease: { state: "released" } });
+
+      const prepared = await coordinator.execute(
+        {
+          kind: "prepare_integration",
+          command_id: "command_prepare_1",
+          project_id: PROJECT_ID,
+          operation_id: "op_1",
+        },
+        session,
+      );
+      expect(prepared.status).toBe("prepared");
+      if (prepared.status !== "prepared") throw new Error("unreachable");
+      const accepted = await coordinator.execute(
+        {
+          kind: "accept_integration",
+          command_id: "command_accept_1",
+          project_id: PROJECT_ID,
+          integration_id: prepared.integration_record.integration_id,
+          expected_target_commit: prepared.integration_record.expected_target_commit,
+        },
+        session,
+      );
+      expect(accepted).toMatchObject({ status: "accepted", replayed: false });
+      if (accepted.status !== "accepted") throw new Error("unreachable");
+
+      const digestBeforeDelete = projection.projectionDigest();
+      const conflictsBeforeDelete = await projection.query({
+        kind: "integration_conflicts",
+        project_id: PROJECT_ID,
+      });
+      expect(conflictsBeforeDelete).toMatchObject({
+        conflicts: [{ integration_id: accepted.integration_record.integration_id }],
+      });
+
+      // Delete the projection and resume into a fresh one: the Integration
+      // Records must be recovered from Git (the accepted record lives on the
+      // Target tree), or the digest drifts — the dogfood regression.
+      projection.close();
+      rmSync(projectionPath);
+      const rebuiltProjection = new SqliteCoordinatorProjection(projectionPath);
+      const resumed = await resumeCollaborationCoordinator(
+        { ...deps, projection: rebuiltProjection },
+        PROJECT_ID,
+      );
+      expect(resumed).toEqual({ status: "ready" });
+      expect(rebuiltProjection.projectionDigest()).toBe(digestBeforeDelete);
+      expect(
+        await rebuiltProjection.query({ kind: "integration_conflicts", project_id: PROJECT_ID }),
+      ).toEqual(conflictsBeforeDelete);
+      rebuiltProjection.close();
     },
   );
 });

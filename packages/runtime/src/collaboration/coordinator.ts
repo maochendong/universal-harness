@@ -2,6 +2,7 @@ import type {
   CollaborationConnectionRecord,
   CollaborationProvider,
   ControlRecord,
+  IntegrationRecord,
   LeaseRecord,
   PrincipalSnapshotRecord,
   RemoteApprovalDecisionRecord,
@@ -143,6 +144,35 @@ function latestSnapshotDigest(records: readonly ControlRecord[]): string | undef
     if (record.record_kind === "principal_snapshot") return record.record_digest;
   }
   return undefined;
+}
+
+/**
+ * Load every IntegrationRecord recoverable from Git for a projection rebuild
+ * (spec §12): staged candidates first, then the accepted Target-tree records,
+ * deduplicated by integration id so the accepted record overwrites a stale
+ * staged twin (staging refs are cleaned up best-effort after the Target CAS).
+ * Without this the rebuilt projection would lose the `integration_conflicts`
+ * rows that prepare/accept applied incrementally and the rebuild digest would
+ * drift from the live one.
+ */
+async function loadIntegrationRecordsForRebuild(
+  deps: CollaborationCoordinatorDependencies,
+  projectId: string,
+  targetRef: string | undefined,
+): Promise<
+  | { readonly status: "ok"; readonly records: readonly IntegrationRecord[] }
+  | { readonly status: "failed"; readonly failure: CollaborationFailure }
+> {
+  const listed = await deps.controlStore.listIntegrationRecords({
+    project_id: projectId,
+    ...(targetRef === undefined ? {} : { target_ref: targetRef }),
+  });
+  if (listed.status === "failed") return { status: "failed", failure: listed.failure };
+  const merged = new Map<string, IntegrationRecord>();
+  for (const record of [...listed.staged, ...listed.accepted]) {
+    merged.set(record.integration_id, record);
+  }
+  return { status: "ok", records: [...merged.values()] };
 }
 
 export function createCollaborationCoordinator(
@@ -680,11 +710,20 @@ export function createCollaborationCoordinator(
         ),
       };
     }
+    const integrations = await loadIntegrationRecordsForRebuild(
+      deps,
+      command.project_id,
+      state.snapshot.latest_connection.target_ref,
+    );
+    if (integrations.status === "failed") {
+      return { status: "failed", failure: integrations.failure };
+    }
     try {
       await deps.projection.rebuild({
         project_id: command.project_id,
         latest_connection: state.snapshot.latest_connection,
         control_records: state.snapshot.control_records,
+        integration_records: integrations.records,
       });
     } catch (error) {
       return {
@@ -1235,7 +1274,17 @@ export async function resumeCollaborationCoordinator(
     }
   }
 
-  // 3. Rebuild the disposable projection from the authoritative state.
+  // 3. Rebuild the disposable projection from the authoritative state. The
+  // IntegrationRecords live outside the Control Ref chain, so they are
+  // recovered separately from the staging refs and the Target tree.
+  const integrations = await loadIntegrationRecordsForRebuild(
+    deps,
+    projectId,
+    snapshot.latest_connection?.target_ref ?? hint?.target_ref,
+  );
+  if (integrations.status === "failed") {
+    return { status: "blocked", failure: integrations.failure };
+  }
   try {
     await deps.projection.rebuild({
       project_id: projectId,
@@ -1243,6 +1292,7 @@ export async function resumeCollaborationCoordinator(
         ? {}
         : { latest_connection: snapshot.latest_connection }),
       control_records: snapshot.control_records,
+      integration_records: integrations.records,
     });
   } catch (error) {
     return {

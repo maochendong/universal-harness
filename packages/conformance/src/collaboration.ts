@@ -6,6 +6,7 @@ import {
   type CollaborationPermission,
   type CollaborationProvider,
   type ControlRecord,
+  type IntegrationRecord,
   type LeaseRecord,
   type PrincipalSnapshotRecord,
   type RemoteApprovalDecisionRecord,
@@ -157,6 +158,25 @@ export function conformanceApprovalRecord(
     required_permission: "maintain" as const,
     decided_at: NOW,
     command_id: `command_decision_${String(sequence)}`,
+    ...overrides,
+  });
+}
+
+/** An accepted IntegrationRecord as the Target tree would carry it. */
+export function conformanceIntegrationRecord(
+  overrides: Partial<IntegrationRecord> = {},
+): IntegrationRecord {
+  return buildCollaborationRecord({
+    record_kind: "integration" as const,
+    integration_id: "integration_conformance",
+    operation_id: "op_conformance",
+    expected_target_commit: "0".repeat(40),
+    operation_commit: "1".repeat(40),
+    lease_fencing_token: 1,
+    ledger_sequence_rewrites: [],
+    evidence_digests: [],
+    approval_decision_digests: [],
+    command_id: "command_prepare_conformance",
     ...overrides,
   });
 }
@@ -757,6 +777,7 @@ export type ProjectionFactory = () => Promise<CoordinatorProjectionKit> | Coordi
 interface ProjectionFixtures {
   readonly connection: CollaborationConnectionRecord;
   readonly records: readonly ControlRecord[];
+  readonly integration: IntegrationRecord;
 }
 
 function projectionFixtures(): ProjectionFixtures {
@@ -766,6 +787,7 @@ function projectionFixtures(): ProjectionFixtures {
   return {
     connection: conformanceConnectionFixture(),
     records: [snapshot, lease, approval],
+    integration: conformanceIntegrationRecord(),
   };
 }
 
@@ -823,6 +845,10 @@ export function coordinatorProjectionConformanceCases(
             project_id: PROJECT_ID,
             latest_connection: fixtures.connection,
             control_records: fixtures.records,
+            // IntegrationRecords live outside the Control Ref chain; the
+            // rebuild must restore them too or the integration_conflicts
+            // view would silently empty out (spec §12).
+            integration_records: [fixtures.integration],
           };
           await first.port.rebuild(input);
           await second.port.rebuild(input);

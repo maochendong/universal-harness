@@ -1037,3 +1037,108 @@ describe("git control store candidate reads and target cas", { timeout: 30_000 }
     expect(git(remote, "rev-parse", "refs/heads/main").trim()).toBe(targetHead);
   });
 });
+
+describe("git control store listIntegrationRecords", { timeout: 30_000 }, () => {
+  it("lists staged candidates and accepted target records, skipping operation-candidate refs", async () => {
+    const { remote, store, targetHead, operationHead } = createOperationHarness();
+
+    // An operation-candidate ref from the CLI publish flow shares the
+    // namespace but carries no integration record file: it must be skipped.
+    const replica = cloneRemote(remote);
+    git(replica, "push", "origin", `${operationHead}:${STAGING_REF_PREFIX}/op_1`);
+
+    // One prepared (staged, not yet accepted) integration.
+    const stagedRecord = integrationRecordRecord("integration_staged", targetHead, operationHead);
+    const stagedPrepare = await store.prepareCandidate({
+      project_id: PROJECT_ID,
+      operation_id: "op_1",
+      target_ref: "refs/heads/main",
+      expected_target_commit: targetHead,
+      operation_commit: operationHead,
+      plan: fixedPlan(stagedRecord),
+    });
+    if (stagedPrepare.status !== "prepared") throw new Error("expected a prepared candidate");
+
+    // A second integration that is accepted onto the target; its staging ref
+    // is cleaned up by the successful Target CAS.
+    const acceptedRecord = integrationRecordRecord(
+      "integration_accepted",
+      targetHead,
+      operationHead,
+    );
+    const acceptedPrepare = await store.prepareCandidate({
+      project_id: PROJECT_ID,
+      operation_id: "op_1",
+      target_ref: "refs/heads/main",
+      expected_target_commit: targetHead,
+      operation_commit: operationHead,
+      plan: fixedPlan(acceptedRecord),
+    });
+    if (acceptedPrepare.status !== "prepared") throw new Error("expected a prepared candidate");
+    const swapped = await store.compareAndSwapTarget({
+      project_id: PROJECT_ID,
+      target_ref: "refs/heads/main",
+      expected_commit: targetHead,
+      new_commit: acceptedPrepare.candidate_commit,
+      integration_id: "integration_accepted",
+    });
+    expect(swapped).toEqual({ status: "swapped", commit: acceptedPrepare.candidate_commit });
+
+    const listed = await store.listIntegrationRecords({
+      project_id: PROJECT_ID,
+      target_ref: "refs/heads/main",
+    });
+    expect(listed.status).toBe("ok");
+    if (listed.status !== "ok") throw new Error("unreachable");
+    expect(listed.staged).toEqual([stagedRecord]);
+    expect(listed.accepted).toEqual([acceptedRecord]);
+  });
+
+  it("reports an empty listing when the staging namespace does not exist and no target is named", async () => {
+    const { store } = createHarness();
+    // A wildcard fetch matching no remote refs is not an error.
+    const listed = await store.listIntegrationRecords({ project_id: PROJECT_ID });
+    expect(listed).toEqual({ status: "ok", staged: [], accepted: [] });
+  });
+
+  it("prunes staging refs that vanished from the remote", async () => {
+    const { remote, store, targetHead, operationHead } = createOperationHarness();
+    const record = integrationRecordRecord("integration_pruned", targetHead, operationHead);
+    const prepared = await store.prepareCandidate({
+      project_id: PROJECT_ID,
+      operation_id: "op_1",
+      target_ref: "refs/heads/main",
+      expected_target_commit: targetHead,
+      operation_commit: operationHead,
+      plan: fixedPlan(record),
+    });
+    if (prepared.status !== "prepared") throw new Error("expected a prepared candidate");
+
+    const before = await store.listIntegrationRecords({ project_id: PROJECT_ID });
+    expect(before).toMatchObject({
+      status: "ok",
+      staged: [{ integration_id: record.integration_id }],
+    });
+
+    // The remote staging ref disappears; the mirror must not serve it again.
+    git(remote, "update-ref", "-d", `${STAGING_REF_PREFIX}/integration_pruned`);
+    const after = await store.listIntegrationRecords({ project_id: PROJECT_ID });
+    expect(after).toEqual({ status: "ok", staged: [], accepted: [] });
+  });
+
+  it("fails closed when a staged candidate carries a corrupt record file", async () => {
+    const { remote, store } = createHarness();
+    const corrupt = cloneRemote(remote);
+    mkdirSync(join(corrupt, ".harness/artifacts/integrations"), { recursive: true });
+    writeFileSync(
+      join(corrupt, ".harness/artifacts/integrations/integration_corrupt.json"),
+      "this is not a canonical integration record\n",
+    );
+    git(corrupt, "add", ".harness");
+    git(corrupt, "commit", "-m", "corrupt staged record");
+    git(corrupt, "push", "origin", `HEAD:${STAGING_REF_PREFIX}/integration_corrupt`);
+
+    const listed = await store.listIntegrationRecords({ project_id: PROJECT_ID });
+    expect(listed).toMatchObject({ status: "failed", failure: { code: "control_ref_invalid" } });
+  });
+});

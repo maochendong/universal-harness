@@ -174,6 +174,7 @@ function createLossyControlStore(inner: GitControlStorePort): {
         }
         return inner.readIntegrationRecord(input);
       },
+      listIntegrationRecords: (input) => inner.listIntegrationRecords(input),
       async compareAndSwapTarget(input) {
         const outcome = await inner.compareAndSwapTarget(input);
         if (outcome.status === "swapped" && state.loseNextTargetCas) {

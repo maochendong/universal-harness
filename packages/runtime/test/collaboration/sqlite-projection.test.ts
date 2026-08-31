@@ -9,6 +9,7 @@ import {
   buildCollaborationRecord,
   type CollaborationConnectionRecord,
   type ControlRecord,
+  type IntegrationRecord,
   type LeaseRecord,
   type PrincipalSnapshotRecord,
   type RemoteApprovalDecisionRecord,
@@ -128,6 +129,21 @@ function connectionFixture(): CollaborationConnectionRecord {
   });
 }
 
+function integrationRecord(integrationId: string): IntegrationRecord {
+  return buildCollaborationRecord({
+    record_kind: "integration" as const,
+    integration_id: integrationId,
+    operation_id: "op_1",
+    expected_target_commit: "0".repeat(40),
+    operation_commit: "1".repeat(40),
+    lease_fencing_token: 1,
+    ledger_sequence_rewrites: [],
+    evidence_digests: [],
+    approval_decision_digests: [],
+    command_id: "command_prepare_1",
+  });
+}
+
 describe("SqliteCoordinatorProjection rebuild", () => {
   it("rebuilds the projection from the connection and control records", async () => {
     const connection = connectionFixture();
@@ -188,6 +204,75 @@ describe("SqliteCoordinatorProjection rebuild", () => {
       .all()
       .map((row) => String((row as { name: unknown }).name));
     expect(columns.some((name) => /token|secret|credential/u.test(name))).toBe(false);
+    projection.close();
+  });
+});
+
+describe("SqliteCoordinatorProjection integration records", () => {
+  it("rebuilds the identical digest when integration records are part of the rebuild input", async () => {
+    const connection = connectionFixture();
+    const snapshot = snapshotRecord(1);
+    const lease = leaseRecord(2, snapshot.record_digest);
+    const records: ControlRecord[] = [snapshot, lease];
+    const integration = integrationRecord("integration_01");
+
+    // Live path: rebuild from the chain, then apply the integration record
+    // the way prepare/accept do.
+    const live = new SqliteCoordinatorProjection(":memory:");
+    await live.rebuild({
+      project_id: PROJECT_ID,
+      latest_connection: connection,
+      control_records: records,
+    });
+    await live.apply(integration);
+    const liveDigest = live.projectionDigest();
+    live.close();
+
+    // Delete+rebuild path: the recovered integration records arrive with the
+    // rebuild input and the digest must not drift.
+    const rebuilt = new SqliteCoordinatorProjection(":memory:");
+    await rebuilt.rebuild({
+      project_id: PROJECT_ID,
+      latest_connection: connection,
+      control_records: records,
+      integration_records: [integration],
+    });
+    expect(rebuilt.projectionDigest()).toBe(liveDigest);
+    await expect(
+      rebuilt.query({ kind: "integration_conflicts", project_id: PROJECT_ID }),
+    ).resolves.toEqual({
+      kind: "integration_conflicts",
+      project_id: PROJECT_ID,
+      conflicts: [integration],
+    });
+    rebuilt.close();
+  });
+
+  it("drops integration records when the rebuild input omits them", async () => {
+    const integration = integrationRecord("integration_01");
+    const projection = new SqliteCoordinatorProjection(":memory:");
+    await projection.rebuild({
+      project_id: PROJECT_ID,
+      latest_connection: connectionFixture(),
+      control_records: [snapshotRecord(1)],
+      integration_records: [integration],
+    });
+    const withRecords = projection.projectionDigest();
+
+    // A rebuild is a delete+rebuild: without the records the rows are gone.
+    await projection.rebuild({
+      project_id: PROJECT_ID,
+      latest_connection: connectionFixture(),
+      control_records: [snapshotRecord(1)],
+    });
+    expect(projection.projectionDigest()).not.toBe(withRecords);
+    await expect(
+      projection.query({ kind: "integration_conflicts", project_id: PROJECT_ID }),
+    ).resolves.toEqual({
+      kind: "integration_conflicts",
+      project_id: PROJECT_ID,
+      conflicts: [],
+    });
     projection.close();
   });
 });

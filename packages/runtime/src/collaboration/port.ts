@@ -505,6 +505,32 @@ export type IntegrationRecordReadResult =
   | { readonly status: "missing" }
   | { readonly status: "failed"; readonly failure: CollaborationFailure };
 
+export interface ListIntegrationRecordsInput {
+  readonly project_id: string;
+  /**
+   * Target ref whose accepted records are listed from the Target tree
+   * (`.harness/artifacts/integrations/`). Omitted on a cold start with no
+   * connection: the staged candidates are still listed, `accepted` is empty.
+   */
+  readonly target_ref?: string;
+}
+
+/**
+ * Every IntegrationRecord recoverable from Git: `staged` are the prepared,
+ * not-yet-accepted records read from the candidate staging refs
+ * (`refs/heads/harness/candidate/<integration_id>`; operation-candidate refs,
+ * which carry no record file, are skipped), `accepted` are the records that
+ * landed on the Target ref tree. The Coordinator merges them staged-first so
+ * an accepted record overwrites its stale staged twin for the same id.
+ */
+export type IntegrationRecordListResult =
+  | {
+      readonly status: "ok";
+      readonly staged: readonly IntegrationRecord[];
+      readonly accepted: readonly IntegrationRecord[];
+    }
+  | { readonly status: "failed"; readonly failure: CollaborationFailure };
+
 export interface TargetCasInput {
   readonly project_id: string;
   readonly target_ref: string;
@@ -536,6 +562,13 @@ export interface GitControlStorePort {
   prepareCandidate(input: PrepareGitCandidateInput): Promise<PreparedGitCandidateResult>;
   readCandidate(input: ReadCandidateInput): Promise<CandidateReadResult>;
   readIntegrationRecord(input: ReadIntegrationRecordInput): Promise<IntegrationRecordReadResult>;
+  /**
+   * Enumerate every IntegrationRecord recoverable from Git (spec §12): the
+   * Coordinator needs them to rebuild the projection deterministically —
+   * `integration_conflicts` rows are applied at prepare/accept time, so a
+   * rebuild that only restores the Control Ref chain would lose them.
+   */
+  listIntegrationRecords(input: ListIntegrationRecordsInput): Promise<IntegrationRecordListResult>;
   compareAndSwapTarget(input: TargetCasInput): Promise<TargetCasResult>;
 }
 
@@ -545,6 +578,13 @@ export interface ProjectionRebuildInput {
   readonly project_id: string;
   readonly latest_connection?: CollaborationConnectionRecord;
   readonly control_records: readonly ControlRecord[];
+  /**
+   * IntegrationRecords recovered from the candidate staging refs and the
+   * accepted Target tree, ordered staged-first so an accepted row overwrites
+   * the staged row for the same integration id (matching `INSERT OR REPLACE`
+   * in the SQLite projection).
+   */
+  readonly integration_records?: readonly IntegrationRecord[];
 }
 
 /**

@@ -210,6 +210,15 @@ function createFakeControlStore(seedControlRecords: ControlRecord[] = []): FakeC
           failure: collaborationFailure("coordinator_unavailable", "not implemented in slice"),
         });
       },
+      listIntegrationRecords() {
+        return Promise.resolve({
+          status: "ok" as const,
+          staged: [],
+          accepted: projectRecords.filter(
+            (record): record is IntegrationRecord => record.record_kind === "integration",
+          ),
+        });
+      },
     },
   };
 }

@@ -206,6 +206,11 @@ export class SqliteCoordinatorProjection implements CoordinatorProjectionPort {
       for (const record of input.control_records) {
         this.insertControlRecord(record);
       }
+      // IntegrationRecords live outside the Control Ref chain; the
+      // Coordinator recovers them from the staging refs and the Target tree.
+      for (const record of input.integration_records ?? []) {
+        this.insertIntegration(record);
+      }
       // The cursor moves only after every row landed (spec §12).
       const last = input.control_records[input.control_records.length - 1];
       writeMeta(this.database, META_LAST_CONTROL_SEQUENCE, String(last?.control_sequence ?? 0));

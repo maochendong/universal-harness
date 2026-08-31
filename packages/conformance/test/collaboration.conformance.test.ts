@@ -497,6 +497,8 @@ function createInMemoryGitKit(): GitControlStoreKit {
       prepareCandidate: unused,
       readCandidate: () => Promise.resolve({ status: "missing" as const }),
       readIntegrationRecord: () => Promise.resolve({ status: "missing" as const }),
+      listIntegrationRecords: () =>
+        Promise.resolve({ status: "ok" as const, staged: [], accepted: [] }),
       compareAndSwapTarget(input) {
         const head = refs.get(input.target_ref);
         if (head !== input.expected_commit) {
@@ -598,6 +600,7 @@ function inMemoryProjectionKit(): CoordinatorProjectionKit {
         decisions = [];
         integrations = [];
         for (const record of input.control_records) applyRecord(record);
+        for (const record of input.integration_records ?? []) applyRecord(record);
         return Promise.resolve();
       },
       apply(record) {

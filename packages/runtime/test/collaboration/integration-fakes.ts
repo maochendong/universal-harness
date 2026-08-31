@@ -21,6 +21,7 @@ import type {
   AppendControlInput,
   AppendProjectRecordInput,
   GitControlStorePort,
+  ListIntegrationRecordsInput,
   PrepareGitCandidateInput,
   PreparedGitCandidateResult,
   ReadIntegrationRecordInput,
@@ -214,6 +215,43 @@ export function createIntegrationFakeStore(): IntegrationFakeStore {
         const record = recordInCommit(head, input.integration_id);
         if (record === undefined) return Promise.resolve({ status: "missing" as const });
         return Promise.resolve({ status: "found" as const, commit: head, record });
+      },
+      listIntegrationRecords(input: ListIntegrationRecordsInput) {
+        // Mirrors the production adapter: staged records come from the
+        // candidate staging refs that carry a record file, accepted records
+        // from the target ref head tree.
+        const staged: IntegrationRecord[] = [];
+        for (const [ref, oid] of [...refs.entries()].sort()) {
+          if (!ref.startsWith("refs/heads/harness/candidate/")) continue;
+          const record = recordInCommit(oid, ref.slice("refs/heads/harness/candidate/".length));
+          if (record !== undefined) staged.push(record);
+        }
+        const accepted: IntegrationRecord[] = [];
+        if (input.target_ref !== undefined) {
+          const head = refs.get(input.target_ref);
+          if (head === undefined) {
+            return Promise.resolve({
+              status: "failed" as const,
+              failure: failure("git_remote_unavailable", `unknown target ref ${input.target_ref}`),
+            });
+          }
+          for (const path of [...treeOf(head).keys()].sort()) {
+            if (!path.startsWith(".harness/artifacts/integrations/")) continue;
+            const match = /^\.harness\/artifacts\/integrations\/([^/]+)\.json$/u.exec(path);
+            const record = match === null ? undefined : recordInCommit(head, match[1] as string);
+            if (record === undefined) {
+              return Promise.resolve({
+                status: "failed" as const,
+                failure: failure(
+                  "control_ref_invalid",
+                  `integration record at ${path} is unreadable`,
+                ),
+              });
+            }
+            accepted.push(record);
+          }
+        }
+        return Promise.resolve({ status: "ok" as const, staged, accepted });
       },
       compareAndSwapTarget(input: TargetCasInput) {
         const head = refs.get(input.target_ref);

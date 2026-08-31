@@ -281,6 +281,9 @@ function createFakeControlStore(): FakeControlStore {
       readIntegrationRecord() {
         throw new Error("not used in the approval slice tests");
       },
+      listIntegrationRecords() {
+        throw new Error("not used in the approval slice tests");
+      },
     },
   };
   return store;
