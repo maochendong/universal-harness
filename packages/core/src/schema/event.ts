@@ -41,6 +41,17 @@ export const EVENT_TYPES = [
   "RemoteDisconnected",
   "RemoteApprovalMaterialized",
   "IntegrationAccepted",
+  // Protocol 1.3 (M4): the minimal scheduling lifecycle vocabulary. Events are
+  // timeline facts only — they never substitute for TaskLeaseRecord or
+  // WaveIntegrationRecord authoritative state.
+  "TaskLeaseGranted",
+  "TaskDispatched",
+  "TaskIntegrationQueued",
+  "TaskCandidateValidated",
+  "TaskRetryScheduled",
+  "WaveGateCompleted",
+  "WaveIntegrated",
+  "SchedulerRecovered",
 ] as const;
 
 export const EventSchema = strictObject({

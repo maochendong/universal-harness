@@ -6,7 +6,7 @@ import type { EdgeRecord } from "../schema/edge.js";
 import type { LifecycleEvent } from "../schema/event.js";
 import type { LedgerOperation } from "../schema/operation.js";
 import { validateSchema, type SchemaKey } from "../schema/registry.js";
-import { PROTOCOL_1_2_VERSION, assertProtocolReaderCanProject } from "../protocol.js";
+import { PROTOCOL_1_3_VERSION, assertProtocolReaderCanProject } from "../protocol.js";
 import { resolveHarnessPath } from "./layout.js";
 import {
   BaselineMismatch,
@@ -92,7 +92,7 @@ export function readCommittedOperations(
   harnessRoot: string,
   options?: LedgerReadOptions,
 ): CommittedOperation[] {
-  const readerVersion = options?.readerVersion ?? PROTOCOL_1_2_VERSION;
+  const readerVersion = options?.readerVersion ?? PROTOCOL_1_3_VERSION;
   const operationsDir = resolveHarnessPath(harnessRoot, "ledger/operations");
   if (!existsSync(operationsDir)) return [];
   const operations = readdirSync(operationsDir)

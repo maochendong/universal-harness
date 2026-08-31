@@ -1,6 +1,6 @@
 import { Type, type Static } from "@sinclair/typebox";
 
-import { PROTOCOL_1_2_VERSION } from "../protocol.js";
+import { PROTOCOL_1_2_VERSION, PROTOCOL_1_3_VERSION } from "../protocol.js";
 import {
   DigestSchema,
   ExtensionsSchema,
@@ -94,10 +94,13 @@ export const LedgerOperationSchema = strictObject({
   // materialization can reject a manifest whose shard bytes no longer match.
   edge_file_digest: Type.Optional(DigestSchema),
   event_file_digest: Type.Optional(DigestSchema),
-  // Protocol 1.2: written exactly when the transaction carries a 1.2
-  // authoritative Artifact/Event; older readers must fail closed with
-  // `protocol_upgrade_required` instead of silently projecting the record.
-  required_reader_version: Type.Optional(Type.Literal(PROTOCOL_1_2_VERSION)),
+  // Protocol 1.2+: written exactly when the transaction carries an
+  // authoritative Artifact/Event at 1.2.0 or newer; older readers must fail
+  // closed with `protocol_upgrade_required` instead of silently projecting the
+  // record. The value is exactly the newest carried version.
+  required_reader_version: Type.Optional(
+    enumerated([PROTOCOL_1_2_VERSION, PROTOCOL_1_3_VERSION] as const),
+  ),
   committed_at: TimestampSchema,
   digest: DigestSchema,
   extensions: Type.Optional(ExtensionsSchema),

@@ -1,0 +1,132 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.universal-harness.dev/1.3/task-lease.schema.json",
+  "additionalProperties": false,
+  "type": "object",
+  "required": [
+    "protocol_version",
+    "record_kind",
+    "operation_id",
+    "iteration_id",
+    "plan_digest",
+    "task_id",
+    "task_digest",
+    "run_id",
+    "slot_id",
+    "baseline_commit",
+    "agent_adapter_digest",
+    "policy_digest",
+    "approval_digests",
+    "task_lease_record_id",
+    "lease_id",
+    "fencing_token",
+    "state",
+    "attempt_number",
+    "reserved_budget",
+    "consumed_budget",
+    "issued_at",
+    "expires_at",
+    "command_id",
+    "record_digest"
+  ],
+  "properties": {
+    "protocol_version": { "const": "1.3.0", "type": "string" },
+    "record_kind": { "const": "task_lease", "type": "string" },
+    "operation_id": {
+      "minLength": 3,
+      "maxLength": 160,
+      "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+      "type": "string"
+    },
+    "iteration_id": {
+      "minLength": 3,
+      "maxLength": 160,
+      "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+      "type": "string"
+    },
+    "plan_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
+    "task_id": {
+      "minLength": 3,
+      "maxLength": 160,
+      "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+      "type": "string"
+    },
+    "task_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
+    "run_id": {
+      "minLength": 3,
+      "maxLength": 160,
+      "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+      "type": "string"
+    },
+    "slot_id": {
+      "minLength": 3,
+      "maxLength": 160,
+      "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+      "type": "string"
+    },
+    "baseline_commit": { "pattern": "^[0-9a-f]{7,40}$", "type": "string" },
+    "agent_adapter_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
+    "policy_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
+    "approval_digests": {
+      "uniqueItems": true,
+      "type": "array",
+      "items": { "pattern": "^[a-f0-9]{64}$", "type": "string" }
+    },
+    "task_lease_record_id": {
+      "minLength": 3,
+      "maxLength": 160,
+      "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+      "type": "string"
+    },
+    "lease_id": {
+      "minLength": 3,
+      "maxLength": 160,
+      "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+      "type": "string"
+    },
+    "previous_lease_record_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
+    "fencing_token": { "minimum": 1, "type": "integer" },
+    "state": {
+      "anyOf": [
+        { "const": "granted", "type": "string" },
+        { "const": "released", "type": "string" },
+        { "const": "expired", "type": "string" },
+        { "const": "revoked", "type": "string" }
+      ]
+    },
+    "attempt_number": { "minimum": 1, "type": "integer" },
+    "retry_kind": {
+      "anyOf": [
+        { "const": "executor_retry", "type": "string" },
+        { "const": "integration_retry", "type": "string" }
+      ]
+    },
+    "reserved_budget": {
+      "additionalProperties": false,
+      "type": "object",
+      "required": ["steps", "tokens"],
+      "properties": {
+        "steps": { "minimum": 0, "type": "integer" },
+        "tokens": { "minimum": 0, "type": "integer" }
+      }
+    },
+    "consumed_budget": {
+      "additionalProperties": false,
+      "type": "object",
+      "required": ["steps", "tokens"],
+      "properties": {
+        "steps": { "minimum": 0, "type": "integer" },
+        "tokens": { "minimum": 0, "type": "integer" }
+      }
+    },
+    "issued_at": { "format": "date-time", "type": "string" },
+    "expires_at": { "format": "date-time", "type": "string" },
+    "command_id": {
+      "minLength": 3,
+      "maxLength": 160,
+      "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+      "type": "string"
+    },
+    "record_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" }
+  }
+}

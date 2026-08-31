@@ -11,8 +11,13 @@ import {
 import { PROTOCOL_MAJOR_VERSION, PROTOCOL_VERSION } from "../../src/version.js";
 
 describe("protocol registry", () => {
-  it("registers 1.0.0 as stable and 1.1.0/1.2.0 as in-development on the same major", () => {
-    expect(PROTOCOL_REGISTRY.map((entry) => entry.version)).toEqual(["1.0.0", "1.1.0", "1.2.0"]);
+  it("registers 1.0.0 as stable and 1.1.0/1.2.0/1.3.0 as in-development on the same major", () => {
+    expect(PROTOCOL_REGISTRY.map((entry) => entry.version)).toEqual([
+      "1.0.0",
+      "1.1.0",
+      "1.2.0",
+      "1.3.0",
+    ]);
     expect(lookupProtocol(PROTOCOL_VERSION)).toMatchObject({
       version: "1.0.0",
       major: PROTOCOL_MAJOR_VERSION,
@@ -39,10 +44,11 @@ describe("protocol registry", () => {
     expect(isKnownProtocol("1.0.0")).toBe(true);
     expect(isKnownProtocol("1.1.0")).toBe(true);
     expect(isKnownProtocol("1.2.0")).toBe(true);
-    expect(isKnownProtocol("1.3.0")).toBe(false);
+    expect(isKnownProtocol("1.3.0")).toBe(true);
+    expect(isKnownProtocol("1.4.0")).toBe(false);
     expect(isKnownProtocol("2.0.0")).toBe(false);
     expect(isKnownProtocol("not-semver")).toBe(false);
-    expect(() => assertKnownProtocol("1.3.0")).toThrow(/unknown protocol version/i);
+    expect(() => assertKnownProtocol("1.4.0")).toThrow(/unknown protocol version/i);
     expect(() => assertKnownProtocol("not-semver")).toThrow(/unknown protocol version/i);
   });
 

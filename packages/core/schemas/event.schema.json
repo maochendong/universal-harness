@@ -59,7 +59,15 @@
         { "const": "RemoteConnected", "type": "string" },
         { "const": "RemoteDisconnected", "type": "string" },
         { "const": "RemoteApprovalMaterialized", "type": "string" },
-        { "const": "IntegrationAccepted", "type": "string" }
+        { "const": "IntegrationAccepted", "type": "string" },
+        { "const": "TaskLeaseGranted", "type": "string" },
+        { "const": "TaskDispatched", "type": "string" },
+        { "const": "TaskIntegrationQueued", "type": "string" },
+        { "const": "TaskCandidateValidated", "type": "string" },
+        { "const": "TaskRetryScheduled", "type": "string" },
+        { "const": "WaveGateCompleted", "type": "string" },
+        { "const": "WaveIntegrated", "type": "string" },
+        { "const": "SchedulerRecovered", "type": "string" }
       ]
     },
     "project_id": {

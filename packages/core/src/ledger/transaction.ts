@@ -1,5 +1,5 @@
 import { contentDigest } from "../identity/digest.js";
-import { PROTOCOL_1_2_VERSION } from "../protocol.js";
+import { PROTOCOL_1_2_VERSION, compareProtocolVersions, isKnownProtocol } from "../protocol.js";
 import type { EdgeRecord } from "../schema/edge.js";
 import type { LifecycleEvent } from "../schema/event.js";
 import type { LedgerOperation } from "../schema/operation.js";
@@ -117,9 +117,10 @@ export interface TransactionInput {
   readonly edges?: readonly EdgeRecord[];
   readonly events?: readonly LifecycleEvent[];
   /**
-   * Protocol 1.2: required exactly when the transaction carries a 1.2
-   * authoritative Artifact/Event; the only accepted value is "1.2.0". Plain
-   * 1.0/1.1 transactions never write the field.
+   * Protocol 1.2+: required exactly when the transaction carries an
+   * authoritative Artifact/Event at protocol 1.2.0 or newer; the only accepted
+   * value is the newest carried version ("1.2.0" or "1.3.0"). Plain 1.0/1.1
+   * transactions never write the field.
    */
   readonly required_reader_version?: string;
 }
@@ -197,26 +198,43 @@ export function requiredReaderVersionField(version: string | undefined): {
 }
 
 /**
- * Protocol 1.2 detection: a transaction is an M3 transaction when any event
- * or JSON artifact carries `protocol_version: "1.2.0"`. Unparseable artifact
- * content is opaque bytes, never a 1.2 record.
+ * Authoritative-content detection: a transaction is reader-gated when any
+ * event or JSON artifact carries a known `protocol_version` at 1.2.0 or newer.
+ * Unparseable artifact content is opaque bytes, never an authoritative record.
  */
-function artifactCarriesProtocol12(content: string): boolean {
+function artifactProtocolVersion(content: string): string | undefined {
   try {
-    return plainRecordField(JSON.parse(content), "protocol_version") === PROTOCOL_1_2_VERSION;
+    const version = plainRecordField(JSON.parse(content), "protocol_version");
+    return typeof version === "string" && isKnownProtocol(version) ? version : undefined;
   } catch {
-    return false;
+    return undefined;
   }
 }
 
-function transactionCarriesProtocol12(input: TransactionInput): boolean {
-  return (
-    // `persistedRecordProperties` widens protocol_version away at the type
-    // level; the persisted record always carries it at runtime.
-    (input.events ?? []).some(
-      (event) => plainRecordField(event, "protocol_version") === PROTOCOL_1_2_VERSION,
-    ) || (input.artifacts ?? []).some((artifact) => artifactCarriesProtocol12(artifact.content))
-  );
+function eventProtocolVersion(event: unknown): string | undefined {
+  // `persistedRecordProperties` widens protocol_version away at the type
+  // level; the persisted record always carries it at runtime.
+  const version = plainRecordField(event, "protocol_version");
+  return typeof version === "string" && isKnownProtocol(version) ? version : undefined;
+}
+
+/**
+ * Single newest-authoritative-version reducer: the exact
+ * `required_reader_version` a transaction must pin, or undefined when it only
+ * carries legacy 1.0/1.1 content. A transaction mixing 1.2 and 1.3 content
+ * reduces to 1.3.0; a transaction with no post-1.1 content keeps its existing
+ * manifest bytes.
+ */
+export function transactionRequiredReaderVersion(input: TransactionInput): string | undefined {
+  let newest: string | undefined;
+  const consider = (version: string | undefined): void => {
+    if (version === undefined) return;
+    if (compareProtocolVersions(version, PROTOCOL_1_2_VERSION) < 0) return;
+    if (newest === undefined || compareProtocolVersions(version, newest) > 0) newest = version;
+  };
+  for (const event of input.events ?? []) consider(eventProtocolVersion(event));
+  for (const artifact of input.artifacts ?? []) consider(artifactProtocolVersion(artifact.content));
+  return newest;
 }
 
 /**
@@ -289,23 +307,24 @@ export function validateTransaction(input: TransactionInput): ValidationIssue[] 
     }
   });
 
-  // Protocol 1.2 reader gate: a transaction carrying 1.2 authoritative
-  // records must pin required_reader_version to exactly "1.2.0", and a plain
-  // 1.0/1.1 transaction must not carry the field at all.
-  const carriesProtocol12 = transactionCarriesProtocol12(input);
-  if (carriesProtocol12 && input.required_reader_version !== PROTOCOL_1_2_VERSION) {
+  // Reader gate (Protocol 1.2+): a transaction carrying authoritative records
+  // at 1.2.0 or newer must pin required_reader_version to exactly the newest
+  // carried version, and a plain 1.0/1.1 transaction must not carry the field
+  // at all.
+  const requiredVersion = transactionRequiredReaderVersion(input);
+  if (requiredVersion !== undefined && input.required_reader_version !== requiredVersion) {
     issues.push({
       instancePath: "/required_reader_version",
       keyword: "requiredReaderVersion",
-      message: `transaction carries protocol ${PROTOCOL_1_2_VERSION} authoritative records and must pin required_reader_version to ${PROTOCOL_1_2_VERSION}`,
+      message: `transaction carries protocol ${requiredVersion} authoritative records and must pin required_reader_version to ${requiredVersion}`,
     });
   }
-  if (!carriesProtocol12 && input.required_reader_version !== undefined) {
+  if (requiredVersion === undefined && input.required_reader_version !== undefined) {
     issues.push({
       instancePath: "/required_reader_version",
       keyword: "requiredReaderVersion",
       message:
-        "required_reader_version is only valid on transactions carrying protocol 1.2 records",
+        "required_reader_version is only valid on transactions carrying protocol 1.2 or newer records",
     });
   }
 

@@ -2,7 +2,7 @@ import type { ValidateFunction } from "ajv/dist/2020.js";
 import type { TSchema } from "@sinclair/typebox";
 
 import { isProtocolCompatible } from "../version.js";
-import { PROTOCOL_1_1_VERSION, PROTOCOL_1_2_VERSION } from "../protocol.js";
+import { PROTOCOL_1_1_VERSION, PROTOCOL_1_2_VERSION, PROTOCOL_1_3_VERSION } from "../protocol.js";
 import { createDomainSchemaRegistry, mergeSchemaDocuments } from "./domain-registry.js";
 import { CapabilityPlanRecordSchema } from "./capability.js";
 import {
@@ -67,6 +67,7 @@ import {
   PrdValidationReportRecordSchema,
 } from "./proposal.js";
 import { RuntimeSchema } from "./runtime.js";
+import { TaskLeaseRecordSchema, WaveIntegrationRecordSchema } from "./scheduling.js";
 import {
   ApprovalBriefInputSchema,
   ApprovalBriefOutputSchema,
@@ -287,9 +288,24 @@ export const PROTOCOL_1_2_SCHEMA_REGISTRY = createDomainSchemaRegistry({
   ],
 });
 
+/**
+ * Protocol 1.3 (M4 local multi-agent scheduling): the only two authoritative
+ * record kinds M4 introduces — task-lease and wave-integration. Task state,
+ * scheduler state, parallel groups and driver locks stay derived projections
+ * and never register a schema here.
+ */
+export const PROTOCOL_1_3_SCHEMA_REGISTRY = createDomainSchemaRegistry({
+  protocolVersion: PROTOCOL_1_3_VERSION,
+  entries: [
+    { key: "task-lease", schema: TaskLeaseRecordSchema },
+    { key: "wave-integration", schema: WaveIntegrationRecordSchema },
+  ],
+});
+
 /** Every document scripts/write-schemas.mjs persists into `schemas/`. */
 export const SCHEMA_EXPORT_DOCUMENTS = mergeSchemaDocuments(
   JSON_SCHEMA_DOCUMENTS,
   PROTOCOL_1_1_SCHEMA_REGISTRY.documents(),
   PROTOCOL_1_2_SCHEMA_REGISTRY.documents(),
+  PROTOCOL_1_3_SCHEMA_REGISTRY.documents(),
 );

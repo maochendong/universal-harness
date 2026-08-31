@@ -17,6 +17,7 @@ export * from "./protocol.js";
 export * from "./review/index.js";
 export * from "./risk/index.js";
 export * from "./schema/index.js";
+export * from "./scheduling/index.js";
 export * from "./synthesis/index.js";
 export * from "./version.js";
 

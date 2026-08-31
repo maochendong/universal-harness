@@ -26,6 +26,7 @@ export * from "./registry.js";
 export * from "./review.js";
 export * from "./risk.js";
 export * from "./run-stream.js";
+export * from "./scheduling.js";
 export * from "./synthesis.js";
 export * from "./tdd.js";
 export * from "./runtime.js";
