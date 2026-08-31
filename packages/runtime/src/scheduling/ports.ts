@@ -109,3 +109,56 @@ export interface PolicyDecisionPort {
   readonly name: string;
   decide(input: SchedulerPolicyInput): Promise<PolicyDecision>;
 }
+
+/**
+ * Live scheduling observation types (M4 design §4.2/§4.4, plan Task 8). These
+ * are the payload contract of the disposable live projection: they never
+ * carry authority — no status, verdict, approval or integration fact lives
+ * here — and every free-text field is redacted before it is written.
+ */
+
+export const AGENT_POOL_SLOT_STATES = ["idle", "running", "cancelling"] as const;
+
+export type AgentPoolSlotState = (typeof AGENT_POOL_SLOT_STATES)[number];
+
+export interface AgentPoolSlot {
+  readonly slot_id: string;
+  readonly state: AgentPoolSlotState;
+  readonly task_id?: string;
+  readonly run_id?: string;
+}
+
+/**
+ * Live observation of one scheduled Task. `pid`, `steps` and `tokens` stay
+ * `null` when the Adapter/process boundary cannot meter them — an unmetered
+ * field is never displayed as zero (design §18).
+ */
+export interface SchedulerTaskLiveObservation {
+  readonly task_id: string;
+  readonly pid: number | null;
+  readonly heartbeat_at: string | null;
+  readonly output_tail: string | null;
+  readonly steps: number | null;
+  readonly tokens: number | null;
+  readonly duration_ms: number;
+  /** Digest-based worktree locator; never an absolute path. */
+  readonly worktree_id: string | null;
+}
+
+export interface SchedulerLiveSnapshot {
+  readonly operation_id: string;
+  readonly observed_at: string;
+  readonly slots: readonly AgentPoolSlot[];
+  readonly tasks: readonly SchedulerTaskLiveObservation[];
+}
+
+/**
+ * Disposable live projection store (design §4.4). The whole snapshot of one
+ * operation is replaced atomically; the store may be deleted at any time and
+ * the authoritative Task state is rebuilt from Ledger and Git without it.
+ */
+export interface SchedulerProjectionStore {
+  replace(snapshot: SchedulerLiveSnapshot): Promise<void>;
+  read(operationId: string): Promise<SchedulerLiveSnapshot | null>;
+  clear(operationId: string): Promise<void>;
+}

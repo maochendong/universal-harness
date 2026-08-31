@@ -124,6 +124,7 @@ export function createDshAgentAdapter(options: DshAgentAdapterOptions): AgentAda
     args: readonly string[],
     timeoutMs: number,
     onOutput?: NonNullable<Parameters<AgentAdapter["run"]>[1]["on_output"]>,
+    signal?: AbortSignal,
   ): Promise<ProcessRunResult> =>
     spawnProcess(executable, {
       args,
@@ -132,6 +133,7 @@ export function createDshAgentAdapter(options: DshAgentAdapterOptions): AgentAda
       timeout_ms: timeoutMs,
       max_output_bytes: maxOutputBytes,
       ...(onOutput === undefined ? {} : { on_output: onOutput }),
+      ...(signal === undefined ? {} : { signal }),
     });
 
   return {
@@ -185,6 +187,7 @@ export function createDshAgentAdapter(options: DshAgentAdapterOptions): AgentAda
           [...launcherArgs, "--profile", "headless", renderDshTask(envelope)],
           timeoutMs,
           runOptions.on_output,
+          runOptions.signal,
         );
         const after = await options.inspector.inspect(worktree);
         const newlyChanged = after.changed_paths
@@ -200,6 +203,7 @@ export function createDshAgentAdapter(options: DshAgentAdapterOptions): AgentAda
           signal: processResult.signal,
           timed_out: processResult.timed_out,
           output_truncated: processResult.output_truncated,
+          aborted: processResult.aborted,
           duration_ms: processResult.duration_ms,
           stdout: processResult.stdout,
           stderr: processResult.stderr,
@@ -226,6 +230,16 @@ export function createDshAgentAdapter(options: DshAgentAdapterOptions): AgentAda
           evidence,
         };
 
+        if (processResult.aborted) {
+          return withBudgetObservations(envelope, manifest, {
+            ...emptyFailure(
+              "partial",
+              "user_cancellation",
+              "dsh run aborted: one SIGTERM was delivered to the supervised process",
+            ),
+            ...base,
+          });
+        }
         if (processResult.timed_out) {
           return withBudgetObservations(envelope, manifest, {
             ...emptyFailure(

@@ -168,6 +168,16 @@ export interface AgentRunOptions {
   readonly mode: AgentRunMode;
   readonly resume?: AgentResumeContext;
   readonly on_output?: (output: AgentRunOutput) => void;
+  /**
+   * Optional cooperative termination request (M4 design §15.2). Process-backed
+   * adapters forward it to the supervised subprocess, which acknowledges with
+   * a distinct `aborted` result flag. An adapter that never observes the
+   * signal stays within the contract; its result is then
+   * termination-unconfirmed and follows the existing uncertain side-effect
+   * semantics -- callers must never claim cancellation from the abort intent
+   * alone.
+   */
+  readonly signal?: AbortSignal;
 }
 
 export interface AgentAdapter {

@@ -346,6 +346,7 @@ export function createConfiguredGateSuite(
             stderr: error.message,
             timed_out: false,
             output_truncated: false,
+            aborted: false,
             duration_ms: 0,
           };
         }

@@ -33,6 +33,7 @@ describe("dsh agent adapter", () => {
           stderr: "",
           timed_out: false,
           output_truncated: false,
+          aborted: false,
           duration_ms: 2,
         });
       },
@@ -58,6 +59,7 @@ describe("dsh agent adapter", () => {
           stderr: "",
           timed_out: false,
           output_truncated: false,
+          aborted: false,
           duration_ms: 5,
         });
       }
@@ -68,6 +70,7 @@ describe("dsh agent adapter", () => {
         stderr: "",
         timed_out: false,
         output_truncated: false,
+        aborted: false,
         duration_ms: 25,
       });
     };
@@ -155,6 +158,7 @@ describe("dsh agent adapter", () => {
           stderr: call === 1 ? "" : "MISSING_CREDENTIAL: no API key",
           timed_out: false,
           output_truncated: false,
+          aborted: false,
           duration_ms: 2,
         });
       },
@@ -197,6 +201,7 @@ describe("dsh agent adapter", () => {
           stderr: "",
           timed_out: false,
           output_truncated: false,
+          aborted: false,
           duration_ms: 2,
         }),
     });
@@ -208,5 +213,82 @@ describe("dsh agent adapter", () => {
       completion_claimed: false,
       undeclared_writes: ["outside.txt"],
     });
+  });
+});
+
+describe("abort signal", () => {
+  it("forwards the run signal to the task process, never to the version probe", async () => {
+    const controller = new AbortController();
+    const seen: Array<{ probe: boolean; signal: AbortSignal | undefined }> = [];
+    const adapter = createDshAgentAdapter({
+      executable: "npx",
+      launcher_args: ["--no-install", "@deepseek-ai/dsh"],
+      expected_version: "0.1.0-rc.6",
+      worktree: makeTempDir("harness-dsh-worktree-"),
+      evidence_dir: makeTempDir("harness-dsh-evidence-"),
+      inspector: {
+        inspect: () => Promise.resolve({ head: null, changed_paths: [], digest: "a".repeat(64) }),
+      },
+      spawnProcess: (_executable, options) => {
+        const probe = options.args.at(-1) === "--version";
+        seen.push({ probe, signal: options.signal });
+        return Promise.resolve({
+          exit_code: 0,
+          signal: null,
+          stdout: probe ? "0.1.0-rc.6\n" : "done\n",
+          stderr: "",
+          timed_out: false,
+          output_truncated: false,
+          aborted: false,
+          duration_ms: 2,
+        });
+      },
+    });
+
+    await adapter.run(fixtureEnvelope(), { mode: "supervised", signal: controller.signal });
+
+    expect(seen).toEqual([
+      { probe: true, signal: undefined },
+      { probe: false, signal: controller.signal },
+    ]);
+  });
+
+  it("maps an aborted headless process to a distinct user_cancellation result", async () => {
+    const adapter = createDshAgentAdapter({
+      executable: "npx",
+      launcher_args: ["--no-install", "@deepseek-ai/dsh"],
+      expected_version: "0.1.0-rc.6",
+      worktree: makeTempDir("harness-dsh-worktree-"),
+      evidence_dir: makeTempDir("harness-dsh-evidence-"),
+      inspector: {
+        inspect: () => Promise.resolve({ head: null, changed_paths: [], digest: "a".repeat(64) }),
+      },
+      spawnProcess: (_executable, options) => {
+        const probe = options.args.at(-1) === "--version";
+        return Promise.resolve({
+          exit_code: probe ? 0 : null,
+          signal: probe ? null : "SIGTERM",
+          stdout: probe ? "0.1.0-rc.6\n" : "",
+          stderr: "",
+          timed_out: false,
+          output_truncated: false,
+          aborted: !probe,
+          duration_ms: 2,
+        });
+      },
+    });
+    const controller = new AbortController();
+    const running = adapter.run(fixtureEnvelope(), {
+      mode: "supervised",
+      signal: controller.signal,
+    });
+    controller.abort();
+    const result = await running;
+
+    expect(result.outcome).toBe("partial");
+    expect(result.termination_reason).toBe("user_cancellation");
+    expect(result.completion_claimed).toBe(false);
+    expect(result.summary).toContain("abort");
+    expect(result.evidence.map((entry) => entry.kind)).toContain("transcript");
   });
 });

@@ -308,6 +308,7 @@ describe("project runtime configuration", () => {
           stderr: "",
           timed_out: false,
           output_truncated: false,
+          aborted: false,
           duration_ms: 50,
         });
       },
@@ -647,6 +648,7 @@ describe("project runtime configuration", () => {
           stderr: "",
           timed_out: false,
           output_truncated: false,
+          aborted: false,
           duration_ms: 1,
         });
       },

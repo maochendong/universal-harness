@@ -1,3 +1,4 @@
+import { getEventListeners } from "node:events";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -60,5 +61,126 @@ describe("plugin subprocess output observation", () => {
     });
 
     expect(result).toMatchObject({ exit_code: 0, stdout: "done\n", timed_out: false });
+  });
+});
+
+describe("plugin subprocess abort signal", () => {
+  it("sends one SIGTERM on abort and reports the aborted flag distinctly", async () => {
+    const controller = new AbortController();
+    const running = runPluginSubprocess(process.execPath, {
+      // Trap SIGTERM so a second signal would be observable; exit on the first.
+      args: [
+        "-e",
+        "process.on('SIGTERM', () => { process.stdout.write('sigterm\\n'); process.exit(42); }); setTimeout(() => {}, 5000);",
+      ],
+      cwd: worktree(),
+      env: {},
+      timeout_ms: 10_000,
+      max_output_bytes: 4_096,
+      signal: controller.signal,
+    });
+    setTimeout(() => {
+      controller.abort();
+    }, 100);
+    const result = await running;
+
+    expect(result.aborted).toBe(true);
+    expect(result.timed_out).toBe(false);
+    expect(result.output_truncated).toBe(false);
+    expect(result.stdout).toBe("sigterm\n");
+    expect(result.exit_code).toBe(42);
+  });
+
+  it("kills a process that never traps SIGTERM and reports the signal", async () => {
+    const controller = new AbortController();
+    const running = runPluginSubprocess(process.execPath, {
+      args: ["-e", "setTimeout(() => {}, 5000)"],
+      cwd: worktree(),
+      env: {},
+      timeout_ms: 10_000,
+      max_output_bytes: 4_096,
+      signal: controller.signal,
+    });
+    setTimeout(() => {
+      controller.abort();
+    }, 100);
+    const result = await running;
+
+    expect(result.aborted).toBe(true);
+    expect(result.signal).toBe("SIGTERM");
+    expect(result.exit_code).toBeNull();
+  });
+
+  it("removes the abort listener after the process closes", async () => {
+    const controller = new AbortController();
+    const result = await runPluginSubprocess(process.execPath, {
+      args: ["-e", "process.stdout.write('done\\n')"],
+      cwd: worktree(),
+      env: {},
+      timeout_ms: 2_000,
+      max_output_bytes: 4_096,
+      signal: controller.signal,
+    });
+
+    expect(result).toMatchObject({ exit_code: 0, aborted: false });
+    expect(getEventListeners(controller.signal, "abort")).toHaveLength(0);
+  });
+
+  it("aborts immediately when the signal is already aborted at spawn time", async () => {
+    const controller = new AbortController();
+    controller.abort();
+    const result = await runPluginSubprocess(process.execPath, {
+      args: ["-e", "setTimeout(() => {}, 5000)"],
+      cwd: worktree(),
+      env: {},
+      timeout_ms: 10_000,
+      max_output_bytes: 4_096,
+      signal: controller.signal,
+    });
+
+    expect(result.aborted).toBe(true);
+  });
+
+  it("preserves timeout behavior when a signal is attached but never aborted", async () => {
+    const controller = new AbortController();
+    const result = await runPluginSubprocess(process.execPath, {
+      args: ["-e", "setTimeout(() => {}, 5000)"],
+      cwd: worktree(),
+      env: {},
+      timeout_ms: 150,
+      max_output_bytes: 4_096,
+      signal: controller.signal,
+    });
+
+    expect(result.timed_out).toBe(true);
+    expect(result.aborted).toBe(false);
+    expect(getEventListeners(controller.signal, "abort")).toHaveLength(0);
+  });
+
+  it("preserves the output cap when a signal is attached but never aborted", async () => {
+    const controller = new AbortController();
+    const result = await runPluginSubprocess(process.execPath, {
+      args: ["-e", "process.stdout.write('x'.repeat(100_000))"],
+      cwd: worktree(),
+      env: {},
+      timeout_ms: 10_000,
+      max_output_bytes: 1_024,
+      signal: controller.signal,
+    });
+
+    expect(result.output_truncated).toBe(true);
+    expect(result.aborted).toBe(false);
+  });
+
+  it("reports aborted false when no signal is provided", async () => {
+    const result = await runPluginSubprocess(process.execPath, {
+      args: ["-e", "process.stdout.write('done\\n')"],
+      cwd: worktree(),
+      env: {},
+      timeout_ms: 2_000,
+      max_output_bytes: 4_096,
+    });
+
+    expect(result.aborted).toBe(false);
   });
 });

@@ -164,6 +164,7 @@ export function createCommandAgentAdapter(options: CommandAgentAdapterOptions): 
           env: buildEnvironment(manifest, process.env),
           timeout_ms: timeoutMs,
           max_output_bytes: maxOutputBytes,
+          ...(runOptions.signal === undefined ? {} : { signal: runOptions.signal }),
         });
       } catch (error) {
         if (error instanceof ProcessSpawnError) {
@@ -185,6 +186,7 @@ export function createCommandAgentAdapter(options: CommandAgentAdapterOptions): 
         signal: processResult.signal,
         timed_out: processResult.timed_out,
         output_truncated: processResult.output_truncated,
+        aborted: processResult.aborted,
         duration_ms: processResult.duration_ms,
         stdout: processResult.stdout,
         stderr: processResult.stderr,
@@ -209,6 +211,15 @@ export function createCommandAgentAdapter(options: CommandAgentAdapterOptions): 
         evidence: [transcriptEvidence, ...extraEvidence],
       });
 
+      if (processResult.aborted) {
+        return withTranscript(
+          failureResult(
+            "partial",
+            "user_cancellation",
+            "provider run aborted: one SIGTERM was delivered to the supervised process",
+          ),
+        );
+      }
       if (processResult.timed_out) {
         return withTranscript(
           failureResult(

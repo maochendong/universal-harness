@@ -260,3 +260,64 @@ describe("explicit resume", () => {
     expect(payload.resume.note).toBe("continue");
   });
 });
+
+describe("abort signal", () => {
+  it("forwards the run signal to the supervised provider process", async () => {
+    const controller = new AbortController();
+    let seenSignal: AbortSignal | undefined;
+    const worktree = makeTempDir("harness-worktree-");
+    const adapter = createCommandAgentAdapter({
+      manifest: fixtureManifest("complete.mjs"),
+      worktree,
+      evidence_dir: makeTempDir("harness-evidence-"),
+      spawnProcess: async (executable, spawnOptions) => {
+        seenSignal = spawnOptions.signal;
+        const { runCommandProcess } = await import("../src/process.js");
+        return runCommandProcess(executable, spawnOptions);
+      },
+    });
+
+    await adapter.run(fixtureEnvelope(), { mode: "supervised", signal: controller.signal });
+
+    expect(seenSignal).toBe(controller.signal);
+  });
+
+  it("maps an aborted provider process to a distinct user_cancellation result", async () => {
+    const { adapter, evidenceDir } = makeAdapter("sleep.mjs");
+    const controller = new AbortController();
+    const running = adapter.run(fixtureEnvelope(), {
+      mode: "supervised",
+      signal: controller.signal,
+    });
+    setTimeout(() => {
+      controller.abort();
+    }, 100);
+    const result = await running;
+
+    expect(result.outcome).toBe("partial");
+    expect(result.termination_reason).toBe("user_cancellation");
+    expect(result.completion_claimed).toBe(false);
+    expect(result.summary).toContain("abort");
+    // The abort is still observed as evidence through the transcript artifact.
+    const transcript = result.evidence.find((entry) => entry.kind === "transcript");
+    expect(transcript?.locator.startsWith(evidenceDir)).toBe(true);
+    const persisted = JSON.parse(readFileSync(transcript?.locator ?? "", "utf8")) as {
+      aborted: boolean;
+      signal: string | null;
+    };
+    expect(persisted.aborted).toBe(true);
+    expect(persisted.signal).toBe("SIGTERM");
+  });
+
+  it("keeps timeout semantics when a signal is attached but never aborted", async () => {
+    const { adapter } = makeAdapter("sleep.mjs", { timeout_ms: 200 });
+    const controller = new AbortController();
+    const result = await adapter.run(fixtureEnvelope(), {
+      mode: "supervised",
+      signal: controller.signal,
+    });
+
+    expect(result.outcome).toBe("partial");
+    expect(result.termination_reason).toBe("timeout");
+  });
+});

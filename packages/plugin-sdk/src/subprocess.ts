@@ -42,6 +42,13 @@ export interface PluginSubprocessOptions {
   readonly max_output_bytes: number;
   /** Disposable, best-effort observation of output accepted under the cap. */
   readonly on_output?: (output: PluginSubprocessOutput) => void;
+  /**
+   * Optional cooperative termination request (M4). Aborting sends exactly one
+   * SIGTERM to the supervised child; the resulting `aborted` flag is the only
+   * confirmation the termination landed -- the abort intent alone proves
+   * nothing.
+   */
+  readonly signal?: AbortSignal;
 }
 
 export interface PluginSubprocessOutput {
@@ -56,6 +63,12 @@ export interface PluginSubprocessResult {
   readonly stderr: string;
   readonly timed_out: boolean;
   readonly output_truncated: boolean;
+  /**
+   * `true` only when the caller's AbortSignal fired and this runner sent the
+   * SIGTERM that ended the process. Distinct from `timed_out` and
+   * `output_truncated` so a cancellation is never misread as a limit kill.
+   */
+  readonly aborted: boolean;
   readonly duration_ms: number;
 }
 
@@ -98,7 +111,30 @@ export function runPluginSubprocess(
     let captured = 0;
     let truncated = false;
     let timedOut = false;
+    let aborted = false;
     let settled = false;
+    // Timeout, output-cap and abort all terminate via the same single SIGTERM;
+    // the flags record which limit (or the caller) actually fired it.
+    let sigtermSent = false;
+    const terminate = (): void => {
+      if (sigtermSent || settled) return;
+      sigtermSent = true;
+      child.kill("SIGTERM");
+    };
+    const onAbort = (): void => {
+      aborted = true;
+      terminate();
+    };
+    const detachAbortListener = (): void => {
+      options.signal?.removeEventListener("abort", onAbort);
+    };
+    if (options.signal !== undefined) {
+      if (options.signal.aborted) {
+        onAbort();
+      } else {
+        options.signal.addEventListener("abort", onAbort, { once: true });
+      }
+    }
 
     const decoders = {
       stdout: new StringDecoder("utf8"),
@@ -121,7 +157,7 @@ export function runPluginSubprocess(
           if (!truncated) {
             truncated = true;
             // An output flood is a runaway plugin; stop it.
-            child.kill("SIGTERM");
+            terminate();
           }
           return;
         }
@@ -132,7 +168,7 @@ export function runPluginSubprocess(
 
     const timer = setTimeout(() => {
       timedOut = true;
-      child.kill("SIGTERM");
+      terminate();
     }, options.timeout_ms);
 
     child.stdout.on("data", collect("stdout", stdoutChunks));
@@ -141,6 +177,7 @@ export function runPluginSubprocess(
       if (settled) return;
       settled = true;
       clearTimeout(timer);
+      detachAbortListener();
       reject(
         new PluginSubprocessError(
           "spawn_failed",
@@ -153,6 +190,7 @@ export function runPluginSubprocess(
       if (settled) return;
       settled = true;
       clearTimeout(timer);
+      detachAbortListener();
       observe("stdout", decoders.stdout.end());
       observe("stderr", decoders.stderr.end());
       resolve({
@@ -162,6 +200,7 @@ export function runPluginSubprocess(
         stderr: Buffer.concat(stderrChunks).toString("utf8"),
         timed_out: timedOut,
         output_truncated: truncated,
+        aborted,
         duration_ms: Math.max(0, Date.now() - started),
       });
     });
