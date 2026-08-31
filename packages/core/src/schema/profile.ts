@@ -1,6 +1,6 @@
 import { Type, type Static } from "@sinclair/typebox";
 
-import { PROTOCOL_1_1_VERSION } from "../protocol.js";
+import { PROTOCOL_1_1_VERSION, PROTOCOL_1_3_VERSION } from "../protocol.js";
 import {
   DigestSchema,
   IdentifierSchema,
@@ -21,21 +21,30 @@ export const PROFILE_IDS = ["lite", "standard", "governed"] as const;
 export type ProfileId = (typeof PROFILE_IDS)[number];
 export const ProfileIdSchema = enumerated(PROFILE_IDS);
 
-export const CAPABILITY_IDS = [
+export const CAPABILITY_IDS_1_1 = [
   "impact_analysis",
   "design_governance",
   "independent_evaluation",
   "strict_tdd",
   "advanced_audit",
 ] as const;
-export type CapabilityId = (typeof CAPABILITY_IDS)[number];
+/**
+ * The legacy Protocol 1.1 alias: existing 1.0–1.2 readers, schemas and goldens
+ * keep resolving exactly these five capabilities. Protocol 1.3 adds
+ * `parallel_task_execution` (M4 design 10.2) without rotating the 1.1 list.
+ */
+export const CAPABILITY_IDS = CAPABILITY_IDS_1_1;
+export type CapabilityId = (typeof CAPABILITY_IDS_1_1)[number];
+
+export const CAPABILITY_IDS_1_3 = [...CAPABILITY_IDS_1_1, "parallel_task_execution"] as const;
+export type CapabilityIdV13 = (typeof CAPABILITY_IDS_1_3)[number];
 
 export const CAPABILITY_MODES = ["required", "conditional", "disabled"] as const;
 export type CapabilityMode = (typeof CAPABILITY_MODES)[number];
 export const CapabilityModeSchema = enumerated(CAPABILITY_MODES);
 
 /** Registry data for one tier; the digest seals the whole definition. */
-export const ProfileDefinitionSchema = strictObject({
+export const ProfileDefinitionV11Schema = strictObject({
   profile_id: ProfileIdSchema,
   protocol_version: Type.Literal(PROTOCOL_1_1_VERSION),
   capabilities: strictObject({
@@ -50,7 +59,37 @@ export const ProfileDefinitionSchema = strictObject({
   cli_presentation_id: Type.String({ minLength: 1 }),
   definition_digest: DigestSchema,
 });
-export type ProfileDefinition = Static<typeof ProfileDefinitionSchema>;
+export type ProfileDefinitionV11 = Static<typeof ProfileDefinitionV11Schema>;
+
+/**
+ * Protocol 1.3 profile definition (M4 design 10.2): the same tier shape plus
+ * the `parallel_task_execution` mode — Lite `disabled`, Standard/Governed
+ * `required`. A separate sealed schema so 1.1 definitions keep their digests.
+ */
+export const ProfileDefinitionV13Schema = strictObject({
+  profile_id: ProfileIdSchema,
+  protocol_version: Type.Literal(PROTOCOL_1_3_VERSION),
+  capabilities: strictObject({
+    impact_analysis: CapabilityModeSchema,
+    design_governance: CapabilityModeSchema,
+    independent_evaluation: CapabilityModeSchema,
+    strict_tdd: CapabilityModeSchema,
+    advanced_audit: CapabilityModeSchema,
+    parallel_task_execution: CapabilityModeSchema,
+  }),
+  approval_policy_id: Type.String({ minLength: 1 }),
+  dashboard_presentation_id: Type.String({ minLength: 1 }),
+  cli_presentation_id: Type.String({ minLength: 1 }),
+  definition_digest: DigestSchema,
+});
+export type ProfileDefinitionV13 = Static<typeof ProfileDefinitionV13Schema>;
+
+/** Reader union: a current reader accepts both definition versions. */
+export const ProfileDefinitionSchema = Type.Union([
+  ProfileDefinitionV11Schema,
+  ProfileDefinitionV13Schema,
+]);
+export type ProfileDefinition = ProfileDefinitionV11 | ProfileDefinitionV13;
 
 export const MODEL_SLOT_IDS = [
   "impact_advisory",

@@ -1,4 +1,4 @@
-import { CAPABILITY_IDS, type CapabilityId } from "../schema/profile.js";
+import { CAPABILITY_IDS_1_3, type CapabilityIdV13 } from "../schema/profile.js";
 
 /**
  * Generic capability status projection (slim-profiles design 7.5). Every UI,
@@ -6,7 +6,10 @@ import { CAPABILITY_IDS, type CapabilityId } from "../schema/profile.js";
  * domain modules may define finer states, but the mapping to the generic five
  * is registered here by the owning module (the strict_tdd mapping lands with
  * the TDD state machine in Task 16) — Read API and Dashboard never reinvent
- * it. Anything unknown fails closed.
+ * it. Anything unknown fails closed. The capability id vocabulary covers
+ * every protocol version (1.1 and 1.3), so a 1.3-only module such as
+ * parallel_task_execution can register its mapping without weakening the
+ * fail-closed check.
  */
 export const GENERIC_CAPABILITY_STATUSES = [
   "proven",
@@ -18,7 +21,7 @@ export const GENERIC_CAPABILITY_STATUSES = [
 export type GenericCapabilityStatus = (typeof GENERIC_CAPABILITY_STATUSES)[number];
 
 export interface CapabilityStatusProjection {
-  readonly capability_id: CapabilityId;
+  readonly capability_id: CapabilityIdV13;
   readonly generic_status: GenericCapabilityStatus;
   readonly domain_status: string;
   readonly reason?: string;
@@ -27,7 +30,7 @@ export interface CapabilityStatusProjection {
 
 /** The interface through which an owning module registers its state mapping. */
 export interface DomainStatusMapping {
-  readonly capability_id: CapabilityId;
+  readonly capability_id: CapabilityIdV13;
   readonly mappings: Readonly<Record<string, GenericCapabilityStatus>>;
 }
 
@@ -43,19 +46,19 @@ export class StatusProjectionError extends Error {
 
 export interface CapabilityStatusProjector {
   project(
-    capabilityId: CapabilityId,
+    capabilityId: CapabilityIdV13,
     domainStatus: string,
     options?: { readonly reason?: string; readonly binding_ids?: readonly string[] },
   ): CapabilityStatusProjection;
-  inactive(capabilityId: CapabilityId): CapabilityStatusProjection;
+  inactive(capabilityId: CapabilityIdV13): CapabilityStatusProjection;
 }
 
 function isGenericStatus(value: string): value is GenericCapabilityStatus {
   return (GENERIC_CAPABILITY_STATUSES as readonly string[]).includes(value);
 }
 
-function isCapabilityId(value: string): value is CapabilityId {
-  return (CAPABILITY_IDS as readonly string[]).includes(value);
+function isCapabilityId(value: string): value is CapabilityIdV13 {
+  return (CAPABILITY_IDS_1_3 as readonly string[]).includes(value);
 }
 
 export function createCapabilityStatusProjector(

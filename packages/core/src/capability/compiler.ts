@@ -3,21 +3,26 @@ import { domainRecordId } from "../identity/record-id.js";
 import { PromptContractError } from "../prompt/contracts.js";
 import type { PromptContractResolver } from "../prompt/registry.js";
 import type { ProfilePolicyConstraints } from "../profile/decisions.js";
-import { profileDefinition } from "../profile/definitions.js";
+import {
+  profileDefinitionForProtocol,
+  profileDefinitionVersionForProtocol,
+} from "../profile/definitions.js";
 import {
   assertBindingScopesDisjoint,
   bindingScopeKey,
   isCaptureScopeBinding,
   modelSlotDefaultsForProfile,
 } from "../profile/model-slots.js";
-import { PROTOCOL_1_1_VERSION } from "../protocol.js";
+import { PROTOCOL_1_1_VERSION, PROTOCOL_1_3_VERSION } from "../protocol.js";
 import type {
+  AnyCapabilityPlanRecord,
   ApprovalObjectKind,
   CapabilityPlanRecord,
   CapabilityResolutionEntry,
+  CapabilityResolutionEntryV13,
   CapabilityResolutionSource,
   CompilationStage,
-  InvalidationEdge,
+  InvalidationEdgeV13,
   ProviderCapability,
 } from "../schema/capability.js";
 import { PROVIDER_CAPABILITIES } from "../schema/capability.js";
@@ -26,11 +31,14 @@ import {
   GROUNDED_SYNTHESIS_PURPOSES,
   MODEL_SLOT_IDS,
   type CapabilityId,
+  type CapabilityIdV13,
+  type CapabilityMode,
   type GroundedSynthesisPurpose,
   type ModelBindingFailureMode,
   type ModelProviderBinding,
   type ModelSlotId,
   type ProfileDecisionRecord,
+  type ProfileDefinition,
   type ProfileId,
   type ProjectProfileRecord,
 } from "../schema/profile.js";
@@ -62,7 +70,7 @@ export class CapabilityCompileError extends Error {
 }
 
 export interface CapabilityActivation {
-  readonly capability_id: CapabilityId;
+  readonly capability_id: CapabilityIdV13;
   readonly source: "user_activation" | "risk_activation";
   /** Digest of the object justifying the activation; defaults per source. */
   readonly binding_digest?: string;
@@ -113,7 +121,15 @@ export interface CapabilityPlanCompileInput {
   /** The Capture-scope bindings (Task 2 record) for scope-overlap verification. */
   readonly capture_scope_bindings?: readonly ModelProviderBinding[];
   readonly accepted_design_set?: AcceptedDesignSetInput;
-  readonly supersedes?: CapabilityPlanRecord;
+  readonly supersedes?: AnyCapabilityPlanRecord;
+  /**
+   * Operation protocol selecting the capability/profile definition set
+   * (M4 design 10.2). Protocol 1.0–1.2 operations omit it and compile exactly
+   * the legacy 1.1 plan; a 1.3 operation resolves the 1.3 definitions and
+   * emits a Protocol 1.3 CapabilityPlan revision when — and only when — the
+   * parallel_task_execution module actually participates.
+   */
+  readonly protocol_version?: "1.1.0" | "1.3.0";
 }
 
 /**
@@ -145,24 +161,50 @@ function isProviderCapability(value: string): value is ProviderCapability {
   return (PROVIDER_CAPABILITIES as readonly string[]).includes(value);
 }
 
+/**
+ * Mode lookup over a versioned profile definition. The id list always comes
+ * from the same protocol version as the definition, so a missing mode means
+ * registry drift — fail closed instead of reading it as conditional.
+ */
+function profileCapabilityMode(
+  definition: ProfileDefinition,
+  capabilityId: CapabilityIdV13,
+): CapabilityMode {
+  const mode = (definition.capabilities as Readonly<Record<string, CapabilityMode>>)[capabilityId];
+  if (mode === undefined) {
+    throw new CapabilityCompileError(
+      "unknown_capability",
+      `profile ${definition.profile_id} (${definition.protocol_version}) has no mode for ${capabilityId}`,
+    );
+  }
+  return mode;
+}
+
 function resolveCapabilities(
   input: CapabilityPlanCompileInput,
   profileId: ProfileId,
-): Map<CapabilityId, ResolvedCapability> {
-  const definition = profileDefinition(profileId);
+  protocolVersion: "1.1.0" | "1.3.0",
+): Map<CapabilityIdV13, ResolvedCapability> {
+  const definition = profileDefinitionForProtocol(
+    profileId,
+    profileDefinitionVersionForProtocol(protocolVersion),
+  );
   const policy = input.policy;
-  const activations = new Map<CapabilityId, CapabilityActivation>();
+  const activations = new Map<CapabilityIdV13, CapabilityActivation>();
   for (const activation of input.activations ?? []) {
     // Unknown capabilities fail closed via the registry lookup.
-    capabilityModuleDefinition(activation.capability_id);
+    capabilityModuleDefinition(activation.capability_id, protocolVersion);
     activations.set(activation.capability_id, activation);
   }
 
-  const resolved = new Map<CapabilityId, ResolvedCapability>();
-  for (const capabilityId of registeredCapabilityIds()) {
-    const mode = definition.capabilities[capabilityId];
-    const denied = policy?.denied_capabilities?.includes(capabilityId) ?? false;
-    const policyRequired = policy?.required_capabilities?.includes(capabilityId) ?? false;
+  const deniedCapabilities = policy?.denied_capabilities as readonly string[] | undefined;
+  const requiredCapabilities = policy?.required_capabilities as readonly string[] | undefined;
+
+  const resolved = new Map<CapabilityIdV13, ResolvedCapability>();
+  for (const capabilityId of registeredCapabilityIds(protocolVersion)) {
+    const mode = profileCapabilityMode(definition, capabilityId);
+    const denied = deniedCapabilities?.includes(capabilityId) ?? false;
+    const policyRequired = requiredCapabilities?.includes(capabilityId) ?? false;
     const activation = activations.get(capabilityId);
 
     if (denied && mode === "required") {
@@ -238,7 +280,7 @@ function resolveCapabilities(
 function compileModelProviderBindings(
   input: CapabilityPlanCompileInput,
   profileId: ProfileId,
-  active: ReadonlySet<CapabilityId>,
+  active: ReadonlySet<CapabilityIdV13>,
 ): ModelProviderBinding[] {
   const defaults = new Map(
     modelSlotDefaultsForProfile(profileId).map((slot) => [bindingScopeKey(slot), slot]),
@@ -391,17 +433,20 @@ function compileModelProviderBindings(
   return sorted;
 }
 
-function compileInvalidationGraph(active: ReadonlySet<CapabilityId>): InvalidationEdge[] {
-  const edges = new Map<string, CapabilityId[]>();
+function compileInvalidationGraph(
+  active: ReadonlySet<CapabilityIdV13>,
+  protocolVersion: "1.1.0" | "1.3.0",
+): InvalidationEdgeV13[] {
+  const edges = new Map<string, CapabilityIdV13[]>();
   for (const capabilityId of active) {
-    const module = capabilityModuleDefinition(capabilityId);
+    const module = capabilityModuleDefinition(capabilityId, protocolVersion);
     for (const bindingKind of module.invalidated_by) {
       edges.set(bindingKind, [...(edges.get(bindingKind) ?? []), capabilityId]);
     }
   }
   return [...edges.entries()]
     .map(([bindingKind, invalidates]) => ({
-      binding_kind: bindingKind as InvalidationEdge["binding_kind"],
+      binding_kind: bindingKind as InvalidationEdgeV13["binding_kind"],
       invalidates: [...invalidates].sort(),
     }))
     .sort((left, right) => (left.binding_kind < right.binding_kind ? -1 : 1));
@@ -410,9 +455,18 @@ function compileInvalidationGraph(active: ReadonlySet<CapabilityId>): Invalidati
 /**
  * Compile one CapabilityPlan revision. Standard resolves strict_tdd in two
  * stages: provisional defers it until the accepted DesignSet, final binds the
- * test_strategy digest in one superseding revision (design 9.3).
+ * test_strategy digest in one superseding revision (design 9.3). Protocol 1.3
+ * operations (M4 design 10.2) resolve the 1.3 definition set and emit a 1.3
+ * revision exactly when the parallel_task_execution module participates; a
+ * 1.3 operation with the module disabled keeps the byte-compatible 1.1 shape
+ * so sequential execution and legacy readers never see a 1.3 record.
  */
-export function compileCapabilityPlan(input: CapabilityPlanCompileInput): CapabilityPlanRecord {
+export function compileCapabilityPlan(
+  input: CapabilityPlanCompileInput & { protocol_version?: "1.1.0" },
+): CapabilityPlanRecord;
+export function compileCapabilityPlan(input: CapabilityPlanCompileInput): AnyCapabilityPlanRecord;
+export function compileCapabilityPlan(input: CapabilityPlanCompileInput): AnyCapabilityPlanRecord {
+  const protocolVersion = input.protocol_version ?? PROTOCOL_1_1_VERSION;
   const profileId = input.project_profile.profile_id;
   if (input.stage === "provisional" && profileId !== "standard") {
     throw new CapabilityCompileError(
@@ -455,7 +509,7 @@ export function compileCapabilityPlan(input: CapabilityPlanCompileInput): Capabi
     }
   }
 
-  const resolved = resolveCapabilities(input, profileId);
+  const resolved = resolveCapabilities(input, profileId, protocolVersion);
 
   // Standard strict_tdd finalization is the declared deferred boundary: it is
   // the only resolution allowed to consume a future artifact, and only once
@@ -494,9 +548,12 @@ export function compileCapabilityPlan(input: CapabilityPlanCompileInput): Capabi
   const directlyActive = [...resolved.entries()]
     .filter(([, entry]) => entry.resolution === "active")
     .map(([capabilityId]) => capabilityId);
-  const closure = capabilityDependencyClosure(directlyActive);
+  const closure = capabilityDependencyClosure(directlyActive, protocolVersion);
   const active = new Set(closure);
-  const definition = profileDefinition(profileId);
+  const definition = profileDefinitionForProtocol(
+    profileId,
+    profileDefinitionVersionForProtocol(protocolVersion),
+  );
   for (const capabilityId of closure) {
     const entry = resolved.get(capabilityId);
     if (entry !== undefined && entry.resolution !== "active") {
@@ -508,10 +565,18 @@ export function compileCapabilityPlan(input: CapabilityPlanCompileInput): Capabi
     }
   }
 
+  // The emitted record version follows participation (M4 design 10.2): only a
+  // 1.3 operation with an active parallel module produces a 1.3 revision.
+  const emitVersion =
+    protocolVersion === PROTOCOL_1_3_VERSION && active.has("parallel_task_execution")
+      ? PROTOCOL_1_3_VERSION
+      : PROTOCOL_1_1_VERSION;
+
   // Provider closure: required providers of every active module must exist.
   const requiredProviders = new Set<ProviderCapability>();
   for (const capabilityId of active) {
-    for (const provider of capabilityModuleDefinition(capabilityId).required_providers) {
+    for (const provider of capabilityModuleDefinition(capabilityId, emitVersion)
+      .required_providers) {
       requiredProviders.add(provider);
     }
   }
@@ -534,7 +599,7 @@ export function compileCapabilityPlan(input: CapabilityPlanCompileInput): Capabi
 
   const bindings = compileModelProviderBindings(input, profileId, active);
 
-  const dag = buildOperationDag(active);
+  const dag = buildOperationDag(active, emitVersion);
   validateOperationDag(dag);
   // The record schema owns mutable arrays; copy the readonly DAG nodes once.
   const dagNodes = dag.map((node) => ({
@@ -548,14 +613,18 @@ export function compileCapabilityPlan(input: CapabilityPlanCompileInput): Capabi
     "project_profile",
     "requirement_baseline",
     ...[...active].flatMap((capabilityId) => [
-      ...capabilityModuleDefinition(capabilityId).approval_objects,
+      ...capabilityModuleDefinition(capabilityId, emitVersion).approval_objects,
     ]),
   ]) as ApprovalObjectKind[];
 
   const revision = supersedes === undefined ? 1 : supersedes.revision + 1;
-  const capabilities: CapabilityResolutionEntry[] = [...resolved.entries()].map(
-    ([capabilityId, entry]) => {
-      const module = capabilityModuleDefinition(capabilityId);
+  // A 1.1 revision carries exactly the legacy five resolution entries; the
+  // 1.3 vocabulary appears only in a 1.3 revision.
+  const emittedIds = new Set<string>(registeredCapabilityIds(emitVersion));
+  const capabilities: CapabilityResolutionEntryV13[] = [...resolved.entries()]
+    .filter(([capabilityId]) => emittedIds.has(capabilityId))
+    .map(([capabilityId, entry]) => {
+      const module = capabilityModuleDefinition(capabilityId, emitVersion);
       return {
         capability_id: capabilityId,
         resolution: entry.resolution,
@@ -564,16 +633,15 @@ export function compileCapabilityPlan(input: CapabilityPlanCompileInput): Capabi
         module_digest: module.definition_digest,
         binding_digest: entry.binding_digest,
       };
-    },
-  );
+    });
 
-  return sealRecordEnvelope({
-    protocol_version: PROTOCOL_1_1_VERSION,
+  const record = sealRecordEnvelope({
+    protocol_version: emitVersion,
     record_kind: "capability_plan" as const,
     capability_plan_id: domainRecordId({
       domain_tag: "capability_plan",
       id_prefix: "capability-plan",
-      protocol_version: PROTOCOL_1_1_VERSION,
+      protocol_version: emitVersion,
       canonical_input: { operation_id: input.operation_id, revision },
     }),
     operation_id: input.operation_id,
@@ -591,7 +659,7 @@ export function compileCapabilityPlan(input: CapabilityPlanCompileInput): Capabi
     approval_policy_id: definition.approval_policy_id,
     approval_objects: approvalObjects,
     operation_dag: { nodes: dagNodes },
-    invalidation_graph: compileInvalidationGraph(active),
+    invalidation_graph: compileInvalidationGraph(active, emitVersion),
     model_provider_bindings: bindings,
     ...(input.stage === "final" && input.accepted_design_set !== undefined
       ? {
@@ -601,6 +669,10 @@ export function compileCapabilityPlan(input: CapabilityPlanCompileInput): Capabi
       : {}),
     ...(supersedes === undefined ? {} : { supersedes_digest: supersedes.record_digest }),
   });
+  // The emitted version is data-dependent (see emitVersion above), so the
+  // static record type is pinned by the overloads; schema validation of both
+  // shapes is covered by the capability test suites.
+  return record as AnyCapabilityPlanRecord;
 }
 
 /**
@@ -608,7 +680,7 @@ export function compileCapabilityPlan(input: CapabilityPlanCompileInput): Capabi
  * enter the Plan stage (design 8.4 — provisional grants no execution
  * authorization).
  */
-export function assertCapabilityPlanFinal(plan: CapabilityPlanRecord): void {
+export function assertCapabilityPlanFinal(plan: AnyCapabilityPlanRecord): void {
   const deferred = plan.capabilities.filter((entry) => entry.resolution === "deferred");
   if (plan.compilation_stage !== "final" || deferred.length > 0) {
     throw new CapabilityCompileError(
@@ -620,10 +692,10 @@ export function assertCapabilityPlanFinal(plan: CapabilityPlanRecord): void {
 
 /** Read API helper: the compiled resolution of one capability. */
 export function capabilityResolution(
-  plan: CapabilityPlanRecord,
-  capabilityId: CapabilityId,
-): CapabilityResolutionEntry {
-  capabilityModuleDefinition(capabilityId);
+  plan: AnyCapabilityPlanRecord,
+  capabilityId: CapabilityIdV13,
+): CapabilityResolutionEntry | CapabilityResolutionEntryV13 {
+  capabilityModuleDefinition(capabilityId, plan.protocol_version);
   const entry = plan.capabilities.find((candidate) => candidate.capability_id === capabilityId);
   if (entry === undefined) {
     throw new CapabilityCompileError(
@@ -639,10 +711,10 @@ export function capabilityResolution(
  * direct consumers and everything depending on them downstream.
  */
 export function invalidatedCapabilities(
-  plan: CapabilityPlanRecord,
+  plan: AnyCapabilityPlanRecord,
   bindingKind: string,
-): CapabilityId[] {
-  const invalidated = new Set<CapabilityId>(
+): CapabilityIdV13[] {
+  const invalidated = new Set<CapabilityIdV13>(
     plan.invalidation_graph
       .filter((edge) => edge.binding_kind === bindingKind)
       .flatMap((edge) => [...edge.invalidates]),
@@ -655,7 +727,7 @@ export function invalidatedCapabilities(
     changed = false;
     for (const capabilityId of activeIds) {
       if (invalidated.has(capabilityId)) continue;
-      const dependsOn = capabilityModuleDefinition(capabilityId).depends_on;
+      const dependsOn = capabilityModuleDefinition(capabilityId, plan.protocol_version).depends_on;
       if (dependsOn.some((dependency) => invalidated.has(dependency))) {
         invalidated.add(capabilityId);
         changed = true;

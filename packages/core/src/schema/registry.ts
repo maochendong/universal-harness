@@ -4,7 +4,7 @@ import type { TSchema } from "@sinclair/typebox";
 import { isProtocolCompatible } from "../version.js";
 import { PROTOCOL_1_1_VERSION, PROTOCOL_1_2_VERSION, PROTOCOL_1_3_VERSION } from "../protocol.js";
 import { createDomainSchemaRegistry, mergeSchemaDocuments } from "./domain-registry.js";
-import { CapabilityPlanRecordSchema } from "./capability.js";
+import { CapabilityPlanRecordSchema, CapabilityPlanRecordV13Schema } from "./capability.js";
 import {
   CollaborationConnectionRecordSchema,
   IntegrationRecordSchema,
@@ -39,7 +39,7 @@ import { PluginManifestSchema } from "./plugin.js";
 import {
   CaptureModelProviderBindingRecordSchema,
   ProfileDecisionRecordSchema,
-  ProfileDefinitionSchema,
+  ProfileDefinitionV11Schema,
   ProfileRecommendationRecordSchema,
   ProjectProfileRecordSchema,
 } from "./profile.js";
@@ -213,7 +213,7 @@ export const JSON_SCHEMA_DOCUMENTS = Object.fromEntries(
 export const PROTOCOL_1_1_SCHEMA_REGISTRY = createDomainSchemaRegistry({
   protocolVersion: PROTOCOL_1_1_VERSION,
   entries: [
-    { key: "profile-definition", schema: ProfileDefinitionSchema },
+    { key: "profile-definition", schema: ProfileDefinitionV11Schema },
     { key: "project-profile", schema: ProjectProfileRecordSchema },
     { key: "profile-recommendation", schema: ProfileRecommendationRecordSchema },
     { key: "profile-decision", schema: ProfileDecisionRecordSchema },
@@ -302,10 +302,31 @@ export const PROTOCOL_1_3_SCHEMA_REGISTRY = createDomainSchemaRegistry({
   ],
 });
 
+/**
+ * The Protocol 1.3 CapabilityPlan revision schema (M4 design 10.2). It is not
+ * a new domain record kind — it versions the existing `capability_plan` kind —
+ * so the version-suffixed document name keeps both generations readable
+ * side by side; a registry key cannot carry the dotted suffix.
+ */
+export const CAPABILITY_PLAN_1_3_SCHEMA_DOCUMENT_NAME = "capability-plan-1.3.schema.json";
+
+const SCHEMA_ID_BASE_1_3 = "https://schemas.universal-harness.dev/1.3";
+
+const CAPABILITY_PLAN_1_3_SCHEMA_DOCUMENTS: Record<string, Record<string, unknown>> = {
+  [CAPABILITY_PLAN_1_3_SCHEMA_DOCUMENT_NAME]: JSON.parse(
+    JSON.stringify({
+      $schema: JSON_SCHEMA_DIALECT,
+      $id: `${SCHEMA_ID_BASE_1_3}/capability-plan-1.3.schema.json`,
+      ...CapabilityPlanRecordV13Schema,
+    }),
+  ) as Record<string, unknown>,
+};
+
 /** Every document scripts/write-schemas.mjs persists into `schemas/`. */
 export const SCHEMA_EXPORT_DOCUMENTS = mergeSchemaDocuments(
   JSON_SCHEMA_DOCUMENTS,
   PROTOCOL_1_1_SCHEMA_REGISTRY.documents(),
   PROTOCOL_1_2_SCHEMA_REGISTRY.documents(),
   PROTOCOL_1_3_SCHEMA_REGISTRY.documents(),
+  CAPABILITY_PLAN_1_3_SCHEMA_DOCUMENTS,
 );

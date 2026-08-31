@@ -1,0 +1,325 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.universal-harness.dev/1.3/capability-plan-1.3.schema.json",
+  "additionalProperties": false,
+  "type": "object",
+  "required": [
+    "protocol_version",
+    "record_kind",
+    "capability_plan_id",
+    "operation_id",
+    "revision",
+    "compilation_stage",
+    "profile_id",
+    "project_profile_digest",
+    "profile_decision_digest",
+    "requirement_digest",
+    "risk_digest",
+    "policy_digest",
+    "baseline_digest",
+    "capabilities",
+    "providers",
+    "approval_policy_id",
+    "approval_objects",
+    "operation_dag",
+    "invalidation_graph",
+    "model_provider_bindings",
+    "record_digest"
+  ],
+  "properties": {
+    "protocol_version": { "const": "1.3.0", "type": "string" },
+    "record_kind": { "const": "capability_plan", "type": "string" },
+    "capability_plan_id": {
+      "minLength": 3,
+      "maxLength": 160,
+      "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+      "type": "string"
+    },
+    "operation_id": {
+      "minLength": 3,
+      "maxLength": 160,
+      "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+      "type": "string"
+    },
+    "revision": { "minimum": 1, "type": "integer" },
+    "compilation_stage": {
+      "anyOf": [
+        { "const": "provisional", "type": "string" },
+        { "const": "final", "type": "string" }
+      ]
+    },
+    "profile_id": {
+      "anyOf": [
+        { "const": "lite", "type": "string" },
+        { "const": "standard", "type": "string" },
+        { "const": "governed", "type": "string" }
+      ]
+    },
+    "project_profile_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
+    "profile_decision_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
+    "requirement_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
+    "risk_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
+    "policy_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
+    "baseline_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
+    "capabilities": {
+      "minItems": 6,
+      "type": "array",
+      "items": {
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "capability_id",
+          "resolution",
+          "resolution_source",
+          "module_version",
+          "module_digest",
+          "binding_digest"
+        ],
+        "properties": {
+          "capability_id": {
+            "anyOf": [
+              { "const": "impact_analysis", "type": "string" },
+              { "const": "design_governance", "type": "string" },
+              { "const": "independent_evaluation", "type": "string" },
+              { "const": "strict_tdd", "type": "string" },
+              { "const": "advanced_audit", "type": "string" },
+              { "const": "parallel_task_execution", "type": "string" }
+            ]
+          },
+          "resolution": {
+            "anyOf": [
+              { "const": "active", "type": "string" },
+              { "const": "inactive_by_profile", "type": "string" },
+              { "const": "deferred", "type": "string" }
+            ]
+          },
+          "resolution_source": {
+            "anyOf": [
+              { "const": "profile_required", "type": "string" },
+              { "const": "policy_required", "type": "string" },
+              { "const": "policy_denied", "type": "string" },
+              { "const": "user_activation", "type": "string" },
+              { "const": "risk_activation", "type": "string" },
+              { "const": "dependency_closure", "type": "string" },
+              { "const": "awaiting_design_set", "type": "string" },
+              { "const": "design_set_finalization", "type": "string" },
+              { "const": "conditional_inactive", "type": "string" }
+            ]
+          },
+          "module_version": { "minLength": 1, "type": "string" },
+          "module_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
+          "binding_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" }
+        }
+      }
+    },
+    "providers": {
+      "type": "array",
+      "items": {
+        "anyOf": [
+          { "const": "isolated_workspace_provider", "type": "string" },
+          { "const": "structured_gate_provider", "type": "string" }
+        ]
+      }
+    },
+    "approval_policy_id": { "minLength": 1, "type": "string" },
+    "approval_objects": {
+      "type": "array",
+      "items": {
+        "anyOf": [
+          { "const": "design_set", "type": "string" },
+          { "const": "impact_set", "type": "string" },
+          { "const": "project_profile", "type": "string" },
+          { "const": "requirement_baseline", "type": "string" }
+        ]
+      }
+    },
+    "operation_dag": {
+      "additionalProperties": false,
+      "type": "object",
+      "required": ["nodes"],
+      "properties": {
+        "nodes": {
+          "minItems": 1,
+          "type": "array",
+          "items": {
+            "additionalProperties": false,
+            "type": "object",
+            "required": [
+              "node_id",
+              "node_kind",
+              "depends_on",
+              "consumes",
+              "produces",
+              "checkpoint"
+            ],
+            "properties": {
+              "node_id": { "minLength": 1, "pattern": "^[a-z][a-z0-9_]*$", "type": "string" },
+              "node_kind": {
+                "anyOf": [
+                  { "const": "kernel", "type": "string" },
+                  { "const": "module", "type": "string" }
+                ]
+              },
+              "capability_id": {
+                "anyOf": [
+                  { "const": "impact_analysis", "type": "string" },
+                  { "const": "design_governance", "type": "string" },
+                  { "const": "independent_evaluation", "type": "string" },
+                  { "const": "strict_tdd", "type": "string" },
+                  { "const": "advanced_audit", "type": "string" },
+                  { "const": "parallel_task_execution", "type": "string" }
+                ]
+              },
+              "depends_on": {
+                "type": "array",
+                "items": { "minLength": 1, "pattern": "^[a-z][a-z0-9_]*$", "type": "string" }
+              },
+              "consumes": {
+                "type": "array",
+                "items": {
+                  "anyOf": [
+                    { "const": "audit_report", "type": "string" },
+                    { "const": "context_bundle", "type": "string" },
+                    { "const": "design_set", "type": "string" },
+                    { "const": "evaluation_report", "type": "string" },
+                    { "const": "execution_plan", "type": "string" },
+                    { "const": "gate_evidence", "type": "string" },
+                    { "const": "impact_set", "type": "string" },
+                    { "const": "requirement_baseline", "type": "string" },
+                    { "const": "snapshot", "type": "string" },
+                    { "const": "tdd_contract", "type": "string" },
+                    { "const": "wave_integration", "type": "string" }
+                  ]
+                }
+              },
+              "produces": {
+                "type": "array",
+                "items": {
+                  "anyOf": [
+                    { "const": "audit_report", "type": "string" },
+                    { "const": "context_bundle", "type": "string" },
+                    { "const": "design_set", "type": "string" },
+                    { "const": "evaluation_report", "type": "string" },
+                    { "const": "execution_plan", "type": "string" },
+                    { "const": "gate_evidence", "type": "string" },
+                    { "const": "impact_set", "type": "string" },
+                    { "const": "requirement_baseline", "type": "string" },
+                    { "const": "snapshot", "type": "string" },
+                    { "const": "tdd_contract", "type": "string" },
+                    { "const": "wave_integration", "type": "string" }
+                  ]
+                }
+              },
+              "checkpoint": { "type": "boolean" },
+              "subgraph": {
+                "anyOf": [
+                  { "const": "strict_tdd", "type": "string" },
+                  { "const": "parallel_task_execution", "type": "string" }
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    "invalidation_graph": {
+      "type": "array",
+      "items": {
+        "additionalProperties": false,
+        "type": "object",
+        "required": ["binding_kind", "invalidates"],
+        "properties": {
+          "binding_kind": {
+            "anyOf": [
+              { "const": "audit_report", "type": "string" },
+              { "const": "context_bundle", "type": "string" },
+              { "const": "design_set", "type": "string" },
+              { "const": "evaluation_report", "type": "string" },
+              { "const": "execution_plan", "type": "string" },
+              { "const": "gate_evidence", "type": "string" },
+              { "const": "impact_set", "type": "string" },
+              { "const": "requirement_baseline", "type": "string" },
+              { "const": "snapshot", "type": "string" },
+              { "const": "tdd_contract", "type": "string" },
+              { "const": "wave_integration", "type": "string" }
+            ]
+          },
+          "invalidates": {
+            "minItems": 1,
+            "type": "array",
+            "items": {
+              "anyOf": [
+                { "const": "impact_analysis", "type": "string" },
+                { "const": "design_governance", "type": "string" },
+                { "const": "independent_evaluation", "type": "string" },
+                { "const": "strict_tdd", "type": "string" },
+                { "const": "advanced_audit", "type": "string" },
+                { "const": "parallel_task_execution", "type": "string" }
+              ]
+            }
+          }
+        }
+      }
+    },
+    "model_provider_bindings": {
+      "type": "array",
+      "items": {
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "slot_id",
+          "required",
+          "provider_identity",
+          "config_digest",
+          "prompt_version",
+          "prompt_contract_id",
+          "prompt_contract_version",
+          "prompt_contract_digest",
+          "output_schema_digest",
+          "schema_version",
+          "budget_profile",
+          "failure_mode"
+        ],
+        "properties": {
+          "slot_id": {
+            "anyOf": [
+              { "const": "impact_advisory", "type": "string" },
+              { "const": "design_review", "type": "string" },
+              { "const": "plan_proposal", "type": "string" },
+              { "const": "feedback_analysis", "type": "string" },
+              { "const": "grounded_synthesis", "type": "string" }
+            ]
+          },
+          "purpose": {
+            "anyOf": [
+              { "const": "project_discovery", "type": "string" },
+              { "const": "context_enrichment", "type": "string" },
+              { "const": "approval_brief", "type": "string" },
+              { "const": "iteration_narrative", "type": "string" }
+            ]
+          },
+          "required": { "type": "boolean" },
+          "provider_identity": { "minLength": 1, "type": "string" },
+          "config_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
+          "prompt_version": { "minLength": 1, "type": "string" },
+          "prompt_contract_id": { "minLength": 1, "type": "string" },
+          "prompt_contract_version": { "minLength": 1, "type": "string" },
+          "prompt_contract_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
+          "output_schema_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
+          "schema_version": { "minLength": 1, "type": "string" },
+          "budget_profile": { "minLength": 1, "type": "string" },
+          "failure_mode": {
+            "anyOf": [
+              { "const": "block", "type": "string" },
+              { "const": "projection_finding", "type": "string" }
+            ]
+          }
+        }
+      }
+    },
+    "design_set_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
+    "test_strategy_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
+    "supersedes_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
+    "record_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" }
+  }
+}

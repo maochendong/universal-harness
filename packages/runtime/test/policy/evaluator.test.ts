@@ -404,4 +404,34 @@ describe("decideAction", () => {
     expect(decision.outcome).toBe("deny");
     expect(decision.reasons[0]).toContain("stale");
   });
+
+  it("never lets prompt-origin input carry approval authority for scheduler actions", () => {
+    // The full scheduler matrix lives in scheduler-policy.test.ts; this pins
+    // the rule inside the evaluator itself: the identical approval digest
+    // allows the control-plane action but is denied when prompt-carried.
+    const layers = [
+      layer("pack", [field("approvals.required", "approval_union", ["integrate_wave"])]),
+    ];
+    const approval = "c".repeat(64);
+    const controlPlane = decideAction(
+      layers,
+      action({
+        kind: "integrate_wave",
+        actor: "harness",
+        actor_kind: "harness",
+        origin: "control_plane",
+        resource: undefined,
+        approval_digest: approval,
+      }),
+    );
+    expect(controlPlane.outcome).toBe("allow");
+    expect(controlPlane.approval_digest).toBe(approval);
+
+    const promptCarried = decideAction(
+      layers,
+      action({ kind: "integrate_wave", resource: undefined, approval_digest: approval }),
+    );
+    expect(promptCarried.outcome).toBe("deny");
+    expect(promptCarried.reasons.join("\n")).toContain("prompt");
+  });
 });

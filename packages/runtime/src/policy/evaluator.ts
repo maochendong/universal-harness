@@ -2,6 +2,7 @@ import { contentDigest, POLICY_MERGE_OPERATORS } from "@universal-harness-intern
 
 import {
   ESCALATION_ACTION_KINDS,
+  SCHEDULER_POLICY_ACTION_KINDS,
   PolicyError,
   actionDigest,
   riskRank,
@@ -325,6 +326,22 @@ export function decideAction(
     return finish("deny");
   }
 
+  // M4 design 5.2/11: scheduler decisions are control-plane only. An approval
+  // digest carried by prompt-origin input is untrusted context and can never
+  // satisfy a requires-approval rule — the claim is denied, not ignored, so
+  // the attempt leaves an explicit trace.
+  if (
+    action.origin === "prompt" &&
+    action.approval_digest !== undefined &&
+    (SCHEDULER_POLICY_ACTION_KINDS as readonly string[]).includes(action.kind)
+  ) {
+    reasons.push(
+      `denied: prompt-origin input can never carry approval authority for ${action.kind}; ` +
+        "only a control-plane approval bound to the exact action satisfies requires-approval",
+    );
+    return finish("deny");
+  }
+
   if (isEscalation(action) && (action.actor_kind === "agent" || action.actor_kind === "adapter")) {
     reasons.push(
       `denied: ${action.actor_kind} identity never authorizes ${action.kind}; only the ` +
@@ -470,4 +487,138 @@ export function decideAction(
 
   reasons.push(`allowed: effective policy permits ${action.kind} at ${action.risk} risk`);
   return finish("allow");
+}
+
+/**
+ * Scheduler hard-ceiling paths (M4 design 8.4). Each is a numeric ceiling the
+ * Project/Pack/Installation layers merge with `hard_ceiling`; the resolver
+ * below is the single place that reads them for scheduling decisions.
+ */
+export const SCHEDULER_MAX_CONCURRENCY_PATH = "scheduler.max_concurrency";
+export const ITERATION_BUDGET_CEILING_PATHS = [
+  "budgets.iteration.max_steps",
+  "budgets.iteration.max_tokens",
+  "budgets.iteration.max_duration_ms",
+] as const;
+
+/** Profile-level default local slot count when no ceiling is declared (M4 design 10.2). */
+export const PROFILE_DEFAULT_MAX_CONCURRENCY = 2;
+
+const LOOP_CEILING_FALLBACKS = {
+  "budgets.iteration.max_steps": "loop.max_steps",
+  "budgets.iteration.max_tokens": "loop.max_tokens",
+  "budgets.iteration.max_duration_ms": "loop.max_duration_ms",
+} as const;
+
+export interface SchedulerIterationCeilings {
+  readonly max_steps?: number;
+  readonly max_tokens?: number;
+  readonly max_duration_ms?: number;
+}
+
+export interface SchedulerCeilings {
+  readonly max_concurrency: number;
+  readonly iteration: SchedulerIterationCeilings;
+}
+
+export type SchedulerCeilingResolution =
+  | {
+      readonly outcome: "resolved";
+      readonly ceilings: SchedulerCeilings;
+      readonly reasons: readonly string[];
+    }
+  | { readonly outcome: "blocked"; readonly reasons: readonly string[] };
+
+type CeilingValue =
+  | { readonly status: "missing" }
+  | { readonly status: "invalid"; readonly value: unknown }
+  | { readonly status: "ok"; readonly value: number };
+
+function ceilingValue(effective: EffectivePolicy, path: string): CeilingValue {
+  const field = effective.fields.find((candidate) => candidate.path === path);
+  if (field === undefined) return { status: "missing" };
+  const value = field.value;
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return { status: "invalid", value };
+  }
+  return { status: "ok", value };
+}
+
+/**
+ * Resolve the scheduler ceilings from an effective policy (M4 design 8.4).
+ * Missing fields preserve compatibility: concurrency defaults to the Profile
+ * default of 2 and each iteration ceiling falls back to the already effective
+ * `loop.max_*` value. A field that is present but non-numeric, non-positive —
+ * or, for concurrency, non-integer — blocks instead of silently falling back:
+ * a declared ceiling that cannot be honored is a policy defect, not a default.
+ */
+export function resolveSchedulerCeilings(effective: EffectivePolicy): SchedulerCeilingResolution {
+  const reasons: string[] = [];
+  const violations: string[] = [];
+
+  let maxConcurrency = PROFILE_DEFAULT_MAX_CONCURRENCY;
+  const concurrency = ceilingValue(effective, SCHEDULER_MAX_CONCURRENCY_PATH);
+  if (concurrency.status === "missing") {
+    reasons.push(
+      `${SCHEDULER_MAX_CONCURRENCY_PATH} undeclared: defaulting to the profile default ` +
+        `of ${String(PROFILE_DEFAULT_MAX_CONCURRENCY)}`,
+    );
+  } else if (concurrency.status === "invalid") {
+    violations.push(
+      `${SCHEDULER_MAX_CONCURRENCY_PATH} must be a positive integer; got ` +
+        JSON.stringify(concurrency.value),
+    );
+  } else if (concurrency.value <= 0 || !Number.isInteger(concurrency.value)) {
+    violations.push(
+      `${SCHEDULER_MAX_CONCURRENCY_PATH} must be a positive integer; got ` +
+        JSON.stringify(concurrency.value),
+    );
+  } else {
+    maxConcurrency = concurrency.value;
+    reasons.push(`${SCHEDULER_MAX_CONCURRENCY_PATH}=${String(concurrency.value)}`);
+  }
+
+  const iteration: {
+    max_steps?: number;
+    max_tokens?: number;
+    max_duration_ms?: number;
+  } = {};
+  for (const [path, fallbackPath] of Object.entries(LOOP_CEILING_FALLBACKS)) {
+    const key = path.slice("budgets.iteration.".length) as
+      "max_steps" | "max_tokens" | "max_duration_ms";
+    const explicit = ceilingValue(effective, path);
+    if (explicit.status === "invalid" || (explicit.status === "ok" && explicit.value <= 0)) {
+      violations.push(
+        `${path} must be a positive finite number; got ` + JSON.stringify(explicit.value),
+      );
+      continue;
+    }
+    if (explicit.status === "ok") {
+      iteration[key] = explicit.value;
+      reasons.push(`${path}=${String(explicit.value)}`);
+      continue;
+    }
+    const fallback = ceilingValue(effective, fallbackPath);
+    if (fallback.status === "ok" && fallback.value > 0) {
+      iteration[key] = fallback.value;
+      reasons.push(`${path} undeclared: falling back to ${fallbackPath}=${String(fallback.value)}`);
+    } else {
+      reasons.push(`${path} undeclared and no positive ${fallbackPath} fallback: no ceiling`);
+    }
+  }
+
+  if (violations.length > 0) {
+    return {
+      outcome: "blocked",
+      reasons: [
+        ...violations.sort(),
+        "blocked: a declared scheduler ceiling that cannot be honored never falls back silently",
+      ],
+    };
+  }
+  return {
+    outcome: "resolved",
+    ceilings: { max_concurrency: maxConcurrency, iteration },
+    reasons,
+  };
 }

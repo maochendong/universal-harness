@@ -8,6 +8,7 @@ import {
 } from "../../src/schema/domain-registry.js";
 import { recordEnvelopeSchema, sealRecordEnvelope } from "../../src/schema/envelope.js";
 import {
+  CAPABILITY_PLAN_1_3_SCHEMA_DOCUMENT_NAME,
   JSON_SCHEMA_DOCUMENTS,
   PROTOCOL_1_1_SCHEMA_REGISTRY,
   PROTOCOL_1_2_SCHEMA_REGISTRY,
@@ -191,6 +192,10 @@ describe("protocol 1.1 schema plumbing", () => {
         ...PROTOCOL_1_1_SCHEMA_REGISTRY.keys.map((key) => `${key}.schema.json`),
         ...PROTOCOL_1_2_SCHEMA_REGISTRY.keys.map((key) => `${key}.schema.json`),
         ...PROTOCOL_1_3_SCHEMA_REGISTRY.keys.map((key) => `${key}.schema.json`),
+        // The versioned 1.3 CapabilityPlan revision schema (M4 Task 2) is
+        // exported next to the 1.1 document; a registry key cannot carry the
+        // dotted suffix, so it is appended by name rather than by registry.
+        CAPABILITY_PLAN_1_3_SCHEMA_DOCUMENT_NAME,
       ].sort(),
     );
   });

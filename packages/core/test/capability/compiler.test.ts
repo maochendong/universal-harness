@@ -722,3 +722,51 @@ describe("capability resolution read api", () => {
     );
   });
 });
+
+describe("capability compiler: protocol 1.3 emission boundary", () => {
+  it("emits a 1.3 revision only when the parallel module participates", () => {
+    const governed11 = compileCapabilityPlan(
+      compileInput("governed", {
+        providers: ALL_PROVIDERS,
+        model_providers: OPERATION_SCOPE_CONFIGS,
+      }),
+    );
+    const governed13 = compileCapabilityPlan(
+      compileInput("governed", {
+        protocol_version: "1.3.0",
+        providers: ALL_PROVIDERS,
+        model_providers: OPERATION_SCOPE_CONFIGS,
+      }),
+    );
+    expect(governed11.protocol_version).toBe("1.1.0");
+    expect(governed13.protocol_version).toBe("1.3.0");
+    expect(governed13.record_digest).not.toBe(governed11.record_digest);
+    expect(capabilityResolution(governed13, "parallel_task_execution")).toMatchObject({
+      resolution: "active",
+      resolution_source: "profile_required",
+      module_version: "1.3.0",
+    });
+    // The 1.3 invalidation graph adds the parallel module's own triggers
+    // without touching the legacy edges (canonical binding-kind order).
+    expect(governed13.invalidation_graph).toEqual([
+      { binding_kind: "context_bundle", invalidates: ["parallel_task_execution"] },
+      { binding_kind: "design_set", invalidates: ["strict_tdd"] },
+      { binding_kind: "execution_plan", invalidates: ["parallel_task_execution"] },
+      { binding_kind: "gate_evidence", invalidates: ["independent_evaluation"] },
+      { binding_kind: "impact_set", invalidates: ["design_governance"] },
+      { binding_kind: "requirement_baseline", invalidates: ["impact_analysis"] },
+      { binding_kind: "snapshot", invalidates: ["advanced_audit"] },
+    ]);
+    expect(invalidatedCapabilities(governed13, "execution_plan")).toEqual([
+      "parallel_task_execution",
+    ]);
+    // Legacy readers never see a 1.3 revision for a disabled module.
+    const lite13 = compileCapabilityPlan(
+      compileInput("lite", { protocol_version: "1.3.0", model_providers: [] }),
+    );
+    expect(lite13.protocol_version).toBe("1.1.0");
+    expect(() => capabilityResolution(lite13, "parallel_task_execution")).toThrow(
+      CapabilityRegistryError,
+    );
+  });
+});

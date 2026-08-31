@@ -8,6 +8,20 @@ import { contentDigest } from "@universal-harness-internal/core";
  * provider output are untrusted context: they may request ordinary actions,
  * but they can never carry capability escalation.
  */
+/**
+ * Protocol 1.3 scheduler action kinds (M4 design 5.2): dispatching one Task,
+ * scheduling one bounded retry and integrating one wave. They are
+ * control-plane decisions evaluated by the same deterministic evaluator; a
+ * prompt origin can never lend them approval authority.
+ */
+export const SCHEDULER_POLICY_ACTION_KINDS = [
+  "dispatch_task",
+  "retry_task",
+  "integrate_wave",
+] as const;
+
+export type SchedulerPolicyActionKind = (typeof SCHEDULER_POLICY_ACTION_KINDS)[number];
+
 export const POLICY_ACTION_KINDS = [
   "read_path",
   "write_path",
@@ -19,12 +33,14 @@ export const POLICY_ACTION_KINDS = [
   "change_policy",
   "register_tool",
   "grant_path",
+  // Protocol 1.3 scheduler actions (M4 design 5.2), appended so the legacy
+  // ordering — and every digest computed over it — stays untouched.
+  ...SCHEDULER_POLICY_ACTION_KINDS,
 ] as const;
 
 export type PolicyActionKind = (typeof POLICY_ACTION_KINDS)[number];
 
 export const ACTOR_KINDS = ["harness", "human", "adapter", "agent"] as const;
-
 export type ActorKind = (typeof ACTOR_KINDS)[number];
 
 /**

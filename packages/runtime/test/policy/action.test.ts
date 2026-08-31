@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   ESCALATION_ACTION_KINDS,
   POLICY_ACTION_KINDS,
+  SCHEDULER_POLICY_ACTION_KINDS,
   PolicyError,
   actionDigest,
   normalizeAction,
@@ -126,6 +127,18 @@ describe("normalizeAction", () => {
   it("keeps escalation kinds inside the action kind set", () => {
     for (const kind of ESCALATION_ACTION_KINDS) {
       expect(POLICY_ACTION_KINDS).toContain(kind);
+    }
+  });
+
+  it("appends the protocol 1.3 scheduler kinds without disturbing the legacy set", () => {
+    for (const kind of SCHEDULER_POLICY_ACTION_KINDS) {
+      expect(POLICY_ACTION_KINDS).toContain(kind);
+    }
+    // Scheduler actions are control-plane decisions, not escalation: they are
+    // never part of ESCALATION_ACTION_KINDS, but a prompt origin still cannot
+    // lend them approval authority (covered by the evaluator tests).
+    for (const kind of SCHEDULER_POLICY_ACTION_KINDS) {
+      expect(ESCALATION_ACTION_KINDS).not.toContain(kind);
     }
   });
 

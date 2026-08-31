@@ -5,6 +5,7 @@ import {
   ProfileRegistryError,
   isProfileId,
   profileDefinition,
+  profileDefinitionForProtocol,
   profileRank,
 } from "../../src/profile/definitions.js";
 import { PROFILE_IDS } from "../../src/schema/profile.js";
@@ -71,5 +72,17 @@ describe("profile registry", () => {
     expect(isProfileId("")).toBe(false);
     expect(() => profileDefinition("turbo")).toThrow(ProfileRegistryError);
     expect(() => profileDefinition("1.0-default")).toThrow(ProfileRegistryError);
+  });
+
+  it("keeps the legacy registry untouched by the protocol 1.3 definitions", () => {
+    // The detailed versioned contract lives in protocol-1.3-profile.test.ts;
+    // here we only pin that the 1.1 lookups are unchanged in place.
+    expect(profileDefinition("lite").definition_digest).toBe(
+      "5c921bc9535d369ea8c2594800e9a1e2a27e09fadb0c1c808128daeda57026d1",
+    );
+    expect(profileDefinitionForProtocol("lite", "1.3.0").capabilities).toMatchObject({
+      strict_tdd: "conditional",
+      parallel_task_execution: "disabled",
+    });
   });
 });

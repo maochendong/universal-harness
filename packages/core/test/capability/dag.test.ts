@@ -95,6 +95,27 @@ describe("operation dag construction", () => {
       expect(() => validateOperationDag(dag)).not.toThrow();
     }
   });
+
+  it("keeps the kernel spine order when parallel execution joins a 1.3 dag", () => {
+    const active = new Set(
+      capabilityDependencyClosure(["strict_tdd", "parallel_task_execution"], "1.3.0"),
+    );
+    const dag = buildOperationDag(active, "1.3.0");
+    expect(dag.map((entry) => entry.node_id)).toEqual([
+      "capture",
+      "capability_decision",
+      "impact",
+      "design",
+      "plan",
+      "context",
+      "execute",
+      "verify",
+      "snapshot",
+    ]);
+    expect(() => validateOperationDag(dag)).not.toThrow();
+    // Protocol 1.1 never sees the parallel module.
+    expect(() => buildOperationDag(active, "1.1.0")).toThrowError(OperationDagError);
+  });
 });
 
 describe("operation dag validation", () => {

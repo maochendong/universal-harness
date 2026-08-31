@@ -1,7 +1,7 @@
 import {
   contentDigest,
   validateOperationDag,
-  type BindingKind,
+  type BindingKindV13,
   type OperationDagNode,
 } from "@universal-harness-internal/core";
 
@@ -210,7 +210,7 @@ export class WorkflowDagEngine {
     // Replay the journal against the current DAG: the first node whose
     // checkpoint entry no longer matches (identity, wiring or resolved
     // inputs) is the invalidation point; the journal rewinds to it.
-    const produced = new Map<BindingKind, string>();
+    const produced = new Map<BindingKindV13, string>();
     let journalIndex = 0;
     let resumeAt = ordered.length;
     const replayedNodes: string[] = [];
@@ -219,7 +219,7 @@ export class WorkflowDagEngine {
         resumeAt = index;
         break;
       }
-      const inputs = new Map<BindingKind, string>();
+      const inputs = new Map<BindingKindV13, string>();
       let resolvable = true;
       for (const kind of node.consumes) {
         const digest = produced.get(kind);
@@ -257,7 +257,7 @@ export class WorkflowDagEngine {
 
     const executedNodes: string[] = [];
     for (const node of ordered.slice(resumeAt)) {
-      const inputs = new Map<BindingKind, string>();
+      const inputs = new Map<BindingKindV13, string>();
       for (const kind of node.consumes) {
         const digest = produced.get(kind);
         if (digest === undefined) {
@@ -317,7 +317,7 @@ export class WorkflowDagEngine {
           `runner for ${node.node_id} returned a non-durable or malformed superseding plan`,
         );
       }
-      const outputs = new Map<BindingKind, string>();
+      const outputs = new Map<BindingKindV13, string>();
       for (const binding of result.produces ?? []) {
         if (!node.produces.includes(binding.kind)) {
           throw new DagEngineError(
