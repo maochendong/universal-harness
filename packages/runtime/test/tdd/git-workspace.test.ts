@@ -1,7 +1,10 @@
+import { existsSync } from "node:fs";
+import { join } from "node:path";
+
 import { describe, expect, it } from "vitest";
 
 import { createGitWorktreeWorkspacePort } from "../../src/tdd/git-workspace.js";
-import { cleanupDirectories, headOf, makeRepo } from "../bootstrap/helpers.js";
+import { cleanupDirectories, headOf, makeRepo, makeTempDir } from "../bootstrap/helpers.js";
 
 /**
  * T15 git worktree adapter: real workspaces are reproducible git worktrees
@@ -32,6 +35,29 @@ describe("git worktree workspace port", { timeout: 30000 }, () => {
       await port.destroy(red);
       // The host repository is never touched by workspace lifecycle.
       expect(headOf(root)).toBe(baseline);
+    } finally {
+      cleanupDirectories();
+    }
+  });
+
+  it("places workspaces under an explicit root and exposes their roots", async () => {
+    // M4 plan Task 7 step 2/5: the manager must be able to bind worktrees to
+    // its exact managed root and resolve a handle to its filesystem root.
+    const root = makeRepo({ "src/items.ts": "export const items = [];" });
+    const workspaceRoot = makeTempDir("harness-tdd-managed-");
+    const port = createGitWorktreeWorkspacePort({ repositoryRoot: root, workspaceRoot });
+    try {
+      const handle = await port.create({
+        baseline_commit: headOf(root),
+        purpose: "task_execution",
+      });
+      const worktreeRoot = port.rootOf(handle);
+      expect(worktreeRoot).toBeDefined();
+      expect(worktreeRoot?.startsWith(join(workspaceRoot, "harness-tdd-"))).toBe(true);
+      expect(await port.diff(handle)).toEqual([]);
+      await port.destroy(handle);
+      expect(port.rootOf(handle)).toBeUndefined();
+      expect(existsSync(worktreeRoot as string)).toBe(false);
     } finally {
       cleanupDirectories();
     }

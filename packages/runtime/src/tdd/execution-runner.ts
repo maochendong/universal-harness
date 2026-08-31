@@ -21,7 +21,11 @@ import {
   type StructuredTestResult,
   type TddEvidenceIssue,
 } from "./controller.js";
-import { issueTddPhaseGrant } from "./phase-grants.js";
+import {
+  issueTddPhaseGrant,
+  effectiveTddWriteScopes,
+  tddPhaseWriteScopes,
+} from "./phase-grants.js";
 import { attestWriteSet, canonicalTestPatch, classifyPath, type PatchFile } from "./patch.js";
 import type { IsolatedWorkspacePort, WorkspaceHandle } from "./workspace.js";
 
@@ -278,6 +282,35 @@ export function createStrictTddExecutionRunner(
         handles.push(handle);
         return handle;
       };
+      /**
+       * M4 design 12 / plan Task 7 step 4: for a Protocol 1.3 task the write
+       * set of every writing phase is the true path-scope intersection
+       * Task.write_paths ∩ phase policy scopes ∩ phase grant (the runner's
+       * phase grant doubles as the task grant here). Legacy tasks without
+       * declared write_paths keep the pre-M4 grant-only behavior. An empty
+       * intersection must block the phase before any executor runs.
+       */
+      const effectivePhaseScopes = (
+        state: "test_authoring" | "implementation" | "refactor",
+        grant: CapabilityGrant,
+      ): readonly string[] | undefined => {
+        if (task.write_paths === undefined) return undefined;
+        return effectiveTddWriteScopes({
+          task_write_paths: task.write_paths,
+          task_grant_write_paths: grant.write_paths,
+          phase_policy_write_paths: tddPhaseWriteScopes(state, cluster.path_policy),
+          phase_grant_write_paths: grant.write_paths,
+        });
+      };
+      const emptyScopeStop = (
+        state: "test_authoring" | "implementation" | "refactor",
+      ): Promise<StrictTddTaskOutcome> =>
+        stop(`empty effective write scope for ${state}`, [
+          asIssue(
+            "write_set_violation",
+            `Task.write_paths leaves no writable path for phase ${state}; blocking before execution`,
+          ),
+        ]);
       const persistEvidence = async (value: TddEvidenceBinding): Promise<void> => {
         await options.evidence.appendEvidence(value);
         accepted.push(value);
@@ -339,12 +372,27 @@ export function createStrictTddExecutionRunner(
 
         const authorWorkspace = await createWorkspace("test_authoring");
         const authorGrant = phaseGrant("test_authoring", authorBudget);
+        const authorScopes = effectivePhaseScopes("test_authoring", authorGrant);
+        if (authorScopes !== undefined && authorScopes.length === 0) {
+          return emptyScopeStop("test_authoring");
+        }
         const authored = await options.executor.authorTests({
           task,
           contract,
           workspace: authorWorkspace,
           grant: authorGrant,
         });
+        if (authorScopes !== undefined) {
+          const authorViolations = attestWriteSet(
+            authored.files.map((file) => file.path),
+            authorScopes,
+          );
+          if (authorViolations.length > 0) {
+            return stop("test authoring wrote outside the effective write scope", [
+              asIssue("write_set_violation", authorViolations.join(", ")),
+            ]);
+          }
+        }
         await options.workspace.applyFiles(authorWorkspace, authored.files);
         const testPatch = await options.workspace.diff(authorWorkspace);
         const frozen = freezeTestPatch(view, testPatch, cluster.path_policy);
@@ -387,6 +435,10 @@ export function createStrictTddExecutionRunner(
         const implementationWorkspace = await createWorkspace("implementation");
         await options.workspace.applyFiles(implementationWorkspace, testPatch);
         const implementationGrant = phaseGrant("implementation", implementationBudget, redDigest);
+        const implementationScopes = effectivePhaseScopes("implementation", implementationGrant);
+        if (implementationScopes !== undefined && implementationScopes.length === 0) {
+          return emptyScopeStop("implementation");
+        }
         const implementation = await options.executor.implement({
           task,
           contract,
@@ -396,10 +448,10 @@ export function createStrictTddExecutionRunner(
         });
         const implementationViolations = attestWriteSet(
           implementation.files.map((file) => file.path),
-          implementationGrant.write_paths,
+          implementationScopes ?? implementationGrant.write_paths,
         );
         if (implementationViolations.length > 0) {
-          return stop("implementation wrote outside its production grant", [
+          return stop("implementation wrote outside the effective write scope", [
             asIssue("write_set_violation", implementationViolations.join(", ")),
           ]);
         }
@@ -458,6 +510,10 @@ export function createStrictTddExecutionRunner(
             budgetOf(contract.phase_budgets.refactor, fallback),
             greenDigest,
           );
+          const refactorScopes = effectivePhaseScopes("refactor", refactorGrant);
+          if (refactorScopes !== undefined && refactorScopes.length === 0) {
+            return emptyScopeStop("refactor");
+          }
           const refactored = await options.executor.refactor({
             task,
             contract,
@@ -468,10 +524,10 @@ export function createStrictTddExecutionRunner(
           });
           const refactorViolations = attestWriteSet(
             refactored.files.map((file) => file.path),
-            refactorGrant.write_paths,
+            refactorScopes ?? refactorGrant.write_paths,
           );
           if (refactorViolations.length > 0) {
-            return stop("refactor wrote outside its production grant", [
+            return stop("refactor wrote outside the effective write scope", [
               asIssue("write_set_violation", refactorViolations.join(", ")),
             ]);
           }

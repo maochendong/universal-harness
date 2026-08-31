@@ -66,6 +66,18 @@ describe("in-memory isolated workspace port", () => {
     ).toContain("src/items.ts");
   });
 
+  it("accepts the task_execution purpose for non-TDD task workspaces", async () => {
+    // M4 plan Task 7 step 2: the purpose union gains exactly one member; the
+    // five TDD phases are untouched.
+    const port = createInMemoryWorkspacePort(BASELINE_FILES, { baseline_commit: "deadbeef" });
+    const workspace = await port.create({
+      baseline_commit: "deadbeef",
+      purpose: "task_execution",
+    });
+    expect(workspace.purpose).toBe("task_execution");
+    expect(await port.diff(workspace)).toEqual([]);
+  });
+
   it("discards a failed refactor back to the verified baseline state", async () => {
     const port = createInMemoryWorkspacePort(BASELINE_FILES, { baseline_commit: "deadbeef" });
     const workspace = await port.create({ baseline_commit: "deadbeef", purpose: "refactor" });

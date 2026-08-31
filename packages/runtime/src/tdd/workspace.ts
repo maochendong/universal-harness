@@ -9,12 +9,19 @@ import type { PatchFile } from "./patch.js";
  * frozen test patch, and a failed refactor is discarded by reset, never by
  * an implicit destructive git operation. The in-memory adapter is the
  * deterministic reference implementation; a git worktree adapter shares
- * the same contract.
+ * the same contract. M4 (design 4.3) appends exactly one purpose,
+ * `task_execution`, for non-Strict-TDD task worktrees; the five TDD phase
+ * purposes are unchanged.
  */
 export type { PatchFile } from "./patch.js";
 
 export type TddWorkspacePurpose =
-  "baseline" | "test_authoring" | "red_verification" | "implementation" | "refactor";
+  | "baseline"
+  | "test_authoring"
+  | "red_verification"
+  | "implementation"
+  | "refactor"
+  | "task_execution";
 
 export interface WorkspaceHandle {
   readonly workspace_id: string;

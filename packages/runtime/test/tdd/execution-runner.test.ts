@@ -240,3 +240,99 @@ describe("StrictTddExecutionPort", () => {
     expect(fixture.evidence.cycles.every((entry) => entry.status === "blocked")).toBe(true);
   });
 });
+
+/**
+ * M4 plan Task 7 step 4 (design 12): when a Protocol 1.3 task declares
+ * write_paths, every writing phase runs under the true path-scope
+ * intersection Task.write_paths ∩ phase policy scopes ∩ phase grant —
+ * an empty intersection blocks before execution, and writes outside the
+ * intersection are write-set violations.
+ */
+function p13Harness(spec: TaskSpecification, implementPath = "src/items.ts") {
+  const evidence = createInMemoryTddEvidenceStore();
+  const calls: string[] = [];
+  const runner = createStrictTddExecutionRunner({
+    workspace: createInMemoryWorkspacePort(
+      {
+        "src/items.ts": "export const lookup = () => undefined;",
+        "tests/items.test.ts": "",
+        "vitest.config.ts": "export default {};",
+      },
+      { baseline_commit: "deadbeef" },
+    ),
+    evidence,
+    effectivePolicy: effectivePolicy(),
+    readBaseline: () => "deadbeef",
+    gate: {
+      run(input) {
+        return Promise.resolve(gateObservation(input.phase));
+      },
+    },
+    executor: {
+      authorTests() {
+        calls.push("authorTests");
+        return Promise.resolve({
+          files: [{ path: "tests/items.test.ts", content: "expect(lookup()).toBeDefined();" }],
+        });
+      },
+      implement() {
+        calls.push("implement");
+        return Promise.resolve({
+          files: [{ path: implementPath, content: "export const lookup = () => ({ id: 1 });" }],
+          implementation_revision: "cafe01",
+        });
+      },
+    },
+  });
+  return { runner, evidence, calls };
+}
+
+function p13Task(writePaths: readonly string[]): TaskSpecification {
+  return { ...task, write_paths: writePaths };
+}
+
+describe("Protocol 1.3 write-scope intersection", () => {
+  it("completes when every phase write stays inside the intersection", async () => {
+    const fixture = p13Harness(
+      p13Task(["src/items.ts", "tests/items.test.ts", "vitest.config.ts"]),
+    );
+    const outcome = await fixture.runner.runTask({
+      task: p13Task(["src/items.ts", "tests/items.test.ts", "vitest.config.ts"]),
+      contract: contract(),
+      capability_plan_digest: digest("5"),
+    });
+    expect(outcome.status).toBe("completed");
+    expect(fixture.calls).toEqual(["authorTests", "implement"]);
+  });
+
+  it("blocks before execution when the test-authoring intersection is empty", async () => {
+    const spec = p13Task(["src"]);
+    const fixture = p13Harness(spec);
+    const outcome = await fixture.runner.runTask({
+      task: spec,
+      contract: contract(),
+      capability_plan_digest: digest("5"),
+    });
+    expect(outcome.status).toBe("blocked");
+    expect(fixture.calls).toEqual([]);
+    if (outcome.status === "blocked") {
+      expect(outcome.issues.map((issue) => issue.code)).toContain("write_set_violation");
+    }
+  });
+
+  it("blocks implementation writes outside the declared task write paths", async () => {
+    const spec = p13Task(["src/items.ts", "tests/items.test.ts", "vitest.config.ts"]);
+    const fixture = p13Harness(spec, "src/evil.ts");
+    const outcome = await fixture.runner.runTask({
+      task: spec,
+      contract: contract(),
+      capability_plan_digest: digest("5"),
+    });
+    expect(outcome.status).toBe("blocked");
+    expect(fixture.calls).toEqual(["authorTests", "implement"]);
+    if (outcome.status === "blocked") {
+      expect(outcome.issues.map((issue) => issue.code)).toContain("write_set_violation");
+      expect(outcome.reason).toContain("write scope");
+    }
+  });
+});

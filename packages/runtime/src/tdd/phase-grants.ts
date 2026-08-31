@@ -2,6 +2,7 @@ import { contentDigest, type TddPathPolicy } from "@universal-harness-internal/c
 
 import { issueGrant, type CapabilityGrant, type GrantBudget } from "../policy/capability-grant.js";
 import { type EffectivePolicy } from "../policy/decision.js";
+import { tryNormalizeRepoRelativePath } from "../policy/path-boundary.js";
 
 /**
  * TDD phase grants (provable TDD design 8.3, plan T15): every phase of the
@@ -40,6 +41,63 @@ export function tddPhaseWriteScopes(
     case "refactor":
       return [...policy.production].sort();
   }
+}
+
+/** Canonical scope prefix: strips a trailing `/**`, rejects anything not repository-relative. */
+function scopePrefix(scope: string): string | undefined {
+  const bare = scope.endsWith("/**") ? scope.slice(0, -3) : scope;
+  return tryNormalizeRepoRelativePath(bare);
+}
+
+function covers(ancestor: string, descendant: string): boolean {
+  return descendant === ancestor || descendant.startsWith(`${ancestor}/`);
+}
+
+/**
+ * True path-scope intersection (M4 design 12, plan Task 7 step 4) — never
+ * string-array equality. A path survives iff every input set holds a scope
+ * that covers it; the result is the canonical minimal set of scope prefixes
+ * whose union is exactly that intersection. Any empty set, any
+ * un-normalizable scope and any uncovered branch fail closed to `[]`.
+ */
+export function intersectWriteScopes(sets: readonly (readonly string[])[]): readonly string[] {
+  const normalized = sets.map((scopes) => [
+    ...new Set(scopes.map(scopePrefix).filter((scope): scope is string => scope !== undefined)),
+  ]);
+  if (normalized.some((set) => set.length === 0)) return [];
+  const kept = new Set<string>();
+  for (const set of normalized) {
+    for (const scope of set) {
+      // A scope is inside the intersection iff each set has a prefix of it:
+      // for any path under the scope, that prefix witnesses coverage. The
+      // converse holds because prefixes of one path are always nested, so
+      // the longest witness of every set is itself covered by all of them.
+      if (normalized.every((other) => other.some((candidate) => covers(candidate, scope)))) {
+        kept.add(scope);
+      }
+    }
+  }
+  const sorted = [...kept].sort();
+  return sorted.filter((scope) => !sorted.some((other) => other !== scope && covers(other, scope)));
+}
+
+/**
+ * The effective write set of one Strict TDD phase execution (design 12):
+ * Task.write_paths ∩ Task CapabilityGrant ∩ phase policy scopes ∩ PhaseGrant.
+ * An empty result must block the phase before any execution.
+ */
+export function effectiveTddWriteScopes(input: {
+  readonly task_write_paths: readonly string[];
+  readonly task_grant_write_paths: readonly string[];
+  readonly phase_policy_write_paths: readonly string[];
+  readonly phase_grant_write_paths: readonly string[];
+}): readonly string[] {
+  return intersectWriteScopes([
+    input.task_write_paths,
+    input.task_grant_write_paths,
+    input.phase_policy_write_paths,
+    input.phase_grant_write_paths,
+  ]);
 }
 
 function grantIdFor(

@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
@@ -15,6 +15,12 @@ import type { IsolatedWorkspacePort, PatchFile, WorkspaceHandle } from "./worksp
  * delta against that baseline, and `reset` discards changes inside the
  * worktree only — the host repository is never touched. The adapter holds
  * no write authority beyond the worktree directory it created.
+ *
+ * M4 (design 4.3): callers may pin `workspaceRoot` so an internal
+ * composition layer (TaskWorkspaceManager) can prove every worktree sits
+ * under its exact managed root; `rootOf` exposes that root for managed
+ * git operations. Neither addition widens the IsolatedWorkspacePort
+ * contract.
  */
 const execFileAsync = promisify(execFile);
 
@@ -28,6 +34,12 @@ interface GitWorkspaceState {
   readonly root: string;
 }
 
+/** The git adapter plus the internal root introspection the M4 manager needs. */
+export interface GitWorktreeWorkspacePort extends IsolatedWorkspacePort {
+  /** Absolute worktree root for a handle this port created; undefined once destroyed. */
+  rootOf(handle: WorkspaceHandle): string | undefined;
+}
+
 async function readIfExists(path: string): Promise<string | undefined> {
   try {
     return await readFile(path, "utf8");
@@ -38,13 +50,17 @@ async function readIfExists(path: string): Promise<string | undefined> {
 
 export function createGitWorktreeWorkspacePort(options: {
   readonly repositoryRoot: string;
-}): IsolatedWorkspacePort {
+  /** Directory under which worktrees are created; defaults to the OS temp dir. */
+  readonly workspaceRoot?: string;
+}): GitWorktreeWorkspacePort {
   const workspaces = new Map<string, GitWorkspaceState>();
 
   return {
     name: "git-worktree-workspace",
     async create(input) {
-      const root = await mkdtemp(join(tmpdir(), `harness-tdd-${input.purpose}-`));
+      const base = options.workspaceRoot ?? tmpdir();
+      await mkdir(base, { recursive: true });
+      const root = await mkdtemp(join(base, `harness-tdd-${input.purpose}-`));
       await git(options.repositoryRoot, [
         "worktree",
         "add",
@@ -60,6 +76,9 @@ export function createGitWorktreeWorkspacePort(options: {
       };
       workspaces.set(handle.workspace_id, { handle, root });
       return handle;
+    },
+    rootOf(handle) {
+      return workspaces.get(handle.workspace_id)?.root;
     },
     async applyFiles(handle, files) {
       const state = workspaces.get(handle.workspace_id);
