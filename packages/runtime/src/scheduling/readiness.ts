@@ -9,11 +9,7 @@ import type { ApprovalRequestRecord } from "../approval/request.js";
 import type { GateEvidenceRecord } from "../gates/evidence.js";
 import { taskSemanticDigest, type Protocol13TaskSpecification } from "../planning/task.js";
 
-import {
-  remainingBudget,
-  type BudgetAmount,
-  type IterationBudgetAccount,
-} from "./budget.js";
+import { remainingBudget, type BudgetAmount, type IterationBudgetAccount } from "./budget.js";
 import { buildTaskLeaseChain, nextFencingToken } from "./lease.js";
 import type { TaskDagSnapshot } from "./ports.js";
 import { projectSchedulerState } from "./projection.js";
@@ -103,9 +99,11 @@ export interface ReadyTaskCandidate {
   /**
    * Set when the Task's latest attempt failed recoverably and the single
    * permitted executor retry is still unconsumed (design §15.1). Integration
-   * retries are minted by the candidate-integration path, not by selection.
+   * retries are minted by the scheduler's integration-retry synthesis (Task
+   * 10), not by selection, but share this field so the granted Lease records
+   * the kind either way.
    */
-  readonly retry_kind?: "executor_retry";
+  readonly retry_kind?: "executor_retry" | "integration_retry";
   /** The next attempt number and fencing token the granted Lease must carry. */
   readonly attempt_number: number;
   readonly fencing_token: number;
@@ -134,9 +132,7 @@ export interface SelectReadyTasksInput {
  * every input: identical facts always yield the identical candidate list,
  * including reservation amounts, attempt numbers and fencing tokens.
  */
-export function selectReadyTasks(
-  input: SelectReadyTasksInput,
-): readonly ReadyTaskCandidate[] {
+export function selectReadyTasks(input: SelectReadyTasksInput): readonly ReadyTaskCandidate[] {
   const capacity = Math.min(input.available_slots, input.effective_max_concurrency);
   if (!Number.isInteger(capacity) || capacity < 1) return [];
 

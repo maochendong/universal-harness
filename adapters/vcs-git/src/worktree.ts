@@ -27,6 +27,22 @@ export async function runAddWorktree(
 }
 
 /**
+ * Add a linked worktree in detached HEAD state at `startPoint`; no branch is
+ * created or moved. M4 candidate integration worktrees are managed scratch
+ * space addressed by commit, so they never carry a branch ref.
+ */
+export async function runAddDetachedWorktree(
+  run: GitRunner,
+  root: string,
+  path: string,
+  startPoint: string,
+): Promise<VcsResult<void>> {
+  const added = await run("addWorktree", root, ["worktree", "add", "--detach", path, startPoint]);
+  if (!added.ok) return added;
+  return vcsOk(undefined);
+}
+
+/**
  * Remove a linked worktree. Dirty worktrees are rejected unless `force` is
  * set, so user modifications are never discarded ambiguously; removing the
  * main worktree itself is always refused.

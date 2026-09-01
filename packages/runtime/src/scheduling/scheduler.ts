@@ -42,6 +42,7 @@ import {
   buildTaskLeaseChain,
   deriveTaskLeaseId,
   grantTaskLease,
+  nextFencingToken,
   terminateTaskLease,
 } from "./lease.js";
 import type {
@@ -153,10 +154,37 @@ export type SchedulerTransition =
         readonly digest: string;
       }[];
     }
+  | {
+      /**
+       * Full gate evidence records produced by candidate/wave validation
+       * (Task 10). Unlike `append_evidence` — a reference list — these records
+       * are authoritative content the Ledger transaction must carry.
+       */
+      readonly kind: "append_gate_evidence";
+      readonly records: readonly GateEvidenceRecord[];
+    }
+  | {
+      /** The one authoritative mint of `integrated` (design §13.3/§14). */
+      readonly kind: "record_wave_integration";
+      readonly record: WaveIntegrationRecord;
+    }
   | { readonly kind: "request_approval"; readonly request: ApprovalRequestRecord }
   | { readonly kind: "create_finding"; readonly finding: FeedbackRecord }
   | { readonly kind: "append_event"; readonly event: SchedulerEventSpec }
   | { readonly kind: "record_run"; readonly record: RunRecord };
+
+/**
+ * Recovery-view of one queued task candidate patch (Task 10): the join of the
+ * TaskIntegrationQueued event (task/run identity) with the committed
+ * `task_candidate_patch` evidence entry (artifact locator/digest). Production
+ * authorities derive it from the Ledger; it carries no authority of its own.
+ */
+export interface QueuedCandidateFact {
+  readonly task_id: string;
+  readonly run_id: string;
+  readonly patch_locator: string;
+  readonly patch_digest: string;
+}
 
 /** Authoritative Ledger facts the scheduler rebuilds from, minus the DAG. */
 export interface SchedulerLedgerFacts {
@@ -166,6 +194,8 @@ export interface SchedulerLedgerFacts {
   readonly approvals: readonly ApprovalRequestRecord[];
   readonly findings: readonly FeedbackRecord[];
   readonly wave_integrations: readonly WaveIntegrationRecord[];
+  /** Queued candidate patches awaiting wave integration (Task 10 recovery). */
+  readonly candidate_patches?: readonly QueuedCandidateFact[];
 }
 
 /**
@@ -226,10 +256,7 @@ export interface SchedulerDispatchCallbacks {
   /** Managed evidence directory for one run; never inside the task worktree. */
   evidenceDir(input: { readonly task_id: string; readonly run_id: string }): string;
   /** Context freshness view; defaults to "nothing is stale". */
-  readStaleContextTaskIds?(
-    dag: TaskDagSnapshot,
-    facts: SchedulerLedgerFacts,
-  ): readonly string[];
+  readStaleContextTaskIds?(dag: TaskDagSnapshot, facts: SchedulerLedgerFacts): readonly string[];
 }
 
 export interface SchedulerCeilingBounds {
@@ -340,6 +367,42 @@ function isOpenBlockingFinding(finding: FeedbackRecord): boolean {
   const extension = finding.extensions?.["harness.finding"];
   if (typeof extension !== "object" || extension === null) return false;
   return (extension as { blocking?: unknown }).blocking === true;
+}
+
+function openFindingRule(finding: FeedbackRecord): string | undefined {
+  if (finding.type !== "Finding") return undefined;
+  if (finding.status !== "proposed" && finding.status !== "accepted") return undefined;
+  const extension = finding.extensions?.["harness.finding"];
+  if (typeof extension !== "object" || extension === null) return undefined;
+  const rule = (extension as { rule?: unknown }).rule;
+  return typeof rule === "string" ? rule : undefined;
+}
+
+/** Open Findings (blocking or not) carrying `rule` that name the Task. */
+function hasOpenFindingRule(
+  findings: readonly FeedbackRecord[],
+  rule: string,
+  taskId: string,
+): boolean {
+  return findings.some((finding) => {
+    if (openFindingRule(finding) !== rule) return false;
+    const extension = finding.extensions?.["harness.finding"];
+    const blocks = (extension as { blocks?: unknown }).blocks;
+    return Array.isArray(blocks) && blocks.includes(taskId);
+  });
+}
+
+/**
+ * P2-2: user cancellation is durable §15.2 state — a terminal Run with
+ * termination_reason user_cancellation in the Ledger, never process memory.
+ */
+function hasDurableCancellation(facts: SchedulerLedgerFacts, operationId: string): boolean {
+  return facts.runs.some(
+    (record) =>
+      record.workflow_operation_id === operationId &&
+      (record.record_kind === "run_terminated" || record.record_kind === "run_interrupted") &&
+      record.termination_reason === "user_cancellation",
+  );
 }
 
 export function createLocalTaskScheduler(
@@ -461,7 +524,8 @@ export function createLocalTaskScheduler(
     readonly operation_id: string;
     readonly task_id: string;
     readonly run_id: string;
-    readonly outcome: "success" | "correct_block" | "clarification_required" | "handoff" | "partial" | "failed";
+    readonly outcome:
+      "success" | "correct_block" | "clarification_required" | "handoff" | "partial" | "failed";
     readonly termination_reason:
       | "completion"
       | "gate_failure"
@@ -613,10 +677,9 @@ export function createLocalTaskScheduler(
     }
 
     if (CRASH_TERMINATIONS.has(result.termination_reason)) {
-      const reason = result.termination_reason as "adapter_failure" | "timeout" | "process_interruption";
-      await classifyCrash(dag, entry, consumed, [
-        terminated(result.outcome, reason),
-      ]);
+      const reason = result.termination_reason as
+        "adapter_failure" | "timeout" | "process_interruption";
+      await classifyCrash(dag, entry, consumed, [terminated(result.outcome, reason)]);
       return;
     }
 
@@ -1069,11 +1132,85 @@ export function createLocalTaskScheduler(
     return "completed";
   };
 
+  /**
+   * Integration retry synthesis (design §13.4/§15.1): a Task whose candidate
+   * failed to apply once carries an open non-blocking
+   * `integration_retry_scheduled` Finding and stays `verifying` — ordinary
+   * readiness never selects it again. Exactly one re-dispatch is synthesized
+   * here, on the latest integrated commit, with the retry kind recorded on the
+   * Lease so a later pass (or a recovered process) can never spend it twice.
+   */
+  const synthesizeIntegrationRetries = (
+    dag: TaskDagSnapshot,
+    facts: SchedulerLedgerFacts,
+    account: IterationBudgetAccount,
+    capacity: number,
+  ): ReadyTaskCandidate[] => {
+    if (!Number.isInteger(capacity) || capacity < 1) return [];
+    const chain = buildTaskLeaseChain(facts.leases);
+    const projection = projectSchedulerState(
+      {
+        dag,
+        leases: facts.leases,
+        runs: facts.runs,
+        gate_evidence: facts.gate_evidence,
+        approvals: facts.approvals,
+        findings: facts.findings,
+        wave_integrations: facts.wave_integrations,
+      },
+      null,
+    );
+    const available = remainingBudget(account);
+    let stepsLeft = available.steps;
+    let tokensLeft = available.tokens;
+    let slotsLeft = capacity;
+    const selected: ReadyTaskCandidate[] = [];
+    for (const status of projection.tasks) {
+      if (slotsLeft === 0) break;
+      if (status.status !== "verifying") continue;
+      if (!hasOpenFindingRule(facts.findings, "integration_retry_scheduled", status.task_id)) {
+        continue;
+      }
+      const consumedRetry = chain.records.some(
+        (record) => record.task_id === status.task_id && record.retry_kind === "integration_retry",
+      );
+      if (consumedRetry) continue;
+      const task = dag.tasks.find((candidate) => candidate.id === status.task_id);
+      if (task === undefined) continue;
+      // The retry only ever spends the original Task budget's remainder (§15.1).
+      const consumed = account.consumed[task.id] ?? { steps: 0, tokens: 0 };
+      const reservation: BudgetAmount = {
+        steps: task.budget.steps - consumed.steps,
+        tokens: task.budget.tokens - consumed.tokens,
+      };
+      if (reservation.steps <= 0 || reservation.tokens <= 0) continue;
+      if (reservation.steps > stepsLeft || reservation.tokens > tokensLeft) continue;
+      const latest = chain.latest_by_task.get(task.id);
+      stepsLeft -= reservation.steps;
+      tokensLeft -= reservation.tokens;
+      slotsLeft -= 1;
+      selected.push({
+        task,
+        task_digest: taskSemanticDigest(task),
+        wave_index: status.wave_index ?? 0,
+        retry_kind: "integration_retry",
+        attempt_number: (latest?.attempt_number ?? 0) + 1,
+        fencing_token: nextFencingToken(chain, task.id),
+        reservation,
+      });
+    }
+    return selected;
+  };
+
   const executeDrive = async (
     input: SchedulerDriveInput,
     dag: TaskDagSnapshot,
   ): Promise<SchedulerDriveResult> => {
-    const maxPasses = dag.tasks.length * 2 + 2;
+    // Two retry kinds per Task (executor + integration) plus the initial
+    // attempt bound the pass count.
+    const maxPasses = dag.tasks.length * 3 + 2;
+    /** Integration retries spent by this drive; see the blocking pass below. */
+    const retriedThisDrive = new Set<string>();
     for (let pass = 0; ; pass += 1) {
       if (pass > maxPasses) {
         throw new SchedulerError(
@@ -1110,24 +1247,31 @@ export function createLocalTaskScheduler(
         available_slots: idleSlots.length,
         effective_max_concurrency: effective,
       });
-      if (selected.length === 0) break;
+      const dispatchable =
+        selected.length > 0
+          ? selected
+          : synthesizeIntegrationRetries(
+              dag,
+              facts,
+              account,
+              Math.min(idleSlots.length, effective),
+            );
+      if (dispatchable.length === 0) break;
 
       const running: DispatchEntry[] = [];
       let workingAccount = account;
       let slotCursor = 0;
-      for (const candidate of selected) {
+      for (const candidate of dispatchable) {
         // Slot identity is pre-assigned in scan order; the pool hands out the
         // same first-idle slot because runs start in this exact order.
-        const slotId =
-          idleSlots[slotCursor] ?? `slot_${String(slotCursor + 1)}`;
+        const slotId = idleSlots[slotCursor] ?? `slot_${String(slotCursor + 1)}`;
         slotCursor += 1;
-        const dispatched = await dispatchCandidate(
-          dag,
-          facts,
-          workingAccount,
-          candidate,
-          slotId,
-        );
+        if (candidate.retry_kind === "integration_retry") {
+          // The blocking pass must not judge a retry this drive just spent:
+          // the controller has not re-attempted the apply yet.
+          retriedThisDrive.add(candidate.task.id);
+        }
+        const dispatched = await dispatchCandidate(dag, facts, workingAccount, candidate, slotId);
         workingAccount = dispatched.account;
         if (dispatched.entry !== undefined) running.push(dispatched.entry);
       }
@@ -1146,7 +1290,39 @@ export function createLocalTaskScheduler(
     const finalFacts = await authority.readFacts(input.operation_id);
     const finalStaleIds = options.callbacks.readStaleContextTaskIds?.(dag, finalFacts) ?? [];
     const finalAccount = rebuildAccount(dag, finalFacts);
+    const finalChain = buildTaskLeaseChain(finalFacts.leases);
     const finalProjection = projectSchedulerState({ dag, ...finalFacts }, null);
+    // A Task still verifying with its single integration retry consumed is
+    // stuck: mint the blocking integration_conflict Finding exactly once
+    // (design §13.4: one retry, then blocked).
+    for (const status of finalProjection.tasks) {
+      if (status.status !== "verifying") continue;
+      if (!hasOpenFindingRule(finalFacts.findings, "integration_retry_scheduled", status.task_id)) {
+        continue;
+      }
+      const consumedRetry = finalChain.records.some(
+        (record) => record.task_id === status.task_id && record.retry_kind === "integration_retry",
+      );
+      if (!consumedRetry) continue;
+      if (retriedThisDrive.has(status.task_id)) continue;
+      if (hasOpenFindingRule(finalFacts.findings, "integration_conflict", status.task_id)) continue;
+      const task = dag.tasks.find((candidate) => candidate.id === status.task_id);
+      if (task === undefined) continue;
+      await authority.commit([
+        {
+          kind: "create_finding",
+          finding: blockingFinding({
+            dag,
+            task_id: task.id,
+            task_digest: taskSemanticDigest(task),
+            rule: "integration_conflict",
+            summary:
+              `task ${task.id} is still unintegrated after its single integration retry; ` +
+              "no further automatic recovery",
+          }),
+        },
+      ]);
+    }
     const adapterCapabilities = new Set(options.adapter_capabilities);
     for (const status of finalProjection.tasks) {
       if (status.status !== "ready" && status.status !== "retry_pending") continue;
@@ -1162,9 +1338,7 @@ export function createLocalTaskScheduler(
         rule = "capability_mismatch";
         summary =
           `task ${task.id} requires capabilities the configured adapter cannot satisfy: ` +
-          task.capabilities
-            .filter((capability) => !adapterCapabilities.has(capability))
-            .join(", ");
+          task.capabilities.filter((capability) => !adapterCapabilities.has(capability)).join(", ");
       } else {
         const consumed = finalAccount.consumed[task.id] ?? { steps: 0, tokens: 0 };
         const remainder = {
@@ -1197,10 +1371,7 @@ export function createLocalTaskScheduler(
       ]);
     }
 
-    const readModel = await buildReadModel(
-      dag,
-      await authority.readFacts(input.operation_id),
-    );
+    const readModel = await buildReadModel(dag, await authority.readFacts(input.operation_id));
     return { status: statusOf(readModel), operation_id: input.operation_id, read_model: readModel };
   };
 
@@ -1226,6 +1397,11 @@ export function createLocalTaskScheduler(
       // A granted Lease at drive entry belongs to a dead driver: fail closed
       // and route through recover() (design §16).
       const facts = await authority.readFacts(input.operation_id);
+      // P2-2: a durable user_cancellation terminal Run cancels the operation
+      // for every future process, not just this one.
+      if (hasDurableCancellation(facts, input.operation_id)) {
+        return cancelledResult(dag, input.operation_id);
+      }
       const chain = buildTaskLeaseChain(facts.leases);
       const orphaned = [...chain.latest_by_task.values()].filter(
         (record) => record.state === "granted",
@@ -1250,6 +1426,9 @@ export function createLocalTaskScheduler(
         return cancelledResult(dag, input.operation_id);
       }
       const facts = await authority.readFacts(input.operation_id);
+      if (hasDurableCancellation(facts, input.operation_id)) {
+        return cancelledResult(dag, input.operation_id);
+      }
       const chain = buildTaskLeaseChain(facts.leases);
       const orphaned = [...chain.latest_by_task.values()]
         .filter((record) => record.state === "granted")

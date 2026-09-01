@@ -1310,6 +1310,73 @@ export function createRuntimeService(deps: BootstrapDependencies): RuntimeServic
   };
 }
 
+/**
+ * M4 Task 10 public boundary: the deterministic local scheduler, the
+ * candidate integration controller and standalone scheduling recovery.
+ *
+ * Export decisions:
+ * - The write seam (`SchedulerAuthority`) and the internal ports
+ *   (`TaskDagPort`, `PolicyDecisionPort`, the pool/workspace ports) stay
+ *   runtime-internal: the option/result types below reference them
+ *   structurally, so wiring code composes them without the barrel naming
+ *   them. Only the orchestration entry points and their input/result types
+ *   are public.
+ * - `operationRefFor`/`sourceTreeDigest` are pure locators/digests the
+ *   driver needs to observe acceptance; they carry no authority.
+ */
+export {
+  SCHEDULER_ERROR_KINDS,
+  SchedulerError,
+  createLocalTaskScheduler,
+  type AssembledTaskContext,
+  type DeterministicLocalTaskScheduler,
+  type LocalTaskScheduler,
+  type LocalTaskSchedulerOptions,
+  type QueuedCandidateFact,
+  type SchedulerCancelInput,
+  type SchedulerCeilingBounds,
+  type SchedulerDispatchCallbacks,
+  type SchedulerDriveInput,
+  type SchedulerDriveResult,
+  type SchedulerDriveStatus,
+  type SchedulerErrorKind,
+  type SchedulerReadModel,
+  type SchedulerRecoverInput,
+} from "./scheduling/scheduler.js";
+export {
+  CANDIDATE_INTEGRATION_ERROR_KINDS,
+  CandidateIntegrationError,
+  SCHEDULING_EVIDENCE_EXTENSION_KEY,
+  bindSchedulingEvidence,
+  createCandidateIntegrationController,
+  createGitWaveIntegrationGit,
+  operationRefFor,
+  schedulingEvidenceBindingOf,
+  sourceTreeDigest,
+  waveIntegrationPolicyInput,
+  type AcceptWaveInput,
+  type CandidateIntegrationController,
+  type CandidateIntegrationControllerOptions,
+  type CandidateIntegrationErrorKind,
+  type GitWaveIntegrationOptions,
+  type RebuildWaveInput,
+  type SchedulingEvidenceBinding,
+  type TaskCandidateValidation,
+  type ValidateTaskCandidateInput,
+  type WaveCandidate,
+  type WaveGatePort,
+  type WaveIntegrationGitPort,
+  type WaveOperationLease,
+} from "./scheduling/integration.js";
+export {
+  recoverSchedulingOperation,
+  type SchedulingRecoveryDisposition,
+  type SchedulingRecoveryInput,
+  type SchedulingRecoveryOptions,
+  type SchedulingRecoveryProcessPort,
+  type SchedulingRecoveryReport,
+} from "./scheduling/recovery.js";
+
 export * from "./model/index.js";
 
 export const workspacePackageName = "@universal-harness-internal/runtime" as const;

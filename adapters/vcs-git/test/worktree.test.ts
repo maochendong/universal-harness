@@ -3,11 +3,14 @@ import { join } from "node:path";
 
 import { afterEach, describe, expect, it } from "vitest";
 
+import { createGitRunner } from "../src/commands.js";
+import { runAddDetachedWorktree } from "../src/worktree.js";
 import {
   adapter,
   cleanupDirectories,
   expectSameDirectory,
   git,
+  headOf,
   makeRepo,
   makeTempDir,
   writeRepoFile,
@@ -43,6 +46,39 @@ describe("addWorktree", () => {
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.error.kind).toBe("invalid_argument");
+  });
+});
+
+describe("runAddDetachedWorktree", () => {
+  const run = createGitRunner();
+
+  it("creates a detached worktree at the start point without a branch", async () => {
+    const root = makeRepo();
+    writeRepoFile(root, "second.txt", "second\n");
+    git(root, "add", "second.txt");
+    git(root, "commit", "-m", "second commit");
+    const base = headOf(root);
+    const path = join(makeTempDir("harness-vcs-parent-"), "worktree-detached");
+    const branchesBefore = git(root, "branch", "--format=%(refname)").trim();
+
+    const result = await runAddDetachedWorktree(run, root, path, base);
+
+    expect(result).toEqual({ ok: true, value: undefined });
+    expect(existsSync(join(path, "second.txt"))).toBe(true);
+    expect(git(path, "rev-parse", "HEAD").trim()).toBe(base);
+    // Detached HEAD: no current branch, and no branch ref was created.
+    expect(git(path, "branch", "--show-current").trim()).toBe("");
+    expect(git(root, "branch", "--format=%(refname)").trim()).toBe(branchesBefore);
+  });
+
+  it("rejects a start point that does not exist", async () => {
+    const root = makeRepo();
+    const path = join(makeTempDir("harness-vcs-parent-"), "worktree-missing");
+    const result = await runAddDetachedWorktree(run, root, path, "0".repeat(40));
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.kind).toBe("command_failed");
+    expect(existsSync(path)).toBe(false);
   });
 });
 
