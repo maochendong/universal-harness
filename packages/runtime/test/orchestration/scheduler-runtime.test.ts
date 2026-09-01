@@ -10,10 +10,13 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { buildApprovalRequest } from "../../src/approval/request.js";
 import {
   ParallelTaskExecutionError,
+  SCHEDULER_DRIFT_KINDS,
   SCHEDULER_RECOVERY_ACTIONS,
   createLedgerSchedulerAuthority,
   createParallelExecuteDagRunner,
   driveParallelTaskExecution,
+  schedulerApprovalContinuation,
+  schedulerDriftEffect,
   schedulerRecoveryActionFor,
   schedulerResumeCommand,
   type ParallelTaskExecutionOutcome,
@@ -961,5 +964,40 @@ describe("ledger scheduler authority", () => {
       name: "ParallelTaskExecutionError",
       kind: "operation_not_found",
     });
+  });
+});
+
+describe("approval arrival continuation (design §19.5)", () => {
+  it("wakes a live driver in place", () => {
+    expect(
+      schedulerApprovalContinuation({ driver_live: true, operation_id: OPERATION_ID }),
+    ).toEqual({ kind: "wake_driver" });
+  });
+
+  it("projects the exact resume command when no driver is live", () => {
+    expect(
+      schedulerApprovalContinuation({ driver_live: false, operation_id: OPERATION_ID }),
+    ).toEqual({ kind: "resume_command", command: schedulerResumeCommand(OPERATION_ID) });
+    expect(schedulerResumeCommand(OPERATION_ID)).toBe(`harness resume ${OPERATION_ID}`);
+  });
+});
+
+describe("scheduling drift invalidation (design §17)", () => {
+  it("invalidates pending decisions and degrades in-flight results for every drift kind", () => {
+    expect(SCHEDULER_DRIFT_KINDS.length).toBeGreaterThan(0);
+    for (const kind of SCHEDULER_DRIFT_KINDS) {
+      expect(schedulerDriftEffect(kind)).toEqual({
+        pending_decisions: "invalidated",
+        in_flight_results: "provisional",
+        reentry: kind === "baseline" ? "impact" : "plan",
+      });
+    }
+  });
+
+  it("re-enters at impact only for baseline drift; every other kind re-enters at plan", () => {
+    expect(schedulerDriftEffect("baseline").reentry).toBe("impact");
+    for (const kind of SCHEDULER_DRIFT_KINDS.filter((kind) => kind !== "baseline")) {
+      expect(schedulerDriftEffect(kind).reentry).toBe("plan");
+    }
   });
 });

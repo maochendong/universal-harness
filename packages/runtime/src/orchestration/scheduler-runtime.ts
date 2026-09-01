@@ -11,6 +11,7 @@ import {
   type CapabilityPlanRecord,
   type CommittedOperation,
   type FeedbackRecord,
+  type LeaseRecord,
   type LifecycleEvent,
   type SchedulingRecord,
   type TaskLeaseRecord,
@@ -107,14 +108,12 @@ export interface ParallelTaskExecutionPort {
     readonly capability_plan_digest: string;
     readonly expected_plan_digest: string;
     readonly driver_lock: DriverLockHandle;
-    /** Connected mode only: the current M3 Operation Lease (design §22). */
-    readonly operation_lease?: {
-      readonly resource_kind: string;
-      readonly resource_id: string;
-      readonly fencing_token: number;
-      readonly state: string;
-      readonly expires_at: string;
-    };
+    /**
+     * Connected mode only: the current M3 Operation Lease (design §22). The
+     * port validates the same fields SchedulerDriveInput consumes, so the full
+     * LeaseRecord flows straight through to the scheduler drive.
+     */
+    readonly operation_lease?: LeaseRecord;
   }): Promise<ParallelTaskExecutionOutcome>;
 }
 
@@ -271,7 +270,7 @@ export function driveParallelTaskExecution(
           driver_lock: input.driver_lock,
           ...(input.operation_lease === undefined
             ? {}
-            : { operation_lease: input.operation_lease as never }),
+            : { operation_lease: input.operation_lease }),
         });
         lastReadModel = drive.read_model;
         if (drive.status === "cancelled") return finish("cancelled");
@@ -444,7 +443,7 @@ export function driveParallelTaskExecution(
   };
 }
 
-/** The connected-mode M3 Operation Lease view the port validates. */
+/** The connected-mode M3 Operation Lease the port validates before scheduling. */
 export type ParallelOperationLease = NonNullable<
   Parameters<ParallelTaskExecutionPort["run"]>[0]["operation_lease"]
 >;
