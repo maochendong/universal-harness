@@ -6,14 +6,22 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import { createGitVcsAdapter } from "@universal-harness-internal/adapter-vcs-git";
 import { readLatestProjectProfile } from "@universal-harness-internal/core";
-import { createNewProject } from "@universal-harness-internal/runtime";
+import { createDirectExecutor, createNewProject } from "@universal-harness-internal/runtime";
 import { createRuntimeConfigurationService } from "../src/runtime/configuration-service.js";
+import { createOrchestratedRuntimeService } from "../src/runtime-service.js";
+import type { CliIo } from "../src/index.js";
 
 const roots: string[] = [];
 
 afterEach(() => {
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
 });
+
+const silentIo: CliIo = {
+  writeStdout: () => undefined,
+  writeStderr: () => undefined,
+  isInteractive: false,
+};
 
 describe("CLI runtime configuration facade", () => {
   it("preserves profile lineage and baseline identity through one public seam", async () => {
@@ -46,5 +54,31 @@ describe("CLI runtime configuration facade", () => {
     expect(
       readLatestProjectProfile(created.value.projectRoot, initial.project_id)?.record_digest,
     ).toBe(changed.record_digest);
+  });
+
+  it("reports no scheduler facet for a plain Lite project (M4 zero regression)", async () => {
+    const parent = realpathSync(mkdtempSync(join(tmpdir(), "harness-runtime-facade-m4-")));
+    roots.push(parent);
+    const created = await createNewProject(
+      { parentDirectory: parent, name: "facade-m4", intent: "no scheduler without agent config" },
+      {
+        vcs: createGitVcsAdapter(),
+        now: () => "2026-08-31T00:00:00.000Z",
+        newId: (kind) => `${kind}_facade_m4`,
+      },
+    );
+    if (!created.ok) throw new Error(created.error.message);
+    const service = createOrchestratedRuntimeService({
+      cwd: parent,
+      io: silentIo,
+      now: () => "2026-08-31T00:00:00.000Z",
+      execute: createDirectExecutor(),
+    });
+    // No runtime.json agent_pool, no injected host: the scheduler facet is
+    // absent rather than an empty placeholder, and no projection store or
+    // lock file materializes.
+    await expect(
+      service.schedulerStatus?.({ projectRoot: created.value.projectRoot }),
+    ).resolves.toBeUndefined();
   });
 });

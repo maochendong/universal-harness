@@ -189,14 +189,17 @@ affects future operations.
 `;
 
 exports[`harness CLI help and version > prints per-command help 4`] = `
-"Usage: harness resume <workflow-operation-id> [--profile <lite|standard|governed>] [--answer <question-id>=<value> ...] [--answers <file.json>] [--json]
+"Usage: harness resume <workflow-operation-id> [--profile <lite|standard|governed>] [--answer <question-id>=<value> ...] [--answers <file.json>] [--max-concurrency <n>] [--json]
 
 Resume a paused orchestration from its last committed checkpoint. The
 workflow operation id is returned by earlier blocked or deferred runs. When
 capture pauses with clarification questions, submit answers with --answer
 (repeatable) or an --answers JSON file; a bare resume re-surfaces the
 questions. A legacy project without a profile record must pass --profile
-once to migrate explicitly before resuming.
+once to migrate explicitly before resuming. When the operation's execute
+phase runs parallel task waves, the resume re-acquires the shared local
+Driver Lock first; --max-concurrency is a local request clamped by
+Profile/Policy ceilings.
 "
 `;
 
@@ -248,10 +251,14 @@ and task specifications.
 `;
 
 exports[`harness CLI help and version > prints per-command help 10`] = `
-"Usage: harness run [--dry-run] [--json]
+"Usage: harness run [--dry-run] [--max-concurrency <n>] [--json]
 
 Execute the open workflow operation's planned tasks through the configured
-adapter. --dry-run renders the planned tasks without executing anything.
+adapter. When the accepted CapabilityPlan activates parallel_task_execution,
+the run drives the deterministic task waves under the shared local Driver
+Lock; --max-concurrency is a local request that Profile/Policy ceilings clamp
+(raising a ceiling requires a Policy Proposal). --dry-run renders the planned
+tasks without executing anything.
 "
 `;
 

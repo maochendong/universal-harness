@@ -6,10 +6,11 @@ import { CAPTURE_ANSWER_KINDS, type CaptureAnswerInput } from "@universal-harnes
 import { usageError } from "../errors.js";
 import { parseCommandArgs, requireProjectRoot, type CommandResult } from "../io.js";
 import type { CommandContext } from "../router.js";
+import { parseMaxConcurrency } from "./run.js";
 
 const USAGE =
   "harness resume <workflow-operation-id> [--profile <lite|standard|governed>] " +
-  "[--answer <question-id>=<value> ...] [--answers <file.json>]";
+  "[--answer <question-id>=<value> ...] [--answers <file.json>] [--max-concurrency <n>]";
 
 /** `--answer q=v`: free-text answer bound to the coordinator-issued question id. */
 function parseInlineAnswer(raw: string): CaptureAnswerInput {
@@ -77,6 +78,7 @@ export async function runResumeCommand(
       profile: { type: "string" },
       answer: { type: "string", multiple: true },
       answers: { type: "string" },
+      "max-concurrency": { type: "string" },
     },
     USAGE,
   );
@@ -85,6 +87,7 @@ export async function runResumeCommand(
     throw usageError(`expected exactly one workflow operation id; usage: ${USAGE}`);
   }
   const profile = values["profile"];
+  const maxConcurrency = values["max-concurrency"];
   const inline = values["answer"];
   const answers: CaptureAnswerInput[] = [
     ...(Array.isArray(inline) ? inline : typeof inline === "string" ? [inline] : []).map(
@@ -99,5 +102,8 @@ export async function runResumeCommand(
     projectRoot: requireProjectRoot(context.cwd),
     ...(typeof profile === "string" ? { profile } : {}),
     ...(answers.length === 0 ? {} : { answers }),
+    ...(typeof maxConcurrency === "string"
+      ? { maxConcurrency: parseMaxConcurrency(maxConcurrency, USAGE) }
+      : {}),
   });
 }

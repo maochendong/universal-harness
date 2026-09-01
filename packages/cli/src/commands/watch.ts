@@ -62,6 +62,15 @@ const EVENT_STYLES: Record<string, EventStyle> = {
   RunOutputSummary: { icon: "…", color: GRAY },
   RunTerminated: { icon: "■", color: GREEN },
   BudgetUpdated: { icon: "◆", color: BLUE },
+  // M4 scheduler lifecycle (design §18): timeline facts from the wave driver.
+  TaskLeaseGranted: { icon: "⇢", color: BLUE },
+  TaskDispatched: { icon: "▶", color: CYAN },
+  TaskIntegrationQueued: { icon: "⧉", color: BLUE },
+  TaskCandidateValidated: { icon: "✓", color: GREEN },
+  TaskRetryScheduled: { icon: "↻", color: YELLOW },
+  WaveGateCompleted: { icon: "●", color: GREEN },
+  WaveIntegrated: { icon: "◆", color: GREEN },
+  SchedulerRecovered: { icon: "♻", color: MAGENTA },
 };
 
 type StreamEvent = LifecycleEvent | ObservationEvent;
@@ -80,6 +89,14 @@ function describePayload(event: StreamEvent): string {
       if (found !== undefined) return found;
     }
     return undefined;
+  };
+  const count = (key: string): number => {
+    const value = payload[key];
+    return Array.isArray(value) ? value.length : 0;
+  };
+  const short = (key: string): string => {
+    const value = text(key);
+    return value === undefined ? "?" : value.slice(0, 12);
   };
   switch (event.event_type) {
     case "OperationStarted":
@@ -115,6 +132,22 @@ function describePayload(event: StreamEvent): string {
       return first("finding_id") === undefined ? "" : `finding=${first("finding_id")}`;
     case "CheckpointCommitted":
       return first("phase") === undefined ? "" : `phase=${first("phase")}`;
+    case "TaskLeaseGranted":
+      return `task=${first("task_id") ?? "?"} slot=${first("slot_id") ?? "?"} token=${first("fencing_token") ?? "?"}`;
+    case "TaskDispatched":
+      return `task=${first("task_id") ?? "?"} run=${first("run_id") ?? "?"} slot=${first("slot_id") ?? "?"} attempt=${first("attempt_number") ?? "?"}`;
+    case "TaskIntegrationQueued":
+      return `task=${first("task_id") ?? "?"} run=${first("run_id") ?? "?"} patch=${short("patch_digest")}`;
+    case "TaskCandidateValidated":
+      return `task=${first("task_id") ?? "?"} evidence=${String(count("evidence_digests"))}`;
+    case "TaskRetryScheduled":
+      return `task=${first("task_id") ?? "?"} retry=${first("retry_kind") ?? "?"} attempt=${first("attempt_number") ?? "?"} reason=${first("reason") ?? "?"}`;
+    case "WaveGateCompleted":
+      return `wave=${first("wave_index") ?? "?"} passed=${first("passed") ?? "?"}`;
+    case "WaveIntegrated":
+      return `wave=${first("wave_index") ?? "?"} tasks=${String(count("task_ids"))} commit=${short("candidate_commit")}`;
+    case "SchedulerRecovered":
+      return `recovered=${String(count("recovered_tasks"))} released=${String(count("released_leases"))}`;
     default:
       return first("phase") === undefined ? "" : `phase=${first("phase")}`;
   }
@@ -138,7 +171,9 @@ export function formatEventLine(event: StreamEvent, options: { color: boolean })
   const style = EVENT_STYLES[event.event_type];
   const clock = clockOf(event.timestamp);
   const failed =
-    (event.event_type === "GateCompleted" || event.event_type === "EvaluationCompleted") &&
+    (event.event_type === "GateCompleted" ||
+      event.event_type === "EvaluationCompleted" ||
+      event.event_type === "WaveGateCompleted") &&
     event.payload["passed"] === false;
   const color = failed ? RED : (style?.color ?? GRAY);
   const icon = style?.icon ?? "·";

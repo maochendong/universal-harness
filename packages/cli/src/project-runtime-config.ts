@@ -43,6 +43,15 @@ export interface ProjectAgentConfig {
   readonly proposed_write_paths: readonly string[];
 }
 
+/**
+ * Local agent-pool request (M4 design 10.2): the slot count is a request,
+ * never authority — the effective concurrency is the minimum of this request,
+ * the Profile, Installation/Project Policy ceilings and local resources.
+ */
+export interface ProjectAgentPoolConfig {
+  readonly slots: number;
+}
+
 export interface ProjectGateCommandConfig {
   readonly gate_id: string;
   readonly name: string;
@@ -111,6 +120,7 @@ export interface ProjectRuntimeCompatibilityDiagnostic {
 
 interface ProjectRuntimeConfigBase {
   readonly agent?: ProjectAgentConfig;
+  readonly agent_pool?: ProjectAgentPoolConfig;
   readonly gates: readonly ProjectGateCommandConfig[];
   /** Non-enumerable read diagnostic; never persisted back into the project. */
   readonly compatibility?: ProjectRuntimeCompatibilityDiagnostic;
@@ -209,6 +219,16 @@ function parseAgent(value: unknown): ProjectAgentConfig {
     allowed_read_paths: paths(record.allowed_read_paths, "agent.allowed_read_paths", false),
     proposed_write_paths: paths(record.proposed_write_paths, "agent.proposed_write_paths", true),
   };
+}
+
+function parseAgentPool(value: unknown): ProjectAgentPoolConfig {
+  const record = object(value, "agent_pool");
+  exactKeys(record, ["slots"], "agent_pool");
+  const slots = record.slots;
+  if (!Number.isInteger(slots) || (slots as number) < 1) {
+    fail("agent_pool.slots must be a positive integer");
+  }
+  return { slots: slots as number };
 }
 
 function parseGate(value: unknown, index: number): ProjectGateCommandConfig {
@@ -473,7 +493,7 @@ export function readProjectRuntimeConfig(projectRoot: string): ProjectRuntimeCon
   const record = object(raw, "project runtime config");
   exactKeys(
     record,
-    ["runtime_config_version", "agent", "gates", "judge_gates", "model_providers"],
+    ["runtime_config_version", "agent", "agent_pool", "gates", "judge_gates", "model_providers"],
     "project runtime config",
   );
   if (
@@ -525,13 +545,16 @@ export function readProjectRuntimeConfig(projectRoot: string): ProjectRuntimeCon
     if (defaults > 1) fail("model_providers allows at most one default provider");
   }
   const agent = record.agent === undefined ? {} : { agent: parseAgent(record.agent) };
+  const agentPool =
+    record.agent_pool === undefined ? {} : { agent_pool: parseAgentPool(record.agent_pool) };
   if (version === 1) {
-    return withCompatibility({ runtime_config_version: 1, ...agent, gates });
+    return withCompatibility({ runtime_config_version: 1, ...agent, ...agentPool, gates });
   }
   if (version === 2) {
     return withCompatibility({
       runtime_config_version: 2,
       ...agent,
+      ...agentPool,
       gates,
       judge_gates: judgeGates as ProjectJudgeGateConfig[],
       ...(modelProviders === undefined
@@ -542,6 +565,7 @@ export function readProjectRuntimeConfig(projectRoot: string): ProjectRuntimeCon
   return {
     runtime_config_version: 3,
     ...agent,
+    ...agentPool,
     gates,
     judge_gates: judgeGates as ProjectJudgeGateReference[],
     model_providers: (modelProviders ?? []) as ProjectModelProviderReference[],

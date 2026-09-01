@@ -1,9 +1,14 @@
 import { execFileSync } from "node:child_process";
+import { existsSync } from "node:fs";
 import { createInterface } from "node:readline";
-import { resolve } from "node:path";
+import { join, resolve } from "node:path";
 
 import { createGitVcsAdapter } from "@universal-harness-internal/adapter-vcs-git";
-import { DashboardWriteError, startDashboardServer } from "@universal-harness-internal/dashboard";
+import {
+  DashboardWriteError,
+  startDashboardServer,
+  type DashboardServer,
+} from "@universal-harness-internal/dashboard";
 import { renderTasksProjection } from "@universal-harness-internal/adapter-projection-markdown";
 import { defineEvaluationCase, evaluateRun } from "@universal-harness-internal/eval";
 import {
@@ -14,13 +19,18 @@ import {
   FileLiveSpool,
   ObservationPublisher,
   createGenericInterpreter,
+  createProjectSchedulerHost,
   createRuntimeService,
   driveOpenOperation,
+  findOpenWorkflowOperation,
+  materializeProjectGraph,
   parseApprovalDecision,
   previewImpactSet,
+  projectSchedulerStatus,
   projectSnapshotCommitRefs,
   proposeSemanticImpactEdges,
   provenQualityTaskIds,
+  readExecutionPlanContent,
   readLatestExecutionPlan,
   readLatestSnapshot,
   readCurrentOperation,
@@ -32,14 +42,18 @@ import {
   runIteration,
   auditGraph,
   readBridgedCaptureApprovalDecision,
+  schedulerRecoveryActionFor,
   type ApprovalPrompter,
   type CaptureCoordinatorSeam,
   type EvaluationPort,
+  type ExecutionPlanContent,
   type IntentInterpreter,
   type OrchestrationExecutor,
   type OrchestrationOutcome,
   type OrchestratorDependencies,
   type PhaseProgressEvent,
+  type ProjectSchedulerHost,
+  type SchedulerCeilingBounds,
   type StrictTddExecutionPort,
   type TaskEnvelopeScopePort,
 } from "@universal-harness-internal/runtime";
@@ -47,6 +61,7 @@ import type { SemanticSeedProvider } from "@universal-harness-internal/plugin-sd
 import { materializeLedger, pageEdges, pageNodes } from "@universal-harness-internal/graph";
 import {
   contentDigest,
+  harnessRootFor,
   readLatestProjectProfile,
   readProfileDecisionRecords,
   resolveIterationProfile,
@@ -54,6 +69,7 @@ import {
   ulid,
   ProfileSelectionError,
   ProjectLayoutError,
+  type CapabilityPlanRecord,
   type EdgeRecord,
   type NodeRecord,
   type ObservationEvent,
@@ -81,6 +97,7 @@ import type {
   ProjectRequest,
   ResumeRequest,
   RunRequest,
+  SchedulerStatusView,
   ServeRequest,
   SyncRequest,
   RuntimeService,
@@ -89,7 +106,11 @@ import {
   createCliCollaborationRuntime,
   type CollaborationRuntimeSeams,
 } from "./runtime/collaboration-runtime.js";
-import { createConfiguredAgentExecutor } from "./project-agent.js";
+import {
+  createConfiguredAgentExecutor,
+  createProjectAgentSlotFactory,
+  supervisedSingleSlotNotice,
+} from "./project-agent.js";
 import { createProjectCapabilityPlanCompiler } from "./capability-plan-compiler.js";
 import { createConfiguredGateSuite } from "./project-gates.js";
 import { createManagedIntentInterpreter } from "./managed-interpret.js";
@@ -170,6 +191,27 @@ export interface OrchestratedServiceOptions {
    * composition) so tests pin remote routing without real TLS or OAuth.
    */
   readonly collaboration?: CollaborationRuntimeSeams;
+  /**
+   * Explicit capture seam (M4 Task 12 tests drive the real coordinated-capture
+   * pipeline hermetically); takes precedence over the managed-coordinator
+   * derivation from runtime.json.
+   */
+  readonly capture?: CaptureCoordinatorSeam;
+  /**
+   * Late-bound accepted CapabilityPlan reader (the kernel's embedder
+   * compatibility seam). A thunk because the accepted revision can bind an
+   * operation id minted after the service was constructed.
+   */
+  readonly capabilityPlan?: () => CapabilityPlanRecord | undefined;
+  /**
+   * Scheduler host factory (M4 design 10.2). Absent = the production default:
+   * a Project Scheduler Host is composed only when runtime.json declares an
+   * `agent` (unconfigured projects keep the exact pre-M4 behavior). Tests
+   * inject recording fakes to pin Driver Lock discipline without a real pool.
+   */
+  readonly schedulerHost?: (request: SchedulerHostRequest) => ProjectSchedulerHost | undefined;
+  /** Test seam: receives the started Dashboard server so hosts can close it. */
+  readonly onServerReady?: (server: DashboardServer) => void;
 }
 
 /** Interactive stdin prompt; only constructed when the CLI runs on a TTY. */
@@ -249,6 +291,143 @@ export function createEvalPackagePort(now: () => string): EvaluationPort {
 
 function gitHead(projectRoot: string): string {
   return execFileSync("git", ["rev-parse", "HEAD"], { cwd: projectRoot, encoding: "utf8" }).trim();
+}
+
+/**
+ * The ceilings the CLI declares for local parallel drives (M4 design 10.2).
+ * They mirror the runtime host defaults — the profile default of 2 local
+ * slots and the installation/project/local-resource bounds — and are passed
+ * to the host explicitly so the concurrency the CLI reports is exactly the
+ * concurrency the drive enforces.
+ */
+export const CLI_SCHEDULER_CEILINGS: SchedulerCeilingBounds = {
+  profile_limit: 2,
+  installation_limit: 8,
+  project_limit: 8,
+  local_resource_limit: 8,
+} as const;
+
+/** How one local concurrency request resolves against the ceilings. */
+export interface SchedulerConcurrencyDecision {
+  /** What the operator asked for (--max-concurrency or agent_pool.slots). */
+  readonly requested: number;
+  /** What the drive will actually use: the minimum of request and ceilings. */
+  readonly effective: number;
+  /** The binding ceiling, or "request" when the request itself is lowest. */
+  readonly limited_by: "request" | keyof SchedulerCeilingBounds;
+  /**
+   * True when the request exceeds a ceiling: the drive proceeds at the
+   * clamped value (a decrease never needs approval) and raising the ceiling
+   * itself must go through a Policy Proposal — never a silent expansion.
+   */
+  readonly policy_proposal_required: boolean;
+}
+
+/** Resolve a local concurrency request against the fixed ceilings (design 20). */
+export function resolveSchedulerConcurrency(input: {
+  readonly requested: number;
+  readonly ceilings: SchedulerCeilingBounds;
+}): SchedulerConcurrencyDecision {
+  const requested = Math.max(1, Math.floor(input.requested));
+  const bounds: readonly (readonly [keyof SchedulerCeilingBounds, number])[] = [
+    ["profile_limit", input.ceilings.profile_limit],
+    ["installation_limit", input.ceilings.installation_limit],
+    ["project_limit", input.ceilings.project_limit],
+    ["local_resource_limit", input.ceilings.local_resource_limit],
+  ];
+  let effective = requested;
+  let limitedBy: SchedulerConcurrencyDecision["limited_by"] = "request";
+  for (const [name, value] of bounds) {
+    if (value < effective) {
+      effective = value;
+      limitedBy = name;
+    }
+  }
+  effective = Math.max(1, effective);
+  return {
+    requested,
+    effective,
+    limited_by: limitedBy,
+    policy_proposal_required: requested > effective,
+  };
+}
+
+/**
+ * What a command asks the scheduler host factory for (M4 Task 12). "read"
+ * inspects (status/abort) and never takes the Driver Lock or materializes the
+ * projection store; "write" drives (run/resume/iterate and dashboard resume).
+ */
+export interface SchedulerHostRequest {
+  readonly projectRoot: string;
+  readonly driverKind: "cli" | "dashboard";
+  /** Effective concurrency after ceiling clamping; omitted on read paths. */
+  readonly maxConcurrency?: number;
+  readonly live: "read" | "write";
+}
+
+/** Structural alias: DriverLockHandle stays runtime-internal (constraint 25). */
+type AcquiredDriverLock = Awaited<ReturnType<ProjectSchedulerHost["acquireDriverLock"]>>;
+
+/** Latest revision per node id (mirrors the runtime host's plan projection). */
+function latestNodeRevisions(nodes: readonly NodeRecord[]): NodeRecord[] {
+  const byId = new Map<string, NodeRecord>();
+  for (const node of nodes) {
+    const current = byId.get(node.id);
+    if (current === undefined || node.revision > current.revision) byId.set(node.id, node);
+  }
+  return [...byId.values()];
+}
+
+/**
+ * Human presentation of an ExecutionPlan (M4 design 19.3): waves, per-task
+ * dependencies/resource claims/budgets, and the pairwise conflicts that keep
+ * two Tasks out of the same wave (overlapping write paths or exclusive
+ * resource claims). Pure: derived only from the canonical plan content, so
+ * the human and JSON views of `harness plan` can never drift apart.
+ */
+export function presentExecutionPlan(content: ExecutionPlanContent): string {
+  const lines: string[] = [];
+  const waves = content.parallel_waves ?? [];
+  const header =
+    waves.length === 0
+      ? `plan mode ${content.mode} (${content.execution_kind}), ${String(content.tasks.length)} task(s), sequential`
+      : `plan mode ${content.mode} (${content.execution_kind}), ${String(content.tasks.length)} task(s), ${String(waves.length)} wave(s)`;
+  lines.push(
+    content.iteration_budget === undefined
+      ? header
+      : `${header}, iteration budget ${String(content.iteration_budget.steps)} steps / ${String(content.iteration_budget.tokens)} tokens`,
+  );
+  for (const wave of waves) {
+    lines.push(`wave ${String(wave.wave_index)}: ${wave.task_ids.join(", ")}`);
+  }
+  for (const task of content.tasks) {
+    const parts: string[] = [];
+    if (task.dependencies.length > 0) parts.push(`deps [${task.dependencies.join(", ")}]`);
+    if (task.write_paths !== undefined) parts.push(`writes [${task.write_paths.join(", ")}]`);
+    if (task.exclusive_resources !== undefined && task.exclusive_resources.length > 0) {
+      parts.push(`exclusive [${task.exclusive_resources.join(", ")}]`);
+    }
+    parts.push(`budget ${String(task.budget.steps)} steps / ${String(task.budget.tokens)} tokens`);
+    lines.push(`task ${task.id} "${task.objective}": ${parts.join(", ")}`);
+  }
+  for (let left = 0; left < content.tasks.length; left += 1) {
+    for (let right = left + 1; right < content.tasks.length; right += 1) {
+      const former = content.tasks[left];
+      const latter = content.tasks[right];
+      if (former === undefined || latter === undefined) continue;
+      const sharedWrites = (former.write_paths ?? []).filter((path) =>
+        (latter.write_paths ?? []).includes(path),
+      );
+      const sharedResources = (former.exclusive_resources ?? []).filter((resource) =>
+        (latter.exclusive_resources ?? []).includes(resource),
+      );
+      if (sharedWrites.length === 0 && sharedResources.length === 0) continue;
+      lines.push(
+        `conflict: ${former.id} <-> ${latter.id}: write_paths [${sharedWrites.join(", ")}]; exclusive_resources [${sharedResources.join(", ")}]`,
+      );
+    }
+  }
+  return lines.join("\n");
 }
 
 /**
@@ -514,16 +693,18 @@ export function createOrchestratedRuntimeService(
               identity,
             );
           };
-    const captureSeam = managedCaptureSeamForProject(projectRoot, runtimeConfig, {
-      ...(options.now === undefined ? {} : { now: options.now }),
-      ...(options.providerRegistry === undefined
-        ? {}
-        : { providerRegistry: options.providerRegistry }),
-      ...(options.providerFetch === undefined ? {} : { fetch: options.providerFetch }),
-      ...(options.providerEnvironment === undefined
-        ? {}
-        : { environment: options.providerEnvironment }),
-    });
+    const captureSeam =
+      options.capture ??
+      managedCaptureSeamForProject(projectRoot, runtimeConfig, {
+        ...(options.now === undefined ? {} : { now: options.now }),
+        ...(options.providerRegistry === undefined
+          ? {}
+          : { providerRegistry: options.providerRegistry }),
+        ...(options.providerFetch === undefined ? {} : { fetch: options.providerFetch }),
+        ...(options.providerEnvironment === undefined
+          ? {}
+          : { environment: options.providerEnvironment }),
+      });
     const capabilityPlanCompiler =
       captureSeam === undefined
         ? undefined
@@ -538,6 +719,7 @@ export function createOrchestratedRuntimeService(
               ? {}
               : { environment: options.providerEnvironment }),
           });
+    const injectedCapabilityPlan = options.capabilityPlan?.();
     return {
       projectRoot,
       readBaseline: () => gitHead(projectRoot),
@@ -550,6 +732,7 @@ export function createOrchestratedRuntimeService(
       ...managedPipelinePortsFor(projectRoot, runtimeConfig),
       ...(captureSeam === undefined ? {} : { capture: captureSeam }),
       ...(capabilityPlanCompiler === undefined ? {} : { capabilityPlanCompiler }),
+      ...(injectedCapabilityPlan === undefined ? {} : { capabilityPlan: injectedCapabilityPlan }),
       ...(options.strictTdd === undefined ? {} : { strictTdd: options.strictTdd }),
       ...(injectedExecutor === undefined
         ? configuredAgent === undefined
@@ -721,6 +904,178 @@ export function createOrchestratedRuntimeService(
     };
   };
 
+  // --- M4 scheduler wiring (design 10.2/19/20, plan Task 12) ------------------
+
+  const readRuntimeConfig = (projectRoot: string): ProjectRuntimeConfig => {
+    try {
+      return readProjectRuntimeConfig(projectRoot);
+    } catch (error) {
+      if (error instanceof ProjectRuntimeConfigError) {
+        throw new OrchestrationError("configuration", error.message);
+      }
+      throw error;
+    }
+  };
+
+  /** The effective local concurrency: the request (--max-concurrency), then the
+   * configured pool size, then 1 — always clamped by the fixed ceilings. */
+  const concurrencyDecisionFor = (
+    projectRoot: string,
+    requested: number | undefined,
+  ): SchedulerConcurrencyDecision =>
+    resolveSchedulerConcurrency({
+      requested: requested ?? readRuntimeConfig(projectRoot).agent_pool?.slots ?? 1,
+      ceilings: CLI_SCHEDULER_CEILINGS,
+    });
+
+  /**
+   * Default host composition: only projects whose committed runtime config
+   * declares an `agent` get a Project Scheduler Host; anything else returns
+   * undefined so pre-M4 projects keep their exact behavior. The dsh manifest
+   * is never unattended-eligible, so the pool degrades to supervised
+   * single-slot mode and says so on stderr before a drive.
+   */
+  const schedulerHostFor = (request: SchedulerHostRequest): ProjectSchedulerHost | undefined => {
+    if (options.schedulerHost !== undefined) return options.schedulerHost(request);
+    const runtimeConfig = readRuntimeConfig(request.projectRoot);
+    if (runtimeConfig.agent === undefined) return undefined;
+    const slotFactory = createProjectAgentSlotFactory({
+      projectRoot: request.projectRoot,
+      config: runtimeConfig.agent,
+    });
+    if (request.live === "write") {
+      const notice = supervisedSingleSlotNotice(slotFactory.manifest);
+      if (notice !== undefined) options.io.writeStderr(`${notice}\n`);
+    }
+    const projectionPath = join(harnessRootFor(request.projectRoot), "scheduler-projection.sqlite");
+    return createProjectSchedulerHost({
+      projectRoot: request.projectRoot,
+      readBaseline: () => gitHead(request.projectRoot),
+      agentSlotFactory: slotFactory,
+      // Design §10.1 deviation (host.ts): the manifest declares no capability
+      // list, matching the kernel's production compile with allowedCapabilities [].
+      adapterCapabilities: [],
+      ...(request.maxConcurrency === undefined ? {} : { maxConcurrency: request.maxConcurrency }),
+      ceilings: CLI_SCHEDULER_CEILINGS,
+      driverKind: request.driverKind,
+      // A read against a project that never drove must not create the store.
+      projectionStorePath:
+        request.live === "read" && !existsSync(projectionPath) ? ":memory:" : projectionPath,
+      ...(options.now === undefined ? {} : { now: options.now }),
+      ...(options.newId === undefined ? {} : { newId: options.newId }),
+    });
+  };
+
+  /** DriverLockError stays runtime-internal; recognize it structurally. */
+  const isDriverLockError = (error: unknown): boolean =>
+    error instanceof Error && error.name === "DriverLockError";
+
+  const driverLockFailure = (
+    command: string,
+    operationId: string,
+    error: unknown,
+  ): CommandResult => ({
+    command,
+    status: "failed",
+    message:
+      `driver lock for ${operationId} is held by another driver: ` +
+      `${error instanceof Error ? error.message : String(error)}`,
+    data: { kind: "driver_lock_unavailable", workflow_operation_id: operationId, retryable: true },
+  });
+
+  /**
+   * The status/abort/run view over the host read model (design 19.2/19.3):
+   * the runtime SchedulerStatusProjection plus the operation binding and
+   * exactly one recovery action per blocking Finding (design 21; rules without
+   * a typed action degrade to inspect_blocking_finding, never a silent ignore).
+   */
+  const schedulerViewFor = async (
+    host: ProjectSchedulerHost,
+    operationId: string,
+  ): Promise<SchedulerStatusView> => {
+    const model = await host.readSchedulerModel(operationId);
+    const projection = projectSchedulerStatus(model);
+    const blockers = model.findings.map((finding) => {
+      const extension = finding.extensions?.["harness.finding"];
+      const rule =
+        typeof extension === "object" && extension !== null
+          ? (extension as { rule?: unknown }).rule
+          : undefined;
+      const action = typeof rule === "string" ? schedulerRecoveryActionFor(rule) : undefined;
+      return {
+        finding_id: finding.id,
+        ...(typeof rule === "string" ? { rule } : {}),
+        recovery_action: action ?? "inspect_blocking_finding",
+      };
+    });
+    return { operation_id: operationId, ...projection, blockers, digest: model.digest };
+  };
+
+  /** Post-drive wave progress on stderr; stdout keeps only the CommandResult. */
+  const reportWaveProgress = (view: SchedulerStatusView): void => {
+    if (view.waves === undefined) return;
+    options.io.writeStderr(
+      `scheduler: wave ${String(view.waves.integrated)}/${String(view.waves.total)} integrated; ` +
+        `live projection ${view.live_state ?? "unknown"}\n`,
+    );
+  };
+
+  /**
+   * One local drive under an explicit Driver Lock (design 10.2/20): acquire
+   * before the kernel runs, pass the real handle through the binding (the host
+   * port passes caller-supplied handles through untouched), release in
+   * `finally`. Lock contention fails closed with driver_lock_unavailable —
+   * the port is never invoked. Without a configured/injected host the legacy
+   * path runs untouched.
+   */
+  const driveWithScheduler = async (input: {
+    readonly command: string;
+    readonly projectRoot: string;
+    readonly operationId: string;
+    readonly driverKind: "cli" | "dashboard";
+    readonly maxConcurrency?: number;
+    readonly drive: (deps: OrchestratorDependencies) => Promise<OrchestrationOutcome>;
+  }): Promise<CommandResult> => {
+    const decision = concurrencyDecisionFor(input.projectRoot, input.maxConcurrency);
+    const host = schedulerHostFor({
+      projectRoot: input.projectRoot,
+      driverKind: input.driverKind,
+      maxConcurrency: decision.effective,
+      live: "write",
+    });
+    if (host === undefined) {
+      return outcomeToResult(input.command, await input.drive(orchestratorDeps(input.projectRoot)));
+    }
+    let handle: AcquiredDriverLock;
+    try {
+      handle = await host.acquireDriverLock(input.operationId);
+    } catch (error) {
+      if (isDriverLockError(error)) {
+        return driverLockFailure(input.command, input.operationId, error);
+      }
+      throw error;
+    }
+    try {
+      const acquired = handle;
+      const deps: OrchestratorDependencies = {
+        ...orchestratorDeps(input.projectRoot),
+        parallelExecution: {
+          port: host.parallelExecution.port,
+          driverLock: () => acquired,
+        },
+      };
+      const outcome = await input.drive(deps);
+      const scheduler = await schedulerViewFor(host, input.operationId);
+      reportWaveProgress(scheduler);
+      return outcomeToResult(input.command, outcome, {
+        concurrency: { ...decision },
+        scheduler,
+      });
+    } finally {
+      await handle.release();
+    }
+  };
+
   /**
    * T20 slice 1 capture routing: when the committed runtime config declares a
    * provider covering the prd_proposal slot, intent is interpreted through the
@@ -868,10 +1223,24 @@ export function createOrchestratedRuntimeService(
       }
       const remote = await iterateRemoteImpl(request, active);
       if (remote !== undefined) return remote;
-      const outcome = await runIteration(orchestratorDeps(request.projectRoot), {
-        intent: request.text,
-        intentShape: "pack-converted",
+      // M4: when a scheduler host is configured the parallel binding rides the
+      // deferred facade — the host acquires and releases the Driver Lock inside
+      // `port.run`, only if the execute node actually dispatches waves.
+      const decision = concurrencyDecisionFor(request.projectRoot, undefined);
+      const host = schedulerHostFor({
+        projectRoot: request.projectRoot,
+        driverKind: "cli",
+        maxConcurrency: decision.effective,
+        live: "write",
       });
+      const base = orchestratorDeps(request.projectRoot);
+      const outcome = await runIteration(
+        host === undefined ? base : { ...base, parallelExecution: host.parallelExecution },
+        {
+          intent: request.text,
+          intentShape: "pack-converted",
+        },
+      );
       return outcomeToResult("iterate", outcome, profileResultExtra(active));
     });
 
@@ -900,7 +1269,28 @@ export function createOrchestratedRuntimeService(
     const baselineBefore = gitHead(request.projectRoot);
     let outcome: OrchestrationOutcome;
     try {
-      outcome = await runIteration(orchestratorDepsForWorkflow(request.projectRoot, operationId), {
+      const decision = concurrencyDecisionFor(request.projectRoot, undefined);
+      const host = schedulerHostFor({
+        projectRoot: request.projectRoot,
+        driverKind: "cli",
+        maxConcurrency: decision.effective,
+        live: "write",
+      });
+      const base = orchestratorDepsForWorkflow(request.projectRoot, operationId);
+      // Connected mode: the deferred Driver Lock facade plus the live M3
+      // Operation Lease accessor, so the drive validates the fencing token.
+      const deps =
+        host === undefined
+          ? base
+          : {
+              ...base,
+              parallelExecution: {
+                port: host.parallelExecution.port,
+                driverLock: host.parallelExecution.driverLock,
+                operationLease: () => lease.lease,
+              },
+            };
+      outcome = await runIteration(deps, {
         intent: request.text,
         intentShape: "pack-converted",
       });
@@ -950,9 +1340,44 @@ export function createOrchestratedRuntimeService(
       };
     }
     const baselineBefore = gitHead(request.projectRoot);
+    // Connected resume drives under the same explicit Driver Lock as the local
+    // path; the binding also carries the live M3 Operation Lease accessor.
+    const decision = concurrencyDecisionFor(request.projectRoot, request.maxConcurrency);
+    const host = schedulerHostFor({
+      projectRoot: request.projectRoot,
+      driverKind: "cli",
+      maxConcurrency: decision.effective,
+      live: "write",
+    });
+    let handle: AcquiredDriverLock | undefined;
+    if (host !== undefined) {
+      try {
+        handle = await host.acquireDriverLock(request.workflowOperationId);
+      } catch (error) {
+        await collaboration.releaseLease(context, request.workflowOperationId);
+        if (isDriverLockError(error)) {
+          return driverLockFailure("resume", request.workflowOperationId, error);
+        }
+        throw error;
+      }
+    }
     let outcome: OrchestrationOutcome;
     try {
-      outcome = await resumeRuntime.resume({
+      outcome = await createCliResumeService({
+        dependencies: (projectRoot) => {
+          const base = orchestratorDeps(projectRoot);
+          if (host === undefined || handle === undefined) return base;
+          const acquired = handle;
+          return {
+            ...base,
+            parallelExecution: {
+              port: host.parallelExecution.port,
+              driverLock: () => acquired,
+              operationLease: () => lease.lease,
+            },
+          };
+        },
+      }).resume({
         projectRoot: request.projectRoot,
         workflowOperationId: request.workflowOperationId,
         ...(request.answers === undefined ? {} : { answers: request.answers }),
@@ -961,6 +1386,8 @@ export function createOrchestratedRuntimeService(
       // A crashed resume must not strand the Operation Lease.
       await collaboration.releaseLease(context, request.workflowOperationId);
       throw error;
+    } finally {
+      await handle?.release();
     }
     const publishFailure = await collaboration.publishCandidate(
       context,
@@ -1003,12 +1430,19 @@ export function createOrchestratedRuntimeService(
       }
       const remote = await resumeRemoteImpl(request);
       if (remote !== undefined) return remote;
-      const outcome = await resumeRuntime.resume({
+      return driveWithScheduler({
+        command: "resume",
         projectRoot: request.projectRoot,
-        workflowOperationId: request.workflowOperationId,
-        ...(request.answers === undefined ? {} : { answers: request.answers }),
+        operationId: request.workflowOperationId,
+        driverKind: "cli",
+        ...(request.maxConcurrency === undefined ? {} : { maxConcurrency: request.maxConcurrency }),
+        drive: (deps) =>
+          createCliResumeService({ dependencies: () => deps }).resume({
+            projectRoot: request.projectRoot,
+            workflowOperationId: request.workflowOperationId,
+            ...(request.answers === undefined ? {} : { answers: request.answers }),
+          }),
       });
-      return outcomeToResult("resume", outcome);
     });
 
   const abortImpl = async (request: AbortRequest): Promise<CommandResult> =>
@@ -1018,6 +1452,15 @@ export function createOrchestratedRuntimeService(
         workflowOperationId: request.workflowOperationId,
         actor: request.actor ?? actor,
       });
+      // Post-abort scheduler reconciliation (design 19.2): a read-only view —
+      // abort never takes the Driver Lock.
+      const host = schedulerHostFor({
+        projectRoot: request.projectRoot,
+        driverKind: "cli",
+        live: "read",
+      });
+      const scheduler =
+        host === undefined ? undefined : await schedulerViewFor(host, request.workflowOperationId);
       return {
         command: "abort",
         status: "ok",
@@ -1028,6 +1471,7 @@ export function createOrchestratedRuntimeService(
           workflow_operation_id: aborted.workflowOperationId,
           iteration_id: aborted.iterationId,
           rejected_requests: [...aborted.rejectedRequests],
+          ...(scheduler === undefined ? {} : { scheduler }),
         },
       };
     });
@@ -1312,16 +1756,53 @@ export function createOrchestratedRuntimeService(
                   "the workflow changed; refresh before retrying",
                 );
               }
-              const outcome = await resumeIteration(deps, input.workflowOperationId, {
-                intent: "",
-                intentShape: "pack-converted",
+              // M4 design 19.5: the dashboard resume is the "dashboard" driver
+              // — it takes the same Driver Lock a CLI run/resume would, so a
+              // local drive and a browser drive can never overlap.
+              const decision = concurrencyDecisionFor(request.projectRoot, undefined);
+              const host = schedulerHostFor({
+                projectRoot: request.projectRoot,
+                driverKind: "dashboard",
+                maxConcurrency: decision.effective,
+                live: "write",
               });
-              return {
-                ...outcomeToResult("resume", outcome).data,
-                status: outcome.status,
-                expected_digest: input.expectedDigest,
-                actor: input.actor,
-              };
+              let driveDeps = deps;
+              let handle: AcquiredDriverLock | undefined;
+              if (host !== undefined) {
+                try {
+                  handle = await host.acquireDriverLock(input.workflowOperationId);
+                } catch (error) {
+                  if (isDriverLockError(error)) {
+                    throw new DashboardWriteError(
+                      "conflict",
+                      "the driver lock is held by another driver; retry once it is released",
+                    );
+                  }
+                  throw error;
+                }
+                const acquired = handle;
+                driveDeps = {
+                  ...deps,
+                  parallelExecution: {
+                    port: host.parallelExecution.port,
+                    driverLock: () => acquired,
+                  },
+                };
+              }
+              try {
+                const outcome = await resumeIteration(driveDeps, input.workflowOperationId, {
+                  intent: "",
+                  intentShape: "pack-converted",
+                });
+                return {
+                  ...outcomeToResult("resume", outcome).data,
+                  status: outcome.status,
+                  expected_digest: input.expectedDigest,
+                  actor: input.actor,
+                };
+              } finally {
+                await handle?.release();
+              }
             } catch (error) {
               if (error instanceof DashboardWriteError) throw error;
               return writeFailure(error);
@@ -1350,6 +1831,7 @@ export function createOrchestratedRuntimeService(
           },
         },
       });
+      options.onServerReady?.(server);
       const shutdown = (): void => {
         void server.close().then(
           () => {
@@ -1392,6 +1874,20 @@ export function createOrchestratedRuntimeService(
 
     remoteSummary: (request: ProjectRequest): Promise<Record<string, unknown> | undefined> =>
       collaboration.remoteSummary(request),
+
+    schedulerStatus: async (request: ProjectRequest): Promise<SchedulerStatusView | undefined> => {
+      const openOperation = findOpenWorkflowOperation(request.projectRoot, () =>
+        gitHead(request.projectRoot),
+      );
+      if (openOperation === undefined) return undefined;
+      const host = schedulerHostFor({
+        projectRoot: request.projectRoot,
+        driverKind: "cli",
+        live: "read",
+      });
+      if (host === undefined) return undefined;
+      return schedulerViewFor(host, openOperation);
+    },
 
     approve: async (request: ApproveRequest): Promise<CommandResult> =>
       guard("approve", async () => {
@@ -1473,30 +1969,82 @@ export function createOrchestratedRuntimeService(
 
     plan: async (request: ProjectRequest): Promise<CommandResult> =>
       guard("plan", async () => {
-        const plan = readLatestExecutionPlan(request.projectRoot);
-        if (plan === undefined) {
+        // Full canonical content read (M4 design 19.3): the latest plan node
+        // plus its exact Task/CONTAINS/DEPENDS_ON projection, so protocol 1.3
+        // waves, resource claims and budgets surface alongside the legacy view.
+        const graph = materializeProjectGraph(request.projectRoot);
+        try {
+          const node = [...graph.nodes]
+            .filter((candidate) => candidate.type === "ExecutionPlan")
+            .sort((left, right) => (left.id < right.id ? -1 : 1))
+            .at(-1);
+          if (node === undefined) {
+            return {
+              command: "plan",
+              status: "failed",
+              message: "no committed execution plan; run an iteration first",
+              data: {},
+            };
+          }
+          const contained = new Set(
+            graph.edges
+              .filter((edge) => edge.type === "CONTAINS" && edge.source_id === node.id)
+              .map((edge) => edge.target_id),
+          );
+          const taskNodes = latestNodeRevisions(
+            graph.nodes.filter((candidate) => contained.has(candidate.id)),
+          );
+          const edges = graph.edges.filter(
+            (edge) =>
+              (edge.type === "CONTAINS" &&
+                edge.source_id === node.id &&
+                contained.has(edge.target_id)) ||
+              (edge.type === "DEPENDS_ON" &&
+                contained.has(edge.source_id) &&
+                contained.has(edge.target_id)),
+          );
+          const content = readExecutionPlanContent(node, { tasks: taskNodes, edges });
           return {
             command: "plan",
-            status: "failed",
-            message: "no committed execution plan; run an iteration first",
-            data: {},
+            status: "ok",
+            message:
+              `plan ${node.id} (${content.mode}) with ${String(content.tasks.length)} task(s)` +
+              (content.parallel_waves === undefined
+                ? ""
+                : ` in ${String(content.parallel_waves.length)} wave(s)`),
+            data: {
+              plan_id: node.id,
+              mode: content.mode,
+              impact_set_id: content.impact_set_id,
+              iteration_id: node.provenance.iteration_id,
+              tasks: content.tasks.map((task) => ({
+                id: task.id,
+                objective: task.objective,
+                required_gates: [...task.required_gates],
+                dependencies: [...task.dependencies],
+                budget: { ...task.budget },
+                ...(task.write_paths === undefined ? {} : { write_paths: [...task.write_paths] }),
+                ...(task.exclusive_resources === undefined
+                  ? {}
+                  : { exclusive_resources: [...task.exclusive_resources] }),
+              })),
+              ...(content.parallel_waves === undefined
+                ? {}
+                : {
+                    waves: content.parallel_waves.map((wave) => ({
+                      wave_index: wave.wave_index,
+                      task_ids: [...wave.task_ids],
+                    })),
+                    presentation: presentExecutionPlan(content),
+                  }),
+              ...(content.iteration_budget === undefined
+                ? {}
+                : { iteration_budget: { ...content.iteration_budget } }),
+            },
           };
+        } finally {
+          graph.close();
         }
-        return {
-          command: "plan",
-          status: "ok",
-          message: `plan ${plan.planId} (${plan.mode}) with ${String(plan.tasks.length)} task(s)`,
-          data: {
-            plan_id: plan.planId,
-            mode: plan.mode,
-            impact_set_id: plan.impactSetId,
-            iteration_id: plan.iterationId,
-            tasks: plan.tasks.map((task) => ({
-              ...task,
-              required_gates: [...task.required_gates],
-            })),
-          },
-        };
       }),
 
     run: async (request: RunRequest): Promise<CommandResult> =>
@@ -1526,8 +2074,27 @@ export function createOrchestratedRuntimeService(
             },
           };
         }
-        const outcome = await driveOpenOperation(orchestratorDeps(request.projectRoot), "execute");
-        return outcomeToResult("run", outcome);
+        const openOperation = findOpenWorkflowOperation(request.projectRoot, () =>
+          gitHead(request.projectRoot),
+        );
+        if (openOperation === undefined) {
+          // Preserve the exact no-open-operation failure of the legacy path.
+          const outcome = await driveOpenOperation(
+            orchestratorDeps(request.projectRoot),
+            "execute",
+          );
+          return outcomeToResult("run", outcome);
+        }
+        return driveWithScheduler({
+          command: "run",
+          projectRoot: request.projectRoot,
+          operationId: openOperation,
+          driverKind: "cli",
+          ...(request.maxConcurrency === undefined
+            ? {}
+            : { maxConcurrency: request.maxConcurrency }),
+          drive: (deps) => driveOpenOperation(deps, "execute"),
+        });
       }),
 
     verify: async (request: ProjectRequest): Promise<CommandResult> =>

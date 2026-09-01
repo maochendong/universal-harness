@@ -1,7 +1,10 @@
 import { execFileSync } from "node:child_process";
 
 import { canonicalizeJson, type CaptureAnswerInput } from "@universal-harness-internal/core";
-import type { PhaseProgressEvent } from "@universal-harness-internal/runtime";
+import type {
+  PhaseProgressEvent,
+  SchedulerStatusProjection,
+} from "@universal-harness-internal/runtime";
 
 import { EXIT_CODES, asCliError, usageError } from "./errors.js";
 import {
@@ -86,6 +89,11 @@ export interface ResumeRequest {
    * before the pipeline resumes.
    */
   readonly answers?: readonly CaptureAnswerInput[];
+  /**
+   * Local concurrency request for parallel task waves (M4 design 20): a
+   * request, never authority — Profile/Policy ceilings clamp it at drive time.
+   */
+  readonly maxConcurrency?: number;
 }
 
 export interface AbortRequest {
@@ -131,6 +139,11 @@ export interface ProjectRequest {
 export interface RunRequest {
   readonly projectRoot: string;
   readonly dryRun: boolean;
+  /**
+   * Local concurrency request for parallel task waves (M4 design 20): a
+   * request, never authority — Profile/Policy ceilings clamp it at drive time.
+   */
+  readonly maxConcurrency?: number;
 }
 
 export interface ServeRequest {
@@ -168,6 +181,28 @@ export interface CoordinatorHostRequest {
   readonly configPath: string;
 }
 
+export interface SchedulerBlockerView {
+  readonly finding_id: string;
+  readonly rule?: string;
+  /**
+   * Exactly one recovery action per blocker (design §21): the typed scheduler
+   * recovery action, or `inspect_blocking_finding` when the Finding rule is
+   * not a typed scheduler blocker — never an invented "ignore and continue".
+   */
+  readonly recovery_action: string;
+}
+
+/**
+ * The scheduler facet of `harness status` (M4 design 19.2/19.3): the runtime
+ * SchedulerStatusProjection plus the operation binding, per-blocker recovery
+ * actions and the read-model digest (the digest is rendered only in JSON).
+ */
+export type SchedulerStatusView = SchedulerStatusProjection & {
+  readonly operation_id: string;
+  readonly blockers: readonly SchedulerBlockerView[];
+  readonly digest: string;
+};
+
 export interface RuntimeService {
   newProject(request: NewProjectRequest): Promise<CommandResult>;
   adoptProject(request: AdoptProjectRequest): Promise<CommandResult>;
@@ -196,6 +231,13 @@ export interface RuntimeService {
    * projects keep the exact pre-M3 status output (zero materialization).
    */
   remoteSummary?(request: ProjectRequest): Promise<Record<string, unknown> | undefined>;
+  /**
+   * Optional scheduler facet for `status` (M4 design 19.2/19.3): undefined
+   * unless the project composes a scheduler host (runtime.json `agent`) and an
+   * open operation exists, so unconfigured projects keep the exact pre-M4
+   * status output. Read-only — never acquires the Driver Lock.
+   */
+  schedulerStatus?(request: ProjectRequest): Promise<SchedulerStatusView | undefined>;
 }
 
 function stageUnavailable(
@@ -398,14 +440,17 @@ record returns input_required until --profile selects one explicitly; passing
 a different --profile records a new project profile revision that only
 affects future operations.
 `,
-  resume: `Usage: harness resume <workflow-operation-id> [--profile <lite|standard|governed>] [--answer <question-id>=<value> ...] [--answers <file.json>] [--json]
+  resume: `Usage: harness resume <workflow-operation-id> [--profile <lite|standard|governed>] [--answer <question-id>=<value> ...] [--answers <file.json>] [--max-concurrency <n>] [--json]
 
 Resume a paused orchestration from its last committed checkpoint. The
 workflow operation id is returned by earlier blocked or deferred runs. When
 capture pauses with clarification questions, submit answers with --answer
 (repeatable) or an --answers JSON file; a bare resume re-surfaces the
 questions. A legacy project without a profile record must pass --profile
-once to migrate explicitly before resuming.
+once to migrate explicitly before resuming. When the operation's execute
+phase runs parallel task waves, the resume re-acquires the shared local
+Driver Lock first; --max-concurrency is a local request clamped by
+Profile/Policy ceilings.
 `,
   abort: `Usage: harness abort <workflow-operation-id> [--actor <id>] [--json]
 
@@ -439,10 +484,14 @@ digest-bound MAY_IMPACT proposals; it never activates graph edges.
 Show the latest committed declarative ExecutionPlan: mode, bound impact set
 and task specifications.
 `,
-  run: `Usage: harness run [--dry-run] [--json]
+  run: `Usage: harness run [--dry-run] [--max-concurrency <n>] [--json]
 
 Execute the open workflow operation's planned tasks through the configured
-adapter. --dry-run renders the planned tasks without executing anything.
+adapter. When the accepted CapabilityPlan activates parallel_task_execution,
+the run drives the deterministic task waves under the shared local Driver
+Lock; --max-concurrency is a local request that Profile/Policy ceilings clamp
+(raising a ceiling requires a Policy Proposal). --dry-run renders the planned
+tasks without executing anything.
 `,
   verify: `Usage: harness verify [--json]
 
