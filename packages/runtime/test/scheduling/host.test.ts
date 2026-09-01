@@ -1,0 +1,399 @@
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+
+import { afterEach, describe, expect, it } from "vitest";
+
+import { createGitVcsAdapter } from "@universal-harness-internal/adapter-vcs-git";
+import {
+  canonicalizeJson,
+  compileCapabilityPlan,
+  contentDigest,
+  createProfileDecisionRecord,
+  createProjectProfileRecord,
+  harnessRootFor,
+  type CapabilityPlanRecord,
+} from "@universal-harness-internal/core";
+import type {
+  AgentAdapter,
+  AgentProviderManifest,
+  AgentRunResult,
+} from "@universal-harness-internal/plugin-sdk";
+
+import {
+  createNewProject,
+  createProjectSchedulerHost,
+  type ProjectSchedulerHost,
+} from "../../src/index.js";
+import { commitArtifacts } from "../../src/orchestration/kernel-coordinator.js";
+import { driverLockDirectoryName } from "../../src/scheduling/driver-lock.js";
+import {
+  generateKernelExecutionPlan,
+  readExecutionPlanContent,
+} from "../../src/planning/execution-plan.js";
+import { actionDigest } from "../../src/policy/action.js";
+import { buildDecision } from "../../src/policy/decision.js";
+import { mergePolicyLayers } from "../../src/policy/evaluator.js";
+import { WorkflowEngine, type WorkflowDependencies } from "../../src/workflow/operation.js";
+import { FIXED_NOW, cleanupDirectories, headOf, makeTempDir } from "../bootstrap/helpers.js";
+import { PLAN_CONSTRAINTS, approvedImpactSet, entryPath } from "../planning/fixtures.js";
+import { makeStartInput } from "../workflow/helpers.js";
+
+/**
+ * Project Scheduler Host composition (M4 plan Task 12 blocker): the host
+ * factory assembles every internal scheduling component around a real project
+ * and exposes only the ParallelExecutionBinding, the Scheduler Read Model and
+ * the Driver Lock acquisition. These tests drive a real two-task/two-wave
+ * operation end to end: real Ledger authority, real git worktrees and wave
+ * integration, the real default gate suite — only the policy resolver and the
+ * agent slot factory are substituted.
+ */
+afterEach(cleanupDirectories);
+
+const ITERATION_ID = "iteration_host1";
+const REQUIREMENT_DIGEST = "a".repeat(64);
+const POLICY_DIGEST = "b".repeat(64);
+
+const BUDGETS = {
+  task_ceiling: { steps: 100, tokens: 100_000, duration_ms: 600_000 },
+  iteration_ceiling: { steps: 1_000, tokens: 1_000_000, duration_ms: 3_600_000 },
+  iteration: { steps: 50, tokens: 50_000, duration_ms: 1_200_000 },
+} as const;
+
+const FAKE_MANIFEST: AgentProviderManifest = {
+  provider: "fake",
+  control: "managed",
+  trajectory_visibility: "full",
+  usage_metering: true,
+  side_effect_interception: true,
+  resume_semantics: "explicit",
+};
+
+function stubResult(): AgentRunResult {
+  return {
+    outcome: "handoff",
+    termination_reason: "completion",
+    completion_claimed: true,
+    summary: "done",
+    state_proposal: null,
+    dropped_proposal_fields: [],
+    change_summary: { files_changed: 1, insertions: 1, deletions: 0, paths: [] },
+    tool_activity: { total_calls: 0, governed_calls: 0, by_tool: {} },
+    usage: {
+      input_tokens: null,
+      output_tokens: null,
+      total_tokens: null,
+      duration_ms: 1,
+      metering: "unmetered",
+    },
+    evidence: [],
+    undeclared_writes: [],
+  };
+}
+
+/** Sequential mint; workflow and ledger ids stay deterministic per test. */
+function sequentialIds(): (kind: string) => string {
+  const counters = new Map<string, number>();
+  return (kind) => {
+    const next = (counters.get(kind) ?? 0) + 1;
+    counters.set(kind, next);
+    return `${kind}_h${String(next).padStart(3, "0")}`;
+  };
+}
+
+interface DrivenProject {
+  readonly projectRoot: string;
+  readonly deps: WorkflowDependencies;
+  readonly host: ProjectSchedulerHost;
+  readonly operationId: string;
+  readonly attemptId: string;
+  readonly capabilityPlan: CapabilityPlanRecord;
+  readonly planContentDigest: string;
+  readonly lockDirectory: string;
+}
+
+/**
+ * A real adopted-style project carrying: one workflow operation, an accepted
+ * Protocol 1.3 CapabilityPlan that activates parallel_task_execution, and an
+ * accepted Protocol 1.3 ExecutionPlan with task_api → task_web on two waves —
+ * every record committed through the production write path.
+ */
+async function makeDrivenProject(): Promise<DrivenProject> {
+  // One shared mint across bootstrap and setup: the Ledger rejects two events
+  // with the same id and different content, so separate counters collide.
+  const newId = sequentialIds();
+  const created = await createNewProject(
+    {
+      parentDirectory: makeTempDir("harness-host-"),
+      name: "host-demo",
+      intent: "add the first capability",
+    },
+    { vcs: createGitVcsAdapter(), now: () => FIXED_NOW, newId },
+  );
+  if (!created.ok) throw new Error(created.error.message);
+  const projectRoot = created.value.projectRoot;
+  const baseline = headOf(projectRoot);
+  // The host mints ledger/event ids through its own namespace: sharing the
+  // setup sequence would collide identical id strings with different content.
+  const hostIds = sequentialIds();
+  const hostNewId = (kind: string): string => `host_${hostIds(kind)}`;
+  const deps: WorkflowDependencies = {
+    projectRoot,
+    readBaseline: () => headOf(projectRoot),
+    now: () => FIXED_NOW,
+    newId,
+  };
+
+  const engine = new WorkflowEngine(deps);
+  const started = await engine.startOperation(
+    makeStartInput({
+      iterationId: ITERATION_ID,
+      baselineCommit: baseline,
+      requirementBaselineDigest: REQUIREMENT_DIGEST,
+      policyDigest: POLICY_DIGEST,
+    }),
+  );
+  const operationId = started.operation.workflow_operation_id;
+  const attemptId = started.operation.attempt_id;
+
+  const capabilityPlan = compileCapabilityPlan({
+    operation_id: operationId,
+    stage: "final",
+    protocol_version: "1.3.0",
+    project_profile: createProjectProfileRecord({
+      project_id: "project_host-demo",
+      revision: 1,
+      profile_id: "lite",
+      policy_digest: POLICY_DIGEST,
+      actor: "human:test",
+      effective_from: FIXED_NOW,
+    }),
+    profile_decision: createProfileDecisionRecord({
+      decision_kind: "project_profile_change",
+      project_id: "project_host-demo",
+      actor: "human:test",
+      idempotency_key: `profile-decision:host:${operationId}`,
+      current_profile_id: "lite",
+      decided_profile_id: "lite",
+      policy_digest: POLICY_DIGEST,
+      decided_at: FIXED_NOW,
+    }),
+    requirement_digest: REQUIREMENT_DIGEST,
+    risk_digest: contentDigest({ risk: "host-test" }),
+    policy_digest: POLICY_DIGEST,
+    baseline_digest: contentDigest({ baseline }),
+    policy: { required_capabilities: ["parallel_task_execution"] },
+    providers: ["isolated_workspace_provider", "structured_gate_provider"],
+  }) as CapabilityPlanRecord;
+  await commitArtifacts(deps, operationId, attemptId, [
+    {
+      path: `artifacts/capability-plans/${capabilityPlan.capability_plan_id}/${String(capabilityPlan.revision)}.json`,
+      content: `${canonicalizeJson(capabilityPlan)}\n`,
+    },
+  ]);
+
+  // A real Protocol 1.3 plan from the production kernel compiler; the plan
+  // node enters accepted exactly as its approval would leave it.
+  const { impactSet } = approvedImpactSet();
+  const records = generateKernelExecutionPlan(
+    impactSet,
+    {
+      executionKind: "workflow",
+      intentShape: "structured",
+      hasExistingGraph: true,
+      deterministicWork: true,
+      shared: {
+        goal: "ship the demo feature",
+        requirement_baseline_digest: REQUIREMENT_DIGEST,
+        policy_digest: POLICY_DIGEST,
+        baseline_commit: baseline,
+        capability_plan_digest: capabilityPlan.record_digest,
+      },
+      constraints: {
+        ...PLAN_CONSTRAINTS,
+        knownGates: [...PLAN_CONSTRAINTS.knownGates, "gate_ledger_integrity"],
+        repository_root: projectRoot,
+      },
+      protocol: "protocol13",
+      budgets: BUDGETS,
+      proposal: [
+        {
+          id: "task_api",
+          objective: "build the api slice",
+          impact_paths: [entryPath(impactSet, "requirement_01"), entryPath(impactSet, "test_01")],
+          expected_outputs: ["requirement_01", "test_01"],
+          capabilities: ["fs.read", "fs.write"],
+          tools: ["tool:fs"],
+          dependencies: [],
+          risk: "low",
+          budget: { steps: 10, tokens: 1_000, duration_ms: 300_000 },
+          write_paths: ["src/task_api"],
+          exclusive_resources: [],
+          acceptance: [{ description: "api works", verification: "unit test" }],
+          required_gates: ["gate_ledger_integrity"],
+        },
+        {
+          id: "task_web",
+          objective: "build the web slice",
+          impact_paths: [
+            entryPath(impactSet, "decision_01"),
+            entryPath(impactSet, "component_01"),
+            entryPath(impactSet, "code_01"),
+          ],
+          expected_outputs: ["decision_01", "component_01", "code_01"],
+          capabilities: ["fs.read", "fs.write"],
+          tools: ["tool:fs"],
+          dependencies: ["task_api"],
+          risk: "low",
+          budget: { steps: 10, tokens: 1_000, duration_ms: 300_000 },
+          write_paths: ["src/task_web"],
+          exclusive_resources: [],
+          acceptance: [{ description: "web works", verification: "unit test" }],
+          required_gates: ["gate_ledger_integrity"],
+        },
+      ],
+    },
+    { iterationId: ITERATION_ID, actor: "host-test", timestamp: FIXED_NOW },
+  );
+  const planContentDigest = readExecutionPlanContent(records.plan, {
+    tasks: records.tasks,
+    edges: records.edges,
+  }).content_digest;
+  const acceptedPlanDraft = Object.fromEntries(
+    Object.entries(records.plan).filter(([key]) => key !== "digest"),
+  ) as Record<string, unknown>;
+  acceptedPlanDraft.status = "accepted";
+  const acceptedPlan = {
+    ...acceptedPlanDraft,
+    digest: contentDigest(acceptedPlanDraft),
+  } as unknown as typeof records.plan;
+  await commitArtifacts(
+    deps,
+    operationId,
+    attemptId,
+    [
+      {
+        path: `artifacts/plans/${acceptedPlan.id}.json`,
+        content: `${canonicalizeJson(acceptedPlan)}\n`,
+      },
+      ...records.tasks.map((task) => ({
+        path: `artifacts/tasks/${task.id}.json`,
+        content: `${canonicalizeJson(task)}\n`,
+      })),
+    ],
+    records.edges,
+  );
+
+  const lockDirectory = join(
+    harnessRootFor(projectRoot),
+    "locks",
+    driverLockDirectoryName(operationId),
+  );
+  const host = createProjectSchedulerHost({
+    projectRoot,
+    readBaseline: () => headOf(projectRoot),
+    agentSlotFactory: {
+      adapter_manifest_digest: contentDigest({ adapter: "fake-slot-adapter" }),
+      manifest: FAKE_MANIFEST,
+      create: ({ worktree_root }): AgentAdapter => ({
+        name: "fake-slot-adapter",
+        manifest: FAKE_MANIFEST,
+        run: (envelope) => {
+          // The Driver Lock must be held while any task executes.
+          expect(existsSync(lockDirectory)).toBe(true);
+          const writeScope = envelope.proposed_write_paths[0];
+          if (writeScope === undefined) throw new Error("envelope carries no write scope");
+          const directory = join(worktree_root, writeScope);
+          mkdirSync(directory, { recursive: true });
+          writeFileSync(
+            join(directory, "outcome.ts"),
+            `export const task = ${JSON.stringify(envelope.task_id)};\n`,
+          );
+          return Promise.resolve(stubResult());
+        },
+      }),
+    },
+    adapterCapabilities: ["fs.read", "fs.write"],
+    maxConcurrency: 2,
+    policyResolver: (action) =>
+      buildDecision({
+        outcome: "allow",
+        reasons: [],
+        action_digest: actionDigest(action),
+        effective: mergePolicyLayers([]).effective,
+      }),
+    projectionStorePath: ":memory:",
+    now: () => FIXED_NOW,
+    newId: hostNewId,
+  });
+  return {
+    projectRoot,
+    deps,
+    host,
+    operationId,
+    attemptId,
+    capabilityPlan,
+    planContentDigest,
+    lockDirectory,
+  };
+}
+
+describe("createProjectSchedulerHost", () => {
+  it("drives a real two-task/two-wave operation to completion", async () => {
+    const fixture = await makeDrivenProject();
+    const outcome = await fixture.host.parallelExecution.port.run({
+      operation_id: fixture.operationId,
+      iteration_id: ITERATION_ID,
+      capability_plan_digest: fixture.capabilityPlan.record_digest,
+      expected_plan_digest: fixture.planContentDigest,
+      driver_lock: fixture.host.parallelExecution.driverLock(),
+    });
+
+    expect(outcome.status).toBe("completed");
+    expect(outcome.operation_id).toBe(fixture.operationId);
+    expect(outcome.wave_integration_digests).toHaveLength(2);
+
+    // The read model reflects the integrated waves, byte-stable across reads.
+    const model = await fixture.host.readSchedulerModel(fixture.operationId);
+    expect(model.capability_status).toBe("active");
+    expect(model.plan?.waves).toHaveLength(2);
+    expect(model.tasks.map((task) => [task.task_id, task.status])).toEqual([
+      ["task_api", "integrated"],
+      ["task_web", "integrated"],
+    ]);
+    const reread = await fixture.host.readSchedulerModel(fixture.operationId);
+    expect(reread).toEqual(model);
+  }, 60_000);
+
+  it("releases the driver lock after the drive finishes", async () => {
+    const fixture = await makeDrivenProject();
+    await fixture.host.parallelExecution.port.run({
+      operation_id: fixture.operationId,
+      iteration_id: ITERATION_ID,
+      capability_plan_digest: fixture.capabilityPlan.record_digest,
+      expected_plan_digest: fixture.planContentDigest,
+      driver_lock: fixture.host.parallelExecution.driverLock(),
+    });
+
+    expect(existsSync(fixture.lockDirectory)).toBe(false);
+    const reacquired = await fixture.host.acquireDriverLock(fixture.operationId);
+    expect(existsSync(fixture.lockDirectory)).toBe(true);
+    await reacquired.release();
+    expect(existsSync(fixture.lockDirectory)).toBe(false);
+  }, 60_000);
+
+  it("reports inactive_by_profile when the operation has no parallel capability", async () => {
+    const fixture = await makeDrivenProject();
+    const engine = new WorkflowEngine(fixture.deps);
+    const other = await engine.startOperation(
+      makeStartInput({
+        iterationId: "iteration_host2",
+        baselineCommit: headOf(fixture.projectRoot),
+      }),
+    );
+
+    const model = await fixture.host.readSchedulerModel(other.operation.workflow_operation_id);
+    expect(model.capability_status).toBe("inactive_by_profile");
+    expect(model.plan).toBeNull();
+    expect(model.tasks).toEqual([]);
+  }, 60_000);
+});

@@ -295,8 +295,11 @@ export function driveParallelTaskExecution(
           .find((candidate) => !integrated.has(candidate.wave_index));
         if (wave === undefined) return finish("completed");
 
-        // Every Task of the wave must be candidate_validated (Ledger-derived);
-        // a provisional or unfinished result blocks instead of integrating.
+        // Every Task of the wave must be candidate_validated (Ledger-derived)
+        // or freshly verified: "verifying" with a queued patch and a released
+        // lease is a completed run awaiting the layer-2 candidate gates that
+        // validateTaskCandidate runs below. A provisional or unfinished
+        // result — or a still-granted lease — blocks instead of integrating.
         const projection = projectSchedulerState({ dag, ...facts }, null);
         const statusOf = new Map(
           projection.tasks.map((task) => [task.task_id, task.status] as const),
@@ -304,17 +307,22 @@ export function driveParallelTaskExecution(
         const queuedByTask = new Map(
           (facts.candidate_patches ?? []).map((fact) => [fact.task_id, fact] as const),
         );
+        const latestLeases = latestLeaseByTask(facts.leases);
         if (
-          !wave.task_ids.every(
-            (taskId) => statusOf.get(taskId) === "candidate_validated" && queuedByTask.has(taskId),
-          )
+          !wave.task_ids.every((taskId) => {
+            const status = statusOf.get(taskId);
+            return (
+              queuedByTask.has(taskId) &&
+              latestLeases.get(taskId)?.state === "released" &&
+              (status === "candidate_validated" || status === "verifying")
+            );
+          })
         ) {
           return finish("blocked");
         }
 
         // Refill the in-memory integration buffer from the recovery view (the
         // queue is process-local; the Ledger is the authority).
-        const latestLeases = latestLeaseByTask(facts.leases);
         for (const taskId of wave.task_ids) {
           const queued = queuedByTask.get(taskId);
           if (queued === undefined) return finish("blocked");
@@ -833,6 +841,17 @@ export function createLedgerSchedulerAuthority(
         assertSchedulingRecordSemantics(candidate as SchedulingRecord);
         leases.push(candidate);
       }
+      // buildTaskLeaseChain validates in Ledger encounter order; artifact
+      // filenames are digest-derived, so re-derive the chain order: fencing
+      // tokens strictly increase per Task, and within one lease the granted
+      // record always precedes its terminal transition.
+      const leaseStateRank = (state: TaskLeaseRecord["state"]): number =>
+        state === "granted" ? 0 : 1;
+      leases.sort(
+        (left, right) =>
+          left.fencing_token - right.fencing_token ||
+          leaseStateRank(left.state) - leaseStateRank(right.state),
+      );
       const waves: WaveIntegrationRecord[] = [];
       for (const relative of refs.waves) {
         const parsed = parseJsonArtifact(harnessRoot, relative, allowed);

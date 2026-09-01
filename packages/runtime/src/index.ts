@@ -1433,6 +1433,22 @@ export {
 } from "./scheduling/read-model.js";
 export { type ParallelExecutionBinding } from "./orchestration/pipeline-types.js";
 
+/**
+ * M4 Task 12 public boundary: the Project Scheduler Host composition factory.
+ * The host assembles every internal scheduling component (Task 10/11) around a
+ * real project; only the factory and its input/output types are public —
+ * `TaskDagPort`/`PolicyDecisionPort` stay runtime-internal (global constraint
+ * 25), and `DriverLockHandle` flows structurally like the existing
+ * `ParallelExecutionBinding` pattern.
+ */
+export {
+  createProjectSchedulerHost,
+  type ProjectSchedulerHost,
+  type ProjectSchedulerHostOptions,
+} from "./scheduling/host.js";
+export { type AgentSlotFactory } from "./scheduling/agent-pool.js";
+export { type SchedulerPolicyResolver } from "./scheduling/policy-adapters.js";
+
 export * from "./model/index.js";
 
 export const workspacePackageName = "@universal-harness-internal/runtime" as const;
