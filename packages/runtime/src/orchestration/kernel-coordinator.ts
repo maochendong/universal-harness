@@ -3,10 +3,13 @@ import {
   LedgerRepository,
   PROTOCOL_VERSION,
   PROTOCOL_1_1_SCHEMA_REGISTRY,
+  PROTOCOL_1_3_VERSION,
+  CapabilityPlanRecordV13Schema,
   canonicalizeJson,
   canonicalizeLocator,
   assertCapabilityPlanFinal,
   compileCriterionAssertions,
+  compileSchemaValidator,
   contentDigest,
   criterionSemanticDigest,
   deriveAcceptedPrdId,
@@ -17,6 +20,7 @@ import {
   readManagedManifest,
   resolveHarnessPath,
   sha256Hex,
+  transactionRequiredReaderVersion,
   ulid,
   validateCriterionAssertionCoverage,
   validateSchema,
@@ -574,7 +578,7 @@ export async function commitArtifacts(
     }
     return draft as LifecycleEvent;
   });
-  await repository.commit({
+  const transaction = {
     ledger_operation_id: ledgerOperationId,
     workflow_operation_id: workflowOperationId,
     attempt_id: attemptId,
@@ -582,6 +586,17 @@ export async function commitArtifacts(
     artifacts,
     edges,
     events,
+  };
+  // Reader gate (Protocol 1.2+): a transaction carrying post-1.1 authoritative
+  // records (e.g. a Protocol 1.3 CapabilityPlan revision) must pin the exact
+  // newest carried version; legacy 1.0/1.1 transactions omit the field, so
+  // their manifest bytes are unchanged.
+  const requiredReaderVersion = transactionRequiredReaderVersion(transaction);
+  await repository.commit({
+    ...transaction,
+    ...(requiredReaderVersion === undefined
+      ? {}
+      : { required_reader_version: requiredReaderVersion }),
   });
 }
 export interface PipelineContext {
@@ -935,6 +950,22 @@ function capabilityPlanArtifactPath(plan: CapabilityPlanRecord): string {
   return `artifacts/capability-plans/${plan.capability_plan_id}/${String(plan.revision)}.json`;
 }
 
+/**
+ * Lazily compiled validator for Protocol 1.3 CapabilityPlan revisions. The 1.3
+ * schema versions the existing capability_plan kind instead of registering a
+ * new domain key (core registry note above CapabilityPlanRecordV13Schema), so
+ * no registry entry can address it — dispatch on the record's pinned
+ * protocol_version instead.
+ */
+let capabilityPlanV13Validator: ReturnType<typeof compileSchemaValidator> | undefined;
+function validateCapabilityPlanRecord(record: Record<string, unknown>) {
+  if (record["protocol_version"] === PROTOCOL_1_3_VERSION) {
+    capabilityPlanV13Validator ??= compileSchemaValidator(CapabilityPlanRecordV13Schema);
+    return capabilityPlanV13Validator(record);
+  }
+  return PROTOCOL_1_1_SCHEMA_REGISTRY.validate("capability-plan", record);
+}
+
 function assertCapabilityPlanRecord(value: unknown, path: string): CapabilityPlanRecord {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
     throw new OrchestrationError(
@@ -943,7 +974,7 @@ function assertCapabilityPlanRecord(value: unknown, path: string): CapabilityPla
     );
   }
   const record = value as Record<string, unknown>;
-  const validation = PROTOCOL_1_1_SCHEMA_REGISTRY.validate("capability-plan", record);
+  const validation = validateCapabilityPlanRecord(record);
   if (!validation.valid || !verifyRecordEnvelope(record)) {
     throw new OrchestrationError(
       "binding_drift",
