@@ -242,6 +242,87 @@ describe("projectSchedulerState status precedence", () => {
     expect(projection.tasks.find((task) => task.task_id === "task_a")?.status).toBe("blocked");
   });
 
+  it("marks a successful retry as candidate_validated once its lease released with valid evidence", () => {
+    // Regression for the review finding: sequence is a per-run counter, so the
+    // projection must follow the current lease's run, never a cross-run
+    // sequence comparison that resurrects the failed first attempt.
+    const first = grantedLease("task_a", "run_a");
+    const firstReleased = closedLease(first, "released");
+    const retry = grantedLease("task_a", "run_b", {
+      attempt_number: 2,
+      retry_kind: "executor_retry",
+      fencing_token: first.fencing_token + 1,
+    });
+    const retryReleased = closedLease(retry, "released");
+    const projection = projectSchedulerState(
+      facts({
+        leases: [first, firstReleased, retry, retryReleased],
+        runs: [
+          runStarted("task_a", "run_a"),
+          runTerminated("task_a", "run_a", "partial", "timeout"),
+          runStarted("task_a", "run_b"),
+          runTerminated("task_a", "run_b", "handoff", "completion"),
+        ],
+        gate_evidence: [gateEvidence("task_a")],
+      }),
+      null,
+    );
+    expect(projection.tasks.find((task) => task.task_id === "task_a")?.status).toBe(
+      "candidate_validated",
+    );
+  });
+
+  it("reports a retry in flight as running, never verifying from the failed first attempt", () => {
+    const first = grantedLease("task_a", "run_a");
+    const firstReleased = closedLease(first, "released");
+    const retry = grantedLease("task_a", "run_b", {
+      attempt_number: 2,
+      retry_kind: "executor_retry",
+      fencing_token: first.fencing_token + 1,
+    });
+    const projection = projectSchedulerState(
+      facts({
+        leases: [first, firstReleased, retry],
+        runs: [
+          runStarted("task_a", "run_a"),
+          runTerminated("task_a", "run_a", "partial", "timeout"),
+          runStarted("task_a", "run_b"),
+        ],
+      }),
+      null,
+    );
+    expect(projection.tasks.find((task) => task.task_id === "task_a")?.status).toBe("running");
+  });
+
+  it("selects the latest lease by fencing token regardless of input order", () => {
+    // The projection has no ordering precondition on its facts: the highest
+    // fencing token is the current attempt (design §8.2).
+    const first = grantedLease("task_a", "run_a");
+    const firstReleased = closedLease(first, "released");
+    const retry = grantedLease("task_a", "run_b", {
+      attempt_number: 2,
+      retry_kind: "executor_retry",
+      fencing_token: first.fencing_token + 1,
+    });
+    const retryReleased = closedLease(retry, "released");
+    const projection = projectSchedulerState(
+      facts({
+        leases: [retryReleased, retry, firstReleased, first],
+        runs: [
+          runStarted("task_a", "run_a"),
+          runTerminated("task_a", "run_a", "partial", "timeout"),
+          runStarted("task_a", "run_b"),
+          runTerminated("task_a", "run_b", "handoff", "completion"),
+        ],
+        gate_evidence: [gateEvidence("task_a")],
+      }),
+      null,
+    );
+    expect(projection.tasks.find((task) => task.task_id === "task_a")?.status).toBe(
+      "candidate_validated",
+    );
+  });
+
   it("marks a policy-denied termination as blocked, never retryable", () => {
     const granted = grantedLease("task_a", "run_a");
     const released = closedLease(granted, "released");

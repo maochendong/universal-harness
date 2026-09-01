@@ -119,35 +119,56 @@ interface TerminalRunRecord {
   readonly termination_reason: string;
 }
 
+/**
+ * The current lease of one Task is the record with the highest fencing token
+ * (design §8.2): tokens increase strictly across attempts, so the projection
+ * has no ordering precondition on its input facts.
+ */
 function latestLeaseByTask(leases: readonly TaskLeaseRecord[]): Map<string, TaskLeaseRecord> {
+  // Within one lease chain (same fencing_token) the terminal record supersedes
+  // the granted one; ties beyond that follow Ledger input order.
+  const stateRank = (state: TaskLeaseRecord["state"]): number => (state === "granted" ? 0 : 1);
   const latest = new Map<string, TaskLeaseRecord>();
   for (const record of leases) {
-    latest.set(record.task_id, record);
+    const current = latest.get(record.task_id);
+    if (
+      current === undefined ||
+      record.fencing_token > current.fencing_token ||
+      (record.fencing_token === current.fencing_token &&
+        stateRank(record.state) >= stateRank(current.state))
+    ) {
+      latest.set(record.task_id, record);
+    }
   }
   return latest;
 }
 
-/** Latest record per run chain, then the chain with the highest sequence. */
-function latestRunRecord(runs: readonly RunRecord[], taskId: string): RunRecord | undefined {
+/**
+ * The run that matters for status projection is the one the Task's current
+ * lease binds (design §7/§8: one lease drives one run, one attempt). Run
+ * `sequence` is a per-run stream counter, so comparing it across runs is
+ * meaningless and must never select the chain. When no lease exists yet, the
+ * last record in Ledger input order is the only deterministic fallback.
+ */
+function latestRunRecord(
+  runs: readonly RunRecord[],
+  taskId: string,
+  currentRunId: string | undefined,
+): RunRecord | undefined {
+  let fallback: RunRecord | undefined;
   const byRun = new Map<string, RunRecord>();
   for (const record of runs) {
     if (record.task_id !== taskId) continue;
+    fallback = record;
     const current = byRun.get(record.run_id);
-    if (
-      current === undefined ||
-      record.sequence > current.sequence ||
-      (record.sequence === current.sequence && record.record_kind > current.record_kind)
-    ) {
+    if (current === undefined || record.sequence >= current.sequence) {
       byRun.set(record.run_id, record);
     }
   }
-  return [...byRun.values()].sort((left, right) =>
-    left.sequence === right.sequence
-      ? left.run_id < right.run_id
-        ? -1
-        : 1
-      : left.sequence - right.sequence,
-  )[0];
+  if (currentRunId !== undefined) {
+    return byRun.get(currentRunId);
+  }
+  return fallback;
 }
 
 function terminalRunOf(record: RunRecord | undefined): TerminalRunRecord | undefined {
@@ -232,7 +253,7 @@ export function projectSchedulerState(
 
   const tasks: TaskStatusProjection[] = dag.tasks.map((task) => {
     const lease = latestLeases.get(task.id);
-    const terminalRun = terminalRunOf(latestRunRecord(facts.runs, task.id));
+    const terminalRun = terminalRunOf(latestRunRecord(facts.runs, task.id, lease?.run_id));
     const evidence = readCandidateEvidence(facts.gate_evidence, task.id);
     const waveIndex = waveOfTask.get(task.id) ?? null;
 
