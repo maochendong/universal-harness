@@ -104,6 +104,7 @@ export function grantedLease(
 export function closedLease(
   granted: TaskLeaseRecord,
   state: "released" | "expired" | "revoked",
+  overrides: Partial<TaskLeaseRecord> = {},
 ): TaskLeaseRecord {
   // Strip the sealed envelope fields; the builder re-derives them.
   const identity: Record<string, unknown> = { ...granted };
@@ -119,6 +120,7 @@ export function closedLease(
     previous_lease_record_digest: granted.record_digest,
     state,
     consumed_budget: { steps: 1, tokens: 10 },
+    ...overrides,
   });
 }
 

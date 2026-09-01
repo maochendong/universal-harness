@@ -203,6 +203,16 @@ export interface SchedulerLedgerFacts {
  * staged Ledger transaction; tests substitute a recording authority. This
  * interface stays runtime-internal and is never re-exported through the
  * public barrel.
+ *
+ * Read-side contract every production authority must honor:
+ * - `gate_evidence` is latest-by-evidence_id: when several committed records
+ *   share one evidence_id, the record written by the newest Ledger operation
+ *   wins. The Task 10 recovery downgrade (re-committing the same evidence_id
+ *   as a provisional copy) depends on this supersession.
+ * - `candidate_patches` is a derived view (Task 10 review obligation): the
+ *   TaskIntegrationQueued event (task/run identity, patch digest) joined with
+ *   the committed `task_candidate_patch` evidence reference (locator), never
+ *   a separately stored fact.
  */
 export interface SchedulerAuthority {
   readFacts(operationId: string): Promise<SchedulerLedgerFacts>;

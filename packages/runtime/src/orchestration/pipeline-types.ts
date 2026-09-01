@@ -36,6 +36,8 @@ import { type AbortReason, type RecoverableBlockReason } from "../workflow/state
 import { type OrchestrationPhase } from "./phases.js";
 import { type ExecutionBinding, type OrchestrationExecutor } from "./execution-binding.js";
 import type { StrictTddExecutionPort } from "../tdd/execution-runner.js";
+import type { DriverLockHandle } from "../scheduling/driver-lock.js";
+import type { ParallelOperationLease, ParallelTaskExecutionPort } from "./scheduler-runtime.js";
 
 /**
  * Shared orchestration contracts (plan Task 8-A): the error vocabulary,
@@ -179,6 +181,17 @@ export interface PhaseProgressEvent {
   /** `phase_paused` only: outcome status that paused the pipeline. */
   readonly paused_status?: string;
 }
+/**
+ * Host wiring for the parallel_task_execution subgraph (M4 design 10.2/22):
+ * the driver port plus lazy accessors for the Driver Lock and the connected-
+ * mode M3 Operation Lease the port validates before any scheduling.
+ */
+export interface ParallelExecutionBinding {
+  readonly port: ParallelTaskExecutionPort;
+  readonly driverLock: () => DriverLockHandle;
+  /** Connected mode only; standalone hosts omit it. */
+  readonly operationLease?: () => ParallelOperationLease | undefined;
+}
 export interface OrchestratorDependencies {
   readonly projectRoot: string;
   /** Current Git baseline (HEAD) the next ledger commit must build on. */
@@ -219,6 +232,13 @@ export interface OrchestratorDependencies {
   readonly execution?: ExecutionBinding;
   /** Required-task executor used only when the accepted DAG marks execute with strict_tdd. */
   readonly strictTdd?: StrictTddExecutionPort;
+  /**
+   * Parallel-task execution binding (M4 design 10.2), consulted only when the
+   * accepted DAG marks execute with the parallel_task_execution subgraph. The
+   * Driver Lock and — in connected mode — the M3 Operation Lease are resolved
+   * lazily so standalone operation construction never touches them.
+   */
+  readonly parallelExecution?: ParallelExecutionBinding;
   /** Legacy host seam; treated as an unproven delegated Agent binding. */
   readonly execute?: OrchestrationExecutor;
   /**

@@ -178,7 +178,7 @@ describe("lite kernel-only vertical loop", { timeout: 60000 }, () => {
     expect(outcome.status).toBe("completed");
 
     const capabilities = collectProjectStatus(projectRoot).capabilities;
-    expect(capabilities).toHaveLength(5);
+    expect(capabilities).toHaveLength(6);
     for (const entry of capabilities) {
       expect(entry.resolution).toBe("inactive_by_profile");
       expect(entry.generic_status).toBe("not_enabled_by_profile");
@@ -188,6 +188,7 @@ describe("lite kernel-only vertical loop", { timeout: 60000 }, () => {
       "design_governance",
       "impact_analysis",
       "independent_evaluation",
+      "parallel_task_execution",
       "strict_tdd",
     ]);
   });

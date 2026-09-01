@@ -33,6 +33,8 @@ import type { ProfileModuleStatusEntry } from "../orchestration/profile-modules.
 import { projectFindingGroups, type FindingGroupProjection } from "../finding/groups.js";
 import { projectActiveRun, type ActiveRunProjection } from "../observability/active-run.js";
 import { readLiveObservations } from "../observability/live-spool.js";
+import type { SchedulerReadModel } from "../scheduling/read-model.js";
+import { schedulerRecoveryActionFor } from "../orchestration/scheduler-runtime.js";
 
 /**
  * Project status (design 11.2 `harness status`, plan Task 22). The report is
@@ -72,6 +74,11 @@ export interface ProjectStatus {
   readonly budget_observations?: readonly BudgetObservation[];
   /** T9: per-capability profile resolution, e.g. Lite's not_enabled_by_profile. */
   readonly capabilities: readonly ProfileModuleStatusEntry[];
+  /**
+   * M4 scheduler facet (design 19.2/19.3); present once the CLI wires the
+   * Scheduler Read Model into the collector (plan Task 12).
+   */
+  readonly scheduler?: SchedulerStatusProjection;
   readonly next_action: string;
 }
 
@@ -514,6 +521,74 @@ export function deriveProjectStatus(input: StatusDerivationInput): DerivedStatus
       ? {}
       : { adapter_profile_digest: input.latestSnapshot.adapter_profile_digest }),
     next_action: nextAction,
+  };
+}
+
+/**
+ * Scheduler facet of the status report (M4 design 19.2/19.3, plan Task 11
+ * step 7): a pure projection of the API-facing Scheduler Read Model —
+ * capability activation, wave progress, budget consumption/reservation,
+ * pending scheduler Approvals and blocking Findings, plus the live-projection
+ * health. Inactive capability projects exactly the inactive marker; nothing
+ * here invents progress the Ledger did not commit.
+ */
+export interface SchedulerStatusProjection {
+  readonly capability_status: "active" | "inactive_by_profile";
+  readonly operation_status?: string;
+  readonly live_state?: "observed" | "rebuilding";
+  readonly waves?: { readonly total: number; readonly integrated: number };
+  readonly budget?: SchedulerReadModel["budget"];
+  readonly pending_approvals: readonly string[];
+  readonly blocking_findings: readonly string[];
+  readonly next_action?: string;
+}
+
+export function projectSchedulerStatus(model: SchedulerReadModel): SchedulerStatusProjection {
+  if (model.capability_status === "inactive_by_profile") {
+    return {
+      capability_status: "inactive_by_profile",
+      pending_approvals: [],
+      blocking_findings: [],
+    };
+  }
+  const pendingApprovals = model.approvals.map((request) => request.request_id).sort(byId);
+  const orderedFindings = [...model.findings].sort((left, right) => byId(left.id, right.id));
+  const integratedTaskIds = new Set(
+    model.tasks.filter((task) => task.status === "integrated").map((task) => task.task_id),
+  );
+  const waves = model.plan?.waves ?? [];
+  let nextAction: string | undefined;
+  if (pendingApprovals.length > 0) {
+    nextAction = `resolve approval request ${pendingApprovals[0]}`;
+  } else if (orderedFindings.length > 0) {
+    const first = orderedFindings[0] as (typeof orderedFindings)[number];
+    const extension = first.extensions?.["harness.finding"];
+    const rule =
+      typeof extension === "object" && extension !== null
+        ? (extension as { rule?: unknown }).rule
+        : undefined;
+    const action = typeof rule === "string" ? schedulerRecoveryActionFor(rule) : undefined;
+    nextAction =
+      action === undefined
+        ? `inspect blocking finding ${first.id}`
+        : `scheduler recovery for finding ${first.id}: ${action}`;
+  } else if (model.operation.live_state === "rebuilding") {
+    nextAction = "live scheduler projection is rebuilding from the Ledger";
+  }
+  return {
+    capability_status: "active",
+    operation_status: model.operation.status,
+    live_state: model.operation.live_state,
+    waves: {
+      total: waves.length,
+      integrated: waves.filter((wave) =>
+        wave.task_ids.every((taskId) => integratedTaskIds.has(taskId)),
+      ).length,
+    },
+    budget: model.budget,
+    pending_approvals: pendingApprovals,
+    blocking_findings: orderedFindings.map((finding) => finding.id),
+    ...(nextAction === undefined ? {} : { next_action: nextAction }),
   };
 }
 

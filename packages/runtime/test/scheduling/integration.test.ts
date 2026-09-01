@@ -9,21 +9,14 @@ import {
 import { describe, expect, it } from "vitest";
 
 import type { ApprovalRequestRecord } from "../../src/approval/request.js";
-import {
-  buildGateEvidence,
-  type GateEvidenceRecord,
-} from "../../src/gates/evidence.js";
+import { buildGateEvidence, type GateEvidenceRecord } from "../../src/gates/evidence.js";
 import { normalizeGateDefinition, type GateDefinition } from "../../src/gates/provider.js";
 import { actionDigest } from "../../src/policy/action.js";
 import { buildDecision, type PolicyDecision } from "../../src/policy/decision.js";
 import { mergePolicyLayers } from "../../src/policy/evaluator.js";
-import {
-  taskSemanticDigest,
-  type Protocol13TaskSpecification,
-} from "../../src/planning/task.js";
+import { taskSemanticDigest, type Protocol13TaskSpecification } from "../../src/planning/task.js";
 import type { ParallelWave } from "../../src/planning/waves.js";
 import {
-  CandidateIntegrationError,
   bindSchedulingEvidence,
   createCandidateIntegrationController,
   operationRefFor,
@@ -34,12 +27,10 @@ import {
   type WaveGatePort,
   type WaveIntegrationGitPort,
 } from "../../src/scheduling/integration.js";
-import { buildTaskLeaseChain, terminateTaskLease } from "../../src/scheduling/lease.js";
+import { terminateTaskLease } from "../../src/scheduling/lease.js";
 import { schedulerPolicyAction } from "../../src/scheduling/policy-adapters.js";
 import type { TaskDagSnapshot } from "../../src/scheduling/ports.js";
-import type {
-  SchedulerEventSpec,
-} from "../../src/scheduling/events.js";
+import type { SchedulerEventSpec } from "../../src/scheduling/events.js";
 import type {
   SchedulerAuthority,
   SchedulerLedgerFacts,
@@ -74,7 +65,10 @@ const CONTROL_PROFILE = {
 const hex40 = (letter: string): string => letter.repeat(40);
 const BASE_COMMIT = hex40("b");
 
-function task(id: string, overrides: Partial<Protocol13TaskSpecification> = {}): Protocol13TaskSpecification {
+function task(
+  id: string,
+  overrides: Partial<Protocol13TaskSpecification> = {},
+): Protocol13TaskSpecification {
   return {
     id,
     objective: `Implement ${id}`,
@@ -209,8 +203,16 @@ function schedulingEvidence(spec: EvidenceSpec): GateEvidenceRecord {
   });
 }
 
-function evidenceRef(record: GateEvidenceRecord): { kind: string; locator: string; digest: string } {
-  return { kind: "gate_result", locator: `ledger://evidence/${record.evidence_id}`, digest: record.digest };
+function evidenceRef(record: GateEvidenceRecord): {
+  kind: string;
+  locator: string;
+  digest: string;
+} {
+  return {
+    kind: "gate_result",
+    locator: `ledger://evidence/${record.evidence_id}`,
+    digest: record.digest,
+  };
 }
 
 class IntegrationAuthority implements SchedulerAuthority {
@@ -279,7 +281,10 @@ class FakeWaveGit implements WaveIntegrationGitPort {
   casResult = true;
   private counter = 0;
 
-  async createCandidateWorktree(input: { base_commit: string; wave_index: number }): Promise<string> {
+  async createCandidateWorktree(input: {
+    base_commit: string;
+    wave_index: number;
+  }): Promise<string> {
     this.worktreeBases.push(input.base_commit);
     this.counter += 1;
     return `fake_worktree_${String(this.counter)}`;
@@ -295,7 +300,11 @@ class FakeWaveGit implements WaveIntegrationGitPort {
     this.applied.push(input.patch.task_id);
   }
 
-  async commitCandidate(input: { worktree_root: string; task_id: string; message: string }): Promise<string> {
+  async commitCandidate(input: {
+    worktree_root: string;
+    task_id: string;
+    message: string;
+  }): Promise<string> {
     const commit = contentDigest({ commit: input.task_id, n: this.commits.length }).slice(0, 40);
     this.commits.push(commit);
     return commit;
@@ -375,7 +384,10 @@ class FakeWaveGates implements WaveGatePort {
   }
 }
 
-function patchFor(taskSpec: Protocol13TaskSpecification, changedPaths: readonly string[] = [`src/${taskSpec.id}.ts`]): TaskCandidatePatch {
+function patchFor(
+  taskSpec: Protocol13TaskSpecification,
+  changedPaths: readonly string[] = [`src/${taskSpec.id}.ts`],
+): TaskCandidatePatch {
   const patch = `diff --git a/${changedPaths[0]} b/${changedPaths[0]}\n`;
   return {
     task_id: taskSpec.id,
@@ -414,7 +426,12 @@ function harness(): Harness {
 async function prepareCandidate(
   h: Harness,
   tasks: readonly Protocol13TaskSpecification[],
-): Promise<{ dag: TaskDagSnapshot; wave: ParallelWave; candidateCommit: string; candidate: Awaited<ReturnType<CandidateIntegrationController["rebuildWaveCandidate"]>> }> {
+): Promise<{
+  dag: TaskDagSnapshot;
+  wave: ParallelWave;
+  candidateCommit: string;
+  candidate: Awaited<ReturnType<CandidateIntegrationController["rebuildWaveCandidate"]>>;
+}> {
   const wave: ParallelWave = { wave_index: 0, task_ids: tasks.map((t) => t.id) };
   const dag = dagFor(tasks, [wave]);
   for (const taskSpec of tasks) await h.controller.queueTaskCandidate(patchFor(taskSpec));
@@ -464,7 +481,12 @@ async function validateOne(
   return h.controller.validateTaskCandidate(input);
 }
 
-function allowWaveDecision(dag: TaskDagSnapshot, wave: ParallelWave, baseCommit: string, authority: IntegrationAuthority): PolicyDecision {
+function allowWaveDecision(
+  dag: TaskDagSnapshot,
+  wave: ParallelWave,
+  baseCommit: string,
+  authority: IntegrationAuthority,
+): PolicyDecision {
   const input = waveIntegrationPolicyInput({
     dag,
     wave,
@@ -571,9 +593,9 @@ describe("rebuildWaveCandidate", () => {
       "integration_conflict",
     ]);
     const blocking = h.authority.findings[1];
-    expect(
-      (blocking?.extensions?.["harness.finding"] as { blocking?: boolean }).blocking,
-    ).toBe(true);
+    expect((blocking?.extensions?.["harness.finding"] as { blocking?: boolean }).blocking).toBe(
+      true,
+    );
   });
 
   it("treats an operation-local ref drift at rebuild time as baseline_drift, never a retry", async () => {
@@ -638,7 +660,12 @@ describe("validateTaskCandidate", () => {
     const taskA = task("task_a");
     const { dag, candidate } = await prepareCandidate(h, [taskA]);
     void dag;
-    const validation = await validateOne(h, dagFor([taskA], [{ wave_index: 0, task_ids: ["task_a"] }]), candidate, taskA);
+    const validation = await validateOne(
+      h,
+      dagFor([taskA], [{ wave_index: 0, task_ids: ["task_a"] }]),
+      candidate,
+      taskA,
+    );
     expect(validation.status).toBe("candidate_validated");
     expect(validation.task_id).toBe("task_a");
     expect(validation.evidence_digests.length).toBe(2);
@@ -651,7 +678,9 @@ describe("validateTaskCandidate", () => {
     const { candidate } = await prepareCandidate(h, [taskA]);
     const { lease, taskEvidence } = preloadTaskFacts(h, taskA, candidate.candidate_commit);
     // A newer attempt superseded the validating lease.
-    h.authority.leases.push(...leaseChainFor(taskA, { token: 2, state: "released", runId: "run_task_a_2" }));
+    h.authority.leases.push(
+      ...leaseChainFor(taskA, { token: 2, state: "released", runId: "run_task_a_2" }),
+    );
     await expect(
       h.controller.validateTaskCandidate({
         candidate,
@@ -693,7 +722,11 @@ describe("validateTaskCandidate", () => {
     const { candidate } = await prepareCandidate(h, [taskA]);
     const { lease, taskEvidence } = preloadTaskFacts(h, taskA, candidate.candidate_commit);
 
-    const mutate = (record: GateEvidenceRecord, field: string, value: unknown): GateEvidenceRecord => {
+    const mutate = (
+      record: GateEvidenceRecord,
+      field: string,
+      value: unknown,
+    ): GateEvidenceRecord => {
       const binding = {
         ...(record.extensions?.["harness.scheduling"] as Record<string, unknown>),
         [field]: value,
@@ -977,7 +1010,9 @@ describe("acceptWave", () => {
     expect(h.authority.waveIntegrations).toHaveLength(0);
     // No lease or run transition: validated Tasks never return to retry_pending.
     expect(
-      h.authority.batches.flat().some((t) => t.kind === "terminate_lease" || t.kind === "record_run"),
+      h.authority.batches
+        .flat()
+        .some((t) => t.kind === "terminate_lease" || t.kind === "record_run"),
     ).toBe(false);
     const completed = h.authority.events.find((e) => e.eventType === "WaveGateCompleted");
     expect(completed?.payload.passed).toBe(false);
@@ -1048,5 +1083,146 @@ describe("acceptWave", () => {
     ).rejects.toMatchObject({ kind: "policy_not_allowed" });
     expect(h.git.refs.get(operationRefFor(OPERATION_ID))).toBeUndefined();
     expect(h.authority.waveIntegrations).toHaveLength(0);
+  });
+});
+
+describe("acceptWave connected M3 mode (Task 10 review obligation c; design §22)", () => {
+  interface ConnectedHarness extends Harness {
+    readonly published: readonly {
+      readonly operation_id: string;
+      readonly candidate_commit: string;
+      readonly fencing_token: number;
+      readonly command_id: string;
+    }[];
+  }
+
+  function connectedHarness(publishResult?: {
+    status: "failed";
+    reason: string;
+  }): ConnectedHarness {
+    const authority = new IntegrationAuthority();
+    const git = new FakeWaveGit();
+    const gates = new FakeWaveGates();
+    const published: ConnectedHarness["published"] extends readonly (infer T)[] ? T[] : never =
+      [] as never;
+    const calls: {
+      operation_id: string;
+      candidate_commit: string;
+      fencing_token: number;
+      command_id: string;
+    }[] = [];
+    const controller = createCandidateIntegrationController({
+      authority,
+      git,
+      gates,
+      effective_policy_digest: POLICY.digest,
+      adapter_manifest_digest: ADAPTER_MANIFEST_DIGEST,
+      adapter_control_profile: CONTROL_PROFILE,
+      now: () => NOW,
+      publish_candidate: (publishInput) => {
+        calls.push({ ...publishInput });
+        return Promise.resolve(publishResult ?? { status: "published" as const });
+      },
+    });
+    void published;
+    return { authority, git, gates, controller, published: calls };
+  }
+
+  async function connectedWave(h: ConnectedHarness) {
+    const taskSpec = task("task_a");
+    const wave: ParallelWave = { wave_index: 0, task_ids: ["task_a"] };
+    const dag = dagFor([taskSpec], [wave]);
+    await h.controller.queueTaskCandidate(patchFor(taskSpec));
+    const candidate = await h.controller.rebuildWaveCandidate({
+      dag,
+      wave,
+      expected_base_commit: BASE_COMMIT,
+    });
+    const { lease, taskEvidence } = preloadTaskFacts(h, taskSpec, candidate.candidate_commit);
+    const validations = [
+      await h.controller.validateTaskCandidate({
+        candidate,
+        task: taskSpec,
+        lease,
+        evidence: [evidenceRef(taskEvidence)],
+      }),
+    ];
+    const decision = allowWaveDecision(dag, wave, candidate.base_commit, h.authority);
+    return { dag, candidate, validations, decision };
+  }
+
+  const OPERATION_LEASE = { operation_id: OPERATION_ID, fencing_token: 7 } as const;
+
+  it("publishes the accepted local branch through publish_operation_candidate only", async () => {
+    const h = connectedHarness();
+    const { dag, candidate, validations, decision } = await connectedWave(h);
+    const accepted = await h.controller.acceptWave({
+      dag,
+      candidate,
+      validations,
+      policy_decision: decision,
+      approval_digests: [],
+      command_id: "command_integrate_wave_0",
+      operation_lease: OPERATION_LEASE,
+    });
+
+    expect(accepted.wave_index).toBe(0);
+    expect(h.published).toEqual([
+      {
+        operation_id: OPERATION_ID,
+        candidate_commit: candidate.candidate_commit,
+        fencing_token: 7,
+        command_id: "command_integrate_wave_0",
+      },
+    ]);
+  });
+
+  it("fails closed without the current M3 Operation Lease", async () => {
+    const h = connectedHarness();
+    const { dag, candidate, validations, decision } = await connectedWave(h);
+    await expect(
+      h.controller.acceptWave({
+        dag,
+        candidate,
+        validations,
+        policy_decision: decision,
+        approval_digests: [],
+        command_id: "command_integrate_wave_0",
+      }),
+    ).rejects.toMatchObject({ kind: "operation_lease_required" });
+    expect(h.published).toEqual([]);
+  });
+
+  it("rejects an Operation Lease bound to a different operation", async () => {
+    const h = connectedHarness();
+    const { dag, candidate, validations, decision } = await connectedWave(h);
+    await expect(
+      h.controller.acceptWave({
+        dag,
+        candidate,
+        validations,
+        policy_decision: decision,
+        approval_digests: [],
+        command_id: "command_integrate_wave_0",
+        operation_lease: { operation_id: "operation_other", fencing_token: 7 },
+      }),
+    ).rejects.toMatchObject({ kind: "operation_lease_required" });
+    expect(h.published).toEqual([]);
+  });
+
+  it("surfaces a publish failure instead of pretending the wave shipped", async () => {
+    const h = connectedHarness({ status: "failed", reason: "remote rejected the candidate" });
+    const { dag, candidate, validations, decision } = await connectedWave(h);
+    await expect(
+      h.controller.acceptWave({
+        dag,
+        candidate,
+        validations,
+        policy_decision: decision,
+        approval_digests: [],
+        command_id: "command_integrate_wave_0",
+        operation_lease: OPERATION_LEASE,
+      }),
+    ).rejects.toMatchObject({ kind: "publish_failed" });
   });
 });

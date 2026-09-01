@@ -210,6 +210,7 @@ export {
   CAPABILITY_DAG_KERNEL_NODE_IDS,
   createCapabilityDagRunnerRegistry,
   createStrictTddExecuteDagRunner,
+  resolveExecuteSubgraph,
   type CapabilityDagRunnerPorts,
   type StrictTddExecuteDagRunnerPorts,
   type TddTaskRouteOutcome,
@@ -888,10 +889,12 @@ export {
 export {
   collectProjectStatus,
   deriveProjectStatus,
+  projectSchedulerStatus,
   type DerivedStatus,
   type CoverageCount,
   type EvaluationCoverage,
   type ProjectStatus,
+  type SchedulerStatusProjection,
   type StatusDerivationInput,
 } from "./status/status.js";
 export {
@@ -1026,6 +1029,7 @@ export {
   assertLifecycleOrder,
   phaseLifecycleEvents,
   remoteApprovalMaterializedEvent,
+  schedulerPhaseLifecycleEvent,
   type PhaseLifecycleDetails,
   type PhaseLifecycleEventSpec,
   type RemoteApprovalMaterializedDetails,
@@ -1340,7 +1344,9 @@ export {
   type SchedulerDriveResult,
   type SchedulerDriveStatus,
   type SchedulerErrorKind,
-  type SchedulerReadModel,
+  // The drive-internal read model; the plan-frozen `SchedulerReadModel` name
+  // belongs to the API-facing model in scheduling/read-model.js below.
+  type SchedulerReadModel as SchedulerDriveReadModel,
   type SchedulerRecoverInput,
 } from "./scheduling/scheduler.js";
 export {
@@ -1376,6 +1382,56 @@ export {
   type SchedulingRecoveryProcessPort,
   type SchedulingRecoveryReport,
 } from "./scheduling/recovery.js";
+
+/**
+ * M4 Task 11 public boundary: the parallel execute subgraph driver, its DAG
+ * runner adapter, the production Ledger scheduler authority and the
+ * API-facing Scheduler Read Model.
+ *
+ * Export decisions:
+ * - `createLedgerSchedulerAuthority` is the one production write-seam factory;
+ *   the Task 12 CLI wiring composes it, so it is public here even though Task
+ *   10 kept the `SchedulerAuthority` type itself runtime-internal.
+ * - Recovery actions, resume command and drift effects are the typed
+ *   vocabulary status/CLI surfaces consume verbatim (design 19.5/21).
+ */
+export {
+  PARALLEL_TASK_EXECUTION_ERROR_KINDS,
+  ParallelTaskExecutionError,
+  SCHEDULER_DRIFT_KINDS,
+  SCHEDULER_RECOVERY_ACTIONS,
+  capabilityPlanActivatesParallel,
+  createLedgerSchedulerAuthority,
+  createParallelExecuteDagRunner,
+  deriveQueuedCandidatePatches,
+  driveParallelTaskExecution,
+  schedulerApprovalContinuation,
+  schedulerDriftEffect,
+  schedulerRecoveryActionFor,
+  schedulerResumeCommand,
+  type LedgerSchedulerAuthorityOptions,
+  type ParallelOperationLease,
+  type ParallelTaskExecutionDriverOptions,
+  type ParallelTaskExecutionErrorKind,
+  type ParallelTaskExecutionOutcome,
+  type ParallelTaskExecutionPort,
+  type SchedulerBlockerKind,
+  type SchedulerDriftEffect,
+  type SchedulerDriftKind,
+  type SchedulerRecoveryAction,
+} from "./orchestration/scheduler-runtime.js";
+export {
+  SCHEDULER_READ_MODEL_ERROR_KINDS,
+  SchedulerReadModelError,
+  buildSchedulerReadModelBenchmarkFixture,
+  nonParallelReasons,
+  readSchedulerModel,
+  type SchedulerReadModel,
+  type SchedulerReadModelErrorKind,
+  type SchedulerReadModelSources,
+  type SchedulerTaskProjection,
+} from "./scheduling/read-model.js";
+export { type ParallelExecutionBinding } from "./orchestration/pipeline-types.js";
 
 export * from "./model/index.js";
 

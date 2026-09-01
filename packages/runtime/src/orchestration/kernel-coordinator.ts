@@ -23,7 +23,7 @@ import {
   verifyRecordEnvelope,
   type CapabilityPlanRecord,
   type CaptureAnswerInput,
-  type BindingKind,
+  type BindingKindV13,
   type CaptureOutcome,
   type CaptureSessionRecord,
   type EdgeRecord,
@@ -208,6 +208,7 @@ import type {
   PhaseProgressEvent,
   RunIterationInput,
 } from "./pipeline-types.js";
+import type { ParallelTaskExecutionOutcome } from "./scheduler-runtime.js";
 
 const HARNESS_COMMIT_IDENTITY = { name: "Universal Harness", email: "harness@localhost" } as const;
 
@@ -4784,6 +4785,8 @@ async function driveCapabilityPipeline(
 ): Promise<OrchestrationOutcome> {
   const suite = gateSuiteFor(ctx);
   let terminal: OrchestrationOutcome | undefined;
+  /** Outcome of the parallel execute drive, consumed by the produces closure. */
+  let parallelOutcome: ParallelTaskExecutionOutcome | undefined;
 
   // Capture is the only legal bootstrap before the plan exists. It remains
   // idempotent on resume; the DAG capture runner below imports its accepted
@@ -4814,7 +4817,7 @@ async function driveCapabilityPipeline(
   const runPhaseNode = async (
     phase: OrchestrationPhase,
     stepFn: (step: PipelineContext) => Promise<PhaseStep>,
-    produces: () => readonly { readonly kind: BindingKind; readonly digest: string }[],
+    produces: () => readonly { readonly kind: BindingKindV13; readonly digest: string }[],
   ): Promise<DagNodeResult> => {
     await advanceIntoPhase(ctx, phase);
     emitPhaseProgress(ctx, { type: "phase_started", phase });
@@ -4906,6 +4909,100 @@ async function driveCapabilityPipeline(
         runPhaseNode(
           "execute",
           async (step) => {
+            if (dagContext.node.subgraph === "parallel_task_execution") {
+              const parallel = step.deps.parallelExecution;
+              if (parallel === undefined) {
+                await commitIterationNode(step, "blocked");
+                await step.engine.block(step.workflowOperationId, {
+                  reason: "missing_input",
+                  detail:
+                    "parallel_task_execution execute node has no ParallelExecutionBinding; production execution remains locked",
+                  proposal: {
+                    phase: "execute",
+                    set_next_action: resumeCommandFor(step.workflowOperationId),
+                  },
+                });
+                refreshWorkingState(step);
+                return {
+                  continue: false,
+                  outcome: {
+                    status: "blocked",
+                    workflowOperationId: step.workflowOperationId,
+                    iterationId: step.iterationId,
+                    reason: "missing_input",
+                    detail:
+                      "parallel_task_execution execute node has no ParallelExecutionBinding; production execution remains locked",
+                    resumeCommand: resumeCommandFor(step.workflowOperationId),
+                  },
+                };
+              }
+              const executionPlan = step.plan ?? loadPlan(step);
+              if (executionPlan === undefined) {
+                throw new OrchestrationError(
+                  "binding_drift",
+                  "parallel execute node has no accepted ExecutionPlan",
+                );
+              }
+              const operationLease = parallel.operationLease?.();
+              const outcome = await parallel.port.run({
+                operation_id: step.workflowOperationId,
+                iteration_id: step.iterationId,
+                capability_plan_digest: dagContext.plan_digest,
+                expected_plan_digest: executionPlan.content.content_digest,
+                driver_lock: parallel.driverLock(),
+                ...(operationLease === undefined ? {} : { operation_lease: operationLease }),
+              });
+              parallelOutcome = outcome;
+              if (outcome.status === "completed") return { continue: true };
+              if (outcome.status === "cancelled") {
+                const cancelDetail = `parallel execution cancelled for ${outcome.operation_id}`;
+                await commitIterationNode(step, "aborted");
+                await step.engine.abort(step.workflowOperationId, {
+                  reason: "user_cancellation",
+                  detail: cancelDetail,
+                });
+                refreshWorkingState(step);
+                return {
+                  continue: false,
+                  outcome: {
+                    status: "aborted",
+                    workflowOperationId: step.workflowOperationId,
+                    iterationId: step.iterationId,
+                    reason: "user_cancellation",
+                    detail: cancelDetail,
+                  },
+                };
+              }
+              // A paused drive awaits a scheduler Approval; a blocked drive is
+              // recoverable through the typed recovery actions (design 21).
+              const blockReason: RecoverableBlockReason =
+                outcome.status === "paused" ? "awaiting_approval" : "repairable_gate_failure";
+              const blockDetail =
+                outcome.status === "paused"
+                  ? `parallel execution paused for approval on ${outcome.operation_id}`
+                  : `parallel execution blocked for ${outcome.operation_id} (scheduler state ${outcome.scheduler_state_digest})`;
+              await commitIterationNode(step, "blocked");
+              await step.engine.block(step.workflowOperationId, {
+                reason: blockReason,
+                detail: blockDetail,
+                proposal: {
+                  phase: "execute",
+                  set_next_action: resumeCommandFor(step.workflowOperationId),
+                },
+              });
+              refreshWorkingState(step);
+              return {
+                continue: false,
+                outcome: {
+                  status: "blocked",
+                  workflowOperationId: step.workflowOperationId,
+                  iterationId: step.iterationId,
+                  reason: blockReason,
+                  detail: blockDetail,
+                  resumeCommand: resumeCommandFor(step.workflowOperationId),
+                },
+              };
+            }
             if (dagContext.node.subgraph === "strict_tdd") {
               const tasks = step.plan?.content.tasks ?? loadPlan(step)?.content.tasks ?? [];
               const contracts = tasks.map((task) => loadTaskTddContract(step, task.id));
@@ -4946,8 +5043,26 @@ async function driveCapabilityPipeline(
             }
             return phaseExecute(step);
           },
-          () =>
-            dagContext.node.subgraph === "strict_tdd"
+          () => {
+            if (dagContext.node.subgraph === "parallel_task_execution") {
+              if (parallelOutcome === undefined) {
+                throw new OrchestrationError(
+                  "binding_drift",
+                  "parallel execute committed without a driver outcome",
+                );
+              }
+              return [
+                {
+                  kind: "wave_integration",
+                  digest: contentDigest({
+                    operation_id: parallelOutcome.operation_id,
+                    wave_integration_digests: parallelOutcome.wave_integration_digests,
+                    scheduler_state_digest: parallelOutcome.scheduler_state_digest,
+                  }),
+                },
+              ];
+            }
+            return dagContext.node.subgraph === "strict_tdd"
               ? [
                   {
                     kind: "tdd_contract",
@@ -4968,7 +5083,8 @@ async function driveCapabilityPipeline(
                     ),
                   },
                 ]
-              : [],
+              : [];
+          },
         ),
       verify: () =>
         runPhaseNode(

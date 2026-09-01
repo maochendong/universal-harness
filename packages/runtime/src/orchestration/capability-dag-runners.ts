@@ -36,6 +36,23 @@ export interface CapabilityDagRunnerPorts {
 
 export type { FeedbackAnalysisRequest } from "../finding/feedback-analysis-coordinator.js";
 
+/**
+ * The execute-node subgraph for one set of active capabilities (M4 design
+ * 10.2, plan Task 11 step 1). parallel_task_execution wins over strict_tdd —
+ * when both are active Strict TDD runs per Task inside the parallel wave —
+ * and with neither the execute node keeps the legacy sequential path
+ * (undefined subgraph). The Capability Compiler (buildOperationDag) applies
+ * the same precedence; this pure resolver lets hosts route without
+ * re-compiling the DAG.
+ */
+export function resolveExecuteSubgraph(
+  active: ReadonlySet<string>,
+): "parallel_task_execution" | "strict_tdd" | undefined {
+  if (active.has("parallel_task_execution")) return "parallel_task_execution";
+  if (active.has("strict_tdd")) return "strict_tdd";
+  return undefined;
+}
+
 function withFeedbackAnalysis(
   runner: DagNodeRunner,
   feedback: NonNullable<CapabilityDagRunnerPorts["feedbackAnalysis"]>,

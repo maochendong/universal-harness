@@ -1,7 +1,7 @@
 import {
   TDD_VERDICT_TO_GENERIC,
   TDD_VERDICT_STATES,
-  type CapabilityId,
+  type CapabilityIdV13,
   type DomainStatusMapping,
   type GenericCapabilityStatus,
   type NodeRecord,
@@ -61,7 +61,7 @@ const MODULE_CAPABILITIES = [
 export type ModuleStatusCapabilityId = (typeof MODULE_CAPABILITIES)[number];
 
 export function isModuleStatusCapability(
-  capabilityId: CapabilityId,
+  capabilityId: CapabilityIdV13,
 ): capabilityId is ModuleStatusCapabilityId {
   return (MODULE_CAPABILITIES as readonly string[]).includes(capabilityId);
 }

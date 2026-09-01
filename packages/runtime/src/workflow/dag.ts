@@ -1,4 +1,8 @@
-import type { BindingKind, CapabilityId, OperationDagNode } from "@universal-harness-internal/core";
+import type {
+  BindingKindV13,
+  CapabilityId,
+  OperationDagNode,
+} from "@universal-harness-internal/core";
 
 /**
  * DAG node contract (plan Task 8-A; slim-profiles design 9.4/9.5). The
@@ -10,7 +14,7 @@ import type { BindingKind, CapabilityId, OperationDagNode } from "@universal-har
 
 /** One authoritative artifact a node produced, identified by its digest. */
 export interface DagProducedBinding {
-  readonly kind: BindingKind;
+  readonly kind: BindingKindV13;
   readonly digest: string;
 }
 

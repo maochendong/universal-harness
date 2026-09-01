@@ -1,9 +1,20 @@
 import { describe, expect, it } from "vitest";
 
-import { contentDigest, type EdgeRecord, type NodeRecord } from "@universal-harness-internal/core";
+import {
+  contentDigest,
+  type EdgeRecord,
+  type FeedbackRecord,
+  type NodeRecord,
+} from "@universal-harness-internal/core";
 
+import type { ApprovalRequestRecord } from "../../src/approval/request.js";
 import { createNewProject } from "../../src/bootstrap/new-project.js";
-import { collectProjectStatus, deriveProjectStatus } from "../../src/status/status.js";
+import type { SchedulerReadModel } from "../../src/scheduling/read-model.js";
+import {
+  collectProjectStatus,
+  deriveProjectStatus,
+  projectSchedulerStatus,
+} from "../../src/status/status.js";
 import { cleanupDirectories, makeDeps, makeTempDir } from "../bootstrap/helpers.js";
 
 const FIXED_NOW = "2026-08-12T00:00:00.000Z";
@@ -492,5 +503,162 @@ describe("collectProjectStatus", () => {
     } finally {
       cleanupDirectories();
     }
+  });
+});
+
+describe("projectSchedulerStatus", () => {
+  const baseTasks: SchedulerReadModel["tasks"] = [
+    {
+      task_id: "task_a",
+      title: "A",
+      wave_index: 0,
+      status: "integrated",
+      authority: "ledger",
+      dependency_ids: [],
+      non_parallel_reasons: [],
+    },
+    {
+      task_id: "task_b",
+      title: "B",
+      wave_index: 0,
+      status: "integrated",
+      authority: "ledger",
+      dependency_ids: [],
+      non_parallel_reasons: [],
+    },
+    {
+      task_id: "task_c",
+      title: "C",
+      wave_index: 1,
+      status: "ready",
+      authority: "ledger",
+      dependency_ids: [],
+      non_parallel_reasons: [],
+    },
+  ];
+
+  function schedulerModel(overrides: Partial<SchedulerReadModel> = {}): SchedulerReadModel {
+    return {
+      capability_status: "active",
+      operation: {
+        operation_id: "op_1",
+        iteration_id: "it_1",
+        status: "running",
+        live_state: "observed",
+      },
+      plan: {
+        plan_id: "plan_1",
+        plan_digest: "p".repeat(64),
+        waves: [
+          { wave_index: 0, task_ids: ["task_a", "task_b"] },
+          { wave_index: 1, task_ids: ["task_c"] },
+        ],
+      },
+      tasks: baseTasks,
+      slots: [],
+      budget: {
+        limit: { steps: 100, tokens: 1000, duration_ms: 60_000 },
+        consumed_steps: 10,
+        consumed_tokens: 100,
+        reserved_steps: 5,
+        reserved_tokens: 50,
+      },
+      approvals: [],
+      findings: [],
+      presentation_map: {},
+      digest: "d".repeat(64),
+      ...overrides,
+    };
+  }
+
+  it("projects exactly the inactive marker for an inactive capability", () => {
+    const projection = projectSchedulerStatus(
+      schedulerModel({
+        capability_status: "inactive_by_profile",
+        plan: null,
+        tasks: [],
+      }),
+    );
+    expect(projection).toEqual({
+      capability_status: "inactive_by_profile",
+      pending_approvals: [],
+      blocking_findings: [],
+    });
+  });
+
+  it("summarizes wave progress, budget and live state for an active capability", () => {
+    const projection = projectSchedulerStatus(schedulerModel());
+    expect(projection).toEqual({
+      capability_status: "active",
+      operation_status: "running",
+      live_state: "observed",
+      waves: { total: 2, integrated: 1 },
+      budget: {
+        limit: { steps: 100, tokens: 1000, duration_ms: 60_000 },
+        consumed_steps: 10,
+        consumed_tokens: 100,
+        reserved_steps: 5,
+        reserved_tokens: 50,
+      },
+      pending_approvals: [],
+      blocking_findings: [],
+    });
+  });
+
+  it("points at the earliest pending approval before anything else", () => {
+    const approvals = ["req_b", "req_a"].map(
+      (requestId) => ({ request_id: requestId }) as unknown as ApprovalRequestRecord,
+    );
+    const projection = projectSchedulerStatus(schedulerModel({ approvals }));
+    expect(projection.pending_approvals).toEqual(["req_a", "req_b"]);
+    expect(projection.next_action).toBe("resolve approval request req_a");
+  });
+
+  it("maps the first blocking finding to its typed recovery action", () => {
+    const finding = {
+      id: "finding_1",
+      type: "Finding",
+      status: "accepted",
+      iteration_id: "it_1",
+      summary: "budget exhausted",
+      created_at: FIXED_NOW,
+      digest: "e".repeat(64),
+      extensions: { "harness.finding": { blocking: true, rule: "budget_exhausted" } },
+    } as unknown as FeedbackRecord;
+    const projection = projectSchedulerStatus(schedulerModel({ findings: [finding] }));
+    expect(projection.blocking_findings).toEqual(["finding_1"]);
+    expect(projection.next_action).toBe(
+      "scheduler recovery for finding finding_1: submit_budget_policy_proposal",
+    );
+  });
+
+  it("falls back to inspection when the finding rule has no recovery action", () => {
+    const finding = {
+      id: "finding_2",
+      type: "Finding",
+      status: "proposed",
+      iteration_id: "it_1",
+      summary: "unknown rule",
+      created_at: FIXED_NOW,
+      digest: "f".repeat(64),
+      extensions: { "harness.finding": { blocking: true, rule: "unmapped_rule" } },
+    } as unknown as FeedbackRecord;
+    const projection = projectSchedulerStatus(schedulerModel({ findings: [finding] }));
+    expect(projection.next_action).toBe("inspect blocking finding finding_2");
+  });
+
+  it("surfaces a lost live projection as rebuilding", () => {
+    const projection = projectSchedulerStatus(
+      schedulerModel({
+        operation: {
+          operation_id: "op_1",
+          iteration_id: "it_1",
+          status: "running",
+          live_state: "rebuilding",
+        },
+      }),
+    );
+    expect(projection.live_state).toBe("rebuilding");
+    expect(projection.next_action).toBe("live scheduler projection is rebuilding from the Ledger");
   });
 });

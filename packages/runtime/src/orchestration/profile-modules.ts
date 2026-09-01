@@ -1,7 +1,7 @@
 import {
   createCapabilityStatusProjector,
   readLatestProjectProfile,
-  type CapabilityId,
+  type CapabilityIdV13,
   type CapabilityStatusProjection,
   type CapabilityPlanRecord,
   type NodeRecord,
@@ -36,7 +36,7 @@ import {
  * coordinator itself never sees a profile.
  */
 export interface ProfileModuleResolution {
-  readonly capability_id: CapabilityId;
+  readonly capability_id: CapabilityIdV13;
   readonly resolution: "active" | "inactive_by_profile";
 }
 
@@ -73,6 +73,13 @@ export function resolveProfileModules(
     {
       capability_id: "strict_tdd",
       resolution: profile?.profile_id === "governed" ? "active" : "inactive_by_profile",
+    },
+    {
+      // M4 (design 10.2): profiled Standard/Governed projects activate the
+      // parallel module; Lite and legacy profile-less projects stay on the
+      // sequential execute path until a CapabilityPlan says otherwise.
+      capability_id: "parallel_task_execution",
+      resolution: profile !== undefined && !lite ? "active" : "inactive_by_profile",
     },
   ];
 }
@@ -154,7 +161,7 @@ const projector = createCapabilityStatusProjector(MODULE_STATUS_MAPPINGS);
  * an active capability makes no proof claim at all.
  */
 export interface ProfileModuleStatusEntry {
-  readonly capability_id: CapabilityId;
+  readonly capability_id: CapabilityIdV13;
   readonly resolution: "active" | "inactive_by_profile";
   readonly generic_status?: CapabilityStatusProjection["generic_status"];
   readonly domain_status?: string;

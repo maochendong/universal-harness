@@ -1,6 +1,8 @@
 import { PROTOCOL_1_2_VERSION } from "@universal-harness-internal/core";
 import type { LifecycleEvent } from "@universal-harness-internal/core";
 
+import type { SchedulerEventSpec } from "../scheduling/events.js";
+
 /**
  * Phase lifecycle events (design 2, plan Task 23 step 4). Every committed
  * phase is bracketed by ordered lifecycle events drawn from the fixed event
@@ -18,6 +20,20 @@ export interface PhaseLifecycleEventSpec {
    * readers fail closed with `protocol_upgrade_required` (design §19.1).
    */
   readonly protocolVersion?: string;
+}
+
+/**
+ * Adapt one scheduler event spec (M4 design 19.2) onto the phase lifecycle
+ * emission contract: event type, pinned protocol version and payload pass
+ * through unchanged — the scheduler event builders in `scheduling/events.ts`
+ * are the sole payload authority.
+ */
+export function schedulerPhaseLifecycleEvent(spec: SchedulerEventSpec): PhaseLifecycleEventSpec {
+  return {
+    eventType: spec.eventType,
+    protocolVersion: spec.protocolVersion,
+    payload: spec.payload,
+  };
 }
 
 /** Facts a RemoteApprovalMaterialized event binds (design §13.1, §20). */

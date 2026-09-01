@@ -14,8 +14,11 @@ import {
   InMemoryDagCheckpointStore,
   createCapabilityDagRunnerRegistry,
   createCapabilityDagRuntime,
+  createParallelExecuteDagRunner,
+  resolveExecuteSubgraph,
   type DagNodeRunner,
 } from "../../src/index.js";
+import type { DriverLockHandle } from "../../src/scheduling/driver-lock.js";
 
 const OPERATION_ID = "operation_capability-routing";
 
@@ -140,5 +143,87 @@ describe("CapabilityPlan production routing", () => {
       plan: replacement,
     });
     expect(replacementCalls).toEqual(replacement.operation_dag.nodes.map((node) => node.node_id));
+  });
+});
+
+describe("parallel_task_execution routing (M4 Task 11)", () => {
+  it("resolves the execute subgraph with parallel precedence and stays legacy without it", () => {
+    expect(resolveExecuteSubgraph(new Set(["parallel_task_execution", "strict_tdd"]))).toBe(
+      "parallel_task_execution",
+    );
+    expect(resolveExecuteSubgraph(new Set(["strict_tdd"]))).toBe("strict_tdd");
+    expect(resolveExecuteSubgraph(new Set())).toBeUndefined();
+
+    // An inactive parallel module leaves the legacy DAG byte-identical: no
+    // subgraph marker and no wave_integration binding anywhere.
+    const legacy = buildOperationDag(new Set());
+    const execute = legacy.find((node) => node.node_id === "execute");
+    expect(execute?.subgraph).toBeUndefined();
+    expect(legacy.flatMap((node) => node.produces)).not.toContain("wave_integration");
+  });
+
+  it("routes a parallel-marked execute node through the parallel DAG runner exactly once", async () => {
+    const base = litePlan();
+    const operation_dag = {
+      nodes: buildOperationDag(new Set(["parallel_task_execution"]), "1.3.0"),
+    };
+    const plan = {
+      ...base,
+      operation_dag,
+      record_digest: contentDigest({ base: base.record_digest, operation_dag }),
+    } as CapabilityPlanRecord;
+    const executeNode = plan.operation_dag.nodes.find((node) => node.node_id === "execute");
+    expect(executeNode?.subgraph).toBe("parallel_task_execution");
+    expect(executeNode?.produces).toContain("wave_integration");
+
+    const parallelCalls: string[] = [];
+    const lock: DriverLockHandle = {
+      operation_id: OPERATION_ID,
+      owner_token: "owner_1",
+      path: "/locks/driver",
+      release: () => Promise.resolve(),
+    };
+    const parallelRunner = createParallelExecuteDagRunner({
+      parallelExecution: {
+        run: (input) => {
+          parallelCalls.push(input.operation_id);
+          return Promise.resolve({
+            status: "completed" as const,
+            operation_id: input.operation_id,
+            wave_integration_digests: ["1".repeat(64)],
+            scheduler_state_digest: "2".repeat(64),
+          });
+        },
+      },
+      iterationId: () => "iteration_capability-routing",
+      driverLock: () => lock,
+    });
+    const generic: DagNodeRunner = (context) => ({
+      status: "committed",
+      produces: context.node.produces.map((kind) => ({
+        kind,
+        digest: contentDigest({ node: context.node.node_id, kind }),
+      })),
+    });
+    const registry = createCapabilityDagRunnerRegistry({
+      kernel: {
+        capture: generic,
+        capability_decision: generic,
+        plan: generic,
+        context: generic,
+        execute: parallelRunner,
+        verify: generic,
+        snapshot: generic,
+      },
+    });
+    const runtime = createCapabilityDagRuntime({
+      store: new InMemoryDagCheckpointStore(),
+      runners: registry,
+    });
+
+    expect(await runtime.run({ operation_id: OPERATION_ID, plan })).toMatchObject({
+      status: "completed",
+    });
+    expect(parallelCalls).toEqual([OPERATION_ID]);
   });
 });
