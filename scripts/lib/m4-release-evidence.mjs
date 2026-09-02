@@ -494,8 +494,9 @@ function containsMachineAbsolutePath(value) {
   if (typeof value === "string") {
     return (
       isAbsolute(value) ||
-      /(?:^|[\s"'=:(])[A-Za-z]:[\\/]/u.test(value) ||
-      /(?:^|[\s"'=:(])\/(?!\/)[^\s]+/u.test(value)
+      /(?:^|[^A-Za-z0-9+.-])[A-Za-z]:[\\/]/u.test(value) ||
+      /\\\\[^\\/\s]+[\\/][^\\/\s]+/u.test(value) ||
+      /(?:^|[^A-Za-z0-9._~%+:/-])\/(?!\/)/u.test(value)
     );
   }
   if (Array.isArray(value)) return value.some(containsMachineAbsolutePath);

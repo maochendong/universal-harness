@@ -189,4 +189,5 @@ jobs:
             docs/m2-acceptance-report.md
             docs/evidence/m3-remote-collaboration-completion.md
             docs/evidence/m4-local-multi-agent-scheduling-completion.md
+            docs/evidence/m4-local-multi-agent-scheduling-results.json
           if-no-files-found: error

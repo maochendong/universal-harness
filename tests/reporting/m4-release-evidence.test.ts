@@ -475,6 +475,31 @@ describe("M4 Markdown projection", () => {
     ).toThrow(/absolute path/u);
   });
 
+  it.each([
+    ["embedded POSIX path", "model error x,/Users/private/model"],
+    ["bracketed Windows path", String.raw`model error [C:\private\model]`],
+    ["UNC path", String.raw`model error \\server\share\model`],
+  ])("rejects %s in release-safe text", (_name, providerModel) => {
+    expect(() =>
+      buildCanonicalDogfoodProof(
+        { ...blockedDogfood(COMMIT_A), provider_model: providerModel },
+        COMMIT_A,
+      ),
+    ).toThrow(/absolute path/u);
+  });
+
+  it("allows a URL in release-safe text", () => {
+    expect(() =>
+      buildCanonicalDogfoodProof(
+        {
+          ...blockedDogfood(COMMIT_A),
+          provider_model: "https://models.example.invalid/deepseek-v4-flash",
+        },
+        COMMIT_A,
+      ),
+    ).not.toThrow();
+  });
+
   it("rejects a forged 20/20 sidecar with empty requirements and evidence", () => {
     expect(() =>
       assertM4AcceptanceSidecar(
@@ -643,5 +668,25 @@ describe("release command", () => {
     expect(packageJson.scripts["verify:m4:report"]).toBe(
       "node scripts/generate-acceptance-report.mjs --verify-report-commit",
     );
+  });
+
+  it("uploads both M4 report projections as one CI evidence bundle", () => {
+    const workflow = readFileSync(
+      join(
+        dirname(new URL(import.meta.url).pathname),
+        "..",
+        "..",
+        ".github",
+        "workflows",
+        "ci.yml",
+      ),
+      "utf8",
+    );
+    const uploadStep = workflow.match(
+      /- name: Upload acceptance reports[\s\S]*?if-no-files-found: error/u,
+    )?.[0];
+    expect(uploadStep).toBeDefined();
+    expect(uploadStep).toContain("docs/evidence/m4-local-multi-agent-scheduling-completion.md");
+    expect(uploadStep).toContain("docs/evidence/m4-local-multi-agent-scheduling-results.json");
   });
 });
