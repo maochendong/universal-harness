@@ -17,12 +17,14 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { redactM4Evidence } from "./dogfood-m4-redaction.mjs";
 import {
+  captureWorkspaceProofBoundary,
   collectPackageBuildProvenance,
   resolveDshExecutable,
+  resolveExpectedDshVersion,
   verifyProbeWorkspace,
 } from "./m4-dogfood-proof.mjs";
 
@@ -34,19 +36,25 @@ const argValue = (name) => {
 };
 
 function loadDotEnv(path) {
-  if (!existsSync(path)) return;
+  const loaded = new Set();
+  if (!existsSync(path)) return loaded;
   for (const line of readFileSync(path, "utf8").split(/\r?\n/u)) {
     const match = /^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*?)\s*$/u.exec(line);
     if (match === null || process.env[match[1]] !== undefined) continue;
     process.env[match[1]] = match[2].replace(/^"(.*)"$/u, "$1").replace(/^'(.*)'$/u, "$1");
+    loaded.add(match[1]);
   }
+  return loaded;
 }
 
-loadDotEnv(join(repositoryRoot, ".env"));
+const loadedEnvNames = loadDotEnv(resolve(argValue("--env-file") ?? join(repositoryRoot, ".env")));
 
 const dshExecutable = resolveDshExecutable({
   argument: argValue("--dsh"),
   environment: process.env.HARNESS_DSH_EXECUTABLE,
+});
+const expectedProviderVersion = resolveExpectedDshVersion({
+  argument: argValue("--expected-dsh-version"),
 });
 const outputPath = resolve(
   argValue("--out") ?? join(repositoryRoot, ".reports", "acceptance", "m4-dogfood.json"),
@@ -88,6 +96,31 @@ function blocked(reason, evidence = {}) {
   process.exitCode = 2;
 }
 
+function createCleanBuildRoot(commit) {
+  const buildRoot = realpathSync(mkdtempSync(join(tmpdir(), "harness-m4-build-")));
+  try {
+    const archive = execFileSync("git", ["archive", "--format=tar", commit], {
+      cwd: repositoryRoot,
+      maxBuffer: 100 * 1024 * 1024,
+    });
+    execFileSync("tar", ["-xf", "-", "-C", buildRoot], { input: archive });
+    execFileSync("pnpm", ["install", "--offline", "--frozen-lockfile", "--ignore-scripts"], {
+      cwd: buildRoot,
+      stdio: "pipe",
+      maxBuffer: 100 * 1024 * 1024,
+    });
+    execFileSync("pnpm", ["build"], {
+      cwd: buildRoot,
+      stdio: "pipe",
+      maxBuffer: 100 * 1024 * 1024,
+    });
+    return buildRoot;
+  } catch (error) {
+    rmSync(buildRoot, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+    throw error;
+  }
+}
+
 if (trackedStatus !== "") {
   blocked("tracked_repository_not_clean", {
     command: "git status --porcelain --untracked-files=no",
@@ -98,6 +131,11 @@ if (trackedStatus !== "") {
       ...(!process.env.DEEPSEEK_API_KEY ? ["DEEPSEEK_API_KEY"] : []),
       ...(!process.env.DEEPSEEK_MODEL ? ["DEEPSEEK_MODEL"] : []),
     ],
+  });
+} else if (expectedProviderVersion === undefined) {
+  blocked("expected_dsh_version_missing", {
+    required_argument: "--expected-dsh-version <version>",
+    reason: "the observed binary version may not define its own expected contract",
   });
 } else {
   let providerVersion;
@@ -113,23 +151,29 @@ if (trackedStatus !== "") {
     });
   }
 
-  if (providerVersion !== undefined) {
+  if (providerVersion !== undefined && providerVersion !== expectedProviderVersion) {
+    blocked("dsh_version_contract_mismatch", {
+      expected_version: expectedProviderVersion,
+      expected_version_source: "cli_argument",
+      observed_version: providerVersion,
+    });
+  }
+
+  if (providerVersion === expectedProviderVersion) {
     let buildProvenance;
+    let buildRoot;
     try {
-      execFileSync("pnpm", ["build"], { cwd: repositoryRoot, stdio: "pipe" });
+      buildRoot = createCleanBuildRoot(implementationCommit);
       buildProvenance = collectPackageBuildProvenance({
         repositoryRoot,
+        buildRoot,
         implementationCommit,
-        packages: [
-          { name: "adapter-agent-dsh", path: "adapters/agent-dsh" },
-          { name: "core", path: "packages/core" },
-          { name: "plugin-sdk", path: "packages/plugin-sdk" },
-          { name: "runtime", path: "packages/runtime" },
-        ],
+        packages: [{ name: "universal-harness", path: "packages/cli" }],
       });
       if (
         !buildProvenance.source_head_matches_implementation_commit ||
-        !buildProvenance.tracked_source_clean
+        !buildProvenance.tracked_source_clean ||
+        !buildProvenance.clean_rebuild_from_committed_archive
       ) {
         blocked("runtime_build_commit_mismatch", { build_provenance: buildProvenance });
       }
@@ -142,19 +186,23 @@ if (trackedStatus !== "") {
 
     if (
       buildProvenance !== undefined &&
+      buildRoot !== undefined &&
       buildProvenance.source_head_matches_implementation_commit &&
-      buildProvenance.tracked_source_clean
+      buildProvenance.tracked_source_clean &&
+      buildProvenance.clean_rebuild_from_committed_archive
     ) {
       const [
         { createDshAgentAdapter },
         { contentDigest },
         { assessUnattendedEligibility },
         runtime,
+        { createGitRepositoryInspector },
       ] = await Promise.all([
-        import("../adapters/agent-dsh/dist/index.js"),
-        import("../packages/core/dist/index.js"),
-        import("../packages/plugin-sdk/dist/index.js"),
-        import("../packages/runtime/dist/index.js"),
+        import(pathToFileURL(join(buildRoot, "adapters/agent-dsh/dist/index.js")).href),
+        import(pathToFileURL(join(buildRoot, "packages/core/dist/index.js")).href),
+        import(pathToFileURL(join(buildRoot, "packages/plugin-sdk/dist/index.js")).href),
+        import(pathToFileURL(join(buildRoot, "packages/runtime/dist/index.js")).href),
+        import(pathToFileURL(join(buildRoot, "packages/cli/dist/project-agent.js")).href),
       ]);
       const { buildTaskEnvelope, resolveLoopPolicy } = runtime;
       const scratchRoot = realpathSync(mkdtempSync(join(tmpdir(), "harness-m4-dogfood-")));
@@ -177,32 +225,11 @@ if (trackedStatus !== "") {
           encoding: "utf8",
         }).trim();
 
-        const inspector = {
-          inspect(root) {
-            const head = execFileSync("git", ["rev-parse", "HEAD"], {
-              cwd: root,
-              encoding: "utf8",
-            }).trim();
-            const entries = execFileSync(
-              "git",
-              ["status", "--porcelain", "-z", "--untracked-files=all"],
-              { cwd: root, encoding: "utf8" },
-            )
-              .split("\0")
-              .filter(Boolean)
-              .map((entry) => entry.slice(3))
-              .sort();
-            return Promise.resolve({
-              head,
-              changed_paths: entries,
-              digest: contentDigest({ head, entries }),
-            });
-          },
-        };
+        const inspector = createGitRepositoryInspector();
         const adapter = createDshAgentAdapter({
           executable: dshExecutable,
           launcher_args: [],
-          expected_version: providerVersion,
+          expected_version: expectedProviderVersion,
           worktree: scratchRoot,
           evidence_dir: join(scratchRoot, ".harness", "raw-traces", "agent-dsh"),
           inspector,
@@ -228,9 +255,13 @@ if (trackedStatus !== "") {
           repository_id: "repository_m4_dogfood",
           baseline_id: baseline,
           objective:
-            "Create src/dogfood/probe.ts exporting const m4DogfoodProbe = 'real-dsh' and do not change any other file.",
-          expected_output: "src/dogfood/probe.ts contains the requested TypeScript export",
-          acceptance_criteria: ["the requested file exists", "no other path changes"],
+            "Write exactly these UTF-8 bytes to src/dogfood/probe.ts, with no markdown fence, comment, or other file change: export const m4DogfoodProbe = 'real-dsh'; followed by one newline.",
+          expected_output:
+            "src/dogfood/probe.ts is a regular file containing exactly the requested bytes",
+          acceptance_criteria: [
+            "the requested file is a contained regular file with exact bytes",
+            "no other path changes except the adapter's exact raw transcript locator",
+          ],
           dependency_task_ids: [],
           required_gate_ids: [],
           input_node_revisions: {},
@@ -257,6 +288,9 @@ if (trackedStatus !== "") {
           input_digest: contentDigest({ task: "m4-real-dsh-probe" }),
           stale_input_behavior: "block",
         });
+        const transcriptRelativePath =
+          ".harness/raw-traces/agent-dsh/transcript-task_real_dsh_probe.json";
+        const proofBoundary = captureWorkspaceProofBoundary({ repositoryRoot: scratchRoot });
         const result = await adapter.run(envelope, { mode: "supervised" });
         const transcriptEvidence = result.evidence.find((entry) => entry.kind === "transcript");
         const transcript =
@@ -267,6 +301,9 @@ if (trackedStatus !== "") {
           repositoryRoot: scratchRoot,
           expectedPath,
           expectedBytes,
+          baselineCommit: baseline,
+          beforeBoundary: proofBoundary,
+          allowedRawTracePaths: [transcriptRelativePath],
         });
         const probePassed =
           result.outcome === "handoff" &&
@@ -276,7 +313,19 @@ if (trackedStatus !== "") {
           command: `${dshExecutable} --profile headless <TaskEnvelope>`,
           exit_code: transcript?.exit_code ?? null,
           provider: "dsh",
-          provider_version: providerVersion,
+          provider_profile: "headless",
+          provider_model: process.env.DEEPSEEK_MODEL,
+          provider_model_source: loadedEnvNames.has("DEEPSEEK_MODEL")
+            ? "project_dotenv_injected_process_env"
+            : "preexisting_process_env",
+          expected_provider_version: expectedProviderVersion,
+          expected_provider_version_source: "cli_argument",
+          observed_provider_version: providerVersion,
+          credential_source: loadedEnvNames.has("DEEPSEEK_API_KEY")
+            ? "project_dotenv_injected_process_env"
+            : "preexisting_process_env",
+          credential_material_recorded: false,
+          credential_material_hashed: false,
           build_provenance: buildProvenance,
           adapter_manifest: adapter.manifest,
           adapter_manifest_digest: contentDigest({ adapter_manifest: adapter.manifest }),
@@ -287,9 +336,9 @@ if (trackedStatus !== "") {
           unattended_eligible: eligibility.eligible,
           eligibility_reasons: eligibility.reasons,
           provider_probe: {
-            status: probePassed ? "passed" : "failed",
+            verification_status: probePassed ? "verified" : "failed",
             task_id: envelope.task_id,
-            outcome: result.outcome,
+            agent_outcome_claim: result.outcome,
             termination_reason: result.termination_reason,
             verification: probeVerification,
           },
@@ -299,6 +348,13 @@ if (trackedStatus !== "") {
             reasons: eligibility.reasons,
             ac_06: eligibility.eligible ? "pending_full_dogfood" : "blocked",
             ac_20: eligibility.eligible ? "pending_full_dogfood" : "blocked",
+            prerequisite_status: eligibility.eligible ? "eligible_not_executed" : "blocked",
+          },
+          adapter_reported_usage: {
+            metering: result.usage.metering,
+            input_tokens: result.usage.input_tokens,
+            output_tokens: result.usage.output_tokens,
+            total_tokens: result.usage.total_tokens,
           },
           supervised_probe: {
             task_id: envelope.task_id,
@@ -328,6 +384,9 @@ if (trackedStatus !== "") {
       } finally {
         rmSync(scratchRoot, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
       }
+    }
+    if (buildRoot !== undefined) {
+      rmSync(buildRoot, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
     }
   }
 }

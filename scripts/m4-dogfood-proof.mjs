@@ -17,6 +17,11 @@ export function resolveDshExecutable(input) {
   return configured(input.argument) ?? configured(input.environment) ?? "dsh";
 }
 
+/** Expected version is an independent project/CLI contract, never the binary's self-report. */
+export function resolveExpectedDshVersion(input) {
+  return configured(input.argument);
+}
+
 function gitPaths(repositoryRoot, args) {
   return execFileSync("git", args, {
     cwd: repositoryRoot,

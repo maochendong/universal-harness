@@ -9,6 +9,7 @@ import {
   captureWorkspaceProofBoundary,
   collectPackageBuildProvenance,
   resolveDshExecutable,
+  resolveExpectedDshVersion,
   verifyProbeWorkspace,
 } from "../../scripts/m4-dogfood-proof.mjs";
 
@@ -34,6 +35,11 @@ describe("M4 real-provider dogfood proof", () => {
     expect(resolveDshExecutable({ argument: "./tools/dsh", environment: "/opt/harness/dsh" })).toBe(
       "./tools/dsh",
     );
+  });
+
+  it("requires the expected dsh version from an independent CLI binding", () => {
+    expect(resolveExpectedDshVersion({ argument: "0.1.0-rc.6" })).toBe("0.1.0-rc.6");
+    expect(resolveExpectedDshVersion({})).toBeUndefined();
   });
 
   it("requires the exact expected bytes and no path outside the probe output", () => {
