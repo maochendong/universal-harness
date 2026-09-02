@@ -1,11 +1,12 @@
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { afterEach, describe, expect, it } from "vitest";
 
 import {
+  captureWorkspaceProofBoundary,
   collectPackageBuildProvenance,
   resolveDshExecutable,
   verifyProbeWorkspace,
@@ -40,6 +41,7 @@ describe("M4 real-provider dogfood proof", () => {
     writeFileSync(join(root, "README.md"), "baseline\n", "utf8");
     execFileSync("git", ["add", "README.md"], { cwd: root });
     execFileSync("git", ["commit", "-qm", "baseline"], { cwd: root });
+    const boundary = captureWorkspaceProofBoundary({ repositoryRoot: root });
     mkdirSync(join(root, "src", "dogfood"), { recursive: true });
     const expected = "export const m4DogfoodProbe = 'real-dsh';\n";
     writeFileSync(join(root, "src", "dogfood", "probe.ts"), expected, "utf8");
@@ -49,6 +51,9 @@ describe("M4 real-provider dogfood proof", () => {
         repositoryRoot: root,
         expectedPath: "src/dogfood/probe.ts",
         expectedBytes: expected,
+        baselineCommit: "HEAD",
+        beforeBoundary: boundary,
+        allowedRawTracePaths: [],
       }),
     ).toMatchObject({
       status: "passed",
@@ -63,6 +68,9 @@ describe("M4 real-provider dogfood proof", () => {
         repositoryRoot: root,
         expectedPath: "src/dogfood/probe.ts",
         expectedBytes: expected,
+        baselineCommit: "HEAD",
+        beforeBoundary: boundary,
+        allowedRawTracePaths: [],
       }),
     ).toMatchObject({ status: "failed", only_allowed_path_changed: false });
 
@@ -73,8 +81,97 @@ describe("M4 real-provider dogfood proof", () => {
         repositoryRoot: root,
         expectedPath: "src/dogfood/probe.ts",
         expectedBytes: expected,
+        baselineCommit: "HEAD",
+        beforeBoundary: boundary,
+        allowedRawTracePaths: [],
       }),
     ).toMatchObject({ status: "failed", exact_bytes_match: false });
+  });
+
+  it("rejects symlinks, non-regular outputs and realpath escapes", () => {
+    const root = repository();
+    writeFileSync(join(root, ".gitignore"), ".harness/\n", "utf8");
+    execFileSync("git", ["add", ".gitignore"], { cwd: root });
+    execFileSync("git", ["commit", "-qm", "baseline"], { cwd: root });
+    const boundary = captureWorkspaceProofBoundary({ repositoryRoot: root });
+    const outside = join(root, "..", `outside-${Date.now()}.txt`);
+    writeFileSync(outside, "expected\n", "utf8");
+    roots.push(outside);
+    mkdirSync(join(root, "src"), { recursive: true });
+    symlinkSync(outside, join(root, "src", "probe.ts"));
+
+    expect(
+      verifyProbeWorkspace({
+        repositoryRoot: root,
+        baselineCommit: "HEAD",
+        beforeBoundary: boundary,
+        expectedPath: "src/probe.ts",
+        expectedBytes: "expected\n",
+        allowedRawTracePaths: [],
+      }),
+    ).toMatchObject({
+      status: "failed",
+      output_regular_file: false,
+      output_realpath_contained: false,
+    });
+
+    rmSync(join(root, "src", "probe.ts"));
+    mkdirSync(join(root, "src", "probe.ts"));
+    expect(
+      verifyProbeWorkspace({
+        repositoryRoot: root,
+        baselineCommit: "HEAD",
+        beforeBoundary: boundary,
+        expectedPath: "src/probe.ts",
+        expectedBytes: "expected\n",
+        allowedRawTracePaths: [],
+      }),
+    ).toMatchObject({ status: "failed", output_regular_file: false });
+  });
+
+  it("detects ignored and reserved writes while allowing one exact raw transcript", () => {
+    const root = repository();
+    writeFileSync(join(root, ".gitignore"), ".harness/\n*.ignored\n", "utf8");
+    execFileSync("git", ["add", ".gitignore"], { cwd: root });
+    execFileSync("git", ["commit", "-qm", "baseline"], { cwd: root });
+    const boundary = captureWorkspaceProofBoundary({ repositoryRoot: root });
+    const expected = "export const probe = true;\n";
+    mkdirSync(join(root, "src"), { recursive: true });
+    writeFileSync(join(root, "src", "probe.ts"), expected, "utf8");
+    const transcript = ".harness/raw-traces/agent-dsh/transcript-task.json";
+    mkdirSync(join(root, ".harness", "raw-traces", "agent-dsh"), { recursive: true });
+    writeFileSync(join(root, transcript), "{}\n", "utf8");
+
+    expect(
+      verifyProbeWorkspace({
+        repositoryRoot: root,
+        baselineCommit: "HEAD",
+        beforeBoundary: boundary,
+        expectedPath: "src/probe.ts",
+        expectedBytes: expected,
+        allowedRawTracePaths: [transcript],
+      }),
+    ).toMatchObject({
+      status: "passed",
+      raw_trace_paths: [transcript],
+      unauthorized_paths: [],
+    });
+
+    writeFileSync(join(root, "hidden.ignored"), "hidden\n", "utf8");
+    writeFileSync(join(root, ".harness", "authority.json"), "{}\n", "utf8");
+    writeFileSync(join(root, ".git", "agent-rogue"), "changed\n", "utf8");
+    const failed = verifyProbeWorkspace({
+      repositoryRoot: root,
+      baselineCommit: "HEAD",
+      beforeBoundary: boundary,
+      expectedPath: "src/probe.ts",
+      expectedBytes: expected,
+      allowedRawTracePaths: [transcript],
+    });
+    expect(failed.status).toBe("failed");
+    expect(failed.unauthorized_paths).toEqual(
+      expect.arrayContaining([".git/agent-rogue", ".harness/authority.json", "hidden.ignored"]),
+    );
   });
 
   it("binds package source trees and built entry bytes to the implementation commit", () => {
