@@ -67,6 +67,18 @@ export function assertCanonicalSuiteReports(reports, commands, implementationCom
     if (report.implementation_commit !== implementationCommit) {
       throw new ReleaseEvidenceError(`${suite}: implementation commit is stale or mixed`);
     }
+    if (
+      report.started_commit !== implementationCommit ||
+      report.finished_commit !== implementationCommit
+    ) {
+      throw new ReleaseEvidenceError(`${suite}: repository HEAD changed during the suite run`);
+    }
+    if (
+      report.tracked_worktree_clean_at_start !== true ||
+      report.tracked_worktree_clean_at_finish !== true
+    ) {
+      throw new ReleaseEvidenceError(`${suite}: tracked worktree changed during the suite run`);
+    }
     if (report.tracked_worktree_clean !== true) {
       throw new ReleaseEvidenceError(`${suite}: tests did not run from a clean tracked worktree`);
     }

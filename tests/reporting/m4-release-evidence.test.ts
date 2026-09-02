@@ -51,6 +51,10 @@ function report(
   return {
     schema_version: "harness.acceptance-suite-report/1",
     implementation_commit: COMMIT_A,
+    started_commit: COMMIT_A,
+    finished_commit: COMMIT_A,
+    tracked_worktree_clean_at_start: true,
+    tracked_worktree_clean_at_finish: true,
     tracked_worktree_clean: true,
     invocation_id: `inv-${suite}`,
     suite,
@@ -90,6 +94,7 @@ describe("canonical M4 release suite reports", () => {
     ["mixed commit", "fault", { implementation_commit: COMMIT_B }],
     ["command mismatch", "main", { command: "pnpm test -- one.test.ts" }],
     ["dirty tracked worktree", "main", { tracked_worktree_clean: false }],
+    ["commit changed during run", "main", { finished_commit: COMMIT_B }],
   ])("rejects %s", (_name, changedSuite, overrides) => {
     const reports = new Map([
       ["main", report("main", commands.main)],

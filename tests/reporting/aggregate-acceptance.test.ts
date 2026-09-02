@@ -78,20 +78,31 @@ describe("suiteNameFromInvocation", () => {
 describe("release suite provenance", () => {
   it("marks only the exact canonical command as full coverage", () => {
     expect(
-      resolveSuiteInvocation("/repo/vitest.workspace.ts", [
-        "run",
-        "--config",
-        "vitest.workspace.ts",
-      ]),
-    ).toEqual({ suite: "main", command: "pnpm test", coverage: "full" });
+      resolveSuiteInvocation(
+        "/repo/vitest.workspace.ts",
+        ["run", "--config", "vitest.workspace.ts"],
+        "/repo",
+      ),
+    ).toEqual({
+      suite: "main",
+      command: "pnpm test",
+      coverage: "full",
+      config_path: "/repo/vitest.workspace.ts",
+    });
     expect(
-      resolveSuiteInvocation("/repo/vitest.workspace.ts", [
-        "run",
-        "--config",
-        "vitest.workspace.ts",
-        "tests/reporting",
-      ]),
+      resolveSuiteInvocation(
+        "/repo/vitest.workspace.ts",
+        ["run", "--config", "vitest.workspace.ts", "tests/reporting"],
+        "/repo",
+      ),
     ).toMatchObject({ suite: "partial", coverage: "partial" });
+    expect(
+      resolveSuiteInvocation(
+        "/tmp/vitest.workspace.ts",
+        ["run", "--config", "/tmp/vitest.workspace.ts"],
+        "/repo",
+      ),
+    ).toMatchObject({ coverage: "partial", config_path: "/tmp/vitest.workspace.ts" });
   });
 
   it("keeps partial invocations in an identity-scoped path", () => {
@@ -115,19 +126,23 @@ describe("release suite provenance", () => {
 
   it("requires the exact dashboard command for full Playwright coverage", () => {
     expect(
-      resolvePlaywrightInvocation(["test", "--config", "playwright.dashboard.config.ts"]),
+      resolvePlaywrightInvocation(["test", "--config", "playwright.dashboard.config.ts"], "/repo"),
     ).toEqual({
       suite: "playwright-dashboard",
       command: "pnpm test:e2e:dashboard",
       coverage: "full",
+      config_path: "/repo/playwright.dashboard.config.ts",
     });
     expect(
-      resolvePlaywrightInvocation([
-        "test",
-        "--config",
-        "playwright.dashboard.config.ts",
-        "tests/e2e/dashboard-m4-scheduler.test.ts",
-      ]),
+      resolvePlaywrightInvocation(
+        [
+          "test",
+          "--config",
+          "playwright.dashboard.config.ts",
+          "tests/e2e/dashboard-m4-scheduler.test.ts",
+        ],
+        "/repo",
+      ),
     ).toMatchObject({ suite: "playwright-dashboard", coverage: "partial" });
   });
 });
@@ -146,6 +161,10 @@ describe("buildSuiteReport", () => {
       {
         schema_version: "harness.acceptance-suite-report/1",
         implementation_commit: "a".repeat(40),
+        started_commit: "a".repeat(40),
+        finished_commit: "a".repeat(40),
+        tracked_worktree_clean_at_start: true,
+        tracked_worktree_clean_at_finish: true,
         tracked_worktree_clean: true,
         invocation_id: "inv-main",
         command: "pnpm test",
@@ -160,6 +179,10 @@ describe("buildSuiteReport", () => {
     expect(report).toMatchObject({
       schema_version: "harness.acceptance-suite-report/1",
       implementation_commit: "a".repeat(40),
+      started_commit: "a".repeat(40),
+      finished_commit: "a".repeat(40),
+      tracked_worktree_clean_at_start: true,
+      tracked_worktree_clean_at_finish: true,
       tracked_worktree_clean: true,
       invocation_id: "inv-main",
       command: "pnpm test",
@@ -175,6 +198,10 @@ describe("buildSuiteReport", () => {
       {
         schema_version: "harness.acceptance-suite-report/1",
         implementation_commit: "a".repeat(40),
+        started_commit: "a".repeat(40),
+        finished_commit: "a".repeat(40),
+        tracked_worktree_clean_at_start: true,
+        tracked_worktree_clean_at_finish: true,
         tracked_worktree_clean: true,
         invocation_id: "inv-security",
         command: "pnpm test:security",
@@ -205,6 +232,10 @@ describe("mergeSuiteReports", () => {
       {
         schema_version: "harness.acceptance-suite-report/1",
         implementation_commit: "a".repeat(40),
+        started_commit: "a".repeat(40),
+        finished_commit: "a".repeat(40),
+        tracked_worktree_clean_at_start: true,
+        tracked_worktree_clean_at_finish: true,
         tracked_worktree_clean: true,
         invocation_id: "inv-main",
         command: "pnpm test",
@@ -218,6 +249,10 @@ describe("mergeSuiteReports", () => {
       {
         schema_version: "harness.acceptance-suite-report/1",
         implementation_commit: "a".repeat(40),
+        started_commit: "a".repeat(40),
+        finished_commit: "a".repeat(40),
+        tracked_worktree_clean_at_start: true,
+        tracked_worktree_clean_at_finish: true,
         tracked_worktree_clean: true,
         invocation_id: "inv-security",
         command: "pnpm test:security",

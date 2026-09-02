@@ -12,6 +12,8 @@
  * Source files stay ASCII; the human-readable criterion statements live in
  * the approved design document and are quoted from there at render time.
  */
+import { resolve } from "node:path";
+
 import {
   assertAcceptanceEvidenceRecord,
   type AcceptanceCriterionId,
@@ -168,11 +170,16 @@ export interface SuiteInvocation {
   readonly suite: string;
   readonly command: string;
   readonly coverage: SuiteCoverage;
+  readonly config_path?: string;
 }
 
 export interface SuiteReportProvenance extends SuiteInvocation {
   readonly schema_version: typeof SUITE_REPORT_SCHEMA_VERSION;
   readonly implementation_commit: string;
+  readonly started_commit: string;
+  readonly finished_commit: string;
+  readonly tracked_worktree_clean_at_start: boolean;
+  readonly tracked_worktree_clean_at_finish: boolean;
   readonly tracked_worktree_clean: boolean;
   readonly invocation_id: string;
 }
@@ -186,6 +193,10 @@ export interface SuiteFileResult {
 export interface SuiteAcceptanceReport {
   readonly schema_version: typeof SUITE_REPORT_SCHEMA_VERSION;
   readonly implementation_commit: string;
+  readonly started_commit: string;
+  readonly finished_commit: string;
+  readonly tracked_worktree_clean_at_start: boolean;
+  readonly tracked_worktree_clean_at_finish: boolean;
   readonly tracked_worktree_clean: boolean;
   readonly invocation_id: string;
   readonly command: string;
@@ -241,19 +252,19 @@ export function suiteNameFromInvocation(
   return filters.length === 0 ? "main" : "partial";
 }
 
-function canonicalArgs(argv: readonly string[]): readonly string[] {
+function canonicalArgs(argv: readonly string[], repositoryRoot: string): readonly string[] {
   const normalized: string[] = [];
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
     if (arg === undefined) continue;
     if (arg === "--config") {
       const value = argv[index + 1];
-      normalized.push(arg, value?.split(/[\\/]/u).at(-1) ?? "");
+      normalized.push(arg, value === undefined ? "" : resolve(repositoryRoot, value));
       index += 1;
       continue;
     }
     if (arg.startsWith("--config=")) {
-      normalized.push(`--config=${arg.slice("--config=".length).split(/[\\/]/u).at(-1) ?? ""}`);
+      normalized.push(`--config=${resolve(repositoryRoot, arg.slice("--config=".length))}`);
       continue;
     }
     normalized.push(arg);
@@ -297,36 +308,63 @@ const FULL_INVOCATIONS: readonly {
 export function resolveSuiteInvocation(
   configFile: string | undefined,
   argv: readonly string[],
+  repositoryRoot = process.cwd(),
 ): SuiteInvocation {
-  const normalized = canonicalArgs(argv);
-  const full = FULL_INVOCATIONS.find(
+  const normalized = canonicalArgs(argv, repositoryRoot);
+  const configIndex = normalized.indexOf("--config");
+  const equalsConfig = normalized.find((arg) => arg.startsWith("--config="));
+  const configPath =
+    configIndex === -1
+      ? (equalsConfig?.slice("--config=".length) ??
+        (configFile === undefined ? undefined : resolve(repositoryRoot, configFile)))
+      : normalized[configIndex + 1];
+  const canonicalInvocations = FULL_INVOCATIONS.map((entry) => ({
+    ...entry,
+    args: entry.args.map((arg, index) =>
+      index > 0 && entry.args[index - 1] === "--config" ? resolve(repositoryRoot, arg) : arg,
+    ),
+  }));
+  const full = canonicalInvocations.find(
     (candidate) => JSON.stringify(candidate.args) === JSON.stringify(normalized),
   );
   if (full !== undefined) {
-    return { suite: full.suite, command: full.command, coverage: "full" };
+    return {
+      suite: full.suite,
+      command: full.command,
+      coverage: "full",
+      ...(configPath === undefined ? {} : { config_path: configPath }),
+    };
   }
   const inferred = suiteNameFromInvocation(configFile, argv);
   return {
     suite: inferred,
     command: `vitest ${normalized.join(" ")}`.trim(),
     coverage: "partial",
+    ...(configPath === undefined ? {} : { config_path: configPath }),
   };
 }
 
-export function resolvePlaywrightInvocation(argv: readonly string[]): SuiteInvocation {
-  const normalized = canonicalArgs(argv);
-  const canonical = ["test", "--config", "playwright.dashboard.config.ts"];
+export function resolvePlaywrightInvocation(
+  argv: readonly string[],
+  repositoryRoot = process.cwd(),
+): SuiteInvocation {
+  const normalized = canonicalArgs(argv, repositoryRoot);
+  const configIndex = normalized.indexOf("--config");
+  const configPath = configIndex === -1 ? undefined : normalized[configIndex + 1];
+  const canonical = ["test", "--config", resolve(repositoryRoot, "playwright.dashboard.config.ts")];
   if (JSON.stringify(normalized) === JSON.stringify(canonical)) {
     return {
       suite: "playwright-dashboard",
       command: "pnpm test:e2e:dashboard",
       coverage: "full",
+      config_path: canonical[2],
     };
   }
   return {
     suite: "playwright-dashboard",
     command: `playwright ${normalized.join(" ")}`.trim(),
     coverage: "partial",
+    ...(configPath === undefined ? {} : { config_path: configPath }),
   };
 }
 
@@ -380,6 +418,10 @@ export function buildSuiteReport(
   return {
     schema_version: provenance.schema_version,
     implementation_commit: provenance.implementation_commit,
+    started_commit: provenance.started_commit,
+    finished_commit: provenance.finished_commit,
+    tracked_worktree_clean_at_start: provenance.tracked_worktree_clean_at_start,
+    tracked_worktree_clean_at_finish: provenance.tracked_worktree_clean_at_finish,
     tracked_worktree_clean: provenance.tracked_worktree_clean,
     invocation_id: provenance.invocation_id,
     command: provenance.command,

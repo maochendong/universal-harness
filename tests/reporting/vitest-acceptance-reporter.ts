@@ -39,16 +39,35 @@ function fileResults(root: string, modules: ReadonlyArray<TestModule>): SuiteFil
 
 export default class AcceptanceReporter implements Reporter {
   private ctx!: Vitest;
+  private startedCommit = "";
+  private trackedCleanAtStart = false;
 
   onInit(ctx: Vitest): void {
     this.ctx = ctx;
+    this.startedCommit = execFileSync("git", ["rev-parse", "HEAD"], {
+      cwd: ctx.config.root,
+      encoding: "utf8",
+    }).trim();
+    this.trackedCleanAtStart =
+      execFileSync("git", ["status", "--porcelain", "--untracked-files=no"], {
+        cwd: ctx.config.root,
+        encoding: "utf8",
+      }).trim() === "";
   }
 
   onTestRunEnd(modules: ReadonlyArray<TestModule>): void {
     const root = this.ctx.config.root;
-    const invocation = resolveSuiteInvocation(this.ctx.config.configFile, process.argv.slice(2));
+    const invocation = resolveSuiteInvocation(
+      this.ctx.config.configFile,
+      process.argv.slice(2),
+      root,
+    );
     const invocationId = randomUUID();
     const trackedStatus = execFileSync("git", ["status", "--porcelain", "--untracked-files=no"], {
+      cwd: root,
+      encoding: "utf8",
+    }).trim();
+    const finishedCommit = execFileSync("git", ["rev-parse", "HEAD"], {
       cwd: root,
       encoding: "utf8",
     }).trim();
@@ -58,11 +77,13 @@ export default class AcceptanceReporter implements Reporter {
       new Date().toISOString(),
       {
         schema_version: SUITE_REPORT_SCHEMA_VERSION,
-        implementation_commit: execFileSync("git", ["rev-parse", "HEAD"], {
-          cwd: root,
-          encoding: "utf8",
-        }).trim(),
-        tracked_worktree_clean: trackedStatus === "",
+        implementation_commit: this.startedCommit,
+        started_commit: this.startedCommit,
+        finished_commit: finishedCommit,
+        tracked_worktree_clean_at_start: this.trackedCleanAtStart,
+        tracked_worktree_clean_at_finish: trackedStatus === "",
+        tracked_worktree_clean:
+          this.trackedCleanAtStart && trackedStatus === "" && this.startedCommit === finishedCommit,
         invocation_id: invocationId,
         ...invocation,
       },

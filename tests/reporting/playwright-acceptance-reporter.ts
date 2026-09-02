@@ -19,7 +19,21 @@ import {
  */
 export default class PlaywrightAcceptanceReporter implements Reporter {
   private root = process.cwd();
+  private startedCommit = "";
+  private trackedCleanAtStart = false;
   private readonly results = new Map<string, { file: string; state: SuiteFileResult["state"] }>();
+
+  onBegin(): void {
+    this.startedCommit = execFileSync("git", ["rev-parse", "HEAD"], {
+      cwd: this.root,
+      encoding: "utf8",
+    }).trim();
+    this.trackedCleanAtStart =
+      execFileSync("git", ["status", "--porcelain", "--untracked-files=no"], {
+        cwd: this.root,
+        encoding: "utf8",
+      }).trim() === "";
+  }
 
   onTestEnd(test: TestCase, result: TestResult): void {
     const state: SuiteFileResult["state"] =
@@ -35,7 +49,7 @@ export default class PlaywrightAcceptanceReporter implements Reporter {
   }
 
   onEnd(result: FullResult): void {
-    const invocation = resolvePlaywrightInvocation(process.argv.slice(2));
+    const invocation = resolvePlaywrightInvocation(process.argv.slice(2), this.root);
     const invocationId = randomUUID();
     const byFile = new Map<string, SuiteFileResult["state"]>();
     for (const entry of this.results.values()) {
@@ -53,17 +67,24 @@ export default class PlaywrightAcceptanceReporter implements Reporter {
       .map(([path, state]) => ({ path, state }))
       .sort((left, right) => left.path.localeCompare(right.path));
     const failedFiles = files.filter((file) => file.state === "fail").map((file) => file.path);
-    const report = {
-      schema_version: SUITE_REPORT_SCHEMA_VERSION,
-      implementation_commit: execFileSync("git", ["rev-parse", "HEAD"], {
+    const finishedCommit = execFileSync("git", ["rev-parse", "HEAD"], {
+      cwd: this.root,
+      encoding: "utf8",
+    }).trim();
+    const trackedCleanAtFinish =
+      execFileSync("git", ["status", "--porcelain", "--untracked-files=no"], {
         cwd: this.root,
         encoding: "utf8",
-      }).trim(),
+      }).trim() === "";
+    const report = {
+      schema_version: SUITE_REPORT_SCHEMA_VERSION,
+      implementation_commit: this.startedCommit,
+      started_commit: this.startedCommit,
+      finished_commit: finishedCommit,
+      tracked_worktree_clean_at_start: this.trackedCleanAtStart,
+      tracked_worktree_clean_at_finish: trackedCleanAtFinish,
       tracked_worktree_clean:
-        execFileSync("git", ["status", "--porcelain", "--untracked-files=no"], {
-          cwd: this.root,
-          encoding: "utf8",
-        }).trim() === "",
+        this.trackedCleanAtStart && trackedCleanAtFinish && this.startedCommit === finishedCommit,
       invocation_id: invocationId,
       ...invocation,
       recorded_at: new Date().toISOString(),
