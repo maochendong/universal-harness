@@ -924,15 +924,12 @@ describe("ledger scheduler authority", () => {
     const original = gateEvidence("task_api", { passed: true });
     await authority.commit([{ kind: "append_gate_evidence", records: [original] }]);
     // Task 10 recovery re-commits the same evidence_id as a provisional copy.
-    const downgraded = {
-      ...gateEvidence("task_api", { passed: true, provisional: true }),
-      digest: contentDigest({ evidence: "evidence_task_api", provisional: true }),
-    };
+    const downgraded = { ...original, provisional: true };
     await authority.commit([{ kind: "append_gate_evidence", records: [downgraded] }]);
 
     const facts = await authority.readFacts(operationId);
     expect(facts.gate_evidence).toHaveLength(1);
-    expect(facts.gate_evidence[0]?.digest).toBe(downgraded.digest);
+    expect(facts.gate_evidence[0]?.digest).toBe(original.digest);
     expect(facts.gate_evidence[0]?.provisional).toBe(true);
   });
 

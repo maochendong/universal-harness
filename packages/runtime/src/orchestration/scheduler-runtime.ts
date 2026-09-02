@@ -1017,8 +1017,15 @@ export function createLedgerSchedulerAuthority(
             break;
           case "append_gate_evidence":
             for (const record of transition.records) {
+              // A recovery downgrade deliberately keeps the Evidence semantic
+              // digest: only its authority status changes. Give that replica
+              // a content-addressed filename so it can coexist with the
+              // immutable original while latest-by-evidence_id selects it.
+              const filename = record.provisional
+                ? `${record.digest}.provisional-${contentDigest(record)}.json`
+                : `${record.digest}.json`;
               artifacts.push({
-                path: `artifacts/evidence/${record.evidence_id}/${record.digest}.json`,
+                path: `artifacts/evidence/${record.evidence_id}/${filename}`,
                 content: json(record),
               });
             }

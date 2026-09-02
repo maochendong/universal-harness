@@ -37,7 +37,11 @@ import {
 import { actionDigest } from "../../src/policy/action.js";
 import { buildDecision } from "../../src/policy/decision.js";
 import { mergePolicyLayers } from "../../src/policy/evaluator.js";
-import { WorkflowEngine, type WorkflowDependencies } from "../../src/workflow/operation.js";
+import {
+  WorkflowEngine,
+  ledgerRepositoryFor,
+  type WorkflowDependencies,
+} from "../../src/workflow/operation.js";
 import { FIXED_NOW, cleanupDirectories, headOf, makeTempDir } from "../bootstrap/helpers.js";
 import { PLAN_CONSTRAINTS, approvedImpactSet, entryPath } from "../planning/fixtures.js";
 import { makeStartInput } from "../workflow/helpers.js";
@@ -562,6 +566,55 @@ describe("createProjectSchedulerHost", () => {
     const replacement = approvals.nextPendingRequest(fixture.operationId);
     expect(replacement?.object_digest).not.toBe(request.object_digest);
   }, 60_000);
+
+  it("recovers Ledger candidates before a fresh production host resumes", async () => {
+    const fixture = await makeDrivenProject({ approvalActions: ["integrate_wave"] });
+    const input = {
+      operation_id: fixture.operationId,
+      iteration_id: ITERATION_ID,
+      capability_plan_digest: fixture.capabilityPlan.record_digest,
+      expected_plan_digest: fixture.planContentDigest,
+    } as const;
+    const first = await fixture.host.parallelExecution.port.run({
+      ...input,
+      driver_lock: fixture.host.parallelExecution.driverLock(),
+    });
+    expect(first.status).toBe("paused");
+    const validationsBefore = ledgerRepositoryFor(fixture.deps)
+      .replay()
+      .events.filter(
+        (event) =>
+          event.event_type === "TaskCandidateValidated" && event.payload["task_id"] === "task_api",
+      ).length;
+    expect(validationsBefore).toBeGreaterThan(0);
+
+    const approvals = new ApprovalService(fixture.deps);
+    const request = approvals.nextPendingRequest(fixture.operationId);
+    if (request === undefined) throw new Error("wave integration approval request missing");
+    await approvals.resolveDecision({
+      requestId: request.request_id,
+      decision: "approve",
+      objectDigest: request.object_digest,
+      actor: "human:reviewer",
+    });
+
+    const restartedHost = fixture.createHost();
+    await restartedHost.parallelExecution.port.run({
+      ...input,
+      driver_lock: restartedHost.parallelExecution.driverLock(),
+    });
+
+    const replay = ledgerRepositoryFor(fixture.deps).replay();
+    const validationsAfter = replay.events.filter(
+      (event) =>
+        event.event_type === "TaskCandidateValidated" && event.payload["task_id"] === "task_api",
+    ).length;
+    expect(validationsAfter).toBeGreaterThan(validationsBefore);
+    const facts = await createLedgerSchedulerAuthority({ deps: fixture.deps }).readFacts(
+      fixture.operationId,
+    );
+    expect(facts.wave_integrations.some((wave) => wave.wave_index === 0)).toBe(true);
+  }, 90_000);
 
   it("drives a real two-task/two-wave operation to completion", async () => {
     const fixture = await makeDrivenProject();

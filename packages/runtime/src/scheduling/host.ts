@@ -87,6 +87,7 @@ import {
 } from "./sqlite-projection.js";
 import { createWorkflowTaskDagAdapter, type WorkflowTaskDagReads } from "./task-dag-adapters.js";
 import { createTaskWorkspaceManager } from "./workspace-manager.js";
+import { recoverSchedulingOperation } from "./recovery.js";
 
 /**
  * Project Scheduler Host (M4 plan Task 12 blocker slice). One composition
@@ -703,12 +704,18 @@ export function createProjectSchedulerHost(
   interface OperationStack {
     readonly port: ParallelTaskExecutionPort;
     readonly scheduler: LocalTaskScheduler;
+    recoveryComplete: boolean;
+    recover(expectedPlanDigest: string): Promise<void>;
   }
   const stacks = new Map<string, OperationStack>();
 
   const stackFor = (operationId: string): OperationStack => {
     const existing = stacks.get(operationId);
     if (existing !== undefined) return existing;
+    const operationAuthority = createLedgerSchedulerAuthority({
+      deps,
+      operation_id: operationId,
+    });
     const capabilityPlan = loadLatestCapabilityPlan(operationId);
     if (capabilityPlan === undefined) {
       throw new ParallelTaskExecutionError(
@@ -812,7 +819,7 @@ export function createProjectSchedulerHost(
     const scheduler = createLocalTaskScheduler({
       dag_port: dagPort,
       policy,
-      authority,
+      authority: operationAuthority,
       pool,
       workspaces,
       adapter_manifest_digest: options.agentSlotFactory.adapter_manifest_digest,
@@ -825,7 +832,7 @@ export function createProjectSchedulerHost(
       now,
     });
     const integration = createCandidateIntegrationController({
-      authority,
+      authority: operationAuthority,
       git: integrationGit,
       gates: waveGates,
       effective_policy_digest: effectivePolicyDigest,
@@ -836,7 +843,7 @@ export function createProjectSchedulerHost(
     const port = driveParallelTaskExecution({
       scheduler,
       integration,
-      authority,
+      authority: operationAuthority,
       dag_port: dagPort,
       policy,
       capability_plan: capabilityPlan,
@@ -846,9 +853,49 @@ export function createProjectSchedulerHost(
       effective_policy_digest: effectivePolicyDigest,
       now,
     });
-    const stack: OperationStack = { port, scheduler };
+    const stack: OperationStack = {
+      port,
+      scheduler,
+      recoveryComplete: false,
+      recover: async (expectedPlanDigest) => {
+        await recoverSchedulingOperation(
+          {
+            dag_port: dagPort,
+            authority: operationAuthority,
+            pool: {
+              cancel: async (runId) => {
+                await pool.cancel(runId);
+              },
+            },
+            projections: projectionStore,
+            git: integrationGit,
+            integration,
+            managed_root: managedRoot,
+            now,
+          },
+          {
+            operation_id: operationId,
+            expected_plan_digest: expectedPlanDigest,
+            recovery_command_id: digestId("command", {
+              purpose: "host-startup-recovery",
+              operation_id: operationId,
+              plan_digest: expectedPlanDigest,
+            }),
+          },
+        );
+      },
+    };
     stacks.set(operationId, stack);
     return stack;
+  };
+
+  const runOperationStack = async (input: Parameters<ParallelTaskExecutionPort["run"]>[0]) => {
+    const stack = stackFor(input.operation_id);
+    if (!stack.recoveryComplete) {
+      await stack.recover(input.expected_plan_digest);
+      stack.recoveryComplete = true;
+    }
+    return stack.port.run(input);
   };
 
   // --- Deferred Driver Lock facade ---------------------------------------------
@@ -889,7 +936,7 @@ export function createProjectSchedulerHost(
         // Caller-supplied real handle: the caller owns its lifecycle.
         activeDriverLocks.set(resolved.operation_id, resolved.driver_lock);
         try {
-          return await stackFor(resolved.operation_id).port.run(resolved);
+          return await runOperationStack(resolved);
         } finally {
           if (activeDriverLocks.get(resolved.operation_id) === resolved.driver_lock) {
             activeDriverLocks.delete(resolved.operation_id);
@@ -903,7 +950,7 @@ export function createProjectSchedulerHost(
       facade.handle = handle;
       activeDriverLocks.set(resolved.operation_id, handle);
       try {
-        return await stackFor(resolved.operation_id).port.run({ ...resolved, driver_lock: handle });
+        return await runOperationStack({ ...resolved, driver_lock: handle });
       } finally {
         if (activeDriverLocks.get(resolved.operation_id) === handle) {
           activeDriverLocks.delete(resolved.operation_id);
