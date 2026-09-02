@@ -19,6 +19,7 @@ import { issueGrant } from "../../src/policy/capability-grant.js";
 import { buildDecision, type EffectivePolicy } from "../../src/policy/decision.js";
 import { taskSemanticDigest, type Protocol13TaskSpecification } from "../../src/planning/task.js";
 import type { AgentRunResult } from "@universal-harness-internal/plugin-sdk";
+import { AgentPoolError } from "../../src/scheduling/agent-pool.js";
 import type { SchedulerEventSpec } from "../../src/scheduling/events.js";
 import {
   bindSchedulingEvidence,
@@ -115,7 +116,11 @@ let leaseCounter = 0;
 
 function grantedLease(
   taskSpec: Protocol13TaskSpecification,
-  input: { runId: string; retryKind?: "executor_retry" | "integration_retry" } = { runId: "run" },
+  input: {
+    runId: string;
+    retryKind?: "executor_retry" | "integration_retry";
+    attemptNumber?: number;
+  } = { runId: "run" },
 ): TaskLeaseRecord {
   leaseCounter += 1;
   return buildTaskLeaseRecord({
@@ -134,7 +139,7 @@ function grantedLease(
     lease_id: `lease_${taskSpec.id}_${String(leaseCounter)}`,
     fencing_token: leaseCounter,
     state: "granted",
-    attempt_number: leaseCounter,
+    attempt_number: input.attemptNumber ?? leaseCounter,
     ...(input.retryKind === undefined ? {} : { retry_kind: input.retryKind }),
     reserved_budget: { steps: 10, tokens: 1000 },
     consumed_budget: { steps: 0, tokens: 0 },
@@ -172,6 +177,30 @@ function runTerminated(
     timestamp: NOW,
     outcome: reason === "completion" ? "handoff" : "failed",
     termination_reason: reason,
+  };
+}
+
+/**
+ * A run_started exactly as the dispatch protocol records it: the Run id is
+ * derived from (operation, task, attempt) and the attempt id binds the Run —
+ * the provenance orphan recovery verifies before settling an interruption.
+ */
+function protocolRunStarted(taskId: string, attemptNumber: number): RunRecord {
+  const runId = `run_${contentDigest({
+    operation_id: OPERATION_ID,
+    task_id: taskId,
+    attempt_number: attemptNumber,
+  }).slice(0, 24)}`;
+  return {
+    protocol_version: "1.3.0",
+    record_kind: "run_started",
+    run_id: runId,
+    task_id: taskId,
+    workflow_operation_id: OPERATION_ID,
+    attempt_id: `attempt_${contentDigest({ run_id: runId }).slice(0, 24)}`,
+    sequence: 1,
+    timestamp: NOW,
+    context_bundle_id: `context_bundle_${taskId}`,
   };
 }
 
@@ -348,6 +377,8 @@ class RecoveryAuthority implements SchedulerAuthority {
 class FakePool {
   readonly cancelled: string[] = [];
   readonly runs: string[] = [];
+  /** When true, cancel answers unknown_run — the pool attests the run is gone. */
+  attestsGone = false;
 
   snapshot() {
     return [];
@@ -359,6 +390,7 @@ class FakePool {
 
   async cancel(runId: string): Promise<void> {
     this.cancelled.push(runId);
+    if (this.attestsGone) throw new AgentPoolError("unknown_run", `no active run ${runId}`);
   }
 }
 
@@ -532,6 +564,96 @@ describe("recoverSchedulingOperation", () => {
     const h = recoveryHarness([taskA]);
     const orphan = grantedLease(taskA, { runId: "run_orphan_unknown_usage" });
     h.authority.leases.push(orphan);
+
+    const report = await h.recover();
+
+    const revoked = h.authority.leases.find(
+      (record) => record.lease_id === orphan.lease_id && record.state === "revoked",
+    );
+    expect(revoked?.consumed_budget).toEqual(orphan.reserved_budget);
+    expect(report.dispositions).toEqual([{ task_id: taskA.id, disposition: "blocked" }]);
+    expect(
+      h.authority.findings.some(
+        (finding) =>
+          (finding.extensions?.["harness.finding"] as { rule?: string } | undefined)?.rule ===
+          "budget_usage_unknown",
+      ),
+    ).toBe(true);
+  });
+
+  it("settles a provenance-verified orphan the pool attests is gone like an executor crash", async () => {
+    const taskA = task("task_a");
+    const h = recoveryHarness([taskA]);
+    const started = protocolRunStarted(taskA.id, 1);
+    const orphan = grantedLease(taskA, { runId: started.run_id, attemptNumber: 1 });
+    h.authority.leases.push(orphan);
+    h.authority.runs.push(started);
+    h.pool.attestsGone = true;
+
+    const report = await h.recover();
+
+    const revoked = h.authority.leases.find(
+      (record) => record.lease_id === orphan.lease_id && record.state === "revoked",
+    );
+    // Known process interruption: only the authoritatively consumed budget is
+    // charged (zero while unmetered), never the full reservation.
+    expect(revoked?.consumed_budget).toEqual(orphan.consumed_budget);
+    expect(
+      h.authority.runs.some(
+        (record) => record.run_id === started.run_id && record.record_kind === "run_interrupted",
+      ),
+    ).toBe(true);
+    expect(
+      h.authority.findings.some(
+        (finding) =>
+          (finding.extensions?.["harness.finding"] as { rule?: string } | undefined)?.rule ===
+          "budget_usage_unknown",
+      ),
+    ).toBe(false);
+    expect(report.dispositions).toEqual([{ task_id: taskA.id, disposition: "retry_pending" }]);
+  });
+
+  it("blocks a provenance-verified orphan the pool cannot attest is gone", async () => {
+    const taskA = task("task_a");
+    const h = recoveryHarness([taskA]);
+    const started = protocolRunStarted(taskA.id, 1);
+    const orphan = grantedLease(taskA, { runId: started.run_id, attemptNumber: 1 });
+    h.authority.leases.push(orphan);
+    h.authority.runs.push(started);
+
+    const report = await h.recover();
+
+    const revoked = h.authority.leases.find(
+      (record) => record.lease_id === orphan.lease_id && record.state === "revoked",
+    );
+    expect(revoked?.consumed_budget).toEqual(orphan.reserved_budget);
+    expect(report.dispositions).toEqual([{ task_id: taskA.id, disposition: "blocked" }]);
+    expect(
+      h.authority.findings.some(
+        (finding) =>
+          (finding.extensions?.["harness.finding"] as { rule?: string } | undefined)?.rule ===
+          "budget_usage_unknown",
+      ),
+    ).toBe(true);
+  });
+
+  it("blocks an attested-gone orphan whose run identity is not protocol-derived", async () => {
+    const taskA = task("task_a");
+    const h = recoveryHarness([taskA]);
+    const orphan = grantedLease(taskA, { runId: "run_orphan_foreign", attemptNumber: 1 });
+    h.authority.leases.push(orphan);
+    h.authority.runs.push({
+      protocol_version: "1.3.0",
+      record_kind: "run_started",
+      run_id: orphan.run_id,
+      task_id: taskA.id,
+      workflow_operation_id: OPERATION_ID,
+      attempt_id: "attempt_run_orphan_foreign",
+      sequence: 1,
+      timestamp: NOW,
+      context_bundle_id: "context_bundle_orphan",
+    });
+    h.pool.attestsGone = true;
 
     const report = await h.recover();
 

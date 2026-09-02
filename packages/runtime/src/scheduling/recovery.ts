@@ -47,7 +47,6 @@ import {
 } from "@universal-harness-internal/core";
 
 import type { GateEvidenceRecord } from "../gates/evidence.js";
-import { AgentPoolError } from "./agent-pool.js";
 import { schedulerRecoveredEvent } from "./events.js";
 import {
   CandidateIntegrationError,
@@ -61,6 +60,8 @@ import { projectSchedulerState } from "./projection.js";
 import {
   authoritativeTerminalBudget,
   isPendingCandidateLease,
+  orphanRunProvenanceVerified,
+  poolAttestsRunGone,
   type SchedulerAuthority,
   type SchedulerLedgerFacts,
   type SchedulerTransition,
@@ -239,13 +240,24 @@ export async function recoverSchedulingOperation(
   if (orphaned.length > 0) {
     const transitions: SchedulerTransition[] = [];
     for (const lease of orphaned) {
-      try {
-        await options.pool.cancel(lease.run_id);
-      } catch (error) {
-        if (!(error instanceof AgentPoolError && error.kind === "unknown_run")) throw error;
-      }
+      const runAttestedGone = await poolAttestsRunGone(options.pool, lease.run_id);
       const observedBudget = authoritativeTerminalBudget(initialFacts, lease);
       const budgetUnknown = observedBudget === undefined;
+      // Same dual-proof settlement as recover(): a provenance-verified run the
+      // pool attests is gone is a known process interruption and settles like
+      // an unmetered executor crash (exactly one executor retry on the Task
+      // remainder); anything less fails closed with the full reservation
+      // charged and a blocking budget_usage_unknown Finding.
+      const usageUnknowable =
+        budgetUnknown &&
+        !(
+          runAttestedGone &&
+          orphanRunProvenanceVerified({
+            facts: initialFacts,
+            lease,
+            operation_id: dag.operation_id,
+          })
+        );
       if (budgetUnknown) {
         transitions.push({
           kind: "record_run",
@@ -261,7 +273,8 @@ export async function recoverSchedulingOperation(
         kind: "terminate_lease",
         record: terminateTaskLease(lease, {
           state: "revoked",
-          consumed_budget: observedBudget ?? lease.reserved_budget,
+          consumed_budget:
+            observedBudget ?? (usageUnknowable ? lease.reserved_budget : lease.consumed_budget),
           command_id: digestId("command", {
             purpose: "recovery-revoke",
             recovery_command_id: input.recovery_command_id,
@@ -270,7 +283,7 @@ export async function recoverSchedulingOperation(
           }),
         }),
       });
-      if (budgetUnknown) {
+      if (usageUnknowable) {
         transitions.push({
           kind: "create_finding",
           finding: unknownBudgetFinding({ dag, lease, now: now() }),

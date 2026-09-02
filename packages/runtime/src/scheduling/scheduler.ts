@@ -600,6 +600,51 @@ export function isPendingCandidateLease(
   return terminalCompletionBudget(facts, lease) !== undefined;
 }
 
+/**
+ * Provenance proof for orphan recovery: the authoritative run_started binds
+ * the exact Run and attempt identities the dispatch protocol derives for this
+ * Lease. Shared by recover() and recoverSchedulingOperation so a given Ledger
+ * shape settles with the same budget semantics on either path — the two
+ * recovery entries never release the same Lease differently.
+ */
+export function orphanRunProvenanceVerified(input: {
+  readonly facts: SchedulerLedgerFacts;
+  readonly lease: TaskLeaseRecord;
+  readonly operation_id: string;
+}): boolean {
+  const started = input.facts.runs.find(
+    (record) => record.run_id === input.lease.run_id && record.record_kind === "run_started",
+  );
+  return (
+    started !== undefined &&
+    started.attempt_id === digestId("attempt", { run_id: input.lease.run_id }) &&
+    input.lease.run_id ===
+      digestId("run", {
+        operation_id: input.operation_id,
+        task_id: input.lease.task_id,
+        attempt_number: input.lease.attempt_number,
+      })
+  );
+}
+
+/**
+ * Pool attestation for orphan recovery: true only when the cooperative stop
+ * seam proves the run executes nowhere (unknown_run). Any resolved outcome
+ * leaves the executor's fate — and its usage — uncertain.
+ */
+export async function poolAttestsRunGone(
+  pool: { readonly cancel: (runId: string) => Promise<unknown> },
+  runId: string,
+): Promise<boolean> {
+  try {
+    await pool.cancel(runId);
+    return false;
+  } catch (error) {
+    if (error instanceof AgentPoolError && error.kind === "unknown_run") return true;
+    throw error;
+  }
+}
+
 export function createLocalTaskScheduler(
   options: LocalTaskSchedulerOptions,
 ): DeterministicLocalTaskScheduler {
@@ -1775,16 +1820,9 @@ export function createLocalTaskScheduler(
         for (const lease of orphaned) {
           // Best-effort cooperative stop. recover() holds the driver lock, so
           // this scheduler's pool is the only place the run could still
-          // execute: unknown_run attests the process is gone, while any
-          // resolved outcome leaves the executor's fate — and its usage —
-          // uncertain.
-          let runAttestedGone = false;
-          try {
-            await pool.cancel(lease.run_id);
-          } catch (error) {
-            if (!(error instanceof AgentPoolError && error.kind === "unknown_run")) throw error;
-            runAttestedGone = true;
-          }
+          // execute; the attestation semantics are shared with
+          // recoverSchedulingOperation.
+          const runAttestedGone = await poolAttestsRunGone(pool, lease.run_id);
           const observedBudget = authoritativeTerminalBudget(facts, lease);
           const budgetUnknown = observedBudget === undefined;
           // A known process interruption needs two independent proofs:
@@ -1800,18 +1838,11 @@ export function createLocalTaskScheduler(
           // unverifiable or possibly live run) fails closed as de6d03c
           // established: the full reservation stays charged and a blocking
           // budget_usage_unknown Finding routes the Task to human review.
-          const startedRecord = facts.runs.find(
-            (record) => record.run_id === lease.run_id && record.record_kind === "run_started",
-          );
-          const provenanceVerified =
-            startedRecord !== undefined &&
-            startedRecord.attempt_id === digestId("attempt", { run_id: lease.run_id }) &&
-            lease.run_id ===
-              digestId("run", {
-                operation_id: dag.operation_id,
-                task_id: lease.task_id,
-                attempt_number: lease.attempt_number,
-              });
+          const provenanceVerified = orphanRunProvenanceVerified({
+            facts,
+            lease,
+            operation_id: dag.operation_id,
+          });
           const usageUnknowable = budgetUnknown && !(runAttestedGone && provenanceVerified);
           if (budgetUnknown) {
             // No terminal usage exists: the interruption is authoritative,
