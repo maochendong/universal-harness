@@ -923,6 +923,7 @@ describe("integration retry re-dispatch", () => {
     const [granted, released] = releasedChain(taskA, "run_a_1");
     authority.leases.push(granted, released);
     authority.runs.push(runTerminated("task_a", "run_a_1", "completion"));
+    authority.gateEvidence.push(candidateEvidence(taskA, released, BASE_COMMIT, "task"));
     authority.findings.push(findingRecord("integration_retry_scheduled", ["task_a"], false));
 
     const { scheduler, pool, driveInput } = schedulerHarness([taskA], authority, () =>

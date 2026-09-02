@@ -226,6 +226,25 @@ function hasOpenBlocker(findings: readonly FeedbackRecord[], taskId: string): bo
   return false;
 }
 
+function hasOpenIntegrationRetry(findings: readonly FeedbackRecord[], taskId: string): boolean {
+  return findings.some((finding) => {
+    if (
+      finding.type !== "Finding" ||
+      (finding.status !== "proposed" && finding.status !== "accepted")
+    ) {
+      return false;
+    }
+    const extension = finding.extensions?.["harness.finding"];
+    if (typeof extension !== "object" || extension === null) return false;
+    const retry = extension as { rule?: unknown; blocks?: unknown };
+    return (
+      retry.rule === "integration_retry_scheduled" &&
+      Array.isArray(retry.blocks) &&
+      retry.blocks.includes(taskId)
+    );
+  });
+}
+
 export function projectSchedulerState(
   facts: SchedulerAuthorityFacts,
   live: SchedulerLiveSnapshot | null,
@@ -274,6 +293,11 @@ export function projectSchedulerState(
       // retry_pending projection; otherwise the next drive keeps selecting
       // and re-requesting the same controlled retry forever.
       status = "awaiting_approval";
+    } else if (hasOpenIntegrationRetry(facts.findings, task.id)) {
+      // The non-blocking retry signal is more recent than Evidence from the
+      // failed candidate apply. Keep the Task selectable by the dedicated
+      // integration-retry path even after that attempt's Lease was released.
+      status = "verifying";
     } else if (lease?.state === "granted") {
       status =
         terminalRun === undefined ? "running" : evidence.valid ? "integration_queued" : "verifying";
