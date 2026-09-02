@@ -321,11 +321,12 @@ class FakeWaveGit implements WaveIntegrationGitPort {
   async compareAndSwapRef(input: {
     ref: string;
     expected: string | undefined;
-    next: string;
+    next: string | undefined;
   }): Promise<boolean> {
     if (!this.casResult) return false;
     if (this.refs.get(input.ref) !== input.expected) return false;
-    this.refs.set(input.ref, input.next);
+    if (input.next === undefined) this.refs.delete(input.ref);
+    else this.refs.set(input.ref, input.next);
     return true;
   }
 

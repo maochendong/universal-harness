@@ -239,6 +239,7 @@ class FaultAuthority implements SchedulerAuthority {
   readonly waveIntegrations: WaveIntegrationRecord[] = [];
   readonly events: SchedulerEventSpec[] = [];
   readonly batches: SchedulerTransition[][] = [];
+  failWaveAcceptanceOnce = false;
 
   async readFacts(operationId: string): Promise<SchedulerLedgerFacts> {
     if (operationId !== OPERATION_ID) throw new Error(`unknown operation ${operationId}`);
@@ -253,6 +254,13 @@ class FaultAuthority implements SchedulerAuthority {
   }
 
   async commit(transitions: readonly SchedulerTransition[]): Promise<void> {
+    if (
+      this.failWaveAcceptanceOnce &&
+      transitions.some((transition) => transition.kind === "record_wave_integration")
+    ) {
+      this.failWaveAcceptanceOnce = false;
+      throw new Error("simulated Ledger transaction failure after ref CAS");
+    }
     this.batches.push([...transitions]);
     for (const transition of transitions) {
       switch (transition.kind) {
@@ -289,6 +297,7 @@ class FaultAuthority implements SchedulerAuthority {
 class FaultGit implements WaveIntegrationGitPort {
   readonly refs = new Map<string, string>();
   casResult = true;
+  loseSuccessfulCasResponseOnce = false;
   casCalls = 0;
   private counter = 0;
 
@@ -312,12 +321,17 @@ class FaultGit implements WaveIntegrationGitPort {
   async compareAndSwapRef(input: {
     ref: string;
     expected: string | undefined;
-    next: string;
+    next: string | undefined;
   }): Promise<boolean> {
     this.casCalls += 1;
     if (!this.casResult) return false;
     if (this.refs.get(input.ref) !== input.expected) return false;
-    this.refs.set(input.ref, input.next);
+    if (input.next === undefined) this.refs.delete(input.ref);
+    else this.refs.set(input.ref, input.next);
+    if (this.loseSuccessfulCasResponseOnce) {
+      this.loseSuccessfulCasResponseOnce = false;
+      throw new Error("simulated lost CAS success response");
+    }
     return true;
   }
 
@@ -679,7 +693,7 @@ describe("m4 wave integration failure boundaries", () => {
     expect(h.git.casCalls).toBe(0);
   });
 
-  it("commits the wave record before the CAS and reports a lost CAS race for reconciliation", async () => {
+  it("leaves neither a wave record nor a moved ref when the acceptance CAS is rejected", async () => {
     const h = fakeHarness();
     const prepared = await prepareValidated(h, task("task_a"));
     h.git.casResult = false;
@@ -695,11 +709,64 @@ describe("m4 wave integration failure boundaries", () => {
       }),
     ).rejects.toMatchObject({ kind: "ref_cas_failed" });
 
-    // The authoritative record exists; the failure is a baseline_drift
-    // Finding for reconciliation, never a silent ref force.
-    expect(h.authority.waveIntegrations).toHaveLength(1);
+    // A rejected CAS is not acceptance: neither authority may advance.
+    expect(h.authority.waveIntegrations).toHaveLength(0);
     expect(findingRules(h.authority)).toEqual(["baseline_drift"]);
     expect(h.git.refs.size).toBe(0);
+  });
+
+  it("recovers a successful CAS with a lost response without duplicate integration", async () => {
+    const h = fakeHarness();
+    const prepared = await prepareValidated(h, task("task_a"));
+    const ref = operationRefFor(OPERATION_ID);
+    const input = {
+      dag: prepared.dag,
+      candidate: prepared.candidate,
+      validations: [prepared.validation],
+      policy_decision: prepared.decision,
+      approval_digests: [] as readonly string[],
+      command_id: "command_fault_cas_lost_response",
+    };
+    h.git.loseSuccessfulCasResponseOnce = true;
+
+    await expect(h.controller.acceptWave(input)).rejects.toThrow(
+      "simulated lost CAS success response",
+    );
+    expect(h.git.refs.get(ref)).toBe(prepared.candidate.candidate_commit);
+    expect(h.authority.waveIntegrations).toEqual([]);
+
+    const recovered = await h.controller.acceptWave(input);
+    expect(recovered.command_id).toBe(input.command_id);
+    expect(h.git.refs.get(ref)).toBe(prepared.candidate.candidate_commit);
+    expect(h.authority.waveIntegrations).toHaveLength(1);
+    expect(h.git.casCalls).toBe(1);
+
+    const replayed = await h.controller.acceptWave(input);
+    expect(replayed.record_digest).toBe(recovered.record_digest);
+    expect(h.authority.waveIntegrations).toHaveLength(1);
+    expect(h.git.casCalls).toBe(1);
+  });
+
+  it("rolls back a successful ref CAS when the Ledger acceptance transaction fails", async () => {
+    const h = fakeHarness();
+    const prepared = await prepareValidated(h, task("task_a"));
+    const ref = operationRefFor(OPERATION_ID);
+    h.authority.failWaveAcceptanceOnce = true;
+
+    await expect(
+      h.controller.acceptWave({
+        dag: prepared.dag,
+        candidate: prepared.candidate,
+        validations: [prepared.validation],
+        policy_decision: prepared.decision,
+        approval_digests: [],
+        command_id: "command_fault_ledger_after_cas",
+      }),
+    ).rejects.toThrow("simulated Ledger transaction failure after ref CAS");
+
+    expect(h.git.refs.get(ref)).toBeUndefined();
+    expect(h.authority.waveIntegrations).toEqual([]);
+    expect(h.git.casCalls).toBe(2); // forward CAS plus exact rollback
   });
 
   it("replays a command_id without advancing twice and completes a lost ref move", async () => {

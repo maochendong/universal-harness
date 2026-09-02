@@ -199,7 +199,8 @@ export interface WaveIntegrationGitPort {
   compareAndSwapRef(input: {
     readonly ref: string;
     readonly expected: string | undefined;
-    readonly next: string;
+    /** Undefined deletes the ref and is used only to roll back a failed acceptance. */
+    readonly next: string | undefined;
   }): Promise<boolean>;
   /** Source-tree digest of a commit, excluding the `.harness` Ledger content. */
   sourceTreeDigest(commit: string): Promise<string>;
@@ -321,12 +322,12 @@ export function createGitWaveIntegrationGit(
 
     async compareAndSwapRef(input) {
       try {
-        await gitStdout(options.repositoryRoot, [
-          "update-ref",
-          input.ref,
-          input.next,
-          input.expected ?? ZERO_OID,
-        ]);
+        await gitStdout(
+          options.repositoryRoot,
+          input.next === undefined
+            ? ["update-ref", "-d", input.ref, input.expected ?? ZERO_OID]
+            : ["update-ref", input.ref, input.next, input.expected ?? ZERO_OID],
+        );
         return true;
       } catch {
         return false;
@@ -1416,10 +1417,12 @@ export function createCandidateIntegrationController(
       // Final freshness passed; revalidate the expected base OID immediately
       // before the staged commit (design §13.4).
       const currentRef = await git.readRef(ref);
+      const refAlreadyAtCandidate = currentRef === candidate.candidate_commit;
       if (
-        (currentRef !== undefined && currentRef !== candidate.base_commit) ||
-        (currentRef === undefined &&
-          !(wave.wave_index === 0 && candidate.base_commit === dag.baseline_commit))
+        !refAlreadyAtCandidate &&
+        ((currentRef !== undefined && currentRef !== candidate.base_commit) ||
+          (currentRef === undefined &&
+            !(wave.wave_index === 0 && candidate.base_commit === dag.baseline_commit)))
       ) {
         await authority.commit([
           {
@@ -1468,42 +1471,101 @@ export function createCandidateIntegrationController(
         integrated_at: now(),
       });
 
-      // Staged acceptance: the Ledger manifest lands first; the ref CAS
-      // follows in the same acceptance step. Code never advances without its
-      // Ledger record (design §13.4, global constraint 30).
-      await authority.commit([
-        { kind: "append_gate_evidence", records: waveEvidence },
-        { kind: "record_wave_integration", record },
-        {
-          kind: "append_event",
-          event: waveGateCompletedEvent({
-            operation_id: dag.operation_id,
-            wave_index: wave.wave_index,
-            passed: true,
-            evidence_digests: waveDigests,
-          }),
-        },
-        {
-          kind: "append_event",
-          event: waveIntegratedEvent({
-            operation_id: dag.operation_id,
-            wave_index: wave.wave_index,
-            task_ids: [...wave.task_ids],
-            wave_integration_id: record.wave_integration_id,
-            candidate_commit: candidate.candidate_commit,
-          }),
-        },
-      ]);
+      // Acceptance is recoverable across the Git/Ledger boundary. A fresh
+      // command advances the operation-local ref first; a retry that observes
+      // the exact candidate there completes a previously lost CAS response.
+      // The Ledger batch then seals Evidence + WaveIntegration atomically. If
+      // that batch fails in-process, the exact CAS is reversed. A process
+      // death after CAS is recovered by the same command on restart — never
+      // by accepting a different candidate or force-moving a ref.
+      if (!refAlreadyAtCandidate) {
+        let moved = false;
+        try {
+          moved = await git.compareAndSwapRef({
+            ref,
+            expected: currentRef,
+            next: candidate.candidate_commit,
+          });
+        } catch (error) {
+          // An external Git implementation may report an uncertain result.
+          // Persist nothing here: replay proves the ref before sealing Ledger.
+          throw error;
+        }
+        if (!moved) {
+          const observed = await git.readRef(ref);
+          if (observed === candidate.candidate_commit) {
+            // Lost-success response: continue to the one Ledger transaction.
+            moved = true;
+          }
+        }
+        if (!moved) {
+          await authority.commit([
+            {
+              kind: "create_finding",
+              finding: finding({
+                iteration_id: dag.iteration_id,
+                rule: "baseline_drift",
+                blocking: true,
+                blocks: [],
+                summary:
+                  `operation ref CAS lost the race for wave base ${candidate.base_commit}; ` +
+                  "neither the ref nor the WaveIntegration authority advanced",
+                subject_digests: [dag.plan_digest],
+              }),
+            },
+          ]);
+          throw new CandidateIntegrationError(
+            "ref_cas_failed",
+            `operation ref compare-and-swap failed for ${ref}`,
+          );
+        }
+      }
 
-      const moved = await git.compareAndSwapRef({
-        ref,
-        expected: currentRef,
-        next: candidate.candidate_commit,
-      });
-      if (!moved) {
-        // Only a concurrent writer can lose this race (the driver lock makes
-        // it unreachable in production); the accepted record exists, so the
-        // drift is reported for reconciliation rather than blind-retried.
+      try {
+        await authority.commit([
+          { kind: "append_gate_evidence", records: waveEvidence },
+          { kind: "record_wave_integration", record },
+          {
+            kind: "append_event",
+            event: waveGateCompletedEvent({
+              operation_id: dag.operation_id,
+              wave_index: wave.wave_index,
+              passed: true,
+              evidence_digests: waveDigests,
+            }),
+          },
+          {
+            kind: "append_event",
+            event: waveIntegratedEvent({
+              operation_id: dag.operation_id,
+              wave_index: wave.wave_index,
+              task_ids: [...wave.task_ids],
+              wave_integration_id: record.wave_integration_id,
+              candidate_commit: candidate.candidate_commit,
+            }),
+          },
+        ]);
+      } catch (error) {
+        const rolledBack = await git.compareAndSwapRef({
+          ref,
+          expected: candidate.candidate_commit,
+          next: currentRef,
+        });
+        if (!rolledBack) {
+          throw new CandidateIntegrationError(
+            "ref_cas_failed",
+            `Ledger acceptance failed and ${ref} could not be restored from ` +
+              `${candidate.candidate_commit} to ${String(currentRef)}: ${
+                error instanceof Error ? error.message : String(error)
+              }`,
+          );
+        }
+        throw error;
+      }
+
+      if ((await git.readRef(ref)) !== candidate.candidate_commit) {
+        // The driver lock should make this unreachable. Fail closed rather
+        // than returning a false success if an external writer violated it.
         await authority.commit([
           {
             kind: "create_finding",
@@ -1513,16 +1575,15 @@ export function createCandidateIntegrationController(
               blocking: true,
               blocks: [],
               summary:
-                `operation ref CAS lost the race for wave base ${candidate.base_commit}; ` +
-                `the wave record ${record.wave_integration_id} is committed and the ref ` +
-                "must be reconciled, never forced",
+                `operation ref moved after wave ${String(wave.wave_index)} acceptance; ` +
+                `record ${record.wave_integration_id} requires manual reconciliation`,
               subject_digests: [dag.plan_digest],
             }),
           },
         ]);
         throw new CandidateIntegrationError(
           "ref_cas_failed",
-          `operation ref compare-and-swap failed for ${ref}`,
+          `operation ref no longer holds accepted candidate ${candidate.candidate_commit}`,
         );
       }
       const root = candidateRoots.get(candidate.candidate_commit);
