@@ -42,6 +42,7 @@ import {
   type WaveIntegrationGitPort,
 } from "../../packages/runtime/src/scheduling/integration.js";
 import { schedulerPolicyAction } from "../../packages/runtime/src/scheduling/policy-adapters.js";
+import { buildTaskLeaseChain } from "../../packages/runtime/src/scheduling/lease.js";
 import type { TaskDagSnapshot } from "../../packages/runtime/src/scheduling/ports.js";
 import type {
   SchedulerAuthority,
@@ -55,6 +56,7 @@ import {
   makeRepo,
   makeTempDir,
 } from "../../packages/runtime/test/bootstrap/helpers.js";
+import { proveM4FaultInvariants } from "./support/m4-fault-invariants.js";
 
 /**
  * Plan Task 10 step 8 (M4 design §13.4/§15.1): failure-boundary evidence for
@@ -504,6 +506,29 @@ function findingRules(authority: FaultAuthority): readonly string[] {
   );
 }
 
+/**
+ * Task-layer Evidence bound to fencing token 0 — a token the one-based chain
+ * never minted — for probing that binding enforcement rejects it.
+ */
+function staleTokenEvidence(
+  taskSpec: Protocol13TaskSpecification,
+  lease: TaskLeaseRecord,
+  commit: string,
+): GateEvidenceRecord {
+  return schedulingEvidence({
+    id: `evidence_stale_${taskSpec.id}`,
+    task: taskSpec,
+    lease: {
+      ...lease,
+      fencing_token: 0,
+      lease_id: `${lease.lease_id}_stale`,
+      run_id: `${lease.run_id}_stale`,
+    },
+    commit,
+    layer: "task",
+  });
+}
+
 function retryEvents(authority: FaultAuthority): readonly SchedulerEventSpec[] {
   return authority.events.filter((event) => event.eventType === "TaskRetryScheduled");
 }
@@ -648,6 +673,7 @@ describe("m4 wave integration failure boundaries", () => {
       expected_base_commit: FAKE_BASE,
     });
     h.gates.candidateFailureFor.add("task_a");
+    const batchesBeforeValidation = h.authority.batches.length;
 
     const validation = await h.controller.validateTaskCandidate({
       candidate,
@@ -662,18 +688,79 @@ describe("m4 wave integration failure boundaries", () => {
       ],
     });
 
-    // Semantic conflict: blocked through a Finding; the retry budget is
-    // untouched and the ref never moved.
-    expect(validation.status).toBe("blocked");
-    expect(findingRules(h.authority)).toEqual(["candidate_gate_failed"]);
-    expect(retryEvents(h.authority)).toEqual([]);
-    expect(h.git.refs.size).toBe(0);
+    await proveM4FaultInvariants({
+      no_duplicate_process_acceptance: () => {
+        // The blocked validation committed exactly one batch — gate Evidence
+        // plus the blocking Finding — and no dispatch or run was accepted.
+        expect(validation.status).toBe("blocked");
+        expect(h.authority.batches).toHaveLength(batchesBeforeValidation + 1);
+        expect(h.authority.batches.at(-1)?.map((transition) => transition.kind)).toEqual([
+          "append_gate_evidence",
+          "create_finding",
+        ]);
+        expect(
+          h.authority.batches
+            .flatMap((batch) => batch)
+            .some((transition) =>
+              ["grant_lease", "terminate_lease", "record_run"].includes(transition.kind),
+            ),
+        ).toBe(false);
+      },
+      no_duplicate_integration: () => {
+        // Candidate Gate failure writes no WaveIntegration record.
+        expect(h.authority.waveIntegrations).toEqual([]);
+      },
+      no_stale_fencing_acceptance: async () => {
+        // Evidence bound to a fencing token the chain never minted is rejected
+        // by the same validation seam, committing nothing.
+        const stale = staleTokenEvidence(taskA, granted, FAKE_BASE);
+        h.authority.gateEvidence.push(stale);
+        const batchesBeforeProbe = h.authority.batches.length;
+        await expect(
+          h.controller.validateTaskCandidate({
+            candidate,
+            task: taskA,
+            lease: granted,
+            evidence: [
+              {
+                kind: "gate_result",
+                locator: "ledger://evidence/evidence_stale_task_a",
+                digest: stale.digest,
+              },
+            ],
+          }),
+        ).rejects.toMatchObject({ kind: "evidence_binding_mismatch" });
+        expect(h.authority.batches).toHaveLength(batchesBeforeProbe);
+      },
+      no_incorrect_budget_return: () => {
+        // The reservation stays exactly where the crash left it: the Lease
+        // remains granted — neither released nor revoked — so no budget moved.
+        expect(buildTaskLeaseChain(h.authority.leases).latest_by_task.get("task_a")?.state).toBe(
+          "granted",
+        );
+        expect(h.authority.leases).toHaveLength(1);
+      },
+      no_ref_ledger_split: () => {
+        // Candidate Gate failure leaves both operation ref and
+        // WaveIntegration absent: neither authority advanced.
+        expect(h.git.refs.size).toBe(0);
+        expect(h.authority.waveIntegrations).toEqual([]);
+      },
+      no_false_success: () => {
+        // The semantic conflict is blocked and never becomes an integration
+        // retry.
+        expect(findingRules(h.authority)).toEqual(["candidate_gate_failed"]);
+        expect(retryEvents(h.authority)).toEqual([]);
+      },
+    });
   });
 
   it("keeps the ref unchanged and never retries when a mandatory wave gate fails", async () => {
     const h = fakeHarness();
-    const prepared = await prepareValidated(h, task("task_a"));
+    const taskA = task("task_a");
+    const prepared = await prepareValidated(h, taskA);
     h.gates.waveFails = true;
+    const batchesBeforeAccept = h.authority.batches.length;
 
     await expect(
       h.controller.acceptWave({
@@ -686,11 +773,80 @@ describe("m4 wave integration failure boundaries", () => {
       }),
     ).rejects.toMatchObject({ kind: "wave_gate_failed" });
 
-    expect(findingRules(h.authority)).toEqual(["wave_gate_failed"]);
-    expect(h.authority.waveIntegrations).toEqual([]);
-    expect(h.git.refs.size).toBe(0);
-    expect(retryEvents(h.authority)).toEqual([]);
-    expect(h.git.casCalls).toBe(0);
+    await proveM4FaultInvariants({
+      no_duplicate_process_acceptance: () => {
+        // The failed wave Gate committed exactly one batch of Evidence, event
+        // and Finding; nothing was dispatched or re-accepted, and the CAS was
+        // never attempted.
+        expect(h.authority.batches).toHaveLength(batchesBeforeAccept + 1);
+        expect(h.authority.batches.at(-1)?.map((transition) => transition.kind)).toEqual([
+          "append_gate_evidence",
+          "append_event",
+          "create_finding",
+        ]);
+        expect(h.git.casCalls).toBe(0);
+        expect(
+          h.authority.batches
+            .flatMap((batch) => batch)
+            .some((transition) => ["grant_lease", "record_run"].includes(transition.kind)),
+        ).toBe(false);
+      },
+      no_duplicate_integration: () => {
+        // Wave Gate failure writes no WaveIntegration record.
+        expect(h.authority.waveIntegrations).toEqual([]);
+      },
+      no_stale_fencing_acceptance: async () => {
+        // A validation naming Evidence bound to a fencing token the chain
+        // never minted is rejected at the acceptance seam — before any gate
+        // run or CAS — and commits nothing.
+        const released = buildTaskLeaseChain(h.authority.leases).latest_by_task.get(
+          "task_a",
+        ) as TaskLeaseRecord;
+        const stale = staleTokenEvidence(taskA, released, prepared.candidate.base_commit);
+        h.authority.gateEvidence.push(stale);
+        const batchesBeforeProbe = h.authority.batches.length;
+        await expect(
+          h.controller.acceptWave({
+            dag: prepared.dag,
+            candidate: prepared.candidate,
+            validations: [
+              {
+                task_id: "task_a",
+                status: "candidate_validated",
+                evidence_digests: [stale.digest],
+              },
+            ],
+            policy_decision: prepared.decision,
+            approval_digests: [],
+            command_id: "command_fault_wave_gate_stale",
+          }),
+        ).rejects.toMatchObject({ kind: "evidence_binding_mismatch" });
+        expect(h.authority.batches).toHaveLength(batchesBeforeProbe);
+        expect(h.git.casCalls).toBe(0);
+      },
+      no_incorrect_budget_return: () => {
+        // Validation released the Lease exactly once with the measured
+        // consumption; the failed wave Gate never touched budget again.
+        const terminal = h.authority.batches
+          .flatMap((batch) => batch)
+          .filter((transition) => transition.kind === "terminate_lease");
+        expect(terminal).toHaveLength(1);
+        expect(
+          buildTaskLeaseChain(h.authority.leases).latest_by_task.get("task_a")?.consumed_budget,
+        ).toEqual({ steps: 1, tokens: 10 });
+      },
+      no_ref_ledger_split: () => {
+        // Wave Gate failure leaves the operation ref and Ledger acceptance
+        // unchanged: neither authority moved.
+        expect(h.git.refs.size).toBe(0);
+        expect(h.authority.waveIntegrations).toEqual([]);
+      },
+      no_false_success: () => {
+        // Wave Gate failure records a blocker and never retries.
+        expect(findingRules(h.authority)).toEqual(["wave_gate_failed"]);
+        expect(retryEvents(h.authority)).toEqual([]);
+      },
+    });
   });
 
   it("leaves neither a wave record nor a moved ref when the acceptance CAS is rejected", async () => {
@@ -802,9 +958,59 @@ describe("m4 wave integration failure boundaries", () => {
       command_id: commandId,
     });
 
-    expect(accepted.candidate_commit).toBe(prepared.candidate.candidate_commit);
-    expect(h.authority.waveIntegrations).toHaveLength(1);
-    expect(h.git.casCalls).toBe(1);
+    await proveM4FaultInvariants({
+      no_duplicate_process_acceptance: () => {
+        // The fresh driver reconciled without dispatching or settling anything
+        // new: still one run, one granted+released Lease chain, one CAS.
+        expect(h.authority.runs).toHaveLength(1);
+        expect(h.authority.leases).toHaveLength(2);
+        expect(h.git.casCalls).toBe(1);
+      },
+      no_duplicate_integration: () => {
+        // Fresh-driver reconciliation records the wave once without a second
+        // CAS.
+        expect(accepted.candidate_commit).toBe(prepared.candidate.candidate_commit);
+        expect(h.authority.waveIntegrations).toHaveLength(1);
+        expect(h.authority.waveIntegrations[0]?.command_id).toBe(commandId);
+      },
+      no_stale_fencing_acceptance: () => {
+        // The reconciled record binds the current released Lease digest — the
+        // fencing-token chain head — and nothing else.
+        const released = buildTaskLeaseChain(h.authority.leases).latest_by_task.get(
+          "task_a",
+        ) as TaskLeaseRecord;
+        expect(released.state).toBe("released");
+        expect(h.authority.waveIntegrations[0]?.task_lease_digests).toEqual([
+          released.record_digest,
+        ]);
+      },
+      no_incorrect_budget_return: () => {
+        // The single release kept its measured consumption; the crash and
+        // reconciliation settled no budget a second time.
+        const terminal = h.authority.batches
+          .flatMap((batch) => batch)
+          .filter((transition) => transition.kind === "terminate_lease");
+        expect(terminal).toHaveLength(1);
+        expect(
+          buildTaskLeaseChain(h.authority.leases).latest_by_task.get("task_a")?.consumed_budget,
+        ).toEqual({ steps: 1, tokens: 10 });
+      },
+      no_ref_ledger_split: () => {
+        // The exact candidate ref is reconciled into one authoritative
+        // WaveIntegration record: ref and Ledger hold the same commit.
+        expect(h.git.refs.get(ref)).toBe(prepared.candidate.candidate_commit);
+        expect(h.authority.waveIntegrations).toHaveLength(1);
+        expect(h.authority.waveIntegrations[0]?.candidate_commit).toBe(
+          prepared.candidate.candidate_commit,
+        );
+      },
+      no_false_success: () => {
+        // The first process reported failure until a fresh driver reran
+        // validation and recorded acceptance — no Findings claimed otherwise.
+        expect(findingRules(h.authority)).toEqual([]);
+        expect(h.authority.waveIntegrations).toHaveLength(1);
+      },
+    });
   });
 
   it("rolls back a successful ref CAS when the Ledger acceptance transaction fails", async () => {
@@ -812,21 +1018,83 @@ describe("m4 wave integration failure boundaries", () => {
     const prepared = await prepareValidated(h, task("task_a"));
     const ref = operationRefFor(OPERATION_ID);
     h.authority.failWaveAcceptanceOnce = true;
+    const acceptInput = {
+      dag: prepared.dag,
+      candidate: prepared.candidate,
+      validations: [prepared.validation],
+      policy_decision: prepared.decision,
+      approval_digests: [] as readonly string[],
+      command_id: "command_fault_ledger_after_cas",
+    };
 
-    await expect(
-      h.controller.acceptWave({
-        dag: prepared.dag,
-        candidate: prepared.candidate,
-        validations: [prepared.validation],
-        policy_decision: prepared.decision,
-        approval_digests: [],
-        command_id: "command_fault_ledger_after_cas",
-      }),
-    ).rejects.toThrow("simulated Ledger transaction failure after ref CAS");
-
+    await expect(h.controller.acceptWave(acceptInput)).rejects.toThrow(
+      "simulated Ledger transaction failure after ref CAS",
+    );
+    // The exact reverse CAS restored the ref when Ledger acceptance failed
+    // in-process: neither authority advanced.
     expect(h.git.refs.get(ref)).toBeUndefined();
     expect(h.authority.waveIntegrations).toEqual([]);
     expect(h.git.casCalls).toBe(2); // forward CAS plus exact rollback
+
+    await proveM4FaultInvariants({
+      no_duplicate_process_acceptance: async () => {
+        // The rollback restored the exact pre-acceptance state, so a fresh
+        // retry of the same command succeeds exactly once — one record, one
+        // net ref move, no duplicate acceptance.
+        const retried = await h.controller.acceptWave(acceptInput);
+        expect(retried.command_id).toBe(acceptInput.command_id);
+        expect(h.authority.waveIntegrations).toHaveLength(1);
+        expect(h.git.casCalls).toBe(3); // forward CAS, exact rollback, retry CAS
+        const replayed = await h.controller.acceptWave(acceptInput);
+        expect(replayed.record_digest).toBe(retried.record_digest);
+        expect(h.authority.waveIntegrations).toHaveLength(1);
+        expect(h.git.casCalls).toBe(3);
+      },
+      no_duplicate_integration: () => {
+        // The failed Ledger transaction left no WaveIntegration record, and
+        // the retry plus replay recorded exactly one.
+        expect(h.authority.waveIntegrations.map((record) => record.command_id)).toEqual([
+          acceptInput.command_id,
+        ]);
+      },
+      no_stale_fencing_acceptance: () => {
+        // The acceptance record binds the current released Lease digests — the
+        // fencing-token chain head — and nothing else.
+        const released = buildTaskLeaseChain(h.authority.leases).latest_by_task.get(
+          "task_a",
+        ) as TaskLeaseRecord;
+        expect(released.state).toBe("released");
+        expect(h.authority.waveIntegrations[0]?.task_lease_digests).toEqual([
+          released.record_digest,
+        ]);
+      },
+      no_incorrect_budget_return: () => {
+        // Validation released the Lease exactly once with the measured
+        // consumption; neither the failed acceptance nor the retry settled
+        // budget again.
+        const terminal = h.authority.batches
+          .flatMap((batch) => batch)
+          .filter((transition) => transition.kind === "terminate_lease");
+        expect(terminal).toHaveLength(1);
+        expect(
+          buildTaskLeaseChain(h.authority.leases).latest_by_task.get("task_a")?.consumed_budget,
+        ).toEqual({ steps: 1, tokens: 10 });
+      },
+      no_ref_ledger_split: () => {
+        // The exact reverse CAS restored the ref when Ledger acceptance failed
+        // in-process; after the retry both authorities hold the same candidate.
+        expect(h.git.refs.get(ref)).toBe(prepared.candidate.candidate_commit);
+        expect(h.authority.waveIntegrations[0]?.candidate_commit).toBe(
+          prepared.candidate.candidate_commit,
+        );
+      },
+      no_false_success: () => {
+        // The acceptance call rejected instead of returning an accepted wave;
+        // no Finding or partial record claimed success mid-flight.
+        expect(h.authority.waveIntegrations).toHaveLength(1);
+        expect(findingRules(h.authority)).toEqual([]);
+      },
+    });
   });
 
   it("replays a command_id without advancing twice and completes a lost ref move", async () => {

@@ -45,6 +45,7 @@ import type {
   TaskWorkspaceManager,
 } from "../../src/scheduling/workspace-manager.js";
 import { MANAGED_PROFILE } from "../policy/fixtures.js";
+import { proveM4FaultInvariants } from "../../../../tests/fault/support/m4-fault-invariants.js";
 import {
   BASELINE_COMMIT,
   ITERATION_ID,
@@ -582,23 +583,90 @@ function preloadGrantedLease(
 describe("drive dispatch transaction", () => {
   it("fails closed instead of releasing a Lease when a required Task Gate has no Evidence", async () => {
     const task = schedTask("task_a", [], { required_gates: ["gate_required"] });
-    const { scheduler, authority } = harness({
+    const { scheduler, authority, pool } = harness({
       tasks: [task],
       script: () => ({ kind: "complete" }),
     });
 
     const result = await scheduler.drive(driveInput());
+    const revoked = authority.latestLease(task.id);
+    // A blocked Task is never re-selected: a repeated drive commits nothing.
+    const batchesAfterBlock = authority.batches.length;
+    const again = await scheduler.drive(driveInput());
 
-    expect(result.status).toBe("blocked");
-    expect(authority.latestLease(task.id)?.state).toBe("revoked");
-    expect(authority.gate_evidence).toEqual([]);
-    expect(
-      authority.findings.some(
-        (finding) =>
-          (finding.extensions?.["harness.finding"] as { rule?: string } | undefined)?.rule ===
-          "task_gate_failed",
-      ),
-    ).toBe(true);
+    await proveM4FaultInvariants({
+      no_duplicate_process_acceptance: () => {
+        // The process ran exactly once and the blocked Task never re-dispatched.
+        expect(pool.startedRuns.map((run) => run.task_id)).toEqual(["task_a"]);
+        expect(
+          authority.leases.filter(
+            (lease) => lease.task_id === "task_a" && lease.state === "granted",
+          ),
+        ).toHaveLength(1);
+        expect(again.status).toBe("blocked");
+        expect(authority.batches).toHaveLength(batchesAfterBlock);
+      },
+      no_duplicate_integration: () => {
+        // The Task never entered the integration queue and no integration
+        // record exists anywhere in the authority.
+        expect(authority.wave_integrations).toEqual([]);
+        expect(authority.events.some((event) => event.eventType === "TaskIntegrationQueued")).toBe(
+          false,
+        );
+      },
+      no_stale_fencing_acceptance: async () => {
+        // Token 1 is the only token ever minted and its chain head is
+        // terminal; any other token is rejected by the production guard, and
+        // the re-drive above minted no token 2.
+        expect(authority.latestLease("task_a")?.fencing_token).toBe(1);
+        await expect(
+          scheduler.acceptRunResult({
+            operation_id: OPERATION_ID,
+            task_id: "task_a",
+            fencing_token: 2,
+          }),
+        ).rejects.toMatchObject({ kind: "stale_fencing_token" });
+      },
+      no_incorrect_budget_return: () => {
+        // The revocation settled exactly once: the read model charged exactly
+        // the recorded consumption and released the reservation remainder.
+        expect(revoked?.state).toBe("revoked");
+        const consumed = revoked?.consumed_budget;
+        expect(consumed).toBeDefined();
+        expect(result.read_model.budget.remaining).toEqual({
+          steps: 100 - (consumed?.steps ?? 0),
+          tokens: 100_000 - (consumed?.tokens ?? 0),
+        });
+        expect(
+          authority.batches.flatMap((batch) => batch).filter((t) => t.kind === "terminate_lease"),
+        ).toHaveLength(1);
+      },
+      no_ref_ledger_split: async () => {
+        // This seam moves no git ref; the split-analogue is authority/read-model
+        // divergence. A fresh read derives the same blocked state and budget
+        // from the same authoritative records.
+        const model = await scheduler.read(OPERATION_ID);
+        expect(model.budget.remaining).toEqual(result.read_model.budget.remaining);
+        expect(model.projection.tasks.find((entry) => entry.task_id === "task_a")?.status).toBe(
+          "blocked",
+        );
+      },
+      no_false_success: () => {
+        // Missing required Gate Evidence blocks the Task and records
+        // task_gate_failed; no evidence was fabricated and no terminal success
+        // was recorded.
+        expect(result.status).toBe("blocked");
+        expect(revoked?.state).toBe("revoked");
+        expect(authority.gate_evidence).toEqual([]);
+        expect(
+          authority.findings.some(
+            (finding) =>
+              (finding.extensions?.["harness.finding"] as { rule?: string } | undefined)?.rule ===
+              "task_gate_failed",
+          ),
+        ).toBe(true);
+      },
+    });
   });
 
   it("commits the reservation and granted Lease before the pool starts", async () => {
@@ -695,14 +763,7 @@ describe("policy outcomes", () => {
     });
 
     const first = await scheduler.drive(driveInput());
-    expect(first.status).toBe("paused");
-    // Only task_b paused: task_a was dispatched and classified normally.
-    expect(pool.startedRuns.map((run) => run.task_id)).toEqual(["task_a"]);
-    expect(authority.latestLease("task_b")).toBeUndefined();
-    expect(authority.approvals).toHaveLength(1);
     const request = authority.approvals[0];
-    expect(request?.object_id).toBe("task_b");
-    expect(request?.object_type).toBe("scheduler_action");
     // The request binds the exact normalized dispatch action digest.
     const boundInput = schedulerPolicyAction({
       action: "dispatch_task",
@@ -725,22 +786,104 @@ describe("policy outcomes", () => {
       adapter_control_profile: MANAGED_PROFILE,
       effective_policy_digest: EFFECTIVE.digest,
     });
-    expect(request?.object_digest).toBe(actionDigest(boundInput));
-    const projection = first.read_model.projection.tasks;
-    expect(projection.find((task) => task.task_id === "task_b")?.status).toBe("awaiting_approval");
-    expect(projection.find((task) => task.task_id === "task_a")?.status).toBe("verifying");
+    const taskAInput = schedulerPolicyAction({
+      action: "dispatch_task",
+      operation_id: OPERATION_ID,
+      iteration_id: ITERATION_ID,
+      plan_digest: PLAN_DIGEST,
+      task_digest: taskSemanticDigest(schedTask("task_a")),
+      wave_index: 0,
+      baseline_commit: BASELINE_COMMIT,
+      risk: "low",
+      capabilities: ["code-edit"],
+      tools: [],
+      write_paths: ["src/task_a"],
+      exclusive_resources: [],
+      task_remaining_budget: { steps: 10, tokens: 1000, duration_ms: 60_000 },
+      iteration_remaining_budget: { steps: 100, tokens: 100_000, duration_ms: 3_600_000 },
+      adapter_manifest_digest: ADAPTER_MANIFEST_DIGEST,
+      adapter_control_profile: MANAGED_PROFILE,
+      effective_policy_digest: EFFECTIVE.digest,
+    });
+
+    // A repeated drive while the request is pending re-selects nothing: the
+    // awaiting_approval projection keeps the Task paused without a second
+    // digest-bound request.
+    const batchesAfterFirst = authority.batches.length;
+    const repeated = await scheduler.drive(driveInput());
+    const batchesAfterRepeat = authority.batches.length;
+    const requestsAfterRepeat = authority.approvals.length;
+    const leaseBeforeApproval = authority.latestLease("task_b");
+    const startedBeforeApproval = pool.startedRuns.map((run) => run.task_id);
 
     // The human approves elsewhere; the request leaves the pending set and
     // the next drive grants the Lease with the approval binding recorded.
     approved = true;
     authority.approvals.length = 0;
     const second = await scheduler.drive(driveInput());
-    expect(second.status).toBe("completed");
     const lease = authority.latestLease("task_b");
-    expect(lease?.state).toBe("granted");
-    expect(
-      authority.leases.find((record) => record.task_id === "task_b")?.approval_digests,
-    ).toEqual([approvalDigest]);
+
+    await proveM4FaultInvariants({
+      no_duplicate_process_acceptance: () => {
+        // The unapproved Task was never dispatched — not on the first pass,
+        // not on the repeated one — while its independent peer ran once.
+        expect(repeated.status).toBe("paused");
+        expect(startedBeforeApproval).toEqual(["task_a"]);
+        expect(batchesAfterRepeat).toBe(batchesAfterFirst);
+        // After approval the peer dispatched exactly once as well.
+        expect(second.status).toBe("completed");
+        expect(pool.startedRuns.map((run) => run.task_id)).toEqual(["task_a", "task_b"]);
+      },
+      no_duplicate_integration: () => {
+        // One decision produced exactly one digest-bound request; the repeated
+        // drive created none, and approval produced exactly one granted Lease.
+        expect(requestsAfterRepeat).toBe(1);
+        expect(authority.leases.filter((record) => record.task_id === "task_b")).toHaveLength(1);
+        expect(lease?.state).toBe("granted");
+      },
+      no_stale_fencing_acceptance: async () => {
+        // The request is bound to task_b's exact action digest — a different
+        // action produces a different digest, so the approval cannot be
+        // replayed against another dispatch. The granted Lease binds the
+        // approval, and any token the chain never minted is rejected.
+        expect(request?.object_digest).toBe(actionDigest(boundInput));
+        expect(request?.object_digest).not.toBe(actionDigest(taskAInput));
+        expect(lease?.approval_digests).toEqual([approvalDigest]);
+        await expect(
+          scheduler.acceptRunResult({
+            operation_id: OPERATION_ID,
+            task_id: "task_b",
+            fencing_token: 2,
+          }),
+        ).rejects.toMatchObject({ kind: "stale_fencing_token" });
+      },
+      no_incorrect_budget_return: () => {
+        // While paused the Task held no reservation; the peer's was charged.
+        expect(first.read_model.budget.remaining).toEqual({ steps: 90, tokens: 99_000 });
+        // After approval both reservations are held exactly once.
+        expect(second.read_model.budget.remaining).toEqual({ steps: 80, tokens: 98_000 });
+      },
+      no_ref_ledger_split: () => {
+        // The authority record and the read model never disagreed: the pending
+        // request was visible through the read path with the same identity,
+        // and the granted Lease carries the approval binding it earned.
+        expect(request?.object_id).toBe("task_b");
+        expect(request?.object_type).toBe("scheduler_action");
+        expect(first.read_model.pending_approvals.map((pending) => pending.request_id)).toEqual([
+          request?.request_id,
+        ]);
+      },
+      no_false_success: () => {
+        // The unapproved Task remained paused without a Lease.
+        expect(first.status).toBe("paused");
+        expect(leaseBeforeApproval).toBeUndefined();
+        const projection = first.read_model.projection.tasks;
+        expect(projection.find((task) => task.task_id === "task_b")?.status).toBe(
+          "awaiting_approval",
+        );
+        expect(projection.find((task) => task.task_id === "task_a")?.status).toBe("verifying");
+      },
+    });
   });
 
   it("deny produces a blocking Finding and no Lease", async () => {
@@ -866,33 +1009,82 @@ describe("executor retry and fencing", () => {
   });
 
   it("rejects results carrying a stale fencing token", async () => {
-    const { scheduler } = harness({
+    const { scheduler, authority, pool } = harness({
       tasks: [schedTask("task_a")],
       script: (_taskId, callIndex) => (callIndex === 0 ? { kind: "crash" } : { kind: "complete" }),
     });
     await scheduler.drive(driveInput());
+    // State snapshot before any late-arriving result is offered.
+    const committedBatches = authority.batchDigests();
 
-    await expect(
-      scheduler.acceptRunResult({
-        operation_id: OPERATION_ID,
-        task_id: "task_a",
-        fencing_token: 1,
-      }),
-    ).rejects.toThrow(/fencing token/u);
-    await expect(
-      scheduler.acceptRunResult({
-        operation_id: OPERATION_ID,
-        task_id: "task_a",
-        fencing_token: 1,
-      }),
-    ).rejects.toMatchObject({ kind: "stale_fencing_token" });
-    await expect(
-      scheduler.acceptRunResult({
-        operation_id: OPERATION_ID,
-        task_id: "task_a",
-        fencing_token: 2,
-      }),
-    ).resolves.toBeUndefined();
+    await proveM4FaultInvariants({
+      no_duplicate_process_acceptance: () => {
+        // Exactly two attempts ever ran: the crashed original and the single
+        // executor retry. No late result started anything more.
+        expect(pool.startedRuns.map((run) => run.task_id)).toEqual(["task_a", "task_a"]);
+      },
+      no_duplicate_integration: () => {
+        // Drive classified each of the two attempts exactly once: one start
+        // and one terminal record per run, never a re-classification, and no
+        // integration record exists.
+        expect(authority.wave_integrations).toEqual([]);
+        const runKeys = authority.runs.map((record) => `${record.run_id}::${record.record_kind}`);
+        expect(new Set(runKeys).size).toBe(runKeys.length);
+        expect(
+          authority.runs.filter((record) => record.record_kind === "run_terminated"),
+        ).toHaveLength(2);
+      },
+      no_stale_fencing_acceptance: async () => {
+        // The old fencing token is rejected twice while the current token is
+        // accepted (production seam: the scheduler's run-result acceptance).
+        await expect(
+          scheduler.acceptRunResult({
+            operation_id: OPERATION_ID,
+            task_id: "task_a",
+            fencing_token: 1,
+          }),
+        ).rejects.toThrow(/fencing token/u);
+        await expect(
+          scheduler.acceptRunResult({
+            operation_id: OPERATION_ID,
+            task_id: "task_a",
+            fencing_token: 1,
+          }),
+        ).rejects.toMatchObject({ kind: "stale_fencing_token" });
+        await expect(
+          scheduler.acceptRunResult({
+            operation_id: OPERATION_ID,
+            task_id: "task_a",
+            fencing_token: 2,
+          }),
+        ).resolves.toBeUndefined();
+      },
+      no_incorrect_budget_return: async () => {
+        // Rejections moved no budget: the crash's measured consumption and the
+        // retry's reservation are exactly what the account still reflects.
+        const model = await scheduler.read(OPERATION_ID);
+        expect(model.budget.remaining).toEqual({ steps: 90, tokens: 99_000 });
+      },
+      no_ref_ledger_split: async () => {
+        // The fencing guard and the read model consult the same authority:
+        // both agree the current token is 2 and the Task awaits verification.
+        const chain = buildTaskLeaseChain(authority.leases);
+        expect(chain.latest_by_task.get("task_a")?.fencing_token).toBe(2);
+        const model = await scheduler.read(OPERATION_ID);
+        expect(model.projection.tasks.find((entry) => entry.task_id === "task_a")?.status).toBe(
+          "verifying",
+        );
+      },
+      no_false_success: () => {
+        // A stale Agent result cannot advance Task authority: the rejections
+        // committed nothing and no validation/integration success was recorded.
+        expect(authority.batchDigests()).toEqual(committedBatches);
+        expect(authority.events.some((event) => event.eventType === "TaskCandidateValidated")).toBe(
+          false,
+        );
+        expect(authority.wave_integrations).toEqual([]);
+      },
+    });
   });
 });
 
@@ -1095,24 +1287,79 @@ describe("recovery", () => {
       ...driveInput(),
       recovery_command_id: "command_recovery_unknown_usage",
     });
-
     const revoked = authority.leases.find(
       (record) => record.lease_id === lease.lease_id && record.state === "revoked",
     );
-    expect(revoked?.consumed_budget).toEqual(lease.reserved_budget);
-    expect(pool.startedRuns).toEqual([]);
-    expect(recovered.status).toBe("blocked");
-    expect(recovered.read_model.budget.remaining).toEqual({
-      steps: 100 - lease.reserved_budget.steps,
-      tokens: 100_000 - lease.reserved_budget.tokens,
+
+    await proveM4FaultInvariants({
+      no_duplicate_process_acceptance: () => {
+        // A fresh driver starts no replacement process while usage is unknown.
+        expect(pool.startedRuns).toEqual([]);
+      },
+      no_duplicate_integration: () => {
+        // Recovery committed exactly one settlement: one revocation plus one
+        // interruption record for the orphan run — no re-classified or
+        // completed run, no integration queue entry, no new grant.
+        expect(
+          authority.batches
+            .flatMap((batch) => batch)
+            .filter((transition) => transition.kind === "terminate_lease"),
+        ).toHaveLength(1);
+        expect(authority.leases).toHaveLength(2);
+        expect(
+          authority.runs.filter((record) => record.record_kind === "run_interrupted"),
+        ).toHaveLength(1);
+        expect(authority.runs.some((record) => record.record_kind === "run_terminated")).toBe(
+          false,
+        );
+        expect(authority.wave_integrations).toEqual([]);
+        expect(authority.events.some((event) => event.eventType === "TaskIntegrationQueued")).toBe(
+          false,
+        );
+      },
+      no_stale_fencing_acceptance: async () => {
+        // Recovery minted no new token: token 1 stays the chain head and is
+        // terminal, and a token no granted Lease carries is rejected.
+        const chain = buildTaskLeaseChain(authority.leases);
+        expect(chain.latest_by_task.get("task_a")?.fencing_token).toBe(1);
+        await expect(
+          scheduler.acceptRunResult({
+            operation_id: OPERATION_ID,
+            task_id: "task_a",
+            fencing_token: 2,
+          }),
+        ).rejects.toMatchObject({ kind: "stale_fencing_token" });
+      },
+      no_incorrect_budget_return: () => {
+        // The revoked Lease conservatively charges the full reservation.
+        expect(revoked?.consumed_budget).toEqual(lease.reserved_budget);
+        expect(recovered.read_model.budget.remaining).toEqual({
+          steps: 100 - lease.reserved_budget.steps,
+          tokens: 100_000 - lease.reserved_budget.tokens,
+        });
+      },
+      no_ref_ledger_split: async () => {
+        // This seam moves no git ref; the split-analogue is authority/read-model
+        // divergence. A fresh read derives the same blocked Task and charged
+        // budget from the same authoritative records.
+        const model = await scheduler.read(OPERATION_ID);
+        expect(model.budget.remaining).toEqual(recovered.read_model.budget.remaining);
+        expect(model.projection.tasks.find((entry) => entry.task_id === "task_a")?.status).toBe(
+          "blocked",
+        );
+      },
+      no_false_success: () => {
+        // Recovery returns blocked with a budget_usage_unknown Finding.
+        expect(recovered.status).toBe("blocked");
+        expect(
+          authority.findings.some(
+            (finding) =>
+              (finding.extensions?.["harness.finding"] as { rule?: string } | undefined)?.rule ===
+              "budget_usage_unknown",
+          ),
+        ).toBe(true);
+      },
     });
-    expect(
-      authority.findings.some(
-        (finding) =>
-          (finding.extensions?.["harness.finding"] as { rule?: string } | undefined)?.rule ===
-          "budget_usage_unknown",
-      ),
-    ).toBe(true);
   });
 
   it("fails closed when a granted Lease has no live driver, then recover() revokes and retries", async () => {

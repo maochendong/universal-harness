@@ -13,6 +13,7 @@ import {
   createProjectProfileRecord,
   harnessRootFor,
   type CapabilityPlanRecord,
+  type TaskLeaseRecord,
 } from "@universal-harness-internal/core";
 import type {
   AgentAdapter,
@@ -43,6 +44,7 @@ import {
   type WorkflowDependencies,
 } from "../../src/workflow/operation.js";
 import { FIXED_NOW, cleanupDirectories, headOf, makeTempDir } from "../bootstrap/helpers.js";
+import { proveM4FaultInvariants } from "../../../../tests/fault/support/m4-fault-invariants.js";
 import { PLAN_CONSTRAINTS, approvedImpactSet, entryPath } from "../planning/fixtures.js";
 import { makeStartInput } from "../workflow/helpers.js";
 
@@ -754,13 +756,73 @@ describe("createProjectSchedulerHost", () => {
     const observed = await fixture.host.readSchedulerModel(fixture.operationId);
     expect(observed.operation.live_state).toBe("observed");
     if (fixture.projectionStorePath === undefined) throw new Error("SQLite path missing");
+
+    // Authority state before the projection loss: real Ledger facts and the
+    // real operation ref.
+    const authorityBefore = await createLedgerSchedulerAuthority({
+      deps: fixture.deps,
+    }).readFacts(fixture.operationId);
+    const refBefore = readGitRef(fixture.projectRoot, operationRefFor(fixture.operationId));
+
     rmSync(fixture.projectionStorePath, { force: true });
 
     const recovered = await fixture.createHost().readSchedulerModel(fixture.operationId);
-    expect(recovered.operation.live_state).toBe("rebuilding");
-    expect(recovered.tasks.map((task) => [task.task_id, task.status])).toEqual(
-      observed.tasks.map((task) => [task.task_id, task.status]),
-    );
-    expect(recovered.slots).toEqual([]);
+    const authorityAfter = await createLedgerSchedulerAuthority({
+      deps: fixture.deps,
+    }).readFacts(fixture.operationId);
+    const refAfter = readGitRef(fixture.projectRoot, operationRefFor(fixture.operationId));
+
+    const leaseBudgetView = (facts: { readonly leases: readonly TaskLeaseRecord[] }) =>
+      facts.leases.map((record) => [
+        record.lease_id,
+        record.state,
+        record.reserved_budget,
+        record.consumed_budget,
+      ]);
+
+    await proveM4FaultInvariants({
+      no_duplicate_process_acceptance: () => {
+        // No process was resurrected by the rebuild: no live slots, and the
+        // authority holds byte-identical run records.
+        expect(recovered.slots).toEqual([]);
+        expect(canonicalizeJson(authorityAfter.runs)).toBe(canonicalizeJson(authorityBefore.runs));
+      },
+      no_duplicate_integration: () => {
+        // The rebuild duplicated no integration: the WaveIntegration records
+        // are byte-identical before and after the projection loss.
+        expect(canonicalizeJson(authorityAfter.wave_integrations)).toBe(
+          canonicalizeJson(authorityBefore.wave_integrations),
+        );
+      },
+      no_stale_fencing_acceptance: () => {
+        // The fencing-token chain rebuilt byte-identically from Ledger
+        // authority; no stale token regressed into currency.
+        expect(canonicalizeJson(authorityAfter.leases)).toBe(
+          canonicalizeJson(authorityBefore.leases),
+        );
+      },
+      no_incorrect_budget_return: () => {
+        // Budget-relevant Lease fields are exactly what the Ledger held before
+        // the loss: the rebuild neither returned nor charged anything twice.
+        expect(leaseBudgetView(authorityAfter)).toEqual(leaseBudgetView(authorityBefore));
+      },
+      no_ref_ledger_split: () => {
+        // The real operation ref and the Ledger still agree: the ref did not
+        // move and the integration record set is unchanged.
+        expect(refBefore).toBeDefined();
+        expect(refAfter).toBe(refBefore);
+        expect(canonicalizeJson(authorityAfter.wave_integrations)).toBe(
+          canonicalizeJson(authorityBefore.wave_integrations),
+        );
+      },
+      no_false_success: () => {
+        // Deleting live SQLite preserves the exact authority-derived Task
+        // statuses, and the rebuilt projection honestly reports "rebuilding".
+        expect(recovered.operation.live_state).toBe("rebuilding");
+        expect(recovered.tasks.map((task) => [task.task_id, task.status])).toEqual(
+          observed.tasks.map((task) => [task.task_id, task.status]),
+        );
+      },
+    });
   }, 60_000);
 });

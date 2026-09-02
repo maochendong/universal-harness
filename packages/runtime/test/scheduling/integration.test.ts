@@ -29,6 +29,7 @@ import {
   type WaveIntegrationGitPort,
 } from "../../src/scheduling/integration.js";
 import { buildTaskLeaseChain, terminateTaskLease } from "../../src/scheduling/lease.js";
+import { proveM4FaultInvariants } from "../../../../tests/fault/support/m4-fault-invariants.js";
 import { schedulerPolicyAction } from "../../src/scheduling/policy-adapters.js";
 import type { TaskDagSnapshot } from "../../src/scheduling/ports.js";
 import type { SchedulerEventSpec } from "../../src/scheduling/events.js";
@@ -738,6 +739,7 @@ describe("validateTaskCandidate", () => {
     const { candidate } = await prepareCandidate(h, [taskA]);
     const { lease, taskEvidence } = preloadTaskFacts(h, taskA, candidate.candidate_commit);
     h.gates.candidateThrowsFor.add(taskA.id);
+    const batchesBeforeCrash = h.authority.batches.length;
 
     await expect(
       h.controller.validateTaskCandidate({
@@ -747,9 +749,74 @@ describe("validateTaskCandidate", () => {
         evidence: [evidenceRef(taskEvidence)],
       }),
     ).rejects.toThrow("injected candidate gate crash");
+    // The crash left the granted Lease — and its reservation — untouched.
     expect(buildTaskLeaseChain(h.authority.leases).latest_by_task.get(taskA.id)?.state).toBe(
       "granted",
     );
+
+    await proveM4FaultInvariants({
+      no_duplicate_process_acceptance: async () => {
+        // The crash committed nothing; a clean retry validates exactly once —
+        // one atomic batch of Evidence, release and event.
+        expect(h.authority.batches).toHaveLength(batchesBeforeCrash);
+        h.gates.candidateThrowsFor.delete(taskA.id);
+        const validation = await h.controller.validateTaskCandidate({
+          candidate,
+          task: taskA,
+          lease,
+          evidence: [evidenceRef(taskEvidence)],
+        });
+        expect(validation.status).toBe("candidate_validated");
+        expect(h.authority.batches).toHaveLength(batchesBeforeCrash + 1);
+        expect(h.authority.batches.at(-1)?.map((transition) => transition.kind)).toEqual([
+          "append_gate_evidence",
+          "terminate_lease",
+          "append_event",
+        ]);
+      },
+      no_duplicate_integration: () => {
+        // No WaveIntegration record exists at this seam, before or after the
+        // retried validation.
+        expect(h.authority.waveIntegrations).toEqual([]);
+      },
+      no_stale_fencing_acceptance: async () => {
+        // The successful validation released the Lease; replaying validation
+        // with the now-superseded grant is rejected as no longer current.
+        await expect(
+          h.controller.validateTaskCandidate({
+            candidate,
+            task: taskA,
+            lease,
+            evidence: [evidenceRef(taskEvidence)],
+          }),
+        ).rejects.toMatchObject({ kind: "lease_not_current" });
+      },
+      no_incorrect_budget_return: () => {
+        // The crash kept the granted Lease's reservation untouched; the retry
+        // released it exactly once with the measured consumption.
+        const terminal = h.authority.leases.filter((record) => record.state !== "granted");
+        expect(terminal).toHaveLength(1);
+        expect(terminal[0]?.state).toBe("released");
+        expect(terminal[0]?.consumed_budget).toEqual({ steps: 1, tokens: 10 });
+      },
+      no_ref_ledger_split: () => {
+        // The candidate commit never reached the operation ref nor the
+        // WaveIntegration authority: both sides agree on nothing accepted.
+        expect(h.git.refs.size).toBe(0);
+        expect(h.authority.waveIntegrations).toEqual([]);
+      },
+      no_false_success: () => {
+        // The crash produced no candidate_validated terminal state on its own:
+        // the only validated event came from the real retried validation, and
+        // the chain head is the released record that validation committed.
+        expect(
+          h.authority.events.filter((event) => event.eventType === "TaskCandidateValidated"),
+        ).toHaveLength(1);
+        expect(buildTaskLeaseChain(h.authority.leases).latest_by_task.get(taskA.id)?.state).toBe(
+          "released",
+        );
+      },
+    });
   });
 
   it("fails closed when a required candidate Gate produces no Evidence", async () => {

@@ -30,6 +30,7 @@ import {
 } from "../../packages/runtime/src/scheduling/budget.js";
 import {
   buildTaskLeaseChain,
+  assertCurrentFencingToken,
   deriveTaskLeaseId,
   grantTaskLease,
   nextFencingToken,
@@ -41,6 +42,7 @@ import {
   createFaultInjector,
   type FaultSpec,
 } from "../helpers/fault-injection.js";
+import { proveM4FaultInvariants } from "./support/m4-fault-invariants.js";
 
 /**
  * Plan Task 5 step 5: atomic commit boundary faults on the dispatch chain
@@ -331,47 +333,102 @@ describe("m4 lease/budget atomic commit boundaries", () => {
     await expect(dispatchTask(crashingRepository, crashed)).rejects.toBeInstanceOf(
       SimulatedProcessKill,
     );
-    // The caller saw a crash before the result returned, so no process was
-    // started by the crashed coordinator even though the commit is durable.
-    expect(crashed.startedProcesses).toEqual([]);
+    expect(injector.fired()).toBe(true);
 
     const recovered = makeRepository(projectRoot);
     const records = readCommittedLeaseRecords(recovered);
-    expect(records).toHaveLength(1);
-    expect(records[0]?.state).toBe("granted");
     const restored = restoreBudgetAccount({
       limit: LIMIT,
       iteration_deadline: DEADLINE,
       records,
     });
-    expect(restored.reservations[TASK_ID]?.lease_id).toBe(records[0]?.lease_id);
 
-    // Replaying the same command_id against the recovered Ledger is a no-op:
-    // no second record, no second reservation, no duplicate process start.
+    // Replaying the same command_id against the recovered Ledger is a no-op.
     const retried = freshCoordinator();
     const outcome = await dispatchTask(recovered, retried);
-    expect(outcome).toBe("already_committed");
-    expect(retried.startedProcesses).toEqual([]);
-    expect(retried.records).toEqual([]);
-    expect(recovered.operations()).toHaveLength(1);
-    expect(readCommittedLeaseRecords(recovered)).toHaveLength(1);
 
-    // The Ledger itself also rejects a duplicate commit of the same command:
-    // byte-identical retry is recognized as already committed, never appended.
-    const granted = records[0] as TaskLeaseRecord;
-    const replay = await recovered.commit(
-      makeInput(COMMAND_ID, {
-        artifacts: [
-          {
-            path: `${RECORD_DIR}/${COMMAND_ID}.json`,
-            content: `${canonicalizeJson(granted)}\n`,
-          },
-        ],
-        required_reader_version: "1.3.0",
-      }),
-    );
-    expect(replay.status).toBe("already_committed");
-    expect(recovered.operations()).toHaveLength(1);
+    await proveM4FaultInvariants({
+      no_duplicate_process_acceptance: () => {
+        // The caller saw a crash before the result returned, so the crashed
+        // coordinator never started a process even though the commit is
+        // durable; the replay started none either.
+        expect(crashed.startedProcesses).toEqual([]);
+        expect(outcome).toBe("already_committed");
+        expect(retried.startedProcesses).toEqual([]);
+        expect(retried.records).toEqual([]);
+      },
+      no_duplicate_integration: async () => {
+        // The Ledger itself also rejects a duplicate commit of the same
+        // command: a byte-identical retry is recognized as already committed,
+        // never appended.
+        const granted = records[0] as TaskLeaseRecord;
+        const replay = await recovered.commit(
+          makeInput(COMMAND_ID, {
+            artifacts: [
+              {
+                path: `${RECORD_DIR}/${COMMAND_ID}.json`,
+                content: `${canonicalizeJson(granted)}\n`,
+              },
+            ],
+            required_reader_version: "1.3.0",
+          }),
+        );
+        expect(replay.status).toBe("already_committed");
+        expect(recovered.operations()).toHaveLength(1);
+        expect(readCommittedLeaseRecords(recovered)).toHaveLength(1);
+      },
+      no_stale_fencing_acceptance: () => {
+        // Exactly one fencing token was ever minted for this Task. The
+        // production acceptance guard takes token 1 as current and rejects a
+        // token no granted Lease carries — a crashed pre-commit view can never
+        // mint a competing one.
+        const chain = buildTaskLeaseChain(records);
+        expect(chain.records).toHaveLength(1);
+        expect(chain.latest_by_task.get(TASK_ID)?.fencing_token).toBe(1);
+        assertCurrentFencingToken(chain, TASK_ID, 1);
+        expect(() => assertCurrentFencingToken(chain, TASK_ID, 2)).toThrowError(
+          expect.objectContaining({ kind: "stale_fencing_token" }),
+        );
+      },
+      no_incorrect_budget_return: () => {
+        // The recovered account retains the durable granted Lease reservation;
+        // neither the crash nor the replay returned or double-charged it.
+        expect(records).toHaveLength(1);
+        expect(records[0]?.state).toBe("granted");
+        expect(restored.reservations[TASK_ID]?.lease_id).toBe(records[0]?.lease_id);
+        expect(restored.reservations[TASK_ID]).toEqual({
+          lease_id: records[0]?.lease_id,
+          fencing_token: 1,
+          steps: RESERVE_STEPS,
+          tokens: RESERVE_TOKENS,
+        });
+        expect(remainingBudget(restored)).toEqual({ steps: 4, tokens: 4_000 });
+      },
+      no_ref_ledger_split: () => {
+        // This seam moves no git ref; the split-analogue is manifest/artifact
+        // divergence. The committed manifests and the record bytes on disk
+        // reference each other exactly — no orphaned bytes, no dangling digest.
+        const operations = recovered.operations();
+        expect(operations).toHaveLength(1);
+        const manifestDigests = new Set(
+          operations.flatMap((operation) => operation.manifest.artifact_digests),
+        );
+        const directory = join(recovered.harnessRoot, RECORD_DIR);
+        const files = readdirSync(directory).sort();
+        expect(files).toEqual([`${COMMAND_ID}.json`]);
+        const fileDigests = new Set(
+          files.map((fileName) => sha256Hex(readFileSync(join(directory, fileName), "utf8"))),
+        );
+        expect(fileDigests).toEqual(manifestDigests);
+      },
+      no_false_success: () => {
+        // The crash leaves one granted Lease, never a terminal success: no
+        // released/integrated state exists anywhere in the authority.
+        expect(records).toHaveLength(1);
+        expect(records[0]?.state).toBe("granted");
+        expect(buildTaskLeaseChain(records).latest_by_task.get(TASK_ID)?.state).toBe("granted");
+      },
+    });
   });
 
   it("a replay after a fully successful dispatch changes nothing", async () => {

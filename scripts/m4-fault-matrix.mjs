@@ -22,11 +22,28 @@ export const M4_FAULT_CASES = [
     invariants: [
       {
         id: "no_duplicate_process_acceptance",
-        assertion: "replay starts no process after the granted Lease command is already committed",
+        assertion:
+          "the crashed coordinator started no process and the command_id replay starts none either",
+      },
+      {
+        id: "no_duplicate_integration",
+        assertion:
+          "a byte-identical Ledger replay of the committed command is already_committed, never appended",
+      },
+      {
+        id: "no_stale_fencing_acceptance",
+        assertion:
+          "exactly one fencing token exists; the production guard rejects a token no granted Lease carries",
       },
       {
         id: "no_incorrect_budget_return",
-        assertion: "the recovered account retains the durable granted Lease reservation",
+        assertion:
+          "the recovered account retains the durable granted Lease reservation, unchanged by the replay",
+      },
+      {
+        id: "no_ref_ledger_split",
+        assertion:
+          "committed manifest digests and on-disk record bytes reference each other exactly — no orphans, no dangling digests",
       },
       {
         id: "no_false_success",
@@ -44,8 +61,23 @@ export const M4_FAULT_CASES = [
         assertion: "a fresh driver starts no replacement process while usage is unknown",
       },
       {
+        id: "no_duplicate_integration",
+        assertion:
+          "recovery settles exactly once: one revocation and one interruption record, no re-classified run, no integration queue entry",
+      },
+      {
+        id: "no_stale_fencing_acceptance",
+        assertion:
+          "recovery mints no new token; the chain head stays terminal at token 1 and a never-granted token is rejected",
+      },
+      {
         id: "no_incorrect_budget_return",
         assertion: "the revoked Lease conservatively charges the full reservation",
+      },
+      {
+        id: "no_ref_ledger_split",
+        assertion:
+          "a fresh read derives the same blocked Task and charged budget from the same authoritative records",
       },
       {
         id: "no_false_success",
@@ -59,12 +91,33 @@ export const M4_FAULT_CASES = [
     test: "rejects results carrying a stale fencing token",
     invariants: [
       {
+        id: "no_duplicate_process_acceptance",
+        assertion:
+          "exactly two attempts ever ran — the crashed original and the single executor retry",
+      },
+      {
+        id: "no_duplicate_integration",
+        assertion:
+          "each attempt was classified exactly once (unique run records) and no integration record exists",
+      },
+      {
         id: "no_stale_fencing_acceptance",
         assertion: "the old fencing token is rejected twice while the current token is accepted",
       },
       {
+        id: "no_incorrect_budget_return",
+        assertion:
+          "the rejections moved no budget: the crash's measured consumption plus the retry reservation is exactly what remains",
+      },
+      {
+        id: "no_ref_ledger_split",
+        assertion:
+          "the fencing guard and the read model consult the same authority: both agree on the current token and status",
+      },
+      {
         id: "no_false_success",
-        assertion: "a stale Agent result cannot advance Task authority",
+        assertion:
+          "the stale rejections committed nothing and recorded no validation or integration success",
       },
     ],
   },
@@ -74,8 +127,34 @@ export const M4_FAULT_CASES = [
     test: "fails closed instead of releasing a Lease when a required Task Gate has no Evidence",
     invariants: [
       {
+        id: "no_duplicate_process_acceptance",
+        assertion:
+          "the process ran exactly once and a repeated drive re-dispatches nothing and commits nothing",
+      },
+      {
+        id: "no_duplicate_integration",
+        assertion:
+          "the Task never entered the integration queue and no WaveIntegration record exists",
+      },
+      {
+        id: "no_stale_fencing_acceptance",
+        assertion:
+          "token 1 stays the only minted token with a terminal chain head; any other token is rejected",
+      },
+      {
+        id: "no_incorrect_budget_return",
+        assertion:
+          "the revocation settled exactly once: the read model charged exactly the recorded consumption",
+      },
+      {
+        id: "no_ref_ledger_split",
+        assertion:
+          "a fresh read derives the same blocked Task and budget from the same authoritative records",
+      },
+      {
         id: "no_false_success",
-        assertion: "missing required Gate Evidence blocks the Task and records task_gate_failed",
+        assertion:
+          "missing required Gate Evidence blocks the Task, records task_gate_failed, and fabricates no Evidence",
       },
     ],
   },
@@ -85,8 +164,23 @@ export const M4_FAULT_CASES = [
     test: "blocks on a candidate gate failure without consuming the integration retry",
     invariants: [
       {
+        id: "no_duplicate_process_acceptance",
+        assertion:
+          "the blocked validation committed exactly one batch of Evidence plus Finding — no dispatch, run or lease transition",
+      },
+      {
         id: "no_duplicate_integration",
         assertion: "candidate Gate failure writes no WaveIntegration record",
+      },
+      {
+        id: "no_stale_fencing_acceptance",
+        assertion:
+          "Evidence bound to a fencing token the chain never minted is rejected by the same validation seam, committing nothing",
+      },
+      {
+        id: "no_incorrect_budget_return",
+        assertion:
+          "the Lease remains granted with its reservation intact — neither released nor revoked by the failure",
       },
       {
         id: "no_ref_ledger_split",
@@ -104,12 +198,33 @@ export const M4_FAULT_CASES = [
     test: "keeps the Lease granted when candidate Gate execution crashes before the atomic release",
     invariants: [
       {
+        id: "no_duplicate_process_acceptance",
+        assertion:
+          "the crash committed nothing; a clean retry validates exactly once in one atomic batch",
+      },
+      {
+        id: "no_duplicate_integration",
+        assertion: "no WaveIntegration record exists at this seam before or after the retry",
+      },
+      {
+        id: "no_stale_fencing_acceptance",
+        assertion:
+          "replaying validation with the released (superseded) grant is rejected as no longer current",
+      },
+      {
         id: "no_incorrect_budget_return",
-        assertion: "the granted Lease keeps its reservation when candidate Gate execution crashes",
+        assertion:
+          "the crash kept the granted Lease's reservation untouched; the retry released it exactly once with the measured consumption",
+      },
+      {
+        id: "no_ref_ledger_split",
+        assertion:
+          "the candidate commit never reached the operation ref nor the WaveIntegration authority",
       },
       {
         id: "no_false_success",
-        assertion: "the crash produces no candidate_validated terminal state",
+        assertion:
+          "the crash produced no candidate_validated terminal state on its own — only the real retried validation did",
       },
     ],
   },
@@ -119,8 +234,23 @@ export const M4_FAULT_CASES = [
     test: "keeps the ref unchanged and never retries when a mandatory wave gate fails",
     invariants: [
       {
+        id: "no_duplicate_process_acceptance",
+        assertion:
+          "the failed wave Gate committed one batch of Evidence, event and Finding; nothing was dispatched and the CAS was never attempted",
+      },
+      {
         id: "no_duplicate_integration",
         assertion: "wave Gate failure writes no WaveIntegration record",
+      },
+      {
+        id: "no_stale_fencing_acceptance",
+        assertion:
+          "a validation naming Evidence bound to a never-minted fencing token is rejected at the acceptance seam before any gate run or CAS",
+      },
+      {
+        id: "no_incorrect_budget_return",
+        assertion:
+          "validation released the Lease exactly once with the measured consumption; the failed wave Gate never settled budget again",
       },
       {
         id: "no_ref_ledger_split",
@@ -138,16 +268,33 @@ export const M4_FAULT_CASES = [
     test: "rolls back a successful ref CAS when the Ledger acceptance transaction fails",
     invariants: [
       {
+        id: "no_duplicate_process_acceptance",
+        assertion:
+          "the rollback restored the exact pre-acceptance state, so the same command succeeds once on retry and its replay adds nothing",
+      },
+      {
         id: "no_duplicate_integration",
-        assertion: "the failed Ledger transaction leaves no WaveIntegration record",
+        assertion:
+          "the failed Ledger transaction left no WaveIntegration record; retry plus replay recorded exactly one",
+      },
+      {
+        id: "no_stale_fencing_acceptance",
+        assertion:
+          "the acceptance record binds exactly the current released Lease digest — the fencing-token chain head",
+      },
+      {
+        id: "no_incorrect_budget_return",
+        assertion:
+          "the Lease was released exactly once with the measured consumption; neither the failed acceptance nor the retry settled budget again",
       },
       {
         id: "no_ref_ledger_split",
-        assertion: "the exact reverse CAS restores the ref when Ledger acceptance fails in-process",
+        assertion:
+          "the exact reverse CAS restored the ref on failure; after the retry ref and Ledger hold the same candidate commit",
       },
       {
         id: "no_false_success",
-        assertion: "the acceptance call rejects instead of returning an accepted wave",
+        assertion: "the acceptance call rejected instead of returning an accepted wave",
       },
     ],
   },
@@ -157,18 +304,33 @@ export const M4_FAULT_CASES = [
     test: "lets a fresh driver reconcile an exact candidate ref after CAS succeeds before Ledger acceptance",
     invariants: [
       {
+        id: "no_duplicate_process_acceptance",
+        assertion:
+          "the fresh driver reconciled without dispatching or settling anything new: one run, one Lease chain, one CAS",
+      },
+      {
         id: "no_duplicate_integration",
         assertion: "fresh-driver reconciliation records the wave once without a second CAS",
       },
       {
+        id: "no_stale_fencing_acceptance",
+        assertion:
+          "the reconciled record binds exactly the current released Lease digest — the fencing-token chain head",
+      },
+      {
+        id: "no_incorrect_budget_return",
+        assertion:
+          "the single release kept its measured consumption; the crash and reconciliation settled no budget a second time",
+      },
+      {
         id: "no_ref_ledger_split",
         assertion:
-          "the exact candidate ref is reconciled into one authoritative WaveIntegration record",
+          "the exact candidate ref is reconciled into one authoritative WaveIntegration record holding the same commit",
       },
       {
         id: "no_false_success",
         assertion:
-          "the first process reports failure until a fresh driver reruns validation and records acceptance",
+          "the first process reported failure until a fresh driver reran validation and recorded acceptance",
       },
     ],
   },
@@ -179,11 +341,32 @@ export const M4_FAULT_CASES = [
     invariants: [
       {
         id: "no_duplicate_process_acceptance",
-        assertion: "the unapproved Task is not dispatched while its independent peer runs once",
+        assertion:
+          "the unapproved Task was never dispatched on the first or the repeated drive while its peer ran once",
+      },
+      {
+        id: "no_duplicate_integration",
+        assertion:
+          "one decision produced exactly one digest-bound request and, after approval, exactly one granted Lease",
+      },
+      {
+        id: "no_stale_fencing_acceptance",
+        assertion:
+          "the request binds task_b's exact action digest (a different action digests differently) and a never-minted token is rejected",
+      },
+      {
+        id: "no_incorrect_budget_return",
+        assertion:
+          "while paused the Task held no reservation; after approval both reservations are held exactly once",
+      },
+      {
+        id: "no_ref_ledger_split",
+        assertion:
+          "the pending request was visible through the read path with the same identity, and the granted Lease carries the approval binding",
       },
       {
         id: "no_false_success",
-        assertion: "the unapproved Task remains paused without a Lease",
+        assertion: "the unapproved Task remained paused without a Lease",
       },
     ],
   },
@@ -194,7 +377,33 @@ export const M4_FAULT_CASES = [
     invariants: [
       {
         id: "no_duplicate_process_acceptance",
-        assertion: "the stale driver owner cannot release or supersede the recovered live owner",
+        assertion:
+          "reclamation produced exactly one live owner on the lock path; a second live driver is refused",
+      },
+      {
+        id: "no_duplicate_integration",
+        assertion:
+          "exactly one authoritative ownership record exists and it names the recovered owner",
+      },
+      {
+        id: "no_stale_fencing_acceptance",
+        assertion:
+          "the superseded owner token cannot release or supersede the recovered live owner",
+      },
+      {
+        id: "no_incorrect_budget_return",
+        assertion:
+          "the stale release returned nothing; the live owner's release removed the lock exactly once and its replay was a no-op",
+      },
+      {
+        id: "no_ref_ledger_split",
+        assertion:
+          "lock directory and owner metadata agreed while held and disappeared together on release",
+      },
+      {
+        id: "no_false_success",
+        assertion:
+          "the superseded owner's release reported failure; the recovered ownership names the live pid, not the dead one",
       },
     ],
   },
@@ -204,8 +413,33 @@ export const M4_FAULT_CASES = [
     test: "rebuilds from Ledger authority after the real SQLite live projection is deleted",
     invariants: [
       {
+        id: "no_duplicate_process_acceptance",
+        assertion:
+          "the rebuild resurrected no process: no live slots and byte-identical run records",
+      },
+      {
+        id: "no_duplicate_integration",
+        assertion:
+          "the WaveIntegration records are byte-identical before and after the projection loss",
+      },
+      {
+        id: "no_stale_fencing_acceptance",
+        assertion:
+          "the fencing-token chain rebuilt byte-identically from Ledger authority; no stale token regressed",
+      },
+      {
+        id: "no_incorrect_budget_return",
+        assertion: "budget-relevant Lease fields are exactly what the Ledger held before the loss",
+      },
+      {
+        id: "no_ref_ledger_split",
+        assertion:
+          "the real operation ref did not move and still agrees with the unchanged integration records",
+      },
+      {
         id: "no_false_success",
-        assertion: "deleting live SQLite preserves the exact authority-derived Task statuses",
+        assertion:
+          "deleting live SQLite preserves the exact authority-derived Task statuses and honestly reports rebuilding",
       },
     ],
   },

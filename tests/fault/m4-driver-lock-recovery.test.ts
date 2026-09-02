@@ -27,6 +27,7 @@ import {
   rebuildResourceLocks,
   releaseTaskResources,
 } from "../../packages/runtime/src/scheduling/resource-locks.js";
+import { proveM4FaultInvariants } from "./support/m4-fault-invariants.js";
 
 /**
  * Plan Task 6 step 3/5 fault evidence: crash recovery of the operation
@@ -66,21 +67,81 @@ describe("driver lock crash recovery", () => {
     const crashed = makeLock(harnessRoot, 222_222, () => false);
     const staleHandle = await crashed.acquire({ operation_id: "operation_1", driver_kind: "cli" });
 
-    const recovering = makeLock(harnessRoot, 333_333, (pid) => pid === 333_333);
+    const livePids = new Set([333_333, 444_444]);
+    const recovering = makeLock(harnessRoot, 333_333, (pid) => livePids.has(pid));
     const live = await recovering.acquire({
       operation_id: "operation_1",
       driver_kind: "dashboard",
     });
-    expect(live.path).toBe(staleHandle.path);
-    expect(live.owner_token).not.toBe(staleHandle.owner_token);
 
-    // The superseded owner must not release the new driver's lock.
-    await expect(staleHandle.release()).rejects.toMatchObject({
-      kind: "driver_lock_owner_mismatch",
-    });
-    expect(existsSync(live.path)).toBe(true);
+    // Fault sequence on the real lock directory: a third live driver tries to
+    // take the held lock, the superseded owner tries to release it, then the
+    // true owner releases it (twice, to probe the no-op replay).
+    const contender = makeLock(harnessRoot, 444_444, (pid) => livePids.has(pid));
+    const contenderError: unknown = await contender
+      .acquire({ operation_id: "operation_1", driver_kind: "cli" })
+      .then(
+        () => undefined,
+        (error: unknown) => error,
+      );
+    const ownerWhileHeld = JSON.parse(
+      readFileSync(join(live.path, "owner.json"), "utf8"),
+    ) as Record<string, unknown>;
+    const staleReleaseError: unknown = await staleHandle.release().then(
+      () => undefined,
+      (error: unknown) => error,
+    );
+    const lockSurvivedStaleRelease = existsSync(live.path);
     await live.release();
-    expect(existsSync(live.path)).toBe(false);
+    const ownerFileGoneWithLock =
+      !existsSync(live.path) && !existsSync(join(live.path, "owner.json"));
+    await live.release();
+    const stillGoneAfterRepeat = !existsSync(live.path);
+
+    await proveM4FaultInvariants({
+      no_duplicate_process_acceptance: () => {
+        // Reclamation produced exactly one live owner on the same lock path;
+        // a second live driver is refused while the recovered owner holds it.
+        expect(live.path).toBe(staleHandle.path);
+        expect(live.owner_token).not.toBe(staleHandle.owner_token);
+        expect(contenderError).toMatchObject({ kind: "driver_lock_unavailable" });
+      },
+      no_duplicate_integration: () => {
+        // Exactly one authoritative ownership record exists and it names the
+        // recovered owner — not a duplicate alongside the dead owner's.
+        expect(ownerWhileHeld["owner_token"]).toBe(live.owner_token);
+        expect(ownerWhileHeld["pid"]).toBe(333_333);
+        expect(ownerWhileHeld["driver_kind"]).toBe("dashboard");
+      },
+      no_stale_fencing_acceptance: () => {
+        // The owner token fences exactly like a Lease fencing token: the
+        // superseded owner cannot release or supersede the recovered owner.
+        expect(staleReleaseError).toMatchObject({ kind: "driver_lock_owner_mismatch" });
+        expect(lockSurvivedStaleRelease).toBe(true);
+      },
+      no_incorrect_budget_return: () => {
+        // Release is the return path: the stale release returned nothing, the
+        // live owner's release removed the lock exactly once, and the repeated
+        // release was a recorded no-op — never a double return.
+        expect(lockSurvivedStaleRelease).toBe(true);
+        expect(ownerFileGoneWithLock).toBe(true);
+        expect(stillGoneAfterRepeat).toBe(true);
+      },
+      no_ref_ledger_split: () => {
+        // The lock directory (the ref) and its owner metadata (the record)
+        // agreed in both phases: while held the metadata named the live token;
+        // after release both disappeared together.
+        expect(ownerWhileHeld["owner_token"]).toBe(live.owner_token);
+        expect(ownerFileGoneWithLock).toBe(true);
+      },
+      no_false_success: () => {
+        // The superseded owner's release reported failure instead of success,
+        // and the recovering acquisition was genuine: the live owner metadata
+        // names the recovering pid, not the dead one.
+        expect(staleReleaseError).toBeInstanceOf(Error);
+        expect(ownerWhileHeld["pid"]).toBe(333_333);
+      },
+    });
   });
 
   it("never reclaims a live owner, however old the lock is", async () => {
