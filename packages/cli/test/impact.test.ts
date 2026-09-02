@@ -17,6 +17,9 @@ import {
 } from "../src/index.js";
 
 const roots: string[] = [];
+// Semantic Impact exercises bootstrap, Git Ledger materialization and SQLite.
+// Preserve the 5s unit-test default globally and widen only this integration suite.
+const CLI_INTEGRATION_TIMEOUT = process.platform === "win32" ? 60_000 : 30_000;
 
 afterEach(() => {
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
@@ -36,7 +39,7 @@ function captureIo(): { readonly io: CliIo; stdout(): string; stderr(): string }
   };
 }
 
-describe("harness impact --semantic", () => {
+describe("harness impact --semantic", { timeout: CLI_INTEGRATION_TIMEOUT }, () => {
   it("delegates the semantic intent without changing the structural route contract", async () => {
     const parent = mkdtempSync(join(tmpdir(), "harness-cli-impact-route-"));
     roots.push(parent);

@@ -35,6 +35,10 @@ function captureIo(): Captured {
 }
 
 const createdRoots: string[] = [];
+// These routes create Git repositories and commit a complete managed Ledger.
+// Under the four-worker release suite they legitimately exceed Vitest's 5s
+// unit-test default, so keep the larger timeout local to these integration tests.
+const CLI_INTEGRATION_TIMEOUT = process.platform === "win32" ? 60_000 : 30_000;
 
 function makeTempDir(prefix: string): string {
   const directory = realpathSync(mkdtempSync(join(tmpdir(), prefix)));
@@ -71,7 +75,7 @@ afterEach(() => {
   }
 });
 
-describe("harness new route", () => {
+describe("harness new route", { timeout: CLI_INTEGRATION_TIMEOUT }, () => {
   it("bootstraps the project and pauses at the required execution approval", async () => {
     const parent = makeTempDir("harness-cli-new-");
     const captured = captureIo();
@@ -133,7 +137,7 @@ describe("harness new route", () => {
   });
 });
 
-describe("harness adopt route", () => {
+describe("harness adopt route", { timeout: CLI_INTEGRATION_TIMEOUT }, () => {
   it("stages a preview and returns a resumable approval request", async () => {
     const repo = makeRepo();
     const headBefore = git(repo, "rev-parse", "HEAD").trim();
