@@ -67,6 +67,7 @@ describe("adapter-agent-manual conformance", () => {
 
 describe("adapter-agent-command conformance", () => {
   it("satisfies the shared agent adapter contract", async () => {
+    const worktree = trackedTempDir("harness-conf-worktree-");
     const adapter = createCommandAgentAdapter({
       manifest: {
         provider: "conformance-provider",
@@ -79,8 +80,16 @@ describe("adapter-agent-command conformance", () => {
         args: [providerFixture, "{input_file}"],
         env_allowlist: [],
       },
-      worktree: trackedTempDir("harness-conf-worktree-"),
+      worktree,
       evidence_dir: trackedTempDir("harness-conf-evidence-"),
+      inspector: {
+        inspect: () =>
+          Promise.resolve({
+            head: "1".repeat(40),
+            changed_paths: [],
+            digest: "a".repeat(64),
+          }),
+      },
     });
     const report = await runConformanceSuite({
       plugin: "adapter-agent-command",

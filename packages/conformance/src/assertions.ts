@@ -99,11 +99,26 @@ export function agentAdapterConformanceCases(
       },
     },
     {
-      name: "never mints a terminal success",
+      name: "returns a supervised completion claim with the required evidence",
       async run() {
         const result = await adapter.run(envelope, { mode: "supervised" });
+        assertEqual(result.outcome, "handoff", "a supervised happy path must hand off");
+        assertEqual(
+          result.termination_reason,
+          "completion",
+          "a supervised happy path must report completion",
+        );
+        assert(result.completion_claimed, "a supervised happy path must claim completion");
+        assert(result.summary.trim().length > 0, "a supervised happy path needs a summary");
+        assert(result.evidence.length > 0, "a supervised happy path needs bound evidence");
+        const kinds = new Set(result.evidence.map((entry) => entry.kind));
+        const requiredKinds =
+          adapter.manifest.control === "manual" ? ["attestation"] : ["transcript", "diff"];
+        for (const kind of requiredKinds) {
+          assert(kinds.has(kind), `${adapter.name} completion evidence must include ${kind}`);
+        }
         assert(
-          result.outcome !== "success",
+          result.outcome !== ("success" as typeof result.outcome),
           "an adapter outcome is a claim; only the Harness mints terminal success",
         );
       },
