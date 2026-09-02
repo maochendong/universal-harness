@@ -433,7 +433,13 @@ async function replayCandidates(
           locator: `ledger://evidence/${record.evidence_id}`,
           digest: record.digest,
         }));
-      await controller.validateTaskCandidate({ candidate, task, lease, evidence });
+      await controller.validateTaskCandidate({
+        candidate,
+        task,
+        lease,
+        evidence,
+        ...(lease.state === "released" ? { revalidate_released: true } : {}),
+      });
     }
   } catch (error) {
     // Conflict accounting (retry scheduling, blocking Findings) already landed

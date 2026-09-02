@@ -410,6 +410,8 @@ export interface ValidateTaskCandidateInput {
     readonly locator: string;
     readonly digest: string;
   }[];
+  /** Recovery only: re-run validation after stale candidate Evidence was downgraded. */
+  readonly revalidate_released?: boolean;
 }
 
 export interface TaskCandidateValidation {
@@ -1008,7 +1010,8 @@ export function createCandidateIntegrationController(
             `lease of task ${taskSpec.id}`,
         );
       }
-      if (lease.state !== "granted") {
+      const revalidatingReleased = input.revalidate_released === true && lease.state === "released";
+      if (lease.state !== "granted" && !revalidatingReleased) {
         throw new CandidateIntegrationError(
           "lease_not_released",
           `lease ${lease.lease_id} is ${lease.state}; candidate validation requires the current ` +
@@ -1019,6 +1022,26 @@ export function createCandidateIntegrationController(
         throw new CandidateIntegrationError(
           "evidence_binding_mismatch",
           `lease ${lease.lease_id} does not bind the approved specification of task ${taskSpec.id}`,
+        );
+      }
+      if (
+        revalidatingReleased &&
+        !facts.gate_evidence.some((record) => {
+          const binding = schedulingEvidenceBindingOf(record);
+          return (
+            record.provisional &&
+            binding?.layer === "candidate" &&
+            binding.task_id === taskSpec.id &&
+            binding.run_id === lease.run_id &&
+            binding.lease_id === lease.lease_id &&
+            binding.fencing_token === lease.fencing_token &&
+            binding.commit === candidate.candidate_commit
+          );
+        })
+      ) {
+        throw new CandidateIntegrationError(
+          "evidence_binding_mismatch",
+          `released lease ${lease.lease_id} has no provisional candidate Evidence to revalidate`,
         );
       }
       if (!candidate.applied_task_ids.includes(taskSpec.id)) {
@@ -1162,17 +1185,16 @@ export function createCandidateIntegrationController(
         return { task_id: taskSpec.id, status: "blocked", evidence_digests: digests };
       }
 
-      const consumedBudget = terminalCompletionBudget(facts, lease);
-      if (consumedBudget === undefined) {
-        throw new CandidateIntegrationError(
-          "evidence_binding_mismatch",
-          `run ${lease.run_id} has no valid authoritative consumed-budget observation`,
-        );
-      }
-
-      await authority.commit([
-        { kind: "append_gate_evidence", records: candidateEvidence },
-        {
+      const releaseTransitions: SchedulerTransition[] = [];
+      if (lease.state === "granted") {
+        const consumedBudget = terminalCompletionBudget(facts, lease);
+        if (consumedBudget === undefined) {
+          throw new CandidateIntegrationError(
+            "evidence_binding_mismatch",
+            `run ${lease.run_id} has no valid authoritative consumed-budget observation`,
+          );
+        }
+        releaseTransitions.push({
           kind: "terminate_lease",
           record: terminateTaskLease(lease, {
             state: "released",
@@ -1186,7 +1208,12 @@ export function createCandidateIntegrationController(
               candidate_commit: candidate.candidate_commit,
             }),
           }),
-        },
+        });
+      }
+
+      await authority.commit([
+        { kind: "append_gate_evidence", records: candidateEvidence },
+        ...releaseTransitions,
         {
           kind: "append_event",
           event: taskCandidateValidatedEvent({

@@ -23,6 +23,7 @@ import type { SchedulerEventSpec } from "../../src/scheduling/events.js";
 import {
   bindSchedulingEvidence,
   createCandidateIntegrationController,
+  schedulingEvidenceBindingOf,
   type WaveGatePort,
   type WaveIntegrationGitPort,
 } from "../../src/scheduling/integration.js";
@@ -415,6 +416,12 @@ class FakeGit implements WaveIntegrationGitPort {
 }
 
 class FakeGates implements WaveGatePort {
+  readonly candidateRuns: Array<{
+    readonly task_id: string;
+    readonly candidate_commit: string;
+    readonly lease_state: TaskLeaseRecord["state"];
+  }> = [];
+
   definitions(): readonly GateDefinition[] {
     return [GATE];
   }
@@ -424,6 +431,11 @@ class FakeGates implements WaveGatePort {
     candidate_commit: string;
     lease: TaskLeaseRecord;
   }): Promise<readonly GateEvidenceRecord[]> {
+    this.candidateRuns.push({
+      task_id: input.task.id,
+      candidate_commit: input.candidate_commit,
+      lease_state: input.lease.state,
+    });
     return [candidateEvidence(input.task, input.lease, input.candidate_commit, "candidate")];
   }
 
@@ -649,6 +661,45 @@ describe("recoverSchedulingOperation", () => {
     expect(h.authority.events.map((event) => event.eventType)).not.toContain(
       "TaskCandidateValidated",
     );
+  });
+
+  it("downgrades and fully revalidates a released unaccepted candidate", async () => {
+    const taskA = task("task_a");
+    const h = recoveryHarness([taskA]);
+    const [granted, released] = releasedChain(taskA, "run_a_1");
+    const unacceptedCommit = "c".repeat(40);
+    h.authority.leases.push(granted, released);
+    h.authority.gateEvidence.push(
+      candidateEvidence(taskA, released, BASE_COMMIT, "task"),
+      candidateEvidence(taskA, released, unacceptedCommit, "candidate"),
+    );
+    h.authority.candidatePatches.push({
+      task_id: taskA.id,
+      run_id: released.run_id,
+      patch_locator: "/virtual/task_a.patch",
+      patch_digest: contentDigest("patch-a"),
+    });
+
+    const report = await h.recover();
+
+    expect(report.downgraded_evidence_ids).toEqual([`evidence_candidate_${taskA.id}`]);
+    expect(report.candidate_replay).toBe("completed");
+    expect(h.gates.candidateRuns).toEqual([
+      {
+        task_id: taskA.id,
+        candidate_commit: unacceptedCommit,
+        lease_state: "released",
+      },
+    ]);
+    const recovered = await h.authority.readFacts(OPERATION_ID);
+    const candidate = recovered.gate_evidence.find(
+      (record) => record.evidence_id === `evidence_candidate_${taskA.id}`,
+    );
+    expect(candidate?.provisional).toBe(false);
+    expect(schedulingEvidenceBindingOf(candidate as GateEvidenceRecord)?.commit).toBe(
+      unacceptedCommit,
+    );
+    expect(h.authority.events.map((event) => event.eventType)).toContain("TaskCandidateValidated");
   });
 
   it("replays valid queued patches in Plan order and reruns candidate gates", async () => {
