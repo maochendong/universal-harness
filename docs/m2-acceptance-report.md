@@ -2,7 +2,7 @@
 
 本文件由 `scripts/generate-acceptance-report.mjs` 从测试、Playwright、性能与打包门禁的结构化输出生成；验收语句引用自 M2 设计第 15 节。
 
-- 生成基线 commit：`e51dd7a`
+- 生成基线 commit：`4aa872d`
 - 汇总：13/13 通过
 
 | AC | 范围 | 必须证明的结果 | 命令 | Evidence | 结果 |
@@ -27,6 +27,6 @@
 
 ## Full-remediation 三档闭环
 
-缺少通过的 `.reports/acceptance/three-profile-dogfood.json` 三档闭环证据。
+Packaged CLI 已完成 Lite / Standard / Governed 三档闭环；三个终态均为 completed Snapshot、Gate passed 且工作树干净。脱敏清单见 `docs/evidence/full-remediation-three-profile-dogfood.md`。
 
 M2 验收矩阵全部具有当前运行证据，发布退出门禁通过。

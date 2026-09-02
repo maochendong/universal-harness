@@ -1,0 +1,2870 @@
+{
+  "schema_version": "harness.m4-acceptance-results/1",
+  "milestone": "M4",
+  "implementation_commit": "4aa872dd1212ba6d80459b7f44c1e1021ccbb0cd",
+  "generated_at": "2026-09-02T20:31:34.427Z",
+  "suite_invocation_ids": {
+    "main": "c7c32bdd-141a-4599-8a23-7014b85ce4a2",
+    "security": "54af3d7d-5003-434e-85de-550ccd173a38",
+    "fault": "b508fede-3709-4aa3-9d68-165f61056bf3",
+    "performance": "d5789934-86fd-4b66-88ca-fbe5c8ec3f7d",
+    "e2e": "60a7e3c7-f642-4afa-b847-41bab554a7f4",
+    "playwright-dashboard": "6dfcddcc-36d8-4fa7-9a3f-8bab07ff24a8"
+  },
+  "suite_results": {
+    "main": {
+      "schema_version": "harness.acceptance-suite-report/1",
+      "suite": "main",
+      "implementation_commit": "4aa872dd1212ba6d80459b7f44c1e1021ccbb0cd",
+      "started_commit": "4aa872dd1212ba6d80459b7f44c1e1021ccbb0cd",
+      "finished_commit": "4aa872dd1212ba6d80459b7f44c1e1021ccbb0cd",
+      "invocation_id": "c7c32bdd-141a-4599-8a23-7014b85ce4a2",
+      "command": "pnpm test",
+      "coverage": "full",
+      "config_path": "vitest.workspace.ts",
+      "tracked_worktree_clean_at_start": true,
+      "tracked_worktree_clean_at_finish": true,
+      "files_total": 420,
+      "files_failed": 0,
+      "failed_files": [],
+      "files": [
+        {
+          "path": "adapters/agent-command/test/adapter.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "adapters/agent-command/test/manifest.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "adapters/agent-command/test/process.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "adapters/agent-command/test/telemetry.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "adapters/agent-dsh/test/adapter.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "adapters/agent-dsh/test/prompt.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "adapters/agent-manual/test/adapter.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "adapters/gate-llm-judge/test/provider.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "adapters/gate-llm-judge/test/response.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "adapters/gate-llm-judge/test/review-bundle.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "adapters/gate-llm-judge/test/transport.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "adapters/projection-markdown/test/projections.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "adapters/projection-markdown/test/tasks.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "adapters/vcs-git/test/branch-commit.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "adapters/vcs-git/test/commands.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "adapters/vcs-git/test/control-store.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "adapters/vcs-git/test/diff-drift.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "adapters/vcs-git/test/repository.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "adapters/vcs-git/test/status.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "adapters/vcs-git/test/worktree.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/cli/test/bootstrap.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/cli/test/collaboration-commands.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/cli/test/finding.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/cli/test/help.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/cli/test/impact.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/cli/test/live-progress.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/cli/test/m4-driver-lock.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/cli/test/m4-scheduling.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/cli/test/managed-capture-coordinator.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/cli/test/managed-capture-orchestration.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/cli/test/managed-interpret.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/cli/test/managed-pipeline-ports.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/cli/test/model-providers.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/cli/test/profile-selection.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/cli/test/project-runtime-config.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/cli/test/prompt-golden-matrix.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/cli/test/prompt-registry.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/cli/test/resume.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/cli/test/runtime-service-facade.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/cli/test/serve.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/cli/test/status.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/cli/test/watch.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/conformance/test/agent-adapters.conformance.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/conformance/test/collaboration.conformance.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/conformance/test/example-plugin.conformance.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/conformance/test/manifest.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/conformance/test/packs.conformance.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/conformance/test/projection.conformance.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/conformance/test/runner.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/conformance/test/scheduling.conformance.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/conformance/test/semantic-seed-provider.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/conformance/test/vcs-git.conformance.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/core/test/acceptance/acceptance.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/core/test/capability/capability-plan-record.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/core/test/capability/compiler.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/core/test/capability/dag.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/core/test/capability/parallel-task-execution.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/core/test/capability/registry.property.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/core/test/capability/registry.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/core/test/capability/status-projection.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/core/test/capture/coordinator.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/core/test/capture/records.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/core/test/capture/state-machine.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/core/test/capture/store.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/core/test/collaboration/records.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/core/test/context/bundle.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/core/test/context/in-memory.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/core/test/context/local-git.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/core/test/context/source-kinds.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/core/test/design/ports.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/core/test/design/prompt-contracts.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/core/test/design/records.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/core/test/design/review-validator.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/core/test/identity/canonical-json.property.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/core/test/identity/canonical-json.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/core/test/identity/canonical-set.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/core/test/identity/locator.property.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/core/test/identity/locator.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/core/test/identity/node-id.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/core/test/identity/record-id.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/core/test/identity/rename.property.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/core/test/identity/rename.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/core/test/ledger/event-store.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/core/test/ledger/golden.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/core/test/ledger/layout.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/core/test/ledger/lock.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/core/test/ledger/repository.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/core/test/ledger/transaction.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/core/test/plan/assertions.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/core/test/profile/decisions.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/core/test/profile/definitions.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/core/test/profile/model-slots.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/core/test/profile/protocol-1.3-profile.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/core/test/profile/recommendation.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/core/test/profile/records.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/core/test/profile/selection.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/core/test/profile/store.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/core/test/project/layout.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/core/test/project/lockfile.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/core/test/project/manifest.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/core/test/prompt/contract-registry.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/core/test/prompt/contracts.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/core/test/prompt/failure-mapping.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/core/test/proposal/conformance.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/core/test/proposal/digest.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/core/test/proposal/gates.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/core/test/proposal/legacy.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/core/test/proposal/manual.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/core/test/proposal/prompt-contract.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/core/test/proposal/records.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/core/test/proposal/stages.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/core/test/protocol/protocol-1.2.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/core/test/protocol/protocol-1.3.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/core/test/protocol/registry.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/core/test/provider/trusted-provider.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/core/test/review/prompt-contract.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/core/test/review/review.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/core/test/risk/risk.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/core/test/scheduling/records.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/core/test/schema/design-review.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/core/test/schema/design-set.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/core/test/schema/domain-registry.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/core/test/schema/impact-advisory.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/core/test/schema/model-invocation.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/core/test/schema/observation.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/core/test/schema/operation-runtime.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/core/test/schema/persisted-records.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/core/test/schema/plan-proposal.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/core/test/schema/plan.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/core/test/schema/protocol-version.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/core/test/schema/record-envelope.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/core/test/schema/schema-export.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/core/test/schema/tdd.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/core/test/synthesis/approval-brief.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/core/test/synthesis/discovery.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/core/test/synthesis/prompt-contracts.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/core/test/synthesis/records.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/dashboard/test/assets.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/dashboard/test/collaboration-api.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/dashboard/test/model-invocations.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/dashboard/test/presentation-model.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/dashboard/test/presentation.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/dashboard/test/scheduler-api.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/dashboard/test/security.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/dashboard/test/server.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/dashboard/test/sse.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/dashboard/test/write-api.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/eval/test/case.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/eval/test/coverage.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/eval/test/deterministic.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/eval/test/evaluator.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/eval/test/feedback/analysis.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/eval/test/feedback/finding.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/eval/test/feedback/golden.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/eval/test/feedback/improvement.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/eval/test/feedback/promotion.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/eval/test/feedback/rca.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/eval/test/feedback/router.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/eval/test/golden.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/graph/test/design/committer.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/graph/test/design/validator.property.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/graph/test/design/validator.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/graph/test/evaluation-read-port.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/graph/test/graph-views.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/graph/test/impact/advisory-apply.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/graph/test/impact/advisory-merge.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/graph/test/impact/advisory-port.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/graph/test/impact/advisory-record.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/graph/test/impact/escalation.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/graph/test/impact/impact-set.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/graph/test/impact/prompt-contract.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/graph/test/impact/propagation.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/graph/test/impact/relation-rules-golden.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/graph/test/impact/scoring.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/graph/test/impact/seeds.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/graph/test/integrity.property.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/graph/test/materializer.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/graph/test/migrations.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/graph/test/read-ports.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/graph/test/semantic/extractor.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/graph/test/semantic/graph-policy.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/graph/test/semantic/provider.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/plugin-sdk/test/agent.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/plugin-sdk/test/measurement.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/plugin-sdk/test/subprocess.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/runtime/test/approval/interaction.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/runtime/test/approval/invalidation.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/runtime/test/approval/request.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/runtime/test/approval/service.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/runtime/test/audit/auditor.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/runtime/test/audit/contract-entries.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/runtime/test/bootstrap/adopt-project.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/runtime/test/bootstrap/new-project.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/runtime/test/bootstrap/scanner.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/runtime/test/collaboration/approval-policy.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/runtime/test/collaboration/connection.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/runtime/test/collaboration/coordinator-git.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/runtime/test/collaboration/coordinator.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/runtime/test/collaboration/http-transport.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/runtime/test/collaboration/integration.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/runtime/test/collaboration/lease.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/runtime/test/collaboration/ledger-resequence.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/runtime/test/collaboration/oauth-session.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/runtime/test/collaboration/platform-adapters.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/runtime/test/collaboration/remote-approval.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/runtime/test/collaboration/remote-discovery.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/runtime/test/collaboration/sqlite-projection.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/runtime/test/compatibility/governance-records.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/runtime/test/compatibility/open-iteration-migration.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/runtime/test/context/budget.property.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/runtime/test/context/budget.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/runtime/test/context/compiler.property.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/runtime/test/context/compiler.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/runtime/test/context/compression.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/runtime/test/context/design-binding.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/runtime/test/context/enrichment.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/runtime/test/context/freshness.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/runtime/test/context/selector.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/runtime/test/context/task-bundles.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/runtime/test/doctor/doctor.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/runtime/test/evaluation-backfill.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/runtime/test/evaluation/task-verdict.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/runtime/test/finding/decay.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/runtime/test/finding/feedback-analysis-coordinator.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/runtime/test/finding/group-service.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/runtime/test/finding/groups.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/runtime/test/gates/evidence.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/runtime/test/gates/freshness.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/runtime/test/gates/llm-judge.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/runtime/test/gates/provider.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/runtime/test/gates/runner.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/runtime/test/graph/reconcile.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/runtime/test/graph/semantic-edits.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/runtime/test/loop/controller.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/runtime/test/loop/outcome.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/runtime/test/loop/policy.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/runtime/test/loop/repeat-detector.property.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/runtime/test/loop/repeat-detector.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/runtime/test/loop/task-envelope.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/runtime/test/model/capture-adapters.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/runtime/test/model/design-adapters.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/runtime/test/model/feedback-analysis-adapter.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/runtime/test/model/impact-advisory-adapter.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/runtime/test/model/invocation-records.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/runtime/test/model/invocation-store.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/runtime/test/model/managed-runner.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/runtime/test/model/openai-compat-provider.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/runtime/test/model/plan-adapters.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/runtime/test/model/prompt-compiler.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/runtime/test/model/prompt-policy.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/runtime/test/model/provider-registry.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/runtime/test/model/result-validation.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/runtime/test/model/source-boundary.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/runtime/test/observability/active-run.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/runtime/test/observability/event-stream.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/runtime/test/observability/publisher.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/runtime/test/orchestration/capability-plan-persistence.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/runtime/test/orchestration/capability-plan-routing.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/runtime/test/orchestration/context-enrichment.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/runtime/test/orchestration/coordinator-facade.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/runtime/test/orchestration/design-phase.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/runtime/test/orchestration/execution-binding.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/runtime/test/orchestration/feedback-analysis-wiring.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/runtime/test/orchestration/impact-advisory.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/runtime/test/orchestration/invalidation.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/runtime/test/orchestration/iteration-narrative.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/runtime/test/orchestration/kernel-parallel-execute.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/runtime/test/orchestration/lite-loop.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/runtime/test/orchestration/module-status.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/runtime/test/orchestration/orchestrator.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/runtime/test/orchestration/phases.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/runtime/test/orchestration/scheduler-runtime.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/runtime/test/orchestration/strict-tdd-routing.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/runtime/test/packs/migration.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/runtime/test/packs/resolver.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/runtime/test/packs/upgrade.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/runtime/test/planning/default-planner-assertions.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/runtime/test/planning/effective-risk.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/runtime/test/planning/execution-plan.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/runtime/test/planning/impact-coverage.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/runtime/test/planning/mode-selector.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/runtime/test/planning/plan-prompt-contract.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/runtime/test/planning/plan-proposal-wiring.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/runtime/test/planning/plan-proposal.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/runtime/test/planning/scope-drift.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/runtime/test/planning/task-sizing.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/runtime/test/planning/validator.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/runtime/test/planning/waves.property.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/runtime/test/planning/waves.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/runtime/test/policy/action.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/runtime/test/policy/capability-grant-record.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/runtime/test/policy/capability-grant.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/runtime/test/policy/evaluator.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/runtime/test/policy/execution-preflight.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/runtime/test/policy/path-boundary.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/runtime/test/policy/scheduler-policy.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/runtime/test/projection/projection.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/runtime/test/requirements/baseline.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/runtime/test/requirements/capture.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/runtime/test/scheduling/agent-pool.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/runtime/test/scheduling/budget.property.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/runtime/test/scheduling/budget.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/runtime/test/scheduling/driver-lock.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/runtime/test/scheduling/events.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/runtime/test/scheduling/host.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/runtime/test/scheduling/integration.git.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/runtime/test/scheduling/integration.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/runtime/test/scheduling/lease.property.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/runtime/test/scheduling/lease.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/runtime/test/scheduling/policy-decision-port.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/runtime/test/scheduling/projection.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/runtime/test/scheduling/read-model.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/runtime/test/scheduling/readiness.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/runtime/test/scheduling/recovery.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/runtime/test/scheduling/resource-locks.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/runtime/test/scheduling/scheduler.property.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/runtime/test/scheduling/scheduler.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/runtime/test/scheduling/sqlite-projection.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/runtime/test/scheduling/task-dag-port.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/runtime/test/scheduling/workspace-manager.git.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/runtime/test/scheduling/workspace-manager.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/runtime/test/snapshot/anchor.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/runtime/test/snapshot/builder.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/runtime/test/status/status.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/runtime/test/tdd/controller.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/runtime/test/tdd/execution-runner.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/runtime/test/tdd/git-workspace.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/runtime/test/tdd/patch.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/runtime/test/tdd/phase-grants.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/runtime/test/tdd/verdict.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/runtime/test/tdd/workspace.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/runtime/test/tools/action-intent.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/runtime/test/tools/definition.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/runtime/test/tools/invocation.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/runtime/test/tools/reconciliation.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/runtime/test/tools/registry.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/runtime/test/tools/secrets.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/runtime/test/workflow/checkpoint.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/runtime/test/workflow/dag-engine.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/runtime/test/workflow/ledger-dag-checkpoint-store.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/runtime/test/workflow/operation.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/runtime/test/workflow/resume.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/runtime/test/workflow/state-machine.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packages/runtime/test/workflow/working-state.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packs/generic/test/generic-pack.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packs/java/test/java-pack.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packs/node/test/node-pack.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "packs/python/test/python-pack.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "tests/architecture/orchestration-boundaries.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "tests/architecture/workspace-boundaries.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "tests/e2e/delegated-agent-vertical-loop.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "tests/e2e/documentation-examples.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "tests/e2e/generic-adopt.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "tests/e2e/generic-iterate.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "tests/e2e/generic-new.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "tests/e2e/generic-resume.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "tests/e2e/graph-model-documentation.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "tests/e2e/java-adopt.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "tests/e2e/java-iterate.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "tests/e2e/java-new.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "tests/e2e/m2-vertical-loop.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "tests/e2e/m3-remote-collaboration.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "tests/e2e/m4-live-driver-approval.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "tests/e2e/m4-local-multi-agent.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "tests/e2e/m4-production-policy-source.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "tests/e2e/m4-sequential-compatibility.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "tests/e2e/node-adopt.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "tests/e2e/node-iterate.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "tests/e2e/node-new.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "tests/e2e/python-adopt.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "tests/e2e/python-iterate.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "tests/e2e/python-new.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "tests/e2e/three-profile-real-loop.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "tests/fault/approval-cascade-invalidation.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "tests/fault/budget-exhaustion.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "tests/fault/concurrent-write.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "tests/fault/dashboard-cache-corruption.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "tests/fault/event-stream-recovery.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "tests/fault/expired-approval.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "tests/fault/git-drift.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "tests/fault/integration-cas-recovery.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "tests/fault/ledger-interruption.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "tests/fault/m4-driver-lock-recovery.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "tests/fault/m4-lease-budget-boundaries.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "tests/fault/m4-scheduler-crash-matrix.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "tests/fault/m4-wave-integration-boundaries.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "tests/fault/model-invocation-recovery.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "tests/fault/partial-gate.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "tests/fault/process-kill.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "tests/fault/remote-approval-materialization.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "tests/fault/sqlite-corruption.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "tests/fault/uncertain-external-action.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "tests/fault/workflow-resume.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "tests/integration/adopt-preview.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "tests/integration/execution-governance-vertical-loop.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "tests/integration/feedback-cascade.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "tests/integration/m3-ledger-sequence-fork.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "tests/integration/m4-wave-cas.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "tests/integration/new-bootstrap.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "tests/integration/three-layer-gates.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "tests/release/ci-platform-evidence.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "tests/release/standalone-history-scan.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "tests/reporting/aggregate-acceptance.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "tests/reporting/m4-release-evidence.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "tests/security/capability-escalation.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "tests/security/command-injection.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "tests/security/dashboard-security.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "tests/security/delegated-provider.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "tests/security/judge-security.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "tests/security/m3-collaboration-boundary.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "tests/security/m3-dogfood-redaction.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "tests/security/m4-dogfood-proof.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "tests/security/m4-path-and-lock-boundary.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "tests/security/m4-scheduler-boundaries.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "tests/security/model-invocation-boundary.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "tests/security/path-traversal.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "tests/security/secret-redaction.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "tests/security/symlink-escape.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "tests/security/tool-validation.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "tests/security/undeclared-write.test.ts",
+          "state": "pass"
+        }
+      ],
+      "exit_semantics": {
+        "runner": "vitest",
+        "success_condition": "no_failed_files_and_runner_success",
+        "observed_success": true
+      }
+    },
+    "security": {
+      "schema_version": "harness.acceptance-suite-report/1",
+      "suite": "security",
+      "implementation_commit": "4aa872dd1212ba6d80459b7f44c1e1021ccbb0cd",
+      "started_commit": "4aa872dd1212ba6d80459b7f44c1e1021ccbb0cd",
+      "finished_commit": "4aa872dd1212ba6d80459b7f44c1e1021ccbb0cd",
+      "invocation_id": "54af3d7d-5003-434e-85de-550ccd173a38",
+      "command": "pnpm test:security",
+      "coverage": "full",
+      "config_path": "vitest.workspace.ts",
+      "tracked_worktree_clean_at_start": true,
+      "tracked_worktree_clean_at_finish": true,
+      "files_total": 16,
+      "files_failed": 0,
+      "failed_files": [],
+      "files": [
+        {
+          "path": "tests/security/capability-escalation.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "tests/security/command-injection.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "tests/security/dashboard-security.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "tests/security/delegated-provider.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "tests/security/judge-security.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "tests/security/m3-collaboration-boundary.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "tests/security/m3-dogfood-redaction.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "tests/security/m4-dogfood-proof.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "tests/security/m4-path-and-lock-boundary.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "tests/security/m4-scheduler-boundaries.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "tests/security/model-invocation-boundary.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "tests/security/path-traversal.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "tests/security/secret-redaction.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "tests/security/symlink-escape.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "tests/security/tool-validation.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "tests/security/undeclared-write.test.ts",
+          "state": "pass"
+        }
+      ],
+      "exit_semantics": {
+        "runner": "vitest",
+        "success_condition": "no_failed_files_and_runner_success",
+        "observed_success": true
+      }
+    },
+    "fault": {
+      "schema_version": "harness.acceptance-suite-report/1",
+      "suite": "fault",
+      "implementation_commit": "4aa872dd1212ba6d80459b7f44c1e1021ccbb0cd",
+      "started_commit": "4aa872dd1212ba6d80459b7f44c1e1021ccbb0cd",
+      "finished_commit": "4aa872dd1212ba6d80459b7f44c1e1021ccbb0cd",
+      "invocation_id": "b508fede-3709-4aa3-9d68-165f61056bf3",
+      "command": "pnpm test:fault",
+      "coverage": "full",
+      "config_path": "vitest.workspace.ts",
+      "tracked_worktree_clean_at_start": true,
+      "tracked_worktree_clean_at_finish": true,
+      "files_total": 20,
+      "files_failed": 0,
+      "failed_files": [],
+      "files": [
+        {
+          "path": "tests/fault/approval-cascade-invalidation.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "tests/fault/budget-exhaustion.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "tests/fault/concurrent-write.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "tests/fault/dashboard-cache-corruption.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "tests/fault/event-stream-recovery.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "tests/fault/expired-approval.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "tests/fault/git-drift.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "tests/fault/integration-cas-recovery.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "tests/fault/ledger-interruption.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "tests/fault/m4-driver-lock-recovery.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "tests/fault/m4-lease-budget-boundaries.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "tests/fault/m4-scheduler-crash-matrix.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "tests/fault/m4-wave-integration-boundaries.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "tests/fault/model-invocation-recovery.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "tests/fault/partial-gate.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "tests/fault/process-kill.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "tests/fault/remote-approval-materialization.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "tests/fault/sqlite-corruption.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "tests/fault/uncertain-external-action.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "tests/fault/workflow-resume.test.ts",
+          "state": "pass"
+        }
+      ],
+      "exit_semantics": {
+        "runner": "vitest",
+        "success_condition": "no_failed_files_and_runner_success",
+        "observed_success": true
+      }
+    },
+    "performance": {
+      "schema_version": "harness.acceptance-suite-report/1",
+      "suite": "performance",
+      "implementation_commit": "4aa872dd1212ba6d80459b7f44c1e1021ccbb0cd",
+      "started_commit": "4aa872dd1212ba6d80459b7f44c1e1021ccbb0cd",
+      "finished_commit": "4aa872dd1212ba6d80459b7f44c1e1021ccbb0cd",
+      "invocation_id": "d5789934-86fd-4b66-88ca-fbe5c8ec3f7d",
+      "command": "pnpm test:performance",
+      "coverage": "full",
+      "config_path": "vitest.performance.ts",
+      "tracked_worktree_clean_at_start": true,
+      "tracked_worktree_clean_at_finish": true,
+      "files_total": 13,
+      "files_failed": 0,
+      "failed_files": [],
+      "files": [
+        {
+          "path": "tests/performance/context-compile.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "tests/performance/dataset.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "tests/performance/impact.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "tests/performance/ledger-commit.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "tests/performance/m2-dashboard.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "tests/performance/m2-finding-semantic.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "tests/performance/m3-control-ref-rebuild.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "tests/performance/m4-scheduler-read-api.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "tests/performance/m4-scheduler-selection.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "tests/performance/m4-sqlite-rebuild.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "tests/performance/m4-wave-compiler.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "tests/performance/projection-generation.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "tests/performance/sqlite-rebuild.test.ts",
+          "state": "pass"
+        }
+      ],
+      "exit_semantics": {
+        "runner": "vitest",
+        "success_condition": "no_failed_files_and_runner_success",
+        "observed_success": true
+      }
+    },
+    "e2e": {
+      "schema_version": "harness.acceptance-suite-report/1",
+      "suite": "e2e",
+      "implementation_commit": "4aa872dd1212ba6d80459b7f44c1e1021ccbb0cd",
+      "started_commit": "4aa872dd1212ba6d80459b7f44c1e1021ccbb0cd",
+      "finished_commit": "4aa872dd1212ba6d80459b7f44c1e1021ccbb0cd",
+      "invocation_id": "60a7e3c7-f642-4afa-b847-41bab554a7f4",
+      "command": "pnpm test:e2e",
+      "coverage": "full",
+      "config_path": "vitest.workspace.ts",
+      "tracked_worktree_clean_at_start": true,
+      "tracked_worktree_clean_at_finish": true,
+      "files_total": 23,
+      "files_failed": 0,
+      "failed_files": [],
+      "files": [
+        {
+          "path": "tests/e2e/delegated-agent-vertical-loop.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "tests/e2e/documentation-examples.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "tests/e2e/generic-adopt.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "tests/e2e/generic-iterate.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "tests/e2e/generic-new.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "tests/e2e/generic-resume.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "tests/e2e/graph-model-documentation.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "tests/e2e/java-adopt.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "tests/e2e/java-iterate.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "tests/e2e/java-new.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "tests/e2e/m2-vertical-loop.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "tests/e2e/m3-remote-collaboration.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "tests/e2e/m4-live-driver-approval.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "tests/e2e/m4-local-multi-agent.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "tests/e2e/m4-production-policy-source.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "tests/e2e/m4-sequential-compatibility.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "tests/e2e/node-adopt.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "tests/e2e/node-iterate.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "tests/e2e/node-new.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "tests/e2e/python-adopt.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "tests/e2e/python-iterate.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "tests/e2e/python-new.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "tests/e2e/three-profile-real-loop.test.ts",
+          "state": "pass"
+        }
+      ],
+      "exit_semantics": {
+        "runner": "vitest",
+        "success_condition": "no_failed_files_and_runner_success",
+        "observed_success": true
+      }
+    },
+    "playwright-dashboard": {
+      "schema_version": "harness.acceptance-suite-report/1",
+      "suite": "playwright-dashboard",
+      "implementation_commit": "4aa872dd1212ba6d80459b7f44c1e1021ccbb0cd",
+      "started_commit": "4aa872dd1212ba6d80459b7f44c1e1021ccbb0cd",
+      "finished_commit": "4aa872dd1212ba6d80459b7f44c1e1021ccbb0cd",
+      "invocation_id": "6dfcddcc-36d8-4fa7-9a3f-8bab07ff24a8",
+      "command": "pnpm test:e2e:dashboard",
+      "coverage": "full",
+      "config_path": "playwright.dashboard.config.ts",
+      "tracked_worktree_clean_at_start": true,
+      "tracked_worktree_clean_at_finish": true,
+      "files_total": 5,
+      "files_failed": 0,
+      "failed_files": [],
+      "files": [
+        {
+          "path": "tests/e2e/dashboard-live-approval.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "tests/e2e/dashboard-m3-collaboration.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "tests/e2e/dashboard-m4-governed-controls.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "tests/e2e/dashboard-m4-scheduler.test.ts",
+          "state": "pass"
+        },
+        {
+          "path": "tests/e2e/dashboard-readonly.test.ts",
+          "state": "pass"
+        }
+      ],
+      "exit_semantics": {
+        "runner": "playwright",
+        "success_condition": "no_failed_files_and_runner_success",
+        "observed_success": true
+      }
+    }
+  },
+  "suite_result_digests": {
+    "main": "b7ae462071ceaab7538ba81bdc2c43ae8c175317b2d1025e8a2eae6cef6ee410",
+    "security": "52fe251e8b7466fa3bf1cd6e10517516e3d56af1a568fd61c9f18344f6707f7e",
+    "fault": "4354ea81d55ca009b8b2ffe878bf801a70d6339a53393edc65bc71ffcad1e08b",
+    "performance": "ca123cd21caf75afbbf15e14e59e8261f7c93b675c23f37ce1a06efe08d49b1c",
+    "e2e": "edad8bfb9258727866014eac6c9290893097d712db35d5a0720b30ff5793a6c3",
+    "playwright-dashboard": "4faa2bd5caaf26042c23310bdabf016605f848878af5357425b8e308b1134a7a"
+  },
+  "dogfood_result": {
+    "present": true,
+    "schema_version": 1,
+    "implementation_commit": "4aa872dd1212ba6d80459b7f44c1e1021ccbb0cd",
+    "status": "blocked",
+    "blocker": "real_adapter_unattended_ineligible",
+    "command": "<redacted-path> --profile headless <TaskEnvelope>",
+    "exit_code": 0,
+    "provider": "dsh",
+    "provider_profile": "headless",
+    "provider_backend": "deepseek-official",
+    "provider_model": "deepseek-v4-flash",
+    "provider_model_source": "dsh_session_request_context_and_assistant_source",
+    "requested_provider_model": "deepseek-v4-flash",
+    "requested_provider_model_source": "preexisting_process_env",
+    "requested_provider_model_matches_observed": true,
+    "expected_provider_version": "0.1.1-rc.2",
+    "expected_provider_version_source": "cli_argument",
+    "observed_provider_version": "0.1.1-rc.2",
+    "credential_source": "project_dotenv_injected_process_env",
+    "credential_material_recorded": false,
+    "credential_material_hashed": false,
+    "build_provenance": {
+      "implementation_commit": "4aa872dd1212ba6d80459b7f44c1e1021ccbb0cd",
+      "source_head": "4aa872dd1212ba6d80459b7f44c1e1021ccbb0cd",
+      "source_head_matches_implementation_commit": true,
+      "tracked_source_clean": true,
+      "build_command": "pnpm build",
+      "clean_rebuild_from_committed_archive": true,
+      "root_package_json_sha256": "9a6a16292841b14f995073631f5998bd5f35f9c06118ae6310b6b6f933f2788b",
+      "lockfile_sha256": "456c71e7a045adb446ba387446ac2ed56c6db21df336b76f5af8a1a55da4aadf",
+      "runtime_dependency_closure": [
+        "@universal-harness-internal/adapter-agent-command",
+        "@universal-harness-internal/adapter-agent-dsh",
+        "@universal-harness-internal/adapter-agent-manual",
+        "@universal-harness-internal/adapter-gate-llm-judge",
+        "@universal-harness-internal/adapter-projection-markdown",
+        "@universal-harness-internal/adapter-vcs-git",
+        "@universal-harness-internal/core",
+        "@universal-harness-internal/dashboard",
+        "@universal-harness-internal/eval",
+        "@universal-harness-internal/graph",
+        "@universal-harness-internal/plugin-sdk",
+        "@universal-harness-internal/runtime",
+        "universal-harness"
+      ],
+      "package_count": 13,
+      "external_runtime_dependency_count": 7,
+      "provenance_sha256": "8b17ae9e04ddbdc5943c4d9b826a0869bb496e4e828e028fffd1b8b647ab6163"
+    },
+    "adapter_manifest_digest": "63285cb9f1573c0c522011bd80e3df5ef0207796cf646643366fec34a0f8a1bf",
+    "requested_task_count": 4,
+    "requested_max_concurrency": 2,
+    "requested_wave_count": 3,
+    "effective_max_concurrency": 1,
+    "unattended_eligible": false,
+    "eligibility_reasons": [
+      "delegated provider does not prove usage metering; without it the Harness cannot enforce a token ceiling",
+      "delegated provider does not prove side-effect interception",
+      "delegated provider exposes no internal trajectory; external-only visibility cannot satisfy trajectory coverage requirements",
+      "delegated provider cannot resume an interrupted run"
+    ],
+    "provider_probe": {
+      "verification_status": "verified",
+      "task_id": "task_real_dsh_probe",
+      "agent_outcome_claim": "handoff",
+      "termination_reason": "completion",
+      "workspace_verification_status": "passed",
+      "output_exists": true,
+      "output_regular_file": true,
+      "output_realpath_contained": true,
+      "exact_bytes_match": true,
+      "only_allowed_path_changed": true,
+      "unauthorized_path_count": 0
+    },
+    "scheduler_eligibility": {
+      "status": "blocked",
+      "unattended_eligible": false,
+      "reasons": [
+        "delegated provider does not prove usage metering; without it the Harness cannot enforce a token ceiling",
+        "delegated provider does not prove side-effect interception",
+        "delegated provider exposes no internal trajectory; external-only visibility cannot satisfy trajectory coverage requirements",
+        "delegated provider cannot resume an interrupted run"
+      ],
+      "ac_06": "blocked",
+      "ac_20": "blocked",
+      "prerequisite_status": "blocked"
+    },
+    "adapter_reported_usage": {
+      "metering": "unmetered",
+      "input_tokens": null,
+      "output_tokens": null,
+      "total_tokens": null
+    },
+    "dsh_session_observation": {
+      "source": "dsh_local_zstd_session",
+      "session_sha256": "81383e57c6b53d3107737a84720e0e6c0110f579e0288f343be4cd4735578308",
+      "raw_session_persisted_in_release_bundle": false,
+      "usage": {
+        "metering": "dsh_session_observed",
+        "model_call_count": 4,
+        "input_tokens": 10891,
+        "cache_read_input_tokens": 32128,
+        "output_tokens": 1096,
+        "reasoning_tokens": 585,
+        "total_tokens": 44115
+      }
+    },
+    "supervised_probe": {
+      "task_id": "task_real_dsh_probe",
+      "outcome": "handoff",
+      "termination_reason": "completion",
+      "output_exists": true,
+      "exact_bytes_match": true,
+      "only_allowed_path_changed": true,
+      "changed_path_count": 1,
+      "evidence": [
+        {
+          "kind": "transcript",
+          "digest": "dfce1ed8ae9b8842ccbbe7c3e6cb853054a32e0b0565858464786ccec9e0b43a"
+        },
+        {
+          "kind": "diff",
+          "digest": "3e847fe5920573d3150e53882c7640caebe396ed6f266130fc67b8ab5a2d1b61"
+        }
+      ],
+      "duration_ms": 11920
+    },
+    "overlap_proven": false,
+    "overlap_intervals": [],
+    "gate_status": null,
+    "evaluation_status": null,
+    "snapshot_status": null,
+    "wave_integration_count": null,
+    "raw_transcript_persisted_in_release_bundle": false,
+    "command_executable_basename": "bin.js"
+  },
+  "dogfood_result_digest": "4326379407bee2d2feed1a1fc24fa0f9f58eb07c27a1c8437c12aca3df3c92f1",
+  "results": [
+    {
+      "acceptance_id": "AC-01",
+      "statement": "Plan 是 Task 规划语义唯一权威源，并原子生成全部 `DEPENDS_ON` 和 digest-bound waves。",
+      "status": "passed",
+      "required_suites": [
+        "main"
+      ],
+      "suite_invocation_ids": {
+        "main": "c7c32bdd-141a-4599-8a23-7014b85ce4a2"
+      },
+      "commands": [
+        "pnpm test"
+      ],
+      "evidence": [
+        "packages/runtime/test/planning/waves.test.ts",
+        "packages/runtime/test/scheduling/task-dag-port.test.ts",
+        "tests/e2e/m4-local-multi-agent.test.ts"
+      ],
+      "tracked_evidence_digest": "54351b77ffc536e2858310a51558c86099a590976732271a07960dd6132d18b6",
+      "suite_result_digests": {
+        "main": "b7ae462071ceaab7538ba81bdc2c43ae8c175317b2d1025e8a2eae6cef6ee410"
+      },
+      "design_section": "§24",
+      "detail": "no extra readiness proof required",
+      "evidence_digest": "231ab6c6cf90c666ebc516750aff5d5ef44a678e68d64b0e5f78f820326cd7cc"
+    },
+    {
+      "acceptance_id": "AC-02",
+      "statement": "循环、缺失依赖、不一致 wave 及不确定拆分被拒绝。",
+      "status": "passed",
+      "required_suites": [
+        "main"
+      ],
+      "suite_invocation_ids": {
+        "main": "c7c32bdd-141a-4599-8a23-7014b85ce4a2"
+      },
+      "commands": [
+        "pnpm test"
+      ],
+      "evidence": [
+        "packages/runtime/test/planning/waves.test.ts"
+      ],
+      "tracked_evidence_digest": "7f928aac37a2307783764ed5e2e7593dbffeff1cc7515ec0828baddf98c761c7",
+      "suite_result_digests": {
+        "main": "b7ae462071ceaab7538ba81bdc2c43ae8c175317b2d1025e8a2eae6cef6ee410"
+      },
+      "design_section": "§24",
+      "detail": "no extra readiness proof required",
+      "evidence_digest": "43e2d7d64fe4a7f3f3e22cf2b23879a266ea0af1577587cd08e8fb22cb87c9f8"
+    },
+    {
+      "acceptance_id": "AC-03",
+      "statement": "写路径与独占资源冲突被机械串行化。",
+      "status": "passed",
+      "required_suites": [
+        "main",
+        "performance"
+      ],
+      "suite_invocation_ids": {
+        "main": "c7c32bdd-141a-4599-8a23-7014b85ce4a2",
+        "performance": "d5789934-86fd-4b66-88ca-fbe5c8ec3f7d"
+      },
+      "commands": [
+        "pnpm test",
+        "pnpm test:performance"
+      ],
+      "evidence": [
+        "packages/runtime/test/planning/waves.test.ts",
+        "tests/performance/m4-wave-compiler.test.ts"
+      ],
+      "tracked_evidence_digest": "03684282929f06b1c293a3d1bd05f427ff5709c96cd16e6d94a5939e60d58b43",
+      "suite_result_digests": {
+        "main": "b7ae462071ceaab7538ba81bdc2c43ae8c175317b2d1025e8a2eae6cef6ee410",
+        "performance": "ca123cd21caf75afbbf15e14e59e8261f7c93b675c23f37ce1a06efe08d49b1c"
+      },
+      "design_section": "§24",
+      "detail": "no extra readiness proof required",
+      "evidence_digest": "200aef8bd0fc11e52742c682c8d5df823882a0e2a85870858d0fa7dbd6ac6669"
+    },
+    {
+      "acceptance_id": "AC-04",
+      "statement": "`parallel_task_execution` 满足完整 Module Contract；Lite disabled，Standard/Governed required 并按有效上限并行。",
+      "status": "passed",
+      "required_suites": [
+        "main"
+      ],
+      "suite_invocation_ids": {
+        "main": "c7c32bdd-141a-4599-8a23-7014b85ce4a2"
+      },
+      "commands": [
+        "pnpm test"
+      ],
+      "evidence": [
+        "packages/runtime/test/orchestration/capability-plan-routing.test.ts",
+        "tests/e2e/m4-sequential-compatibility.test.ts"
+      ],
+      "tracked_evidence_digest": "1ca2527ea85b2e939e1cb9ec04e625002d9b7ac01cef315f1e2b7730d61e93bd",
+      "suite_result_digests": {
+        "main": "b7ae462071ceaab7538ba81bdc2c43ae8c175317b2d1025e8a2eae6cef6ee410"
+      },
+      "design_section": "§24",
+      "detail": "no extra readiness proof required",
+      "evidence_digest": "0b8cf160d8a31be905d3d96037215816a95ad2162c0714b9a81b343e7d52751e"
+    },
+    {
+      "acceptance_id": "AC-05",
+      "statement": "不合格 Adapter 不能无人值守并行。",
+      "status": "passed",
+      "required_suites": [
+        "main"
+      ],
+      "suite_invocation_ids": {
+        "main": "c7c32bdd-141a-4599-8a23-7014b85ce4a2"
+      },
+      "commands": [
+        "pnpm test",
+        "pnpm dogfood:m4"
+      ],
+      "evidence": [
+        "packages/conformance/test/scheduling.conformance.test.ts",
+        "packages/runtime/test/scheduling/agent-pool.test.ts",
+        ".reports/acceptance/m4-dogfood.json"
+      ],
+      "tracked_evidence_digest": "e9fe09705af04b11b0264956ed93e98a8fc91ec3f9ee00fe5a682760351f0450",
+      "suite_result_digests": {
+        "main": "b7ae462071ceaab7538ba81bdc2c43ae8c175317b2d1025e8a2eae6cef6ee410"
+      },
+      "dogfood_result_digest": "4326379407bee2d2feed1a1fc24fa0f9f58eb07c27a1c8437c12aca3df3c92f1",
+      "design_section": "§24",
+      "detail": "no extra readiness proof required",
+      "evidence_digest": "eeec97fee773c3d0457a1f4d9a2571463ebb78eddadba3bf996eb0691aed5caf"
+    },
+    {
+      "acceptance_id": "AC-06",
+      "statement": "至少两个真实 Task 在隔离槽位并行。",
+      "status": "blocked",
+      "required_suites": [],
+      "suite_invocation_ids": {},
+      "commands": [
+        "pnpm dogfood:m4"
+      ],
+      "evidence": [
+        ".reports/acceptance/m4-dogfood.json"
+      ],
+      "tracked_evidence_digest": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "suite_result_digests": {},
+      "dogfood_result_digest": "4326379407bee2d2feed1a1fc24fa0f9f58eb07c27a1c8437c12aca3df3c92f1",
+      "design_section": "§24",
+      "detail": "real parallel overlap proof is incomplete",
+      "evidence_digest": "656b73ed696deaf26d660e1d85778e7c53905cf8a57be62456881646b68ccd73"
+    },
+    {
+      "acceptance_id": "AC-07",
+      "statement": "Context、Budget、Run、worktree 和隐藏历史互不共享；Strict TDD 无嵌套 worktree 且 四层写集取交集。",
+      "status": "passed",
+      "required_suites": [
+        "main",
+        "e2e"
+      ],
+      "suite_invocation_ids": {
+        "main": "c7c32bdd-141a-4599-8a23-7014b85ce4a2",
+        "e2e": "60a7e3c7-f642-4afa-b847-41bab554a7f4"
+      },
+      "commands": [
+        "pnpm test",
+        "pnpm test:e2e"
+      ],
+      "evidence": [
+        "packages/runtime/test/scheduling/workspace-manager.test.ts",
+        "packages/runtime/test/scheduling/agent-pool.test.ts",
+        "tests/e2e/m4-local-multi-agent.test.ts"
+      ],
+      "tracked_evidence_digest": "05cbe6eb104d292e39df78ea8bd778026b0189268645873cb92b97c766c39cf2",
+      "suite_result_digests": {
+        "main": "b7ae462071ceaab7538ba81bdc2c43ae8c175317b2d1025e8a2eae6cef6ee410",
+        "e2e": "edad8bfb9258727866014eac6c9290893097d712db35d5a0720b30ff5793a6c3"
+      },
+      "design_section": "§24",
+      "detail": "no extra readiness proof required",
+      "evidence_digest": "8225def378ba1eab98d0bfeba6696756a4b59ce2a58339437dda8b753cdad46c"
+    },
+    {
+      "acceptance_id": "AC-08",
+      "statement": "Task Lease、fencing、Protocol Envelope 和重启恢复无重复接受。",
+      "status": "passed",
+      "required_suites": [
+        "main",
+        "fault"
+      ],
+      "suite_invocation_ids": {
+        "main": "c7c32bdd-141a-4599-8a23-7014b85ce4a2",
+        "fault": "b508fede-3709-4aa3-9d68-165f61056bf3"
+      },
+      "commands": [
+        "pnpm test",
+        "pnpm test:fault"
+      ],
+      "evidence": [
+        "packages/runtime/test/scheduling/recovery.test.ts",
+        "tests/fault/m4-scheduler-crash-matrix.test.ts"
+      ],
+      "tracked_evidence_digest": "a36c5c4407bfff01eb070423cc26facf825b92ad0c4432a2d9adb816d64e3661",
+      "suite_result_digests": {
+        "main": "b7ae462071ceaab7538ba81bdc2c43ae8c175317b2d1025e8a2eae6cef6ee410",
+        "fault": "4354ea81d55ca009b8b2ffe878bf801a70d6339a53393edc65bc71ffcad1e08b"
+      },
+      "design_section": "§24",
+      "detail": "no extra readiness proof required",
+      "evidence_digest": "640fbac893dae8b4f87081f94e50b314330a728178e71c6f3ab68a3410ad1640"
+    },
+    {
+      "acceptance_id": "AC-09",
+      "statement": "并发预算预留不突破 Iteration 总上限。",
+      "status": "passed",
+      "required_suites": [
+        "main",
+        "e2e"
+      ],
+      "suite_invocation_ids": {
+        "main": "c7c32bdd-141a-4599-8a23-7014b85ce4a2",
+        "e2e": "60a7e3c7-f642-4afa-b847-41bab554a7f4"
+      },
+      "commands": [
+        "pnpm test",
+        "pnpm test:e2e"
+      ],
+      "evidence": [
+        "packages/runtime/test/scheduling/budget.test.ts",
+        "tests/e2e/m4-local-multi-agent.test.ts"
+      ],
+      "tracked_evidence_digest": "0cc354737aab14edd54acc1d33a16fc88983876833abbfc6488bf470cba54de8",
+      "suite_result_digests": {
+        "main": "b7ae462071ceaab7538ba81bdc2c43ae8c175317b2d1025e8a2eae6cef6ee410",
+        "e2e": "edad8bfb9258727866014eac6c9290893097d712db35d5a0720b30ff5793a6c3"
+      },
+      "design_section": "§24",
+      "detail": "no extra readiness proof required",
+      "evidence_digest": "4b755d283306a3e9a0dfbefee6d69bfb2b1c0f9a2b700d7e6176be81d5fa9be3"
+    },
+    {
+      "acceptance_id": "AC-10",
+      "statement": "三个调度 Action 及 Policy `allow/deny/requires_approval/block` 四态、Approval 漂移正确生效。",
+      "status": "passed",
+      "required_suites": [
+        "main",
+        "fault",
+        "e2e"
+      ],
+      "suite_invocation_ids": {
+        "main": "c7c32bdd-141a-4599-8a23-7014b85ce4a2",
+        "fault": "b508fede-3709-4aa3-9d68-165f61056bf3",
+        "e2e": "60a7e3c7-f642-4afa-b847-41bab554a7f4"
+      },
+      "commands": [
+        "pnpm test",
+        "pnpm test:fault",
+        "pnpm test:e2e"
+      ],
+      "evidence": [
+        "packages/runtime/test/scheduling/policy-decision-port.test.ts",
+        "packages/runtime/test/scheduling/scheduler.test.ts"
+      ],
+      "tracked_evidence_digest": "6e24c8964e5795c1fcf789bb1a2e4af38429ddc0ed97568a5801250aac029b2d",
+      "suite_result_digests": {
+        "main": "b7ae462071ceaab7538ba81bdc2c43ae8c175317b2d1025e8a2eae6cef6ee410",
+        "fault": "4354ea81d55ca009b8b2ffe878bf801a70d6339a53393edc65bc71ffcad1e08b",
+        "e2e": "edad8bfb9258727866014eac6c9290893097d712db35d5a0720b30ff5793a6c3"
+      },
+      "design_section": "§24",
+      "detail": "tests/e2e/m4-production-policy-source.test.ts passed in canonical e2e",
+      "evidence_digest": "14d2d3ea040a14914e416936915b0c4956559b611b1a109201d52c903f943ce8"
+    },
+    {
+      "acceptance_id": "AC-11",
+      "statement": "三层 Gate 与 wave 原子集成成立。",
+      "status": "passed",
+      "required_suites": [
+        "main",
+        "e2e"
+      ],
+      "suite_invocation_ids": {
+        "main": "c7c32bdd-141a-4599-8a23-7014b85ce4a2",
+        "e2e": "60a7e3c7-f642-4afa-b847-41bab554a7f4"
+      },
+      "commands": [
+        "pnpm test",
+        "pnpm test:e2e"
+      ],
+      "evidence": [
+        "packages/runtime/test/scheduling/integration.test.ts",
+        "tests/e2e/m4-local-multi-agent.test.ts"
+      ],
+      "tracked_evidence_digest": "ec7b805c36122ff5028c845b9347008b662f986955fa1072bd0869b7c95d142c",
+      "suite_result_digests": {
+        "main": "b7ae462071ceaab7538ba81bdc2c43ae8c175317b2d1025e8a2eae6cef6ee410",
+        "e2e": "edad8bfb9258727866014eac6c9290893097d712db35d5a0720b30ff5793a6c3"
+      },
+      "design_section": "§24",
+      "detail": "no extra readiness proof required",
+      "evidence_digest": "d556f49b4ed590866a33778311cf187ad2adb973dd61854de5a0747c17d6139e"
+    },
+    {
+      "acceptance_id": "AC-12",
+      "statement": "executor retry 和 patch-apply integration retry 均最多一次；语义冲突与 baseline drift 不进入 retry。",
+      "status": "passed",
+      "required_suites": [
+        "main",
+        "fault"
+      ],
+      "suite_invocation_ids": {
+        "main": "c7c32bdd-141a-4599-8a23-7014b85ce4a2",
+        "fault": "b508fede-3709-4aa3-9d68-165f61056bf3"
+      },
+      "commands": [
+        "pnpm test",
+        "pnpm test:fault"
+      ],
+      "evidence": [
+        "packages/runtime/test/scheduling/scheduler.test.ts",
+        "tests/fault/m4-scheduler-crash-matrix.test.ts"
+      ],
+      "tracked_evidence_digest": "dfc2c7d4384d50a601e12336ea2ca252c2a7e18d49eb0db29599f9627f8015e3",
+      "suite_result_digests": {
+        "main": "b7ae462071ceaab7538ba81bdc2c43ae8c175317b2d1025e8a2eae6cef6ee410",
+        "fault": "4354ea81d55ca009b8b2ffe878bf801a70d6339a53393edc65bc71ffcad1e08b"
+      },
+      "design_section": "§24",
+      "detail": "no extra readiness proof required",
+      "evidence_digest": "3fa06384102401980d18cf39fc6db8d052ab46404fb2ad7c1bda8dfee4a03162"
+    },
+    {
+      "acceptance_id": "AC-13",
+      "statement": "第二次失败、越权写入和预算耗尽正确阻塞。",
+      "status": "passed",
+      "required_suites": [
+        "main",
+        "security"
+      ],
+      "suite_invocation_ids": {
+        "main": "c7c32bdd-141a-4599-8a23-7014b85ce4a2",
+        "security": "54af3d7d-5003-434e-85de-550ccd173a38"
+      },
+      "commands": [
+        "pnpm test",
+        "pnpm test:security"
+      ],
+      "evidence": [
+        "packages/runtime/test/scheduling/scheduler.test.ts",
+        "tests/security/m4-scheduler-boundaries.test.ts"
+      ],
+      "tracked_evidence_digest": "f39520ad6340b3f5ddc09524c649272392418963541ccab99aed35e4dd0a287b",
+      "suite_result_digests": {
+        "main": "b7ae462071ceaab7538ba81bdc2c43ae8c175317b2d1025e8a2eae6cef6ee410",
+        "security": "52fe251e8b7466fa3bf1cd6e10517516e3d56af1a568fd61c9f18344f6707f7e"
+      },
+      "design_section": "§24",
+      "detail": "no extra readiness proof required",
+      "evidence_digest": "0733fb6a8f0cb0476dee6a8675aa09ff080c5cbe0c481233cdd389b7c872bcea"
+    },
+    {
+      "acceptance_id": "AC-14",
+      "statement": "baseline drift 不会自动 force/rebase。",
+      "status": "passed",
+      "required_suites": [
+        "main",
+        "fault"
+      ],
+      "suite_invocation_ids": {
+        "main": "c7c32bdd-141a-4599-8a23-7014b85ce4a2",
+        "fault": "b508fede-3709-4aa3-9d68-165f61056bf3"
+      },
+      "commands": [
+        "pnpm test",
+        "pnpm test:fault"
+      ],
+      "evidence": [
+        "packages/runtime/test/scheduling/recovery.test.ts",
+        "tests/fault/m4-scheduler-crash-matrix.test.ts"
+      ],
+      "tracked_evidence_digest": "a36c5c4407bfff01eb070423cc26facf825b92ad0c4432a2d9adb816d64e3661",
+      "suite_result_digests": {
+        "main": "b7ae462071ceaab7538ba81bdc2c43ae8c175317b2d1025e8a2eae6cef6ee410",
+        "fault": "4354ea81d55ca009b8b2ffe878bf801a70d6339a53393edc65bc71ffcad1e08b"
+      },
+      "design_section": "§24",
+      "detail": "no extra readiness proof required",
+      "evidence_digest": "bd5c0ffcadb695534b16781b739828e7a010466b7d3fb87f2b263719d7451b2c"
+    },
+    {
+      "acceptance_id": "AC-15",
+      "statement": "Evidence 绑定 Task、Run、Lease token 和实际基线；丢弃 candidate 后旧 Evidence provisional 且完整重验。",
+      "status": "passed",
+      "required_suites": [
+        "main",
+        "e2e"
+      ],
+      "suite_invocation_ids": {
+        "main": "c7c32bdd-141a-4599-8a23-7014b85ce4a2",
+        "e2e": "60a7e3c7-f642-4afa-b847-41bab554a7f4"
+      },
+      "commands": [
+        "pnpm test",
+        "pnpm test:e2e"
+      ],
+      "evidence": [
+        "packages/runtime/test/scheduling/integration.test.ts",
+        "tests/e2e/m4-local-multi-agent.test.ts"
+      ],
+      "tracked_evidence_digest": "ec7b805c36122ff5028c845b9347008b662f986955fa1072bd0869b7c95d142c",
+      "suite_result_digests": {
+        "main": "b7ae462071ceaab7538ba81bdc2c43ae8c175317b2d1025e8a2eae6cef6ee410",
+        "e2e": "edad8bfb9258727866014eac6c9290893097d712db35d5a0720b30ff5793a6c3"
+      },
+      "design_section": "§24",
+      "detail": "no extra readiness proof required",
+      "evidence_digest": "d1f0dd1efd3f182cdefc4ae5c33e7073694bc50df6ff1aca7160dae6874de3d1"
+    },
+    {
+      "acceptance_id": "AC-16",
+      "statement": "Dashboard 展示完整调度与恢复状态。",
+      "status": "passed",
+      "required_suites": [
+        "main",
+        "playwright-dashboard"
+      ],
+      "suite_invocation_ids": {
+        "main": "c7c32bdd-141a-4599-8a23-7014b85ce4a2",
+        "playwright-dashboard": "6dfcddcc-36d8-4fa7-9a3f-8bab07ff24a8"
+      },
+      "commands": [
+        "pnpm test",
+        "pnpm test:e2e:dashboard"
+      ],
+      "evidence": [
+        "packages/dashboard/test/scheduler-api.test.ts",
+        "tests/e2e/dashboard-m4-scheduler.test.ts"
+      ],
+      "tracked_evidence_digest": "87287f563353f591bc943ad64a3530885ee8f303a50b706a2747a2728068fc15",
+      "suite_result_digests": {
+        "main": "b7ae462071ceaab7538ba81bdc2c43ae8c175317b2d1025e8a2eae6cef6ee410",
+        "playwright-dashboard": "4faa2bd5caaf26042c23310bdabf016605f848878af5357425b8e308b1134a7a"
+      },
+      "design_section": "§24",
+      "detail": "tests/e2e/dashboard-m4-governed-controls.test.ts passed in canonical playwright-dashboard",
+      "evidence_digest": "18435c4b0568c0368f5455e236387f780587ef6c122eb7814b75bf8f4c0a92e9"
+    },
+    {
+      "acceptance_id": "AC-17",
+      "statement": "CLI run/resume/status/watch/abort 形成闭环，CLI 与 Dashboard 对同一 Operation 保持 单驱动。",
+      "status": "passed",
+      "required_suites": [
+        "main",
+        "fault",
+        "e2e"
+      ],
+      "suite_invocation_ids": {
+        "main": "c7c32bdd-141a-4599-8a23-7014b85ce4a2",
+        "fault": "b508fede-3709-4aa3-9d68-165f61056bf3",
+        "e2e": "60a7e3c7-f642-4afa-b847-41bab554a7f4"
+      },
+      "commands": [
+        "pnpm test",
+        "pnpm test:fault",
+        "pnpm test:e2e"
+      ],
+      "evidence": [
+        "packages/cli/test/m4-scheduling.test.ts",
+        "tests/fault/m4-scheduler-crash-matrix.test.ts"
+      ],
+      "tracked_evidence_digest": "586ae5d0e26e5f301db6da7f2d8a79fa6e5167a2d25257005ce99fedac2dbd42",
+      "suite_result_digests": {
+        "main": "b7ae462071ceaab7538ba81bdc2c43ae8c175317b2d1025e8a2eae6cef6ee410",
+        "fault": "4354ea81d55ca009b8b2ffe878bf801a70d6339a53393edc65bc71ffcad1e08b",
+        "e2e": "edad8bfb9258727866014eac6c9290893097d712db35d5a0720b30ff5793a6c3"
+      },
+      "design_section": "§24",
+      "detail": "tests/e2e/m4-live-driver-approval.test.ts passed in canonical e2e",
+      "evidence_digest": "0143e8d4acdcfca40773d369b1e04dd44842e99f595c9c547a2a60c7df794078"
+    },
+    {
+      "acceptance_id": "AC-18",
+      "statement": "SQLite 删除后可从 Ledger 恢复权威状态。",
+      "status": "passed",
+      "required_suites": [
+        "performance"
+      ],
+      "suite_invocation_ids": {
+        "performance": "d5789934-86fd-4b66-88ca-fbe5c8ec3f7d"
+      },
+      "commands": [
+        "pnpm test:performance"
+      ],
+      "evidence": [
+        "tests/performance/m4-sqlite-rebuild.test.ts"
+      ],
+      "tracked_evidence_digest": "7696eb7b87920b3c11207ccd925d0c2394024157d52902cc3f6b941d90c1622c",
+      "suite_result_digests": {
+        "performance": "ca123cd21caf75afbbf15e14e59e8261f7c93b675c23f37ce1a06efe08d49b1c"
+      },
+      "design_section": "§24",
+      "detail": "no extra readiness proof required",
+      "evidence_digest": "80fdf56315506920b572ad3dc1a857e08e1b68f32ecaec3953d6af21e2159024"
+    },
+    {
+      "acceptance_id": "AC-19",
+      "statement": "Protocol 1.3 Envelope/Reader/`required_reader_version`、M1/M2/M3 与顺序执行回归全部通过。",
+      "status": "passed",
+      "required_suites": [
+        "main",
+        "e2e"
+      ],
+      "suite_invocation_ids": {
+        "main": "c7c32bdd-141a-4599-8a23-7014b85ce4a2",
+        "e2e": "60a7e3c7-f642-4afa-b847-41bab554a7f4"
+      },
+      "commands": [
+        "pnpm test",
+        "pnpm test:e2e"
+      ],
+      "evidence": [
+        "packages/core/test/protocol/protocol-1.3.test.ts",
+        "tests/e2e/m4-sequential-compatibility.test.ts"
+      ],
+      "tracked_evidence_digest": "6448f286fb83a70dc927fc48e080d3805f35c46b03c17063d774ae824c0b2711",
+      "suite_result_digests": {
+        "main": "b7ae462071ceaab7538ba81bdc2c43ae8c175317b2d1025e8a2eae6cef6ee410",
+        "e2e": "edad8bfb9258727866014eac6c9290893097d712db35d5a0720b30ff5793a6c3"
+      },
+      "design_section": "§24",
+      "detail": "no extra readiness proof required",
+      "evidence_digest": "20d80dc595696c40a0033019099f46df98bc05e02d7042603e2ec8500ef18205"
+    },
+    {
+      "acceptance_id": "AC-20",
+      "statement": "真实 Dogfood 完成并生成绑定当前提交的验收报告。",
+      "status": "blocked",
+      "required_suites": [
+        "main",
+        "security",
+        "fault",
+        "performance",
+        "e2e",
+        "playwright-dashboard"
+      ],
+      "suite_invocation_ids": {
+        "main": "c7c32bdd-141a-4599-8a23-7014b85ce4a2",
+        "security": "54af3d7d-5003-434e-85de-550ccd173a38",
+        "fault": "b508fede-3709-4aa3-9d68-165f61056bf3",
+        "performance": "d5789934-86fd-4b66-88ca-fbe5c8ec3f7d",
+        "e2e": "60a7e3c7-f642-4afa-b847-41bab554a7f4",
+        "playwright-dashboard": "6dfcddcc-36d8-4fa7-9a3f-8bab07ff24a8"
+      },
+      "commands": [
+        "pnpm test",
+        "pnpm test:security",
+        "pnpm test:fault",
+        "pnpm test:performance",
+        "pnpm test:e2e",
+        "pnpm test:e2e:dashboard",
+        "pnpm dogfood:m4"
+      ],
+      "evidence": [
+        "scripts/dogfood-m4-local-scheduler.mjs",
+        "scripts/dogfood-m4-redaction.mjs",
+        ".reports/acceptance/m4-dogfood.json"
+      ],
+      "tracked_evidence_digest": "85942526f9a0080282189c6384371c9821d5fbbf7daa601fb4a5f52e0f0d1522",
+      "suite_result_digests": {
+        "main": "b7ae462071ceaab7538ba81bdc2c43ae8c175317b2d1025e8a2eae6cef6ee410",
+        "security": "52fe251e8b7466fa3bf1cd6e10517516e3d56af1a568fd61c9f18344f6707f7e",
+        "fault": "4354ea81d55ca009b8b2ffe878bf801a70d6339a53393edc65bc71ffcad1e08b",
+        "performance": "ca123cd21caf75afbbf15e14e59e8261f7c93b675c23f37ce1a06efe08d49b1c",
+        "e2e": "edad8bfb9258727866014eac6c9290893097d712db35d5a0720b30ff5793a6c3",
+        "playwright-dashboard": "4faa2bd5caaf26042c23310bdabf016605f848878af5357425b8e308b1134a7a"
+      },
+      "dogfood_result_digest": "4326379407bee2d2feed1a1fc24fa0f9f58eb07c27a1c8437c12aca3df3c92f1",
+      "design_section": "§24",
+      "detail": "full real Scheduler/Gate/Evaluate/Snapshot dogfood is incomplete",
+      "evidence_digest": "52ba8234b2ae6687593a5408ddcdffd4cb69a0554722c63fe22b80f8f131cbd2"
+    }
+  ]
+}
