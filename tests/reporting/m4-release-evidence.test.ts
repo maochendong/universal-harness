@@ -17,6 +17,32 @@ import {
 const COMMIT_A = "a".repeat(40);
 const COMMIT_B = "b".repeat(40);
 
+function completeResults(): readonly Record<string, unknown>[] {
+  return Array.from({ length: 20 }, (_, index) => ({
+    acceptance_id: `AC-${String(index + 1).padStart(2, "0")}`,
+    statement: "proof",
+    status: "passed",
+    required_suites: [],
+    suite_invocation_ids: {},
+    commands: [],
+    evidence: [],
+    evidence_digest: "1".repeat(64),
+    design_section: "§24",
+    detail: "verified",
+  }));
+}
+
+function completeInvocationIds(): Record<string, string> {
+  return {
+    main: "inv-main",
+    security: "inv-security",
+    fault: "inv-fault",
+    performance: "inv-performance",
+    e2e: "inv-e2e",
+    "playwright-dashboard": "inv-playwright-dashboard",
+  };
+}
+
 function report(
   suite: string,
   command: string,
@@ -122,7 +148,8 @@ describe("tracked Evidence and report commit", () => {
       `${JSON.stringify({
         schema_version: "harness.m4-acceptance-results/1",
         implementation_commit: implementation,
-        results: [],
+        suite_invocation_ids: completeInvocationIds(),
+        results: completeResults(),
       })}\n`,
       "report",
     );

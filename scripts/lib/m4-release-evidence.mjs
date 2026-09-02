@@ -112,14 +112,67 @@ function escapeCell(value) {
   return String(value).replaceAll("|", "\\|").replaceAll("\n", " ");
 }
 
-/** Render-only projection: every result cell originates in the typed JSON. */
-export function renderM4Markdown(sidecar, dogfood) {
+export function assertM4AcceptanceSidecar(sidecar, options = {}) {
   if (!isObject(sidecar) || sidecar.schema_version !== M4_RESULTS_SCHEMA_VERSION) {
     throw new ReleaseEvidenceError("M4 sidecar schema is missing or unsupported");
   }
+  assertString(sidecar.implementation_commit, "implementation_commit", "M4 sidecar");
   if (!Array.isArray(sidecar.results)) {
     throw new ReleaseEvidenceError("M4 sidecar results must be an array");
   }
+  const expectedCount = options.requireComplete === true ? 20 : sidecar.results.length;
+  if (sidecar.results.length !== expectedCount) {
+    throw new ReleaseEvidenceError(`M4 sidecar must contain ${String(expectedCount)} results`);
+  }
+  if (options.requireComplete === true) {
+    if (!isObject(sidecar.suite_invocation_ids)) {
+      throw new ReleaseEvidenceError(
+        "M4 sidecar must retain canonical suite invocation identities",
+      );
+    }
+    for (const suite of Object.keys(CANONICAL_RELEASE_COMMANDS)) {
+      assertString(sidecar.suite_invocation_ids[suite], "invocation_id", suite);
+    }
+  }
+  const seen = new Set();
+  for (const [index, entry] of sidecar.results.entries()) {
+    if (!isObject(entry)) throw new ReleaseEvidenceError("M4 sidecar result must be an object");
+    const expectedId = `AC-${String(index + 1).padStart(2, "0")}`;
+    if (entry.acceptance_id !== expectedId || seen.has(entry.acceptance_id)) {
+      throw new ReleaseEvidenceError(`M4 sidecar result identity must be ${expectedId}`);
+    }
+    seen.add(entry.acceptance_id);
+    if (!Array.isArray(entry.required_suites) || !isObject(entry.suite_invocation_ids)) {
+      throw new ReleaseEvidenceError(`${expectedId}: required suites/invocations are malformed`);
+    }
+    for (const suite of entry.required_suites) {
+      if (!(suite in CANONICAL_RELEASE_COMMANDS)) {
+        throw new ReleaseEvidenceError(`${expectedId}: unknown required suite ${String(suite)}`);
+      }
+      assertString(entry.suite_invocation_ids[suite], "suite invocation id", expectedId);
+      if (
+        isObject(sidecar.suite_invocation_ids) &&
+        entry.suite_invocation_ids[suite] !== sidecar.suite_invocation_ids[suite]
+      ) {
+        throw new ReleaseEvidenceError(`${expectedId}: suite invocation identity drifted`);
+      }
+    }
+    if (!Array.isArray(entry.commands) || !Array.isArray(entry.evidence)) {
+      throw new ReleaseEvidenceError(`${expectedId}: commands/evidence must be arrays`);
+    }
+    if (!/^[a-f0-9]{64}$/u.test(entry.evidence_digest ?? "")) {
+      throw new ReleaseEvidenceError(`${expectedId}: evidence digest must be sha256`);
+    }
+    if (!["passed", "failed", "blocked", "not_run"].includes(entry.status)) {
+      throw new ReleaseEvidenceError(`${expectedId}: invalid status`);
+    }
+  }
+  return sidecar;
+}
+
+/** Render-only projection: every result cell originates in the typed JSON. */
+export function renderM4Markdown(sidecar, dogfood) {
+  assertM4AcceptanceSidecar(sidecar);
   const passed = sidecar.results.filter((entry) => entry?.status === "passed").length;
   const blocked = sidecar.results.filter((entry) => entry?.status === "blocked").length;
   const lines = [
@@ -185,6 +238,7 @@ export function verifyM4ReportCommit(repositoryRoot, head = "HEAD") {
   if (sidecar.implementation_commit !== parent) {
     throw new ReleaseEvidenceError("report parent is not the evaluated implementation commit");
   }
+  assertM4AcceptanceSidecar(sidecar, { requireComplete: true });
   const changed = git(repositoryRoot, [
     "diff-tree",
     "--no-commit-id",

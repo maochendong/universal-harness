@@ -27,6 +27,7 @@ import { evaluateCiPlatformEvidence } from "./write-ci-platform-evidence.mjs";
 import {
   CANONICAL_RELEASE_COMMANDS,
   M4_RESULTS_SCHEMA_VERSION,
+  assertM4AcceptanceSidecar,
   assertCanonicalSuiteReports,
   digestTrackedEvidence,
   renderM4Markdown,
@@ -61,6 +62,7 @@ const baselineDirectory = join(
 );
 
 const REQUIRED_SUITES = ["main", "security", "fault", "performance"];
+const M4_REQUIRED_SUITES = Object.keys(CANONICAL_RELEASE_COMMANDS);
 const CRITERION_COUNT = 28;
 const STATUS_PRECEDENCE = ["failed", "blocked", "passed", "not_verified", "not_run"];
 const currentCommit = execFileSync("git", ["rev-parse", "HEAD"], {
@@ -116,6 +118,20 @@ for (const suite of REQUIRED_SUITES) {
 assertCanonicalSuiteReports(
   suiteReports,
   Object.fromEntries(REQUIRED_SUITES.map((suite) => [suite, CANONICAL_RELEASE_COMMANDS[suite]])),
+  currentCommit,
+);
+const canonicalReleaseReports = new Map(suiteReports);
+for (const suite of M4_REQUIRED_SUITES) {
+  if (canonicalReleaseReports.has(suite)) continue;
+  const path = join(reportsDirectory, `${suite}.json`);
+  if (!existsSync(path)) {
+    fail(`missing canonical M4 release suite ${path}`);
+  }
+  canonicalReleaseReports.set(suite, JSON.parse(readFileSync(path, "utf8")));
+}
+const canonicalReleaseInvocationIds = assertCanonicalSuiteReports(
+  canonicalReleaseReports,
+  CANONICAL_RELEASE_COMMANDS,
   currentCommit,
 );
 // Optional extra suites (for example a standalone `pnpm test:e2e` run) merge
@@ -459,7 +475,13 @@ const playwrightPath = join(reportsDirectory, "playwright-dashboard.json");
 let playwrightPassed = false;
 if (existsSync(playwrightPath)) {
   const report = JSON.parse(readFileSync(playwrightPath, "utf8"));
-  playwrightPassed = report.stats?.unexpected === 0 && report.stats?.expected > 0;
+  playwrightPassed =
+    report.schema_version === "harness.acceptance-suite-report/1" &&
+    report.implementation_commit === currentCommit &&
+    report.command === CANONICAL_RELEASE_COMMANDS["playwright-dashboard"] &&
+    report.coverage === "full" &&
+    report.files_failed === 0 &&
+    report.files_total > 0;
 }
 const packPath = join(reportsDirectory, "pack-smoke.json");
 let packPassed = false;
@@ -835,16 +857,8 @@ const m4Dogfood = existsSync(m4DogfoodPath)
   ? JSON.parse(readFileSync(m4DogfoodPath, "utf8"))
   : undefined;
 const m4ImplementationCommit = currentCommit;
-const m4RequiredReports = new Map();
-for (const suite of Object.keys(CANONICAL_RELEASE_COMMANDS)) {
-  const path = join(reportsDirectory, `${suite}.json`);
-  if (existsSync(path)) m4RequiredReports.set(suite, JSON.parse(readFileSync(path, "utf8")));
-}
-const m4SuiteInvocationIds = assertCanonicalSuiteReports(
-  m4RequiredReports,
-  CANONICAL_RELEASE_COMMANDS,
-  m4ImplementationCommit,
-);
+const m4RequiredReports = canonicalReleaseReports;
+const m4SuiteInvocationIds = canonicalReleaseInvocationIds;
 
 function m4Statements() {
   const section = readFileSync(m4DesignPath, "utf8")
@@ -1134,6 +1148,7 @@ const m4Sidecar = {
   suite_invocation_ids: m4SuiteInvocationIds,
   results: m4Results,
 };
+assertM4AcceptanceSidecar(m4Sidecar, { requireComplete: true });
 const m4SidecarJson = `${JSON.stringify(m4Sidecar, null, 2)}\n`;
 writeFileSync(m4MachineResultPath, m4SidecarJson, "utf8");
 writeFileSync(m4TrackedResultPath, m4SidecarJson, "utf8");
