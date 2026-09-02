@@ -195,7 +195,7 @@ test.describe("Dashboard live approval journey", () => {
       if (request.method() !== "POST" || !request.url().includes("/decision")) return;
       decisionBody = request.postDataJSON() as { expected_digest?: string };
     });
-    await card.getByLabel("DECISION ACTOR").fill("human:approval-queue-e2e");
+    await card.getByRole("textbox", { name: /审批人身份/u }).fill("human:approval-queue-e2e");
     await card.getByRole("button", { name: "APPROVE" }).click();
     await expect(card.getByText("DECISION RECORDED")).toBeVisible();
     expect(decisionBody?.expected_digest).toBe(firstObjectDigest);
@@ -226,7 +226,7 @@ test.describe("Dashboard live approval journey", () => {
     await expect(page.getByRole("button", { name: "REJECT" })).toBeVisible();
     await expect(page.getByRole("button", { name: "DEFER" })).toBeVisible();
 
-    await page.getByLabel("DECISION ACTOR").fill("human:web-e2e");
+    await page.getByRole("textbox", { name: /审批人身份/u }).fill("human:web-e2e");
     await page.getByRole("button", { name: "APPROVE" }).click();
     await expect(page.getByText("DECISION RECORDED")).toBeVisible();
     await expect(page.getByRole("button", { name: "RESUME WORKFLOW" })).toBeVisible();
@@ -342,7 +342,7 @@ test.describe("Dashboard live approval journey", () => {
     await expect(
       page.locator(".approval-card").getByRole("heading", { name: "被篡改的展示标题" }),
     ).toBeVisible();
-    await page.getByLabel("DECISION ACTOR").fill("human:digest-binding-e2e");
+    await page.getByRole("textbox", { name: /审批人身份/u }).fill("human:digest-binding-e2e");
     await page.getByRole("button", { name: "APPROVE" }).click();
     await expect(page.getByText("DECISION RECORDED")).toBeVisible();
     expect(decisionBody?.expected_digest).toBe(firstObjectDigest);
