@@ -585,8 +585,7 @@ describe("rebuildWaveCandidate", () => {
     const taskA = task("task_a");
     const wave: ParallelWave = { wave_index: 0, task_ids: ["task_a"] };
     const dag = dagFor([taskA], [wave]);
-    const chain = leaseChainFor(taskA, { token: 1, state: "released" });
-    h.authority.leases.push(...chain);
+    preloadTaskFacts(h, taskA, BASE_COMMIT);
     await h.controller.queueTaskCandidate(patchFor(taskA));
     h.git.failApplyFor.add("task_a");
 
@@ -600,6 +599,9 @@ describe("rebuildWaveCandidate", () => {
     expect(h.authority.events[0]?.payload.retry_kind).toBe("integration_retry");
     expect(findingRules(h.authority)).toEqual(["integration_retry_scheduled"]);
     expect(h.git.discarded).toHaveLength(1);
+    expect(buildTaskLeaseChain(h.authority.leases).latest_by_task.get(taskA.id)?.state).toBe(
+      "released",
+    );
 
     // Second failure of the same class: the retry budget is exhausted and the
     // Task blocks; no second retry is ever scheduled.

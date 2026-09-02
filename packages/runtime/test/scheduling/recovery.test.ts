@@ -262,6 +262,7 @@ class RecoveryAuthority implements SchedulerAuthority {
   readonly candidatePatches: QueuedCandidateFact[] = [];
   readonly events: SchedulerEventSpec[] = [];
   readonly batches: SchedulerTransition[][] = [];
+  private readonly candidateArtifactLocators = new Map<string, string>();
 
   async readFacts(operationId: string): Promise<SchedulerLedgerFacts> {
     if (operationId !== OPERATION_ID) throw new Error(`unknown operation ${operationId}`);
@@ -304,9 +305,39 @@ class RecoveryAuthority implements SchedulerAuthority {
           this.waveIntegrations.push(transition.record);
           break;
         case "append_evidence":
+          for (const evidence of transition.evidence) {
+            if (evidence.kind === "task_candidate_patch") {
+              this.candidateArtifactLocators.set(evidence.digest, evidence.locator);
+            }
+          }
           break;
         case "append_event":
           this.events.push(transition.event);
+          if (transition.event.eventType === "TaskIntegrationQueued") {
+            const taskId = transition.event.payload.task_id;
+            const runId = transition.event.payload.run_id;
+            const patchDigest = transition.event.payload.patch_digest;
+            if (
+              typeof taskId === "string" &&
+              typeof runId === "string" &&
+              typeof patchDigest === "string"
+            ) {
+              const patchLocator = this.candidateArtifactLocators.get(patchDigest);
+              if (
+                patchLocator !== undefined &&
+                !this.candidatePatches.some(
+                  (candidate) => candidate.task_id === taskId && candidate.run_id === runId,
+                )
+              ) {
+                this.candidatePatches.push({
+                  task_id: taskId,
+                  run_id: runId,
+                  patch_locator: patchLocator,
+                  patch_digest: patchDigest,
+                });
+              }
+            }
+          }
           break;
       }
     }
@@ -623,9 +654,13 @@ describe("recoverSchedulingOperation", () => {
   it("replays valid queued patches in Plan order and reruns candidate gates", async () => {
     const taskA = task("task_a");
     const h = recoveryHarness([taskA]);
-    const [granted, released] = releasedChain(taskA, "run_a_1");
-    h.authority.leases.push(granted, released);
-    h.authority.gateEvidence.push(candidateEvidence(taskA, released, BASE_COMMIT, "task"));
+    const granted = grantedLease(taskA, { runId: "run_a_1" });
+    h.authority.leases.push(granted);
+    h.authority.runs.push({
+      ...runTerminated(taskA.id, granted.run_id, "completion"),
+      extensions: { "harness.scheduler": { consumed_budget: { steps: 1, tokens: 10 } } },
+    });
+    h.authority.gateEvidence.push(candidateEvidence(taskA, granted, BASE_COMMIT, "task"));
     h.authority.candidatePatches.push({
       task_id: "task_a",
       run_id: "run_a_1",
@@ -636,9 +671,11 @@ describe("recoverSchedulingOperation", () => {
     const report = await h.recover();
 
     expect(report.candidate_replay).toBe("completed");
+    expect(report.revoked_lease_ids).toEqual([]);
     // The candidate validation reran and wrote fresh evidence + event; the old
     // candidate state was never resurrected.
     expect(h.authority.events.map((event) => event.eventType)).toContain("TaskCandidateValidated");
+    expect(h.authority.leases.at(-1)?.state).toBe("released");
   });
 
   it("sweeps only managed-root task worktrees of the quiesced operation (P2-1)", async () => {

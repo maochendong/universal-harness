@@ -533,19 +533,52 @@ function taskWaveBaseCommit(
   return previous.candidate_commit;
 }
 
-/** A completed run whose patch was durably queued is awaiting candidate validation, not orphaned. */
-function isPendingCandidate(facts: SchedulerLedgerFacts, lease: TaskLeaseRecord): boolean {
-  const queued = (facts.candidate_patches ?? []).some(
-    (candidate) => candidate.task_id === lease.task_id && candidate.run_id === lease.run_id,
-  );
-  if (!queued) return false;
-  return facts.runs.some(
+/**
+ * Authoritative metered consumption of the completed Run covered by a Lease.
+ * Candidate validation and integration-conflict cleanup share this parser so
+ * they can never release the same Lease with different budget semantics.
+ */
+export function terminalCompletionBudget(
+  facts: SchedulerLedgerFacts,
+  lease: TaskLeaseRecord,
+): BudgetAmount | undefined {
+  const terminal = facts.runs.find(
     (record) =>
       record.run_id === lease.run_id &&
       record.record_kind === "run_terminated" &&
       record.termination_reason === "completion" &&
       record.outcome === "handoff",
   );
+  const usage = terminal?.extensions?.["harness.scheduler"] as
+    | { readonly consumed_budget?: { readonly steps?: unknown; readonly tokens?: unknown } }
+    | undefined;
+  const steps = usage?.consumed_budget?.steps;
+  const tokens = usage?.consumed_budget?.tokens;
+  if (
+    typeof steps !== "number" ||
+    !Number.isInteger(steps) ||
+    steps < 0 ||
+    steps > lease.reserved_budget.steps ||
+    typeof tokens !== "number" ||
+    !Number.isInteger(tokens) ||
+    tokens < 0 ||
+    tokens > lease.reserved_budget.tokens
+  ) {
+    return undefined;
+  }
+  return { steps, tokens };
+}
+
+/** A completed run whose patch was durably queued is awaiting candidate validation, not orphaned. */
+export function isPendingCandidateLease(
+  facts: SchedulerLedgerFacts,
+  lease: TaskLeaseRecord,
+): boolean {
+  const queued = (facts.candidate_patches ?? []).some(
+    (candidate) => candidate.task_id === lease.task_id && candidate.run_id === lease.run_id,
+  );
+  if (!queued) return false;
+  return terminalCompletionBudget(facts, lease) !== undefined;
 }
 
 export function createLocalTaskScheduler(
@@ -1689,7 +1722,7 @@ export function createLocalTaskScheduler(
       }
       const chain = buildTaskLeaseChain(facts.leases);
       const orphaned = [...chain.latest_by_task.values()].filter(
-        (record) => record.state === "granted" && !isPendingCandidate(facts, record),
+        (record) => record.state === "granted" && !isPendingCandidateLease(facts, record),
       );
       if (orphaned.length > 0) {
         throw new SchedulerError(
@@ -1716,7 +1749,7 @@ export function createLocalTaskScheduler(
       }
       const chain = buildTaskLeaseChain(facts.leases);
       const orphaned = [...chain.latest_by_task.values()]
-        .filter((record) => record.state === "granted" && !isPendingCandidate(facts, record))
+        .filter((record) => record.state === "granted" && !isPendingCandidateLease(facts, record))
         .sort((left, right) => left.task_id.localeCompare(right.task_id));
       if (orphaned.length > 0) {
         const transitions: SchedulerTransition[] = [];

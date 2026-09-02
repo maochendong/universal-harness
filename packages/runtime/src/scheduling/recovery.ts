@@ -57,7 +57,12 @@ import {
 import { buildTaskLeaseChain, terminateTaskLease } from "./lease.js";
 import type { SchedulerProjectionStore, TaskDagPort, TaskDagSnapshot } from "./ports.js";
 import { projectSchedulerState } from "./projection.js";
-import type { SchedulerAuthority, SchedulerLedgerFacts, SchedulerTransition } from "./scheduler.js";
+import {
+  isPendingCandidateLease,
+  type SchedulerAuthority,
+  type SchedulerLedgerFacts,
+  type SchedulerTransition,
+} from "./scheduler.js";
 import type { TaskCandidatePatch } from "./workspace-manager.js";
 
 /** Directory prefix the workspace manager mints task worktrees under. */
@@ -181,10 +186,14 @@ export async function recoverSchedulingOperation(
       record.termination_reason === "user_cancellation",
   );
 
-  // 1. Revoke orphan leases: a granted latest record belongs to a dead driver.
+  // 1. Revoke orphan leases. A completed Run whose patch is durably queued
+  // still owns its granted Lease through candidate validation; process loss
+  // does not make that authority orphaned.
   const chain = buildTaskLeaseChain(initialFacts.leases);
   const orphaned = [...chain.latest_by_task.values()]
-    .filter((record) => record.state === "granted")
+    .filter(
+      (record) => record.state === "granted" && !isPendingCandidateLease(initialFacts, record),
+    )
     .sort((left, right) => left.task_id.localeCompare(right.task_id));
   const revokedLeaseIds: string[] = [];
   if (orphaned.length > 0) {

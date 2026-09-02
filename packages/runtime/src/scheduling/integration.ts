@@ -31,7 +31,12 @@ import {
 import { buildTaskLeaseChain, terminateTaskLease } from "./lease.js";
 import { schedulerPolicyAction } from "./policy-adapters.js";
 import type { SchedulerPolicyInput, TaskDagSnapshot } from "./ports.js";
-import { deriveIterationDeadline, type SchedulerAuthority } from "./scheduler.js";
+import {
+  deriveIterationDeadline,
+  terminalCompletionBudget,
+  type SchedulerAuthority,
+  type SchedulerTransition,
+} from "./scheduler.js";
 import type { TaskCandidatePatch } from "./workspace-manager.js";
 
 /**
@@ -775,9 +780,34 @@ export function createCandidateIntegrationController(
           findingBlocks(entry).includes(taskId),
       );
     const message = cause instanceof Error ? cause.message : String(cause);
+    const latest = chain.latest_by_task.get(taskId);
+    let release: SchedulerTransition | undefined;
+    if (latest?.state === "granted") {
+      const consumedBudget = terminalCompletionBudget(facts, latest);
+      if (consumedBudget === undefined) {
+        throw new CandidateIntegrationError(
+          "evidence_binding_mismatch",
+          `run ${latest.run_id} has no valid authoritative consumed-budget observation`,
+        );
+      }
+      release = {
+        kind: "terminate_lease",
+        record: terminateTaskLease(latest, {
+          state: "released",
+          consumed_budget: consumedBudget,
+          command_id: digestId("command", {
+            purpose: "integration-conflict-release",
+            operation_id: dag.operation_id,
+            task_id: taskId,
+            run_id: latest.run_id,
+            fencing_token: latest.fencing_token,
+          }),
+        }),
+      };
+    }
     if (!consumed) {
-      const latest = chain.latest_by_task.get(taskId);
       await authority.commit([
+        ...(release === undefined ? [] : [release]),
         {
           kind: "append_event",
           event: taskRetryScheduledEvent({
@@ -803,6 +833,7 @@ export function createCandidateIntegrationController(
       ]);
     } else {
       await authority.commit([
+        ...(release === undefined ? [] : [release]),
         {
           kind: "create_finding",
           finding: finding({
@@ -1126,24 +1157,8 @@ export function createCandidateIntegrationController(
         return { task_id: taskSpec.id, status: "blocked", evidence_digests: digests };
       }
 
-      const terminalRun = facts.runs.find(
-        (record) => record.run_id === lease.run_id && record.record_kind === "run_terminated",
-      );
-      const usage = terminalRun?.extensions?.["harness.scheduler"] as
-        | { readonly consumed_budget?: { readonly steps?: unknown; readonly tokens?: unknown } }
-        | undefined;
-      const steps = usage?.consumed_budget?.steps;
-      const tokens = usage?.consumed_budget?.tokens;
-      if (
-        typeof steps !== "number" ||
-        !Number.isInteger(steps) ||
-        steps < 0 ||
-        steps > lease.reserved_budget.steps ||
-        typeof tokens !== "number" ||
-        !Number.isInteger(tokens) ||
-        tokens < 0 ||
-        tokens > lease.reserved_budget.tokens
-      ) {
+      const consumedBudget = terminalCompletionBudget(facts, lease);
+      if (consumedBudget === undefined) {
         throw new CandidateIntegrationError(
           "evidence_binding_mismatch",
           `run ${lease.run_id} has no valid authoritative consumed-budget observation`,
@@ -1156,7 +1171,7 @@ export function createCandidateIntegrationController(
           kind: "terminate_lease",
           record: terminateTaskLease(lease, {
             state: "released",
-            consumed_budget: { steps, tokens },
+            consumed_budget: consumedBudget,
             command_id: digestId("command", {
               purpose: "candidate-validated-release",
               operation_id: lease.operation_id,
