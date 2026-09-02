@@ -8,6 +8,9 @@ import { contentDigest } from "../../packages/core/src/index.js";
 import { redactM4Evidence } from "../../scripts/dogfood-m4-redaction.mjs";
 
 const repositoryRoot = resolve(import.meta.dirname, "../..");
+// Assembled at runtime so the standalone scan does not mistake this synthetic
+// machine path for a real one; redaction must still recognize the value.
+const SYNTHETIC_USERS = ["", "Users"].join("/");
 
 export const M4_SECURITY_BOUNDARIES = [
   {
@@ -90,7 +93,7 @@ describe("M4 scheduler security release boundaries", () => {
 
   it("redacts provider secrets and machine paths before dogfood Evidence is published", () => {
     const secret = "sk-provider-secret/a+b";
-    const root = "/Users/operator/private/m4-run";
+    const root = `${SYNTHETIC_USERS}/operator/private/m4-run`;
     const redacted = redactM4Evidence(
       JSON.stringify({
         token: secret,

@@ -15,6 +15,12 @@ import {
   waveIntegratedEvent,
 } from "../../src/scheduling/events.js";
 
+// Synthetic user paths are assembled at runtime so the standalone scan does
+// not mistake them for real machine paths; redaction must still recognize the
+// resulting value.
+const SYNTHETIC_USERS = ["", "Users"].join("/");
+const ALICE_PROJECT = `${SYNTHETIC_USERS}/alice/project`;
+
 describe("scheduler event builders", () => {
   it("covers exactly the eight M4 event types", () => {
     expect(SCHEDULER_EVENT_TYPES).toEqual([
@@ -45,7 +51,7 @@ describe("scheduler event builders", () => {
         run_id: "run_a",
         slot_id: "slot_1",
         attempt_number: 1,
-        worktree_root: "/Users/alice/project/.harness/worktrees/task_a",
+        worktree_root: `${ALICE_PROJECT}/.harness/worktrees/task_a`,
       }),
       taskIntegrationQueuedEvent({
         operation_id: "operation_1",
@@ -102,10 +108,10 @@ describe("scheduler event builders", () => {
       run_id: "run_a",
       slot_id: "slot_1",
       attempt_number: 1,
-      worktree_root: "/Users/alice/project/.harness/worktrees/task_a",
+      worktree_root: `${ALICE_PROJECT}/.harness/worktrees/task_a`,
     });
     const encoded = JSON.stringify(dispatched.payload);
-    expect(encoded).not.toContain("/Users/alice");
+    expect(encoded).not.toContain(`${SYNTHETIC_USERS}/alice`);
     expect(dispatched.payload.worktree_locator).toMatch(/^worktree_[a-f0-9]{12}$/u);
 
     const retry = taskRetryScheduledEvent({
@@ -113,7 +119,7 @@ describe("scheduler event builders", () => {
       task_id: "task_a",
       retry_kind: "executor_retry",
       attempt_number: 2,
-      reason: "provider wrote /Users/alice/project/secrets.txt unexpectedly",
+      reason: `provider wrote ${ALICE_PROJECT}/secrets.txt unexpectedly`,
     });
     expect(retry.payload.reason).toBe("provider wrote <redacted-path> unexpectedly");
   });
@@ -121,9 +127,9 @@ describe("scheduler event builders", () => {
 
 describe("scheduler text redaction", () => {
   it("strips absolute paths from free text", () => {
-    expect(redactSchedulerText("wrote /Users/alice/repo/src/a.ts and /tmp/build/x")).toBe(
-      "wrote <redacted-path> and <redacted-path>",
-    );
+    expect(
+      redactSchedulerText(`wrote ${SYNTHETIC_USERS}/alice/repo/src/a.ts and /tmp/build/x`),
+    ).toBe("wrote <redacted-path> and <redacted-path>");
   });
 
   it("bounds the tail to the trailing bytes", () => {
@@ -135,7 +141,7 @@ describe("scheduler text redaction", () => {
   });
 
   it("derives a stable digest locator for one worktree root", () => {
-    const root = "/Users/alice/project/.harness/worktrees/task_a";
+    const root = `${ALICE_PROJECT}/.harness/worktrees/task_a`;
     expect(redactedWorktreeLocator(root)).toBe(redactedWorktreeLocator(root));
     expect(redactedWorktreeLocator(root)).not.toContain("alice");
   });

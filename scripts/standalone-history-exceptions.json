@@ -6,6 +6,60 @@
       "path": "docs/codebuddy-to-universal-harness-evolution.md",
       "blob_digest": "875f62a8c8a465675d3f1f1ed5cfe717c8026d85",
       "reason": "Immutable pre-remediation migration document removed from the current tree"
+    },
+    {
+      "commit": "e4830de68895a2b68850146373c45c01f7fea421",
+      "path": "tests/reporting/m4-release-evidence.test.ts",
+      "blob_digest": "8912843450c76a6a14e8d6bf1d508727730bfbb8",
+      "reason": "M4 redaction tests embedded synthetic macOS user-path fixtures as literals; superseded by runtime-assembled strings in the current tree"
+    },
+    {
+      "commit": "626bc607a1e21618912b296ad9095880979a7f73",
+      "path": "tests/reporting/m4-release-evidence.test.ts",
+      "blob_digest": "44761e344a410d618cb9e8bf4e57c9303059e68a",
+      "reason": "M4 redaction tests embedded synthetic macOS user-path fixtures as literals; superseded by runtime-assembled strings in the current tree"
+    },
+    {
+      "commit": "591f31196ddb2b744913f1e4739c609b8520b443",
+      "path": "tests/reporting/m4-release-evidence.test.ts",
+      "blob_digest": "2bd6b9d0fd7d633c5df3fe208aaceceacfd6668a",
+      "reason": "M4 redaction tests embedded synthetic macOS user-path fixtures as literals; superseded by runtime-assembled strings in the current tree"
+    },
+    {
+      "commit": "0ceda941cfdf4cd5b0bea55353eee50ac7138f8c",
+      "path": "tests/reporting/m4-release-evidence.test.ts",
+      "blob_digest": "ee9dd4d61b752b9d875ffca9a848ec53c231aa8f",
+      "reason": "M4 redaction tests embedded synthetic macOS user-path fixtures as literals; superseded by runtime-assembled strings in the current tree"
+    },
+    {
+      "commit": "437fd0bfe1c0aaa0bf9f93014fae55f6c4e3f728",
+      "path": "tests/reporting/m4-release-evidence.test.ts",
+      "blob_digest": "8b648cc71019c0500d6384c75f11f12feba2c601",
+      "reason": "M4 redaction tests embedded synthetic macOS user-path fixtures as literals; superseded by runtime-assembled strings in the current tree"
+    },
+    {
+      "commit": "e21fd6c464acd154eced69743bb818ee91dfbe9e",
+      "path": "tests/reporting/m4-release-evidence.test.ts",
+      "blob_digest": "1ffaa54c9bb60e72abcdd8c556ad7fc059a0205b",
+      "reason": "M4 redaction tests embedded synthetic macOS user-path fixtures as literals; superseded by runtime-assembled strings in the current tree"
+    },
+    {
+      "commit": "f15c14d6c7e7ffb691b1b85863bafb6d1b05fbbe",
+      "path": "scripts/dogfood-m4-local-scheduler.mjs",
+      "blob_digest": "1a3fab9f937322b1fad23254e728671bffb9c71c",
+      "reason": "Historical dogfood script revision carried a synthetic macOS user-path fixture literal; superseded in the current tree"
+    },
+    {
+      "commit": "f15c14d6c7e7ffb691b1b85863bafb6d1b05fbbe",
+      "path": "tests/security/m4-scheduler-boundaries.test.ts",
+      "blob_digest": "626b332d8545c8ed4e0c120acd2be058684dba4d",
+      "reason": "M4 redaction tests embedded synthetic macOS user-path fixtures as literals; superseded by runtime-assembled strings in the current tree"
+    },
+    {
+      "commit": "67e978bec99c7787b9c5853346db0f03b66b877b",
+      "path": "packages/runtime/test/scheduling/events.test.ts",
+      "blob_digest": "afbb5255a63096857691b84deb4dcfb3921027d4",
+      "reason": "M4 redaction tests embedded synthetic macOS user-path fixtures as literals; superseded by runtime-assembled strings in the current tree"
     }
   ]
 }

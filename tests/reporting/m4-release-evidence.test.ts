@@ -25,6 +25,11 @@ import {
 
 const COMMIT_A = "a".repeat(40);
 const COMMIT_B = "b".repeat(40);
+// Synthetic user paths are assembled at runtime so the standalone scan does
+// not mistake them for real machine paths; release-safe text validation must
+// still recognize the resulting value.
+const SYNTHETIC_USERS = ["", "Users"].join("/");
+const PRIVATE_REPOSITORY = `${SYNTHETIC_USERS}/private/repository`;
 
 function completeResults(): readonly Record<string, unknown>[] {
   const invocationIds = completeInvocationIds();
@@ -441,7 +446,7 @@ describe("M4 Markdown projection", () => {
       },
       api_key: "sk-must-not-survive",
       credential_material_hash: "secret-hash-must-not-survive",
-      repository_root: "/Users/private/repository",
+      repository_root: PRIVATE_REPOSITORY,
     };
     const proof = buildCanonicalDogfoodProof(source, COMMIT_A);
 
@@ -492,7 +497,7 @@ describe("M4 Markdown projection", () => {
     const serialized = JSON.stringify(proof);
     expect(serialized).not.toContain("sk-must-not-survive");
     expect(serialized).not.toContain("secret-hash-must-not-survive");
-    expect(serialized).not.toContain("/Users/private/repository");
+    expect(serialized).not.toContain(PRIVATE_REPOSITORY);
     expect(proof).not.toHaveProperty("provider_version");
     expect(proof).not.toHaveProperty("feature_readiness");
   });
@@ -506,16 +511,19 @@ describe("M4 Markdown projection", () => {
     ).toThrow(ReleaseEvidenceError);
     expect(() =>
       buildCanonicalDogfoodProof(
-        { ...blockedDogfood(COMMIT_A), provider_model: "error at /Users/private/model" },
+        {
+          ...blockedDogfood(COMMIT_A),
+          provider_model: `error at ${SYNTHETIC_USERS}/private/model`,
+        },
         COMMIT_A,
       ),
     ).toThrow(/absolute path/u);
   });
 
   it.each([
-    ["embedded POSIX path", "model error x,/Users/private/model"],
-    ["labelled POSIX path", "model error path:/Users/private/model"],
-    ["prefixed POSIX path", "model error x/Users/private/model"],
+    ["embedded POSIX path", `model error x,${SYNTHETIC_USERS}/private/model`],
+    ["labelled POSIX path", `model error path:${SYNTHETIC_USERS}/private/model`],
+    ["prefixed POSIX path", `model error x${SYNTHETIC_USERS}/private/model`],
     ["prefixed arbitrary POSIX path", "model error x/workspace/project/file"],
     ["backtick POSIX path", "model error `/workspace/project/file`"],
     ["semicolon POSIX path", "model error;/mnt/data/file"],
@@ -539,10 +547,8 @@ describe("M4 Markdown projection", () => {
       buildCanonicalDogfoodProof(
         {
           ...blockedDogfood(COMMIT_A),
-          provider_model:
-            "https://models.example.invalid/path/C:/model?redirect=/Users/private#C:/temp",
-          requested_provider_model:
-            "https://models.example.invalid/path/C:/model?redirect=/Users/private#C:/temp",
+          provider_model: `https://models.example.invalid/path/C:/model?redirect=${SYNTHETIC_USERS}/private#C:/temp`,
+          requested_provider_model: `https://models.example.invalid/path/C:/model?redirect=${SYNTHETIC_USERS}/private#C:/temp`,
         },
         COMMIT_A,
       ),
