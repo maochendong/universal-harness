@@ -310,7 +310,9 @@ export async function recoverSchedulingOperation(
   // unaccepted by definition (acceptWave discards its worktree on success).
   const discardedCandidateWorktrees: string[] = [];
   if (options.git !== undefined) {
-    for (const root of await options.git.listCandidateWorktrees()) {
+    for (const root of await options.git.listCandidateWorktrees({
+      operation_id: input.operation_id,
+    })) {
       await options.git.discardWorktree(root);
       discardedCandidateWorktrees.push(root);
     }

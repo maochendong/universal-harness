@@ -176,6 +176,8 @@ export function schedulingEvidenceBindingOf(
 export interface WaveIntegrationGitPort {
   /** Disposable detached worktree at the wave base; returns its root. */
   createCandidateWorktree(input: {
+    /** Scheduler-owned candidates are scoped to one operation. */
+    readonly operation_id?: string;
     readonly base_commit: string;
     readonly wave_index: number;
   }): Promise<string>;
@@ -209,8 +211,8 @@ export interface WaveIntegrationGitPort {
   }): Promise<boolean>;
   /** Source-tree digest of a commit, excluding the `.harness` Ledger content. */
   sourceTreeDigest(commit: string): Promise<string>;
-  /** Absolute roots of the disposable candidate worktrees under the managed root. */
-  listCandidateWorktrees(): Promise<readonly string[]>;
+  /** Absolute roots under the managed root, optionally scoped to one operation. */
+  listCandidateWorktrees(input?: { readonly operation_id?: string }): Promise<readonly string[]>;
 }
 
 const execFileAsync = promisify(execFile);
@@ -257,10 +259,13 @@ export function createGitWaveIntegrationGit(
   options: GitWaveIntegrationOptions,
 ): WaveIntegrationGitPort {
   const candidatesRoot = join(options.managedRoot, "candidates");
+  const operationPrefix = (operationId: string): string =>
+    `operation-${contentDigest(operationId).slice(0, 24)}-`;
   return {
     async createCandidateWorktree(input) {
       await mkdir(candidatesRoot, { recursive: true });
-      const root = await mkdtemp(join(candidatesRoot, `wave-${String(input.wave_index)}-`));
+      const scope = input.operation_id === undefined ? "" : operationPrefix(input.operation_id);
+      const root = await mkdtemp(join(candidatesRoot, `${scope}wave-${String(input.wave_index)}-`));
       await gitStdout(options.repositoryRoot, [
         "worktree",
         "add",
@@ -343,11 +348,14 @@ export function createGitWaveIntegrationGit(
       return sourceTreeDigest(options.repositoryRoot, commit, { excludeHarnessLedger: true });
     },
 
-    async listCandidateWorktrees() {
+    async listCandidateWorktrees(input) {
       try {
         const entries = await readdir(candidatesRoot, { withFileTypes: true });
+        const scope =
+          input?.operation_id === undefined ? undefined : operationPrefix(input.operation_id);
         return entries
           .filter((entry) => entry.isDirectory())
+          .filter((entry) => scope === undefined || entry.name.startsWith(scope))
           .map((entry) => join(candidatesRoot, entry.name))
           .sort();
       } catch {
@@ -936,6 +944,7 @@ export function createCandidateIntegrationController(
           await assertRefAtBase(dag, approved.wave_index, base);
         }
         const root = await git.createCandidateWorktree({
+          operation_id: dag.operation_id,
           base_commit: candidateCommit,
           wave_index: approved.wave_index,
         });
@@ -951,6 +960,7 @@ export function createCandidateIntegrationController(
       await assertRefAtBase(dag, approved.wave_index, base);
 
       const root = await git.createCandidateWorktree({
+        operation_id: dag.operation_id,
         base_commit: base,
         wave_index: approved.wave_index,
       });

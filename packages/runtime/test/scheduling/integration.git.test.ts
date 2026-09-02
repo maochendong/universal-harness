@@ -85,6 +85,30 @@ function makePatch(
 }
 
 describe("createGitWaveIntegrationGit", () => {
+  it("lists candidate worktrees only for the requested operation", async () => {
+    const repo = setup();
+    const operationA = await repo.port.createCandidateWorktree({
+      operation_id: "operation_a",
+      base_commit: repo.base,
+      wave_index: 0,
+    });
+    const operationB = await repo.port.createCandidateWorktree({
+      operation_id: "operation_b",
+      base_commit: repo.base,
+      wave_index: 0,
+    });
+
+    expect(await repo.port.listCandidateWorktrees({ operation_id: "operation_a" })).toEqual([
+      operationA,
+    ]);
+    expect(await repo.port.listCandidateWorktrees({ operation_id: "operation_b" })).toEqual([
+      operationB,
+    ]);
+
+    await repo.port.discardWorktree(operationA);
+    await repo.port.discardWorktree(operationB);
+  });
+
   it("rebuilds a candidate: detached worktree at base, Plan-order apply, Harness-owned commits", async () => {
     const repo = setup();
     const patchA = makePatch(repo, "task_a", { "src/a.ts": "export const a = 2;\n" });
