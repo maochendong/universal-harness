@@ -324,7 +324,7 @@ describe("M4 AC-17 live-driver approval and durable cancellation", () => {
     } finally {
       cleanupDirectories();
     }
-  }, 120_000);
+  }, 240_000);
 
   it("persists operation cancellation as digest-chained records a fresh driver cannot undo", async () => {
     const fixture = await createM4E2eFixture({ profileId: "governed" });

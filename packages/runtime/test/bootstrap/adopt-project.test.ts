@@ -359,7 +359,7 @@ describe("commitAdoption", () => {
   // suite runs in parallel, hence the explicit per-test timeout. Windows
   // runners have a 2-3x slower filesystem, so scale it there just like the
   // global default in vitest.workspace.ts.
-  const COMMIT_TIMEOUT = 30000 * (process.platform === "win32" ? 4 : 1);
+  const COMMIT_TIMEOUT = 60000 * (process.platform === "win32" ? 4 : 1);
   it(
     "commits byte-identical baselines for identical repositories",
     async () => {

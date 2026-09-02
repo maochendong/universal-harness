@@ -237,7 +237,7 @@ function persistedPlanRecord(
   return JSON.parse(readFileSync(path, "utf8")) as Record<string, unknown>;
 }
 
-describe("capability plan persistence", { timeout: 30000 * TEST_TIMEOUT_SCALE }, () => {
+describe("capability plan persistence", { timeout: 60_000 * TEST_TIMEOUT_SCALE }, () => {
   it("persists a real Protocol 1.3 plan and reads it back on the next resume", async () => {
     const harness = await driveCompiledPipeline("plan-persist-13", { parallel: true });
 

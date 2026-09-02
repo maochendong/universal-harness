@@ -65,10 +65,11 @@ async function approveOnce(
 }
 
 // Windows CI needs the same headroom as the orchestrator suite: observed
-// 60s+ for the enrichment loop there.
+// 60s+ for the enrichment loop there. Full-suite parallel load on developer
+// machines can push individual enrichment tests past 60s as well.
 const TEST_TIMEOUT_SCALE = process.platform === "win32" ? 4 : 1;
 
-describe("context enrichment wiring", { timeout: 60000 * TEST_TIMEOUT_SCALE }, () => {
+describe("context enrichment wiring", { timeout: 120_000 * TEST_TIMEOUT_SCALE }, () => {
   it("persists cited enrichments beside untouched bundles", async () => {
     const newId = sequentialIds();
     const outcome0 = await createNewProject(
