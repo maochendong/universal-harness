@@ -75,6 +75,20 @@ describe("diffSummary", () => {
     ]);
   });
 
+  it("skips nested repositories listed as untracked directory entries", async () => {
+    const root = makeRepo();
+    const from = headOf(root);
+    git(root, "init", "-b", "main", "nested");
+    writeRepoFile(root, "loose.ts", "export {};\n");
+
+    const result = await adapter.diffSummary(root, from);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.files).toEqual([
+      { path: "loose.ts", status: "added", insertions: 1, deletions: 0 },
+    ]);
+  });
+
   it("reports ref_not_found for an unknown base", async () => {
     const root = makeRepo();
     const result = await adapter.diffSummary(root, "deadbeef".repeat(5));

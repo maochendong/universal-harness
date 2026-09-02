@@ -212,6 +212,11 @@ export function createGitVcsAdapter(options: GitVcsAdapterOptions = {}): VcsAdap
       ]);
       if (!listed.ok) return listed;
       for (const path of listed.value.stdout.split("\0").filter((entry) => entry.length > 0)) {
+        // `ls-files --others` refuses to recurse into nested repositories and
+        // linked worktrees, listing them as directory entries with a trailing
+        // "/". Their contents belong to a different repository, so they are
+        // not part of this worktree's diff.
+        if (path.endsWith("/")) continue;
         const content = readFileSync(join(root, path));
         const binary = content.includes(0);
         const text = binary ? "" : content.toString("utf8");
