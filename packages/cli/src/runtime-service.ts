@@ -1731,8 +1731,11 @@ export function createOrchestratedRuntimeService(
               schedulerApi: createDashboardSchedulerApi({
                 readSchedulerModel: (operationId) =>
                   dashboardSchedulerHost.readSchedulerModel(operationId),
+                controlCapabilities: { cancel: true, policyProposal: false },
               }),
             }),
+        schedulerOperationId: () =>
+          findOpenWorkflowOperation(request.projectRoot, deps.readBaseline),
         writeApi: {
           decideApproval: async (input) => {
             try {
@@ -1754,6 +1757,8 @@ export function createOrchestratedRuntimeService(
                 ...(workflow === undefined ? {} : { workflow_digest: contentDigest(workflow) }),
                 expected_digest: input.expectedDigest,
                 actor: input.actor,
+                scheduler_driver_state: "exited",
+                resume_command: `harness resume ${resolved.workflowOperationId}`,
               };
             } catch (error) {
               return writeFailure(error);
@@ -1847,6 +1852,59 @@ export function createOrchestratedRuntimeService(
               return writeFailure(error);
             }
           },
+          cancelSchedulerOperation: async (input) => {
+            try {
+              if (dashboardSchedulerHost === undefined) {
+                throw new DashboardWriteError(
+                  "unavailable",
+                  "this project has no active Scheduler control Provider",
+                );
+              }
+              const activeOperationId = findOpenWorkflowOperation(
+                request.projectRoot,
+                deps.readBaseline,
+              );
+              if (activeOperationId !== input.operationId) {
+                throw new DashboardWriteError(
+                  "conflict",
+                  "the active operation changed; refresh before cancelling",
+                );
+              }
+              const model = await dashboardSchedulerHost.readSchedulerModel(input.operationId);
+              if (model.digest !== input.expectedDigest) {
+                throw new DashboardWriteError(
+                  "conflict",
+                  "the Scheduler read branch changed; refresh before cancelling",
+                );
+              }
+              const aborted = await resumeRuntime.abort({
+                projectRoot: request.projectRoot,
+                workflowOperationId: input.operationId,
+                actor: input.actor,
+              });
+              const current = readCurrentOperation(
+                { projectRoot: request.projectRoot, readBaseline: deps.readBaseline },
+                input.operationId,
+              );
+              return {
+                status: "cancelled",
+                workflow_operation_id: aborted.workflowOperationId,
+                iteration_id: aborted.iterationId,
+                rejected_requests: [...aborted.rejectedRequests],
+                evidence_digest: contentDigest(current),
+              };
+            } catch (error) {
+              if (error instanceof DashboardWriteError) throw error;
+              return writeFailure(error);
+            }
+          },
+          proposeSchedulerPolicy: () =>
+            Promise.reject(
+              new DashboardWriteError(
+                "unavailable",
+                "the Scheduler Policy Proposal Provider is not configured; no proposal was written",
+              ),
+            ),
         },
       });
       options.onServerReady?.(server);

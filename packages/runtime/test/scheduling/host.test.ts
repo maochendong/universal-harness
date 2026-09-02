@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { afterEach, describe, expect, it } from "vitest";
@@ -109,6 +109,8 @@ interface DrivenProject {
   readonly capabilityPlan: CapabilityPlanRecord;
   readonly planContentDigest: string;
   readonly lockDirectory: string;
+  readonly projectionStorePath?: string;
+  readonly createHost: () => ProjectSchedulerHost;
 }
 
 /**
@@ -117,7 +119,9 @@ interface DrivenProject {
  * accepted Protocol 1.3 ExecutionPlan with task_api → task_web on two waves —
  * every record committed through the production write path.
  */
-async function makeDrivenProject(): Promise<DrivenProject> {
+async function makeDrivenProject(
+  options: { readonly sqliteProjection?: boolean } = {},
+): Promise<DrivenProject> {
   // One shared mint across bootstrap and setup: the Ledger rejects two events
   // with the same id and different content, so separate counters collide.
   const newId = sequentialIds();
@@ -288,7 +292,10 @@ async function makeDrivenProject(): Promise<DrivenProject> {
     "locks",
     driverLockDirectoryName(operationId),
   );
-  const host = createProjectSchedulerHost({
+  const projectionStorePath = options.sqliteProjection
+    ? join(harnessRootFor(projectRoot), "scheduler-projection-real.sqlite")
+    : undefined;
+  const hostOptions = {
     projectRoot,
     readBaseline: () => headOf(projectRoot),
     agentSlotFactory: {
@@ -321,10 +328,12 @@ async function makeDrivenProject(): Promise<DrivenProject> {
         action_digest: actionDigest(action),
         effective: mergePolicyLayers([]).effective,
       }),
-    projectionStorePath: ":memory:",
+    projectionStorePath: projectionStorePath ?? ":memory:",
     now: () => FIXED_NOW,
     newId: hostNewId,
-  });
+  } as const;
+  const createHost = (): ProjectSchedulerHost => createProjectSchedulerHost(hostOptions);
+  const host = createHost();
   return {
     projectRoot,
     deps,
@@ -334,6 +343,8 @@ async function makeDrivenProject(): Promise<DrivenProject> {
     capabilityPlan,
     planContentDigest,
     lockDirectory,
+    ...(projectionStorePath === undefined ? {} : { projectionStorePath }),
+    createHost,
   };
 }
 
@@ -395,5 +406,27 @@ describe("createProjectSchedulerHost", () => {
     expect(model.capability_status).toBe("inactive_by_profile");
     expect(model.plan).toBeNull();
     expect(model.tasks).toEqual([]);
+  }, 60_000);
+
+  it("rebuilds from Ledger authority after the real SQLite live projection is deleted", async () => {
+    const fixture = await makeDrivenProject({ sqliteProjection: true });
+    await fixture.host.parallelExecution.port.run({
+      operation_id: fixture.operationId,
+      iteration_id: ITERATION_ID,
+      capability_plan_digest: fixture.capabilityPlan.record_digest,
+      expected_plan_digest: fixture.planContentDigest,
+      driver_lock: fixture.host.parallelExecution.driverLock(),
+    });
+    const observed = await fixture.host.readSchedulerModel(fixture.operationId);
+    expect(observed.operation.live_state).toBe("observed");
+    if (fixture.projectionStorePath === undefined) throw new Error("SQLite path missing");
+    rmSync(fixture.projectionStorePath, { force: true });
+
+    const recovered = await fixture.createHost().readSchedulerModel(fixture.operationId);
+    expect(recovered.operation.live_state).toBe("rebuilding");
+    expect(recovered.tasks.map((task) => [task.task_id, task.status])).toEqual(
+      observed.tasks.map((task) => [task.task_id, task.status]),
+    );
+    expect(recovered.slots).toEqual([]);
   }, 60_000);
 });

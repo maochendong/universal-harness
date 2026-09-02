@@ -216,6 +216,69 @@ describe("Dashboard Scheduler API", () => {
     expect(response.slots).toEqual([]);
   });
 
+  it("fails controls closed for mismatched, missing and stale operation read branches", async () => {
+    const mismatched = await createDashboardSchedulerApi({
+      readSchedulerModel: () => Promise.resolve(schedulerModel()),
+      controlCapabilities: { cancel: true, policyProposal: false },
+    }).read({ operation_id: "operation_other" });
+    expect(mismatched.control).toMatchObject({
+      read_branch_state: "mismatch",
+      writes_enabled: false,
+      cancel_available: false,
+      policy_proposal_available: false,
+    });
+
+    const activeModel = schedulerModel("rebuilding");
+    const missingModel: SchedulerReadModel = {
+      ...activeModel,
+      capability_status: "inactive_by_profile",
+      plan: null,
+      digest: contentDigest({ missing: activeModel.digest }),
+    };
+    const missing = await createDashboardSchedulerApi({
+      readSchedulerModel: () => Promise.resolve(missingModel),
+      controlCapabilities: { cancel: true, policyProposal: true },
+    }).read({ operation_id: "operation_1" });
+    expect(missing.control).toMatchObject({
+      read_branch_state: "missing",
+      writes_enabled: false,
+      cancel_available: false,
+      policy_proposal_available: false,
+      expected_digest: missingModel.digest,
+    });
+
+    const staleModel = schedulerModel();
+    const stale = await createDashboardSchedulerApi({
+      readSchedulerModel: () =>
+        Promise.resolve({
+          ...staleModel,
+          operation: { ...staleModel.operation, status: "completed" },
+          digest: contentDigest({ stale: staleModel.digest }),
+        }),
+      controlCapabilities: { cancel: true, policyProposal: true },
+    }).read({ operation_id: "operation_1" });
+    expect(stale.control).toMatchObject({ read_branch_state: "stale", writes_enabled: false });
+  });
+
+  it("resolves the authoritative active Scheduler operation on every project refresh", async () => {
+    const operationIds = ["operation_first", "operation_second", undefined];
+    const server = await startDashboardServer({
+      projectRoot: await project(),
+      schedulerOperationId: () => operationIds.shift(),
+    });
+    servers.push(server);
+    const cookie = await authenticated(server);
+
+    const read = async (): Promise<string | undefined> => {
+      const response = await fetch(`${server.origin}/api/v1/project`, { headers: { cookie } });
+      const body = (await response.json()) as { data: { scheduler_operation_id?: string } };
+      return body.data.scheduler_operation_id;
+    };
+    await expect(read()).resolves.toBe("operation_first");
+    await expect(read()).resolves.toBe("operation_second");
+    await expect(read()).resolves.toBeUndefined();
+  });
+
   it("serves GET /api/v1/scheduler and rejects missing, malformed or repeated operation_id", async () => {
     const schedulerApi: DashboardSchedulerApi = createDashboardSchedulerApi({
       readSchedulerModel: () => Promise.resolve(schedulerModel()),

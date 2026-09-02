@@ -81,6 +81,11 @@ export interface DashboardReadApi {
   }): DashboardPage<ModelInvocationRecord>;
 }
 
+export interface DashboardReadApiOptions {
+  /** Resolved afresh by the host; absent means no authoritative active Scheduler operation. */
+  readonly schedulerOperationId?: () => string | undefined;
+}
+
 function page<T>(
   value: { readonly items: T[]; readonly nextCursor?: string },
   presentations: readonly BusinessPresentation[] = [],
@@ -120,7 +125,10 @@ function mapQueryError(error: unknown): never {
   throw error;
 }
 
-export function createDashboardReadApi(projectRoot: string): DashboardReadApi {
+export function createDashboardReadApi(
+  projectRoot: string,
+  options: DashboardReadApiOptions = {},
+): DashboardReadApi {
   const semanticProposalDirectory = resolveHarnessPath(
     harnessRootFor(projectRoot),
     "artifacts/edge-proposals",
@@ -172,8 +180,7 @@ export function createDashboardReadApi(projectRoot: string): DashboardReadApi {
   return {
     project: () => {
       const status = collectProjectStatus(projectRoot);
-      const schedulerOperationId = readCommittedOperations(harnessRootFor(projectRoot)).at(-1)
-        ?.manifest.workflow_operation_id;
+      const schedulerOperationId = options.schedulerOperationId?.();
       // M3 (design §18.2): the local Ledger's connection fact rides along so
       // the Overview can render Connection Status without a second request.
       // Never-connected projects keep the exact pre-M3 payload (§19.3).

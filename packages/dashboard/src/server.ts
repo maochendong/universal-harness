@@ -32,6 +32,8 @@ export interface DashboardServerOptions {
   readonly writeApi?: DashboardWriteApi;
   /** M4 Scheduler read projection; the CLI composition root supplies it. */
   readonly schedulerApi?: DashboardSchedulerApi;
+  /** Authoritative active operation resolver, invoked on every project read. */
+  readonly schedulerOperationId?: () => string | undefined;
   /** M3 remote collaboration Adapter; defaults to the Ledger + HTTPS wiring. */
   readonly collaborationApi?: DashboardCollaborationApi;
 }
@@ -164,7 +166,11 @@ export async function startDashboardServer(
     sessions,
     readApi:
       startupProblem === undefined
-        ? createDashboardReadApi(options.projectRoot)
+        ? createDashboardReadApi(options.projectRoot, {
+            ...(options.schedulerOperationId === undefined
+              ? {}
+              : { schedulerOperationId: options.schedulerOperationId }),
+          })
         : unavailableReadApi(startupProblem),
     schedulerApi:
       startupProblem === undefined

@@ -20,11 +20,15 @@ import {
 } from "../../packages/runtime/src/index.js";
 
 interface SchedulerControl {
+  activeOperationId: string;
   liveState: "observed" | "rebuilding";
   approvals: ApprovalRequestRecord[];
   lockHeld: boolean;
   resumeCalls: number;
   decisions: { requestId: string; decision: string; actor: string }[];
+  schedulerDelays: Map<string, number>;
+  cancelledTask: boolean;
+  cancelCalls: { operationId: string; actor: string; expectedDigest: string }[];
 }
 
 interface SchedulerFixture {
@@ -106,7 +110,7 @@ function schedulerModel(operationId: string, control: SchedulerControl): Schedul
         task_id: "task_api",
         title: "实现 API 契约",
         wave_index: 0,
-        status: "running" as const,
+        status: (control.cancelledTask ? "cancelled" : "running") as "cancelled" | "running",
         authority: "ledger" as const,
         dependency_ids: [],
         non_parallel_reasons: [],
@@ -177,6 +181,7 @@ const test = base.extend<{ scheduler: SchedulerFixture }>({
     if (!created.ok) throw new Error(created.error.message);
     const operationId = created.value.workflowOperationId;
     const control: SchedulerControl = {
+      activeOperationId: operationId,
       liveState: "observed",
       approvals: [
         approval(operationId, "approval_dispatch", "task_api", "dispatch_task"),
@@ -185,6 +190,9 @@ const test = base.extend<{ scheduler: SchedulerFixture }>({
       lockHeld: false,
       resumeCalls: 0,
       decisions: [],
+      schedulerDelays: new Map(),
+      cancelledTask: false,
+      cancelCalls: [],
     };
     const writeApi: DashboardWriteApi = {
       decideApproval: (input) => {
@@ -203,6 +211,8 @@ const test = base.extend<{ scheduler: SchedulerFixture }>({
           decision: input.decision,
           workflow_operation_id: operationId,
           workflow_digest: "f".repeat(64),
+          scheduler_driver_state: "exited",
+          resume_command: `harness resume ${operationId}`,
         });
       },
       resumeWorkflow: () => {
@@ -219,11 +229,21 @@ const test = base.extend<{ scheduler: SchedulerFixture }>({
       },
       resolveFindingGroup: () =>
         Promise.reject(new DashboardWriteError("unavailable", "not used by this fixture")),
+      cancelSchedulerOperation: (input) => {
+        control.cancelCalls.push(input);
+        return Promise.resolve({ status: "cancelled" });
+      },
     };
     const server = await startDashboardServer({
       projectRoot: created.value.projectRoot,
+      schedulerOperationId: () => control.activeOperationId,
       schedulerApi: createDashboardSchedulerApi({
-        readSchedulerModel: () => Promise.resolve(schedulerModel(operationId, control)),
+        readSchedulerModel: async (selectedOperationId) => {
+          const delay = control.schedulerDelays.get(selectedOperationId) ?? 0;
+          if (delay > 0) await new Promise((resolve) => setTimeout(resolve, delay));
+          return schedulerModel(selectedOperationId, control);
+        },
+        controlCapabilities: { cancel: true, policyProposal: false },
       }),
       writeApi,
     });
@@ -266,8 +286,9 @@ test.describe("M4 Observatory Scheduler", () => {
     await dispatch.getByLabel("审批人身份：实现 API 契约").fill("human:desktop-reviewer");
     await dispatch.getByRole("button", { name: "APPROVE" }).click();
     await expect(dispatch.getByText("审批决议已写入 Ledger")).toBeVisible();
-    await dispatch.getByRole("button", { name: "恢复 Operation" }).click();
-    await expect(page.getByText("Operation 已恢复；正在刷新调度状态。")).toBeVisible();
+    await expect(dispatch.getByText(`harness resume ${control.activeOperationId}`)).toBeVisible();
+    await dispatch.getByRole("button", { name: "RESUME WORKFLOW" }).click();
+    await expect(page.getByText(/Resume settled as/u)).toBeVisible();
     expect(control.resumeCalls).toBe(1);
 
     const integrate = page
@@ -280,6 +301,13 @@ test.describe("M4 Observatory Scheduler", () => {
       ["approval_dispatch", "approve"],
       ["approval_integrate", "reject"],
     ]);
+    await page.getByLabel("Scheduler 控制操作人").fill("human:desktop-reviewer");
+    await page.getByRole("button", { name: "取消 Operation" }).click();
+    await expect(page.getByText("Operation 已取消；Ledger 状态已刷新。")).toBeVisible();
+    expect(control.cancelCalls).toHaveLength(1);
+    await expect(
+      page.getByRole("button", { name: "Policy Proposal Provider 未配置" }),
+    ).toBeDisabled();
 
     for (const name of [
       "force task success",
@@ -337,8 +365,29 @@ test.describe("M4 Observatory Scheduler", () => {
       .filter({ hasText: "实现 API 契约" });
     await card.getByLabel("审批人身份：实现 API 契约").fill("human:mobile-reviewer");
     await card.getByRole("button", { name: "APPROVE" }).click();
-    await card.getByRole("button", { name: "恢复 Operation" }).click();
+    await card.getByRole("button", { name: "RESUME WORKFLOW" }).click();
     await expect(page.getByText(/driver lock is held by another driver/u)).toBeVisible();
     expect(control.resumeCalls).toBe(0);
+  });
+
+  test("refresh aborts stale Scheduler reads and cancelled tasks never fabricate completed phases", async ({
+    scheduler,
+  }) => {
+    const { page, control } = scheduler;
+    const staleOperation = control.activeOperationId;
+    control.schedulerDelays.set(staleOperation, 250);
+    await page.getByRole("link", { name: /Scheduler/u }).click();
+
+    control.activeOperationId = "operation_new";
+    control.cancelledTask = true;
+    await page.getByRole("button", { name: "刷新调度状态" }).click();
+    await expect(page.getByText(/Operation operation_new/u)).toBeVisible();
+    await page.waitForTimeout(350);
+    await expect(page.getByText(/Operation operation_new/u)).toBeVisible();
+
+    await page.getByRole("button", { name: "查看 Task：实现 API 契约" }).click();
+    const timeline = page.locator("#scheduler-task-detail .scheduler-task-timeline");
+    await expect(timeline.locator('[data-state="complete"]')).toHaveCount(0);
+    await expect(timeline.locator('[data-state="unknown"]')).toHaveCount(6);
   });
 });

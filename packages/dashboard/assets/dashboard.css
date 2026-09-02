@@ -1643,6 +1643,10 @@ h2 {
 .scheduler-task-timeline li[data-state="active"]::before {
   background: var(--warning);
 }
+.scheduler-task-timeline li[data-state="unknown"]::before {
+  border-color: var(--danger);
+  background: var(--ink);
+}
 .scheduler-reason-list {
   margin: 0.7rem 0 1.3rem;
   padding-left: 1rem;
@@ -1666,9 +1670,22 @@ h2 {
 }
 .scheduler-governance-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1.2fr) minmax(15rem, 0.8fr);
+  grid-template-areas:
+    "control approvals"
+    "findings approvals";
+  grid-template-columns: minmax(12rem, 0.8fr) minmax(0, 1.2fr);
   gap: 0.7rem;
 }
+.scheduler-control-list {
+  grid-area: control;
+}
+.scheduler-approval-list {
+  grid-area: approvals;
+}
+.scheduler-finding-list {
+  grid-area: findings;
+}
+.scheduler-control-list,
 .scheduler-approval-list,
 .scheduler-finding-list {
   display: grid;
@@ -1677,6 +1694,27 @@ h2 {
 }
 .scheduler-approval-card {
   border-top: 0.18rem solid var(--warning);
+}
+.scheduler-control-card {
+  display: grid;
+  gap: 0.65rem;
+  padding: 1rem;
+  border: 1px solid var(--rule);
+  border-top: 0.18rem solid var(--signal);
+  background: rgba(7, 16, 19, 0.82);
+}
+.scheduler-control-card input {
+  width: 100%;
+  padding: 0.55rem;
+  border: 1px solid var(--rule-bright);
+  color: var(--paper);
+  background: var(--ink);
+}
+.scheduler-control-card p {
+  margin: 0;
+  color: var(--paper-muted);
+  font-size: 0.65rem;
+  line-height: 1.55;
 }
 .risk-chip,
 .scheduler-finding-rule {
@@ -1912,6 +1950,12 @@ h2 {
   .scheduler-grid,
   .scheduler-governance-grid {
     grid-template-columns: 1fr;
+  }
+  .scheduler-governance-grid {
+    grid-template-areas:
+      "control"
+      "approvals"
+      "findings";
   }
   .scheduler-detail {
     position: static;

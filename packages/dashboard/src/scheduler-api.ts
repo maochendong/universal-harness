@@ -65,6 +65,7 @@ export interface DashboardSchedulerApproval {
   readonly request_id: string;
   readonly action: string;
   readonly objective: string;
+  readonly wave_index?: number;
   readonly risk: ApprovalRequestRecord["risk"];
   readonly risk_label: string;
   readonly reason: string;
@@ -74,6 +75,16 @@ export interface DashboardSchedulerApproval {
     readonly object_digest: string;
     readonly baseline_digest: string;
     readonly policy_digest: string;
+    readonly plan_digest?: string;
+  };
+  readonly iteration_budget: SchedulerReadModel["budget"];
+  readonly parallel_impact: readonly string[];
+  readonly provider_context: {
+    readonly write_paths: null;
+    readonly exclusive_resources: null;
+    readonly adapter_control_profile: null;
+    readonly grounded_brief: null;
+    readonly source_citations: readonly [];
   };
 }
 
@@ -110,6 +121,14 @@ export interface DashboardSchedulerView {
   readonly approvals: readonly DashboardSchedulerApproval[];
   readonly findings: readonly DashboardSchedulerFinding[];
   readonly presentation_map: SchedulerReadModel["presentation_map"];
+  readonly control: {
+    readonly read_branch_state: "aligned" | "mismatch" | "missing" | "stale";
+    readonly writes_enabled: boolean;
+    readonly cancel_available: boolean;
+    readonly policy_proposal_available: boolean;
+    readonly expected_digest: string;
+    readonly reason?: string;
+  };
   readonly technical_details: {
     readonly scheduler_digest: string;
     readonly plan_digest?: string;
@@ -122,6 +141,10 @@ export interface DashboardSchedulerApi {
 
 export interface DashboardSchedulerApiOptions {
   readonly readSchedulerModel: (operationId: string) => Promise<SchedulerReadModel>;
+  readonly controlCapabilities?: {
+    readonly cancel: boolean;
+    readonly policyProposal: boolean;
+  };
 }
 
 function findingRule(finding: SchedulerReadModel["findings"][number]): string | undefined {
@@ -138,7 +161,11 @@ function approvalObjective(
   return taskById.get(approval.object_id)?.title ?? approval.reason;
 }
 
-function project(model: SchedulerReadModel): DashboardSchedulerView {
+function project(
+  model: SchedulerReadModel,
+  requestedOperationId: string,
+  capabilities: DashboardSchedulerApiOptions["controlCapabilities"],
+): DashboardSchedulerView {
   const tasks: DashboardSchedulerTask[] = model.tasks.map((task) => {
     const authority = task.authority === "ledger" ? "authoritative" : "provisional";
     return {
@@ -190,6 +217,23 @@ function project(model: SchedulerReadModel): DashboardSchedulerView {
           observed_at: null,
           usage: { steps: null, tokens: null, duration_ms: null },
         }));
+  const readBranchState =
+    model.operation.operation_id !== requestedOperationId
+      ? "mismatch"
+      : model.capability_status !== "active" || model.plan === null
+        ? "missing"
+        : ["completed", "aborted", "cancelled"].includes(model.operation.status)
+          ? "stale"
+          : "aligned";
+  const writesEnabled = readBranchState === "aligned";
+  const controlReason =
+    readBranchState === "mismatch"
+      ? `读取结果属于 ${model.operation.operation_id}，不是请求的 ${requestedOperationId}`
+      : readBranchState === "missing"
+        ? "当前 Operation 没有可写的 Scheduler Plan/read branch"
+        : readBranchState === "stale"
+          ? `当前 Operation 已处于 ${model.operation.status}，只允许历史读取`
+          : undefined;
 
   return {
     capability_status: model.capability_status,
@@ -215,21 +259,38 @@ function project(model: SchedulerReadModel): DashboardSchedulerView {
     tasks,
     slots,
     budget: model.budget,
-    approvals: model.approvals.map((approval) => ({
-      request_id: approval.request_id,
-      action: approval.object_type,
-      objective: approvalObjective(approval, taskById),
-      risk: approval.risk,
-      risk_label: RISK_LABELS[approval.risk],
-      reason: approval.reason,
-      allowed_decisions: [...approval.allowed_decisions],
-      resume_command: schedulerResumeCommand(approval.workflow_operation_id),
-      bindings: {
-        object_digest: approval.object_digest,
-        baseline_digest: approval.baseline_digest,
-        policy_digest: approval.policy_digest,
-      },
-    })),
+    approvals: model.approvals.map((approval) => {
+      const task = taskById.get(approval.object_id);
+      return {
+        request_id: approval.request_id,
+        action: approval.object_type,
+        objective: approvalObjective(approval, taskById),
+        ...(task === undefined ? {} : { wave_index: task.wave_index }),
+        risk: approval.risk,
+        risk_label: RISK_LABELS[approval.risk],
+        reason: approval.reason,
+        allowed_decisions: [...approval.allowed_decisions],
+        resume_command: schedulerResumeCommand(approval.workflow_operation_id),
+        bindings: {
+          object_digest: approval.object_digest,
+          baseline_digest: approval.baseline_digest,
+          policy_digest: approval.policy_digest,
+          ...(model.plan === null ? {} : { plan_digest: model.plan.plan_digest }),
+        },
+        iteration_budget: model.budget,
+        parallel_impact: task?.non_parallel_reasons ?? [],
+        // ApprovalRequest 1.3 currently has no first-class fields for these
+        // presentation requirements. Keep explicit nulls instead of deriving
+        // governance facts from untrusted free text.
+        provider_context: {
+          write_paths: null,
+          exclusive_resources: null,
+          adapter_control_profile: null,
+          grounded_brief: null,
+          source_citations: [],
+        },
+      };
+    }),
     findings: model.findings.map((finding) => {
       const rule = findingRule(finding);
       const recovery = rule === undefined ? undefined : schedulerRecoveryActionFor(rule);
@@ -241,6 +302,14 @@ function project(model: SchedulerReadModel): DashboardSchedulerView {
       };
     }),
     presentation_map: model.presentation_map,
+    control: {
+      read_branch_state: readBranchState,
+      writes_enabled: writesEnabled,
+      cancel_available: writesEnabled && capabilities?.cancel === true,
+      policy_proposal_available: writesEnabled && capabilities?.policyProposal === true,
+      expected_digest: model.digest,
+      ...(controlReason === undefined ? {} : { reason: controlReason }),
+    },
     technical_details: {
       scheduler_digest: model.digest,
       ...(model.plan === null ? {} : { plan_digest: model.plan.plan_digest }),
@@ -253,7 +322,12 @@ export function createDashboardSchedulerApi(
   options: DashboardSchedulerApiOptions,
 ): DashboardSchedulerApi {
   return {
-    read: async ({ operation_id }) => project(await options.readSchedulerModel(operation_id)),
+    read: async ({ operation_id }) =>
+      project(
+        await options.readSchedulerModel(operation_id),
+        operation_id,
+        options.controlCapabilities,
+      ),
   };
 }
 

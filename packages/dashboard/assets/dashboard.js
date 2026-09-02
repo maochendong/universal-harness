@@ -1,4 +1,4 @@
-/* global document, window, location, fetch, URLSearchParams, EventSource, FormData, navigator, setInterval */
+/* global document, window, location, fetch, URLSearchParams, EventSource, FormData, navigator, setInterval, AbortController */
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
 
@@ -17,6 +17,8 @@ const model = {
   approvalById: new Map(),
   schedulerOperationId: undefined,
   schedulerView: undefined,
+  schedulerGeneration: 0,
+  schedulerController: undefined,
   // undefined = not loaded yet; null = unavailable. Active only when the
   // project Ledger carries an active connection (design §19.3).
   collaborationView: undefined,
@@ -40,8 +42,11 @@ function status(view, message, tone = "ready") {
   line.dataset.tone = tone;
 }
 
-async function api(path) {
-  const response = await fetch(path, { headers: { accept: "application/json" } });
+async function api(path, options = {}) {
+  const response = await fetch(path, {
+    headers: { accept: "application/json" },
+    ...(options.signal === undefined ? {} : { signal: options.signal }),
+  });
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) {
     throw new Error(payload.detail || payload.title || `Request failed (${response.status})`);
@@ -665,12 +670,13 @@ function schedulerPhaseState(task, phase) {
     candidate_validated: 4,
     retry_pending: 2,
     blocked: 2,
-    cancelled: 5,
     integrated: 6,
   };
+  if (task.status === "cancelled") return "unknown";
   const phaseIndex = order.indexOf(phase);
-  const activeIndex = activeByStatus[task.status] ?? -1;
-  if (task.status === "integrated" || task.status === "cancelled") return "complete";
+  const activeIndex = activeByStatus[task.status];
+  if (activeIndex === undefined) return "unknown";
+  if (task.status === "integrated") return "complete";
   if (phaseIndex < activeIndex) return "complete";
   if (phaseIndex === activeIndex) return "active";
   return "pending";
@@ -822,58 +828,6 @@ function renderSchedulerPool(view) {
   }
 }
 
-async function schedulerApprovalDecision(approval, decision, card) {
-  const actorInput = $("input", card);
-  const actorValue = actorInput?.value.trim();
-  if (!actorValue) {
-    status("scheduler", "请输入可审计的审批人身份。", "error");
-    actorInput?.focus();
-    return;
-  }
-  status("scheduler", `正在提交 ${decision}：${approval.request_id}…`);
-  try {
-    const result = await apiWrite(
-      `/api/v1/approvals/${encodeURIComponent(approval.request_id)}/decision`,
-      {
-        decision,
-        expected_digest: approval.bindings.object_digest,
-        actor: actorValue,
-      },
-    );
-    card.dataset.decision = decision;
-    const outcome = node("p", "scheduler-decision-recorded", "审批决议已写入 Ledger");
-    card.append(outcome);
-    if (decision === "approve") {
-      if (result.workflow_operation_id && result.workflow_digest) {
-        const resume = node("button", "command", "恢复 Operation");
-        resume.type = "button";
-        resume.addEventListener("click", async () => {
-          resume.disabled = true;
-          try {
-            await apiWrite(
-              `/api/v1/workflows/${encodeURIComponent(result.workflow_operation_id)}/resume`,
-              { expected_digest: result.workflow_digest, actor: actorValue },
-            );
-            await loadScheduler();
-            status("scheduler", "Operation 已恢复；正在刷新调度状态。", "ready");
-          } catch (error) {
-            status("scheduler", error.message, "error");
-          } finally {
-            resume.disabled = false;
-          }
-        });
-        card.append(resume);
-      } else {
-        card.append(node("code", "scheduler-resume-command", approval.resume_command));
-      }
-    } else {
-      await loadScheduler();
-    }
-  } catch (error) {
-    status("scheduler", error.message, "error");
-  }
-}
-
 function renderSchedulerApprovals(view) {
   const list = $("#scheduler-approvals");
   clear(list);
@@ -888,29 +842,6 @@ function renderSchedulerApprovals(view) {
       node("strong", "", approval.objective),
       node("span", "risk-chip", approval.risk_label),
     );
-    const form = node("form", "scheduler-approval-form");
-    const label = node("label", "", "审批人身份");
-    const input = node("input");
-    input.name = "actor";
-    input.required = true;
-    input.placeholder = "human:operator";
-    input.setAttribute("aria-label", `审批人身份：${approval.objective}`);
-    label.append(input);
-    const actions = node("div", "scheduler-approval-actions");
-    for (const decision of approval.allowed_decisions) {
-      const button = node(
-        "button",
-        `scheduler-decision decision-${decision}`,
-        decision.toUpperCase(),
-      );
-      button.type = "button";
-      button.addEventListener(
-        "click",
-        () => void schedulerApprovalDecision(approval, decision, card),
-      );
-      actions.append(button);
-    }
-    form.append(label, actions);
     const bindings = node("details", "audit-details");
     bindings.append(node("summary", "audit-summary", "审批绑定与恢复命令"));
     const table = node("dl", "audit-table");
@@ -918,18 +849,47 @@ function renderSchedulerApprovals(view) {
       ...pair("ACTION", approval.action),
       ...pair("REASON", approval.reason),
       ...pair("OBJECT DIGEST", approval.bindings.object_digest),
+      ...pair("PLAN", approval.bindings.plan_digest || "Provider 未提供"),
       ...pair("BASELINE", approval.bindings.baseline_digest),
       ...pair("POLICY", approval.bindings.policy_digest),
+      ...pair(
+        "WAVE",
+        approval.wave_index === undefined ? "Provider 未提供" : approval.wave_index + 1,
+      ),
+      ...pair(
+        "BUDGET",
+        `${approval.iteration_budget.consumed_steps}/${approval.iteration_budget.limit.steps} steps · ${approval.iteration_budget.consumed_tokens}/${approval.iteration_budget.limit.tokens} tokens`,
+      ),
+      ...pair(
+        "PARALLEL IMPACT",
+        approval.parallel_impact.length
+          ? approval.parallel_impact.map(schedulerReason).join("；")
+          : "无已声明并行冲突",
+      ),
       ...pair("RESUME", approval.resume_command),
     );
     bindings.append(table);
-    card.append(heading, node("p", "", approval.reason), form, bindings);
+    card.append(heading, node("p", "", approval.reason), bindings);
     card.append(
       node(
         "p",
         "scheduler-provider-note",
-        "write paths / 独占资源 / Adapter / 预算 / grounded brief：仅在权威 Read Model 提供时展示；当前未提供。",
+        "write paths / 独占资源 / Adapter control profile / grounded brief 与 source citation：Provider 未提供；控制保持 fail-closed。",
       ),
+    );
+    appendApprovalDecisionForm(
+      card,
+      {
+        request_id: approval.request_id,
+        object_id: approval.objective,
+        object_type: approval.action,
+        object_digest: approval.bindings.object_digest,
+        workflow_operation_id: view.operation.operation_id,
+        allowed_decisions: approval.allowed_decisions,
+        resume_command: approval.resume_command,
+      },
+      "scheduler",
+      !view.control.writes_enabled,
     );
     list.append(card);
   }
@@ -953,8 +913,87 @@ function renderSchedulerFindings(view) {
         schedulerRecoveryLabels[finding.recovery_action] || "打开 Finding 证据后处理",
       ),
     );
+    if (finding.recovery_action === "submit_budget_policy_proposal") {
+      const proposal = node(
+        "button",
+        "scheduler-decision",
+        view.control.policy_proposal_available
+          ? "提交预算 Policy Proposal"
+          : "Policy Proposal Provider 未配置",
+      );
+      proposal.type = "button";
+      proposal.disabled = !view.control.policy_proposal_available;
+      card.append(proposal);
+    }
     list.append(card);
   }
+}
+
+function renderSchedulerControls(view) {
+  const list = $("#scheduler-controls");
+  clear(list);
+  const card = node("article", "scheduler-control-card");
+  card.append(
+    node("strong", "", "Operation 控制"),
+    node(
+      "p",
+      "scheduler-control-state",
+      view.control.writes_enabled
+        ? "active_operation 与 read branch 一致"
+        : view.control.reason || "控制状态不可验证，所有写操作已关闭",
+    ),
+  );
+  const actorInput = node("input");
+  actorInput.placeholder = "human:operator";
+  actorInput.autocomplete = "off";
+  actorInput.setAttribute("aria-label", "Scheduler 控制操作人");
+  const cancel = node(
+    "button",
+    "scheduler-decision decision-reject",
+    view.control.cancel_available ? "取消 Operation" : "取消不可用",
+  );
+  cancel.type = "button";
+  cancel.disabled = !view.control.cancel_available;
+  cancel.addEventListener("click", async () => {
+    const actorValue = actorInput.value.trim();
+    if (!actorValue) {
+      status("scheduler", "请输入可审计的控制操作人身份。", "error");
+      actorInput.focus();
+      return;
+    }
+    cancel.disabled = true;
+    try {
+      await apiWrite(
+        `/api/v1/scheduler/operations/${encodeURIComponent(view.operation.operation_id)}/cancel`,
+        {
+          expected_digest: view.control.expected_digest,
+          actor: actorValue,
+        },
+      );
+      await loadScheduler();
+      status("scheduler", "Operation 已取消；Ledger 状态已刷新。", "ready");
+    } catch (error) {
+      status(
+        "scheduler",
+        error.status === 409 ? "Operation 已变化；已刷新，请重新确认。" : error.message,
+        "error",
+      );
+      if (error.status === 409) await loadScheduler();
+    } finally {
+      cancel.disabled = !model.schedulerView?.control?.cancel_available;
+    }
+  });
+  card.append(actorInput, cancel);
+  if (!view.control.policy_proposal_available) {
+    card.append(
+      node(
+        "p",
+        "scheduler-provider-note",
+        "预算/并发上限 Policy Proposal Provider 未配置；本视图 fail-closed，不会伪造提案或直接扩大上限。",
+      ),
+    );
+  }
+  list.append(card);
 }
 
 function renderSchedulerSummary(view) {
@@ -993,22 +1032,46 @@ function renderSchedulerSummary(view) {
 }
 
 async function loadScheduler() {
+  const generation = ++model.schedulerGeneration;
+  model.schedulerController?.abort();
+  const controller = new AbortController();
+  model.schedulerController = controller;
   status("scheduler", "正在读取 Ledger、Plan 与可丢弃实时投影…");
   try {
-    if (!model.schedulerOperationId) {
-      const project = await api("/api/v1/project");
-      model.schedulerOperationId = project.scheduler_operation_id;
+    const project = await api("/api/v1/project", { signal: controller.signal });
+    if (generation !== model.schedulerGeneration) return;
+    const operationId = project.scheduler_operation_id;
+    model.schedulerOperationId = operationId;
+    if (!operationId) {
+      model.schedulerView = undefined;
+      for (const target of [
+        "#scheduler-controls",
+        "#scheduler-waves",
+        "#scheduler-agent-pool",
+        "#scheduler-approvals",
+        "#scheduler-findings",
+      ])
+        clear($(target));
+      $("#scheduler-waves").append(
+        node(
+          "p",
+          "scheduler-empty",
+          "当前没有权威 active_operation；历史 read branch 不开放控制动作。",
+        ),
+      );
+      status("scheduler", "没有活动 Scheduler Operation。", "empty");
+      return;
     }
-    if (!model.schedulerOperationId) {
-      throw new Error("当前项目还没有可读取的 Operation。");
-    }
-    const view = await api(
-      `/api/v1/scheduler?operation_id=${encodeURIComponent(model.schedulerOperationId)}`,
-    );
+    const view = await api(`/api/v1/scheduler?operation_id=${encodeURIComponent(operationId)}`, {
+      signal: controller.signal,
+    });
+    if (generation !== model.schedulerGeneration || operationId !== model.schedulerOperationId)
+      return;
     model.schedulerView = view;
     renderSchedulerSummary(view);
     renderSchedulerWaves(view);
     renderSchedulerPool(view);
+    renderSchedulerControls(view);
     renderSchedulerApprovals(view);
     renderSchedulerFindings(view);
     const selected =
@@ -1022,7 +1085,9 @@ async function loadScheduler() {
       view.operation.live_state === "rebuilding" ? "empty" : "ready",
     );
   } catch (error) {
+    if (error.name === "AbortError" || generation !== model.schedulerGeneration) return;
     for (const target of [
+      "#scheduler-controls",
       "#scheduler-waves",
       "#scheduler-agent-pool",
       "#scheduler-approvals",
@@ -1156,6 +1221,44 @@ async function approvalDetails(item) {
   renderApproval(merged, presentation, { card: $("#approval-card"), view: "live" });
 }
 
+function appendApprovalDecisionForm(card, approval, view, disabled = false) {
+  const form = node(
+    "form",
+    view === "scheduler" ? "approval-form scheduler-approval-form" : "approval-form",
+  );
+  const label = node("label", "");
+  label.append(node("span", "", view === "scheduler" ? "审批人身份" : "DECISION ACTOR"));
+  const input = node("input");
+  input.name = "actor";
+  input.required = true;
+  input.disabled = disabled;
+  input.autocomplete = "off";
+  input.placeholder = "human:reviewer";
+  input.setAttribute("aria-label", `审批人身份：${approval.object_id}`);
+  label.append(input);
+  const actions = node(
+    "div",
+    view === "scheduler" ? "approval-actions scheduler-approval-actions" : "approval-actions",
+  );
+  for (const decision of approval.allowed_decisions || ["approve", "reject", "defer"]) {
+    const button = node(
+      "button",
+      view === "scheduler"
+        ? `decision scheduler-decision decision-${decision}`
+        : `decision decision-${decision}`,
+      decision.toUpperCase(),
+    );
+    button.type = "submit";
+    button.value = decision;
+    button.name = "decision";
+    button.disabled = disabled;
+    actions.append(button);
+  }
+  form.append(label, actions);
+  form.addEventListener("submit", (event) => void decideApproval(event, approval, { card, view }));
+  card.append(form);
+}
+
 function renderApproval(approval, presentation, options) {
   const card = options.card;
   const view = options.view;
@@ -1174,26 +1277,7 @@ function renderApproval(approval, presentation, options) {
       ["WORKFLOW", approval.workflow_operation_id],
     ]),
   );
-  const form = node("form", "approval-form");
-  const label = node("label", "");
-  label.append(node("span", "", "DECISION ACTOR"));
-  const input = node("input");
-  input.name = "actor";
-  input.required = true;
-  input.autocomplete = "off";
-  input.placeholder = "human:reviewer";
-  label.append(input);
-  const actions = node("div", "approval-actions");
-  for (const decision of approval.allowed_decisions || ["approve", "reject", "defer"]) {
-    const button = node("button", `decision decision-${decision}`, decision.toUpperCase());
-    button.type = "submit";
-    button.value = decision;
-    button.name = "decision";
-    actions.append(button);
-  }
-  form.append(label, actions);
-  form.addEventListener("submit", (event) => void decideApproval(event, approval, { card, view }));
-  card.append(form);
+  appendApprovalDecisionForm(card, approval, view);
 }
 
 async function decideApproval(event, approval, options) {
@@ -1219,7 +1303,18 @@ async function decideApproval(event, approval, options) {
     const card = options.card;
     clear(card);
     card.append(
-      node("p", "eyebrow", remote ? "远程协调事实" : "DECISION RECORDED"),
+      node(
+        "p",
+        "eyebrow",
+        remote
+          ? "远程协调事实"
+          : options.view === "scheduler"
+            ? "审批决议已写入 Ledger"
+            : "DECISION RECORDED",
+      ),
+      ...(options.view === "scheduler"
+        ? [node("strong", "scheduler-decision-object", approval.object_id)]
+        : []),
       node("h4", "", recorded),
     );
     if (remote) {
@@ -1230,7 +1325,16 @@ async function decideApproval(event, approval, options) {
           `已通过协调器提交 · 本地投影（observed_at ${result.projection_observed_at}）；物化进项目 Ledger 需等待 sync。`,
         ),
       );
+    } else if (result.decision === "approve" && result.scheduler_driver_state === "alive") {
+      card.append(node("p", "", "活动 Scheduler driver 已自动收到唤醒信号。"));
     } else if (result.decision === "approve" && result.workflow_digest) {
+      card.append(
+        node(
+          "code",
+          "scheduler-resume-command",
+          result.resume_command || `harness resume ${result.workflow_operation_id}`,
+        ),
+      );
       const resume = node("button", "command", "RESUME WORKFLOW");
       resume.type = "button";
       resume.addEventListener(
@@ -1245,21 +1349,23 @@ async function decideApproval(event, approval, options) {
     } else {
       card.append(node("p", "", "Ledger readback accepted the actor and expected digest."));
     }
-    status(options.view, `Decision ${recorded} committed by ${actor}`);
     await loadOverview();
+    if (options.view === "scheduler" && recorded !== "approve") await loadScheduler();
     if (recorded === "defer" && options.view === "approvals") await loadApprovals();
+    status(options.view, `Decision ${recorded} committed by ${actor}`);
   } catch (error) {
+    if (error.status === 409) {
+      await loadOverview();
+      if (options.view === "scheduler") await loadScheduler();
+      if (options.view === "approvals") await loadApprovals();
+    }
     status(
       options.view,
       error.status === 409
-        ? "Target changed. Project state refreshed; review again."
+        ? `Target changed. Project state refreshed; review again. ${error.message}`
         : error.message,
       "error",
     );
-    if (error.status === 409) {
-      await loadOverview();
-      if (options.view === "approvals") await loadApprovals();
-    }
   }
 }
 
@@ -1270,16 +1376,22 @@ async function resumeWorkflow(workflowId, workflowDigest, actor, options = { vie
       expected_digest: workflowDigest,
       actor,
     });
-    status(options.view, `Resume settled as ${result.status || "advanced"}`);
     await loadOverview();
+    if (options.view === "scheduler") await loadScheduler();
     if (options.view === "approvals") await loadApprovals();
+    status(options.view, `Resume settled as ${result.status || "advanced"}`);
   } catch (error) {
+    if (error.status === 409) {
+      await loadOverview();
+      if (options.view === "scheduler") await loadScheduler();
+    }
     status(
       options.view,
-      error.status === 409 ? "Workflow changed. Project state refreshed." : error.message,
+      error.status === 409
+        ? `Workflow changed. Project state refreshed. ${error.message}`
+        : error.message,
       "error",
     );
-    if (error.status === 409) await loadOverview();
   }
 }
 

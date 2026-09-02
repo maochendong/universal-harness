@@ -35,6 +35,7 @@ import type { AgentTaskEnvelope } from "@universal-harness-internal/plugin-sdk";
 import {
   createDirectExecutor,
   createNewProject,
+  createProjectSchedulerHost,
   readBridgedCaptureApprovalDecision,
   readCurrentOperation,
   resolveApproval,
@@ -1483,5 +1484,147 @@ describe("serve resumes workflows under the dashboard driver lock", { timeout: 3
     expect(fake.released).toEqual([harness.workflowOperationId]);
     expect(fake.runInputs).toHaveLength(1);
     expect(fake.runInputs[0]?.driver_lock).toBe(fake.handles[0]);
+
+    const afterResume = readCurrentOperation(
+      { projectRoot: harness.projectRoot, readBaseline: () => headOf(harness.projectRoot) },
+      harness.workflowOperationId,
+    );
+    const schedulerAfterResume = fakeSchedulerModel(harness.workflowOperationId);
+    const staleCancel = await fetch(
+      `${origin}/api/v1/scheduler/operations/${harness.workflowOperationId}/cancel`,
+      {
+        method: "POST",
+        headers: {
+          cookie,
+          origin,
+          "content-type": "application/json",
+          "x-harness-csrf": csrf,
+        },
+        body: JSON.stringify({ expected_digest: "0".repeat(64), actor: "human:web-reviewer" }),
+      },
+    );
+    expect(staleCancel.status).toBe(409);
+    expect(
+      readCurrentOperation(
+        { projectRoot: harness.projectRoot, readBaseline: () => headOf(harness.projectRoot) },
+        harness.workflowOperationId,
+      )?.state,
+    ).toBe(afterResume?.state);
+
+    const cancelled = await fetch(
+      `${origin}/api/v1/scheduler/operations/${harness.workflowOperationId}/cancel`,
+      {
+        method: "POST",
+        headers: {
+          cookie,
+          origin,
+          "content-type": "application/json",
+          "x-harness-csrf": csrf,
+        },
+        body: JSON.stringify({
+          expected_digest: schedulerAfterResume.digest,
+          actor: "human:web-reviewer",
+        }),
+      },
+    );
+    expect(cancelled.status).toBe(200);
+    expect(
+      readCurrentOperation(
+        { projectRoot: harness.projectRoot, readBaseline: () => headOf(harness.projectRoot) },
+        harness.workflowOperationId,
+      )?.state,
+    ).toBe("aborted");
+
+    const policyProposal = await fetch(`${origin}/api/v1/scheduler/policy-proposals`, {
+      method: "POST",
+      headers: {
+        cookie,
+        origin,
+        "content-type": "application/json",
+        "x-harness-csrf": csrf,
+      },
+      body: JSON.stringify({
+        operation_id: harness.workflowOperationId,
+        proposal_kind: "concurrency",
+        max_concurrency: 3,
+        expected_digest: schedulerAfterResume.digest,
+        actor: "human:web-reviewer",
+      }),
+    });
+    expect(policyProposal.status).toBe(503);
+    await expect(policyProposal.json()).resolves.toMatchObject({
+      code: "write_operations_unavailable",
+      detail: expect.stringMatching(/Policy Proposal Provider/u),
+    });
+  });
+
+  it("returns 409 when a real filesystem Driver Lock is held by another local driver", async () => {
+    const harness = await makeParallelHarness("m4-real-driver-lock");
+    const realHost = createProjectSchedulerHost({
+      projectRoot: harness.projectRoot,
+      readBaseline: () => headOf(harness.projectRoot),
+      agentSlotFactory: createProjectAgentSlotFactory({
+        projectRoot: harness.projectRoot,
+        config: {
+          provider: "dsh",
+          expected_version: "9.9.9",
+          executable: "dsh-not-invoked",
+          launcher_args: [],
+          env_allowlist: ["PATH"],
+          allowed_read_paths: ["."],
+          proposed_write_paths: ["."],
+        },
+      }),
+      adapterCapabilities: [],
+      projectionStorePath: ":memory:",
+      driverKind: "cli",
+    });
+    const service = createOrchestratedRuntimeService({
+      cwd: harness.parent,
+      io: captureIo().io,
+      now: () => FIXED_NOW,
+      newId: harness.newId,
+      execute: createDirectExecutor(),
+      capture: captureSeamForTest(harness.projectRoot),
+      capabilityPlan: () => harness.plan,
+      schedulerHost: () => realHost,
+      onServerReady: (server) => servers.push(server),
+    });
+    const lock = await realHost.acquireDriverLock(harness.workflowOperationId);
+    try {
+      const started = await service.serve({ projectRoot: harness.projectRoot, port: 0 });
+      const origin = started.data["origin"] as string;
+      const exchange = await fetch(started.data["bootstrap_url"] as string, {
+        redirect: "manual",
+      });
+      const cookie = (exchange.headers.get("set-cookie") ?? "").split(";", 1)[0] ?? "";
+      const sessionResponse = await fetch(`${origin}/api/v1/session`, { headers: { cookie } });
+      const csrf = ((await sessionResponse.json()) as { data: { csrf_token: string } }).data
+        .csrf_token;
+      const current = readCurrentOperation(
+        { projectRoot: harness.projectRoot, readBaseline: () => headOf(harness.projectRoot) },
+        harness.workflowOperationId,
+      );
+      const response = await fetch(
+        `${origin}/api/v1/workflows/${harness.workflowOperationId}/resume`,
+        {
+          method: "POST",
+          headers: {
+            cookie,
+            origin,
+            "content-type": "application/json",
+            "x-harness-csrf": csrf,
+          },
+          body: JSON.stringify({
+            expected_digest: contentDigest(current),
+            actor: "human:real-lock-test",
+          }),
+        },
+      );
+      expect(response.status).toBe(409);
+      await expect(response.json()).resolves.toMatchObject({ code: "write_conflict" });
+    } finally {
+      await lock.release();
+    }
   });
 });
