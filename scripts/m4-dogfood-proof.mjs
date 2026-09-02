@@ -1,5 +1,6 @@
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
+import { createRequire } from "node:module";
 import { existsSync, lstatSync, readFileSync, readdirSync, realpathSync } from "node:fs";
 import { isAbsolute, relative, resolve, sep } from "node:path";
 
@@ -97,6 +98,116 @@ function inspectOutput(repositoryRoot, path) {
   };
 }
 
+function fileTree(root, options = {}) {
+  if (!existsSync(root)) throw new Error(`tree does not exist: ${root}`);
+  const files = [];
+  const visit = (absolute) => {
+    const stat = lstatSync(absolute);
+    if (stat.isSymbolicLink()) throw new Error(`tree contains a symlink: ${absolute}`);
+    if (stat.isDirectory()) {
+      if (options.skipNodeModules && absolute !== root && absolute.endsWith(`${sep}node_modules`)) {
+        return;
+      }
+      for (const child of readdirSync(absolute).sort()) visit(resolve(absolute, child));
+      return;
+    }
+    if (!stat.isFile()) throw new Error(`tree contains a non-regular entry: ${absolute}`);
+    files.push({ path: posixRelative(root, absolute), sha256: sha256(readFileSync(absolute)) });
+  };
+  visit(root);
+  return files;
+}
+
+function packageCatalog(root) {
+  const catalog = new Map();
+  for (const collection of ["adapters", "packages", "packs"]) {
+    const collectionRoot = resolve(root, collection);
+    if (!existsSync(collectionRoot)) continue;
+    for (const entry of readdirSync(collectionRoot, { withFileTypes: true })) {
+      if (!entry.isDirectory()) continue;
+      const path = `${collection}/${entry.name}`;
+      const packageJson = resolve(root, path, "package.json");
+      if (!existsSync(packageJson)) continue;
+      const manifest = JSON.parse(readFileSync(packageJson, "utf8"));
+      if (typeof manifest.name === "string") catalog.set(manifest.name, { path, manifest });
+    }
+  }
+  return catalog;
+}
+
+function internalDependencyClosure(catalog, roots) {
+  const byName = new Map(roots.map((entry) => [entry.name, entry]));
+  const queue = [...roots.map((entry) => entry.name)];
+  while (queue.length > 0) {
+    const name = queue.shift();
+    const entry = byName.get(name) ?? catalog.get(name);
+    if (entry === undefined) throw new Error(`runtime package ${name} is not in the workspace`);
+    byName.set(name, { name, path: entry.path });
+    const catalogEntry = catalog.get(name);
+    const dependencies = catalogEntry?.manifest.dependencies ?? {};
+    for (const dependency of Object.keys(dependencies).sort()) {
+      if (catalog.has(dependency) && !byName.has(dependency)) {
+        const target = catalog.get(dependency);
+        byName.set(dependency, { name: dependency, path: target.path });
+        queue.push(dependency);
+      }
+    }
+  }
+  return [...byName.values()].sort((left, right) => left.name.localeCompare(right.name));
+}
+
+function externalDependencyProof(buildRoot, manifests, internalNames) {
+  const queue = [];
+  for (const { path, manifest } of manifests) {
+    for (const name of Object.keys(manifest.dependencies ?? {}).sort()) {
+      if (!internalNames.has(name)) queue.push({ name, from: resolve(buildRoot, path) });
+    }
+  }
+  const seen = new Set();
+  const proof = [];
+  while (queue.length > 0) {
+    const candidate = queue.shift();
+    const require = createRequire(resolve(candidate.from, "package.json"));
+    let packageJson;
+    try {
+      packageJson = require.resolve(`${candidate.name}/package.json`);
+    } catch {
+      let cursor = require.resolve(candidate.name);
+      while (cursor !== resolve(cursor, "..")) {
+        const possible = resolve(cursor, "..", "package.json");
+        if (existsSync(possible)) {
+          const parsed = JSON.parse(readFileSync(possible, "utf8"));
+          if (parsed.name === candidate.name) {
+            packageJson = possible;
+            break;
+          }
+        }
+        cursor = resolve(cursor, "..");
+      }
+    }
+    if (packageJson === undefined) {
+      throw new Error(`cannot resolve runtime dependency ${candidate.name} from ${candidate.from}`);
+    }
+    const manifest = JSON.parse(readFileSync(packageJson, "utf8"));
+    const identity = `${String(manifest.name)}@${String(manifest.version)}`;
+    if (seen.has(identity)) continue;
+    seen.add(identity);
+    const packageRoot = resolve(packageJson, "..");
+    const files = fileTree(packageRoot, { skipNodeModules: true });
+    proof.push({
+      name: manifest.name,
+      version: manifest.version,
+      package_tree_sha256: sha256(Buffer.from(JSON.stringify(files), "utf8")),
+    });
+    for (const dependency of Object.keys(manifest.dependencies ?? {}).sort()) {
+      queue.push({ name: dependency, from: packageRoot });
+    }
+  }
+  return proof.sort((left, right) =>
+    `${left.name}@${left.version}`.localeCompare(`${right.name}@${right.version}`),
+  );
+}
+
 /** Independently verify the provider probe against literal expected bytes and its one-file scope. */
 export function verifyProbeWorkspace(input) {
   if (isAbsolute(input.expectedPath) || input.expectedPath.split("/").includes("..")) {
@@ -188,6 +299,7 @@ export function verifyProbeWorkspace(input) {
 /** Bind the exact built entries and their committed source trees to one implementation commit. */
 export function collectPackageBuildProvenance(input) {
   const repositoryRoot = resolve(input.repositoryRoot);
+  const buildRoot = resolve(input.buildRoot ?? repositoryRoot);
   const head = execFileSync("git", ["rev-parse", "HEAD"], {
     cwd: repositoryRoot,
     encoding: "utf8",
@@ -196,32 +308,51 @@ export function collectPackageBuildProvenance(input) {
     cwd: repositoryRoot,
     encoding: "utf8",
   }).trim();
-  const packages = input.packages.map((entry) => {
+  const catalog = packageCatalog(repositoryRoot);
+  const closure = internalDependencyClosure(catalog, input.packages);
+  const manifests = closure.map((entry) => {
     const packageJson = resolve(repositoryRoot, entry.path, "package.json");
-    const distEntry = resolve(repositoryRoot, entry.path, "dist", "index.js");
-    if (!existsSync(packageJson) || !existsSync(distEntry)) {
-      throw new Error(`package ${entry.name} has no package.json or built dist/index.js`);
+    if (!existsSync(packageJson)) throw new Error(`package ${entry.name} has no package.json`);
+    return { ...entry, manifest: JSON.parse(readFileSync(packageJson, "utf8")) };
+  });
+  const packages = manifests.map((entry) => {
+    const packageJson = resolve(repositoryRoot, entry.path, "package.json");
+    const distRoot = resolve(buildRoot, entry.path, "dist");
+    if (!existsSync(distRoot)) {
+      throw new Error(`package ${entry.name} has no emitted dist tree`);
     }
     const sourceTreeOid = execFileSync(
       "git",
       ["rev-parse", `${input.implementationCommit}:${entry.path}`],
       { cwd: repositoryRoot, encoding: "utf8" },
     ).trim();
+    const emittedFiles = fileTree(distRoot);
+    if (emittedFiles.length === 0) throw new Error(`package ${entry.name} emitted no files`);
     return {
       name: entry.name,
       path: entry.path,
       source_tree_oid: sourceTreeOid,
       package_json_sha256: sha256(readFileSync(packageJson)),
-      dist_entry_sha256: sha256(readFileSync(distEntry)),
+      emitted_tree_sha256: sha256(Buffer.from(JSON.stringify(emittedFiles), "utf8")),
+      emitted_files: emittedFiles,
     };
   });
+  const internalNames = new Set(closure.map((entry) => entry.name));
+  const lockfile = resolve(repositoryRoot, "pnpm-lock.yaml");
+  const rootManifest = resolve(repositoryRoot, "package.json");
   const proof = {
     implementation_commit: input.implementationCommit,
     source_head: head,
     source_head_matches_implementation_commit: head === input.implementationCommit,
     tracked_source_clean: trackedStatus === "",
     build_command: "pnpm build",
+    clean_rebuild_from_committed_archive:
+      buildRoot !== repositoryRoot && !existsSync(resolve(buildRoot, ".git")),
+    root_package_json_sha256: sha256(readFileSync(rootManifest)),
+    lockfile_sha256: sha256(readFileSync(lockfile)),
+    runtime_dependency_closure: closure.map((entry) => entry.name),
     packages,
+    external_runtime_dependencies: externalDependencyProof(buildRoot, manifests, internalNames),
   };
   return { ...proof, provenance_sha256: sha256(Buffer.from(JSON.stringify(proof), "utf8")) };
 }

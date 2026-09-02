@@ -174,16 +174,31 @@ describe("M4 real-provider dogfood proof", () => {
     );
   });
 
-  it("binds package source trees and built entry bytes to the implementation commit", () => {
+  it("binds the complete emitted trees and internal runtime dependency closure", () => {
     const root = repository();
     mkdirSync(join(root, "packages", "demo", "src"), { recursive: true });
     mkdirSync(join(root, "packages", "demo", "dist"), { recursive: true });
-    writeFileSync(join(root, "packages", "demo", "package.json"), '{"name":"demo"}\n');
+    mkdirSync(join(root, "packages", "dependency", "src"), { recursive: true });
+    mkdirSync(join(root, "packages", "dependency", "dist"), { recursive: true });
+    writeFileSync(
+      join(root, "packages", "demo", "package.json"),
+      '{"name":"demo","dependencies":{"dependency":"workspace:*"}}\n',
+    );
     writeFileSync(join(root, "packages", "demo", "src", "index.ts"), "export const x = 1;\n");
     writeFileSync(join(root, "packages", "demo", "dist", "index.js"), "export const x = 1;\n");
-    execFileSync("git", ["add", "packages/demo/package.json", "packages/demo/src/index.ts"], {
-      cwd: root,
-    });
+    writeFileSync(join(root, "packages", "demo", "dist", "index.d.ts"), "export {};\n");
+    writeFileSync(join(root, "packages", "dependency", "package.json"), '{"name":"dependency"}\n');
+    writeFileSync(
+      join(root, "packages", "dependency", "src", "index.ts"),
+      "export const dependency = true;\n",
+    );
+    writeFileSync(
+      join(root, "packages", "dependency", "dist", "index.js"),
+      "export const dependency = true;\n",
+    );
+    writeFileSync(join(root, "package.json"), '{"private":true}\n');
+    writeFileSync(join(root, "pnpm-lock.yaml"), "lockfileVersion: '9.0'\n");
+    execFileSync("git", ["add", "package.json", "pnpm-lock.yaml", "packages"], { cwd: root });
     execFileSync("git", ["commit", "-qm", "source"], { cwd: root });
     const commit = execFileSync("git", ["rev-parse", "HEAD"], {
       cwd: root,
@@ -192,6 +207,7 @@ describe("M4 real-provider dogfood proof", () => {
 
     const proof = collectPackageBuildProvenance({
       repositoryRoot: root,
+      buildRoot: root,
       implementationCommit: commit,
       packages: [{ name: "demo", path: "packages/demo" }],
     });
@@ -200,16 +216,29 @@ describe("M4 real-provider dogfood proof", () => {
       implementation_commit: commit,
       source_head_matches_implementation_commit: true,
       tracked_source_clean: true,
+      runtime_dependency_closure: ["demo", "dependency"],
+      lockfile_sha256: expect.stringMatching(/^[a-f0-9]{64}$/u),
       provenance_sha256: expect.stringMatching(/^[a-f0-9]{64}$/u),
-      packages: [
-        {
+      packages: expect.arrayContaining([
+        expect.objectContaining({
           name: "demo",
           path: "packages/demo",
           source_tree_oid: expect.stringMatching(/^[a-f0-9]{40,64}$/u),
           package_json_sha256: expect.stringMatching(/^[a-f0-9]{64}$/u),
-          dist_entry_sha256: expect.stringMatching(/^[a-f0-9]{64}$/u),
-        },
-      ],
+          emitted_tree_sha256: expect.stringMatching(/^[a-f0-9]{64}$/u),
+          emitted_files: [
+            { path: "index.d.ts", sha256: expect.stringMatching(/^[a-f0-9]{64}$/u) },
+            { path: "index.js", sha256: expect.stringMatching(/^[a-f0-9]{64}$/u) },
+          ],
+        }),
+        expect.objectContaining({
+          name: "dependency",
+          path: "packages/dependency",
+          source_tree_oid: expect.stringMatching(/^[a-f0-9]{40,64}$/u),
+          package_json_sha256: expect.stringMatching(/^[a-f0-9]{64}$/u),
+          emitted_tree_sha256: expect.stringMatching(/^[a-f0-9]{64}$/u),
+        }),
+      ]),
     });
   });
 });
