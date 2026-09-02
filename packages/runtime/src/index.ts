@@ -1338,6 +1338,7 @@ export {
   type LocalTaskSchedulerOptions,
   type QueuedCandidateFact,
   type SchedulerCancelInput,
+  type SchedulerCancelResult,
   type SchedulerCeilingBounds,
   type SchedulerDispatchCallbacks,
   type SchedulerDriveInput,

@@ -1088,6 +1088,9 @@ function transitionsOperationId(transitions: readonly SchedulerTransition[]): st
         return typeof transition.event.payload["operation_id"] === "string"
           ? (transition.event.payload["operation_id"] as string)
           : "";
+      case "create_finding":
+        if (transition.operation_id !== undefined) return transition.operation_id;
+        break;
       default:
         break;
     }

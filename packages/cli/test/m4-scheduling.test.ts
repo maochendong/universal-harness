@@ -734,6 +734,7 @@ function makeFakeSchedulerHost(input: {
   readonly model: (operationId: string) => SchedulerReadModel;
   readonly outcome: (runInput: ParallelRunInput) => ParallelTaskExecutionOutcome;
   readonly onAcquire?: (operationId: string) => LockHandle;
+  readonly cancellationStatus?: "cancelled" | "unconfirmed";
 }): FakeSchedulerHost {
   const fake: FakeSchedulerHost = {
     host: undefined as unknown as ProjectSchedulerHost,
@@ -780,7 +781,7 @@ function makeFakeSchedulerHost(input: {
       fake.cancellations.push({ operationId, reason });
       const model = input.model(operationId);
       return Promise.resolve({
-        status: "cancelled",
+        status: input.cancellationStatus ?? "cancelled",
         operation_id: operationId,
         read_model: {
           operation_id: operationId,
@@ -1592,6 +1593,68 @@ describe("serve resumes workflows under the dashboard driver lock", { timeout: 3
       code: "write_operations_unavailable",
       detail: expect.stringMatching(/Policy Proposal Provider/u),
     });
+  });
+
+  it("keeps the Workflow active when the Scheduler cannot confirm Adapter cancellation", async () => {
+    const harness = await makeParallelHarness("m4-cancel-unconfirmed");
+    const fake = makeFakeSchedulerHost({
+      model: (operationId) => fakeSchedulerModel(operationId),
+      outcome: COMPLETED_OUTCOME,
+      cancellationStatus: "unconfirmed",
+    });
+    const service = serviceFor(harness, fake, captureIo().io, {
+      onServerReady: (server) => servers.push(server),
+    });
+    const started = await service.serve({ projectRoot: harness.projectRoot, port: 0 });
+    const origin = started.data["origin"] as string;
+    const exchange = await fetch(started.data["bootstrap_url"] as string, {
+      redirect: "manual",
+    });
+    const cookie = (exchange.headers.get("set-cookie") ?? "").split(";", 1)[0] ?? "";
+    const sessionResponse = await fetch(`${origin}/api/v1/session`, { headers: { cookie } });
+    const csrf = ((await sessionResponse.json()) as { data: { csrf_token: string } }).data
+      .csrf_token;
+    const scheduler = await fetch(
+      `${origin}/api/v1/scheduler?operation_id=${harness.workflowOperationId}`,
+      { headers: { cookie } },
+    );
+    const schedulerBody = (await scheduler.json()) as {
+      data: { control: { expected_digest: string } };
+    };
+    const before = readCurrentOperation(
+      { projectRoot: harness.projectRoot, readBaseline: () => headOf(harness.projectRoot) },
+      harness.workflowOperationId,
+    );
+
+    const response = await fetch(
+      `${origin}/api/v1/scheduler/operations/${harness.workflowOperationId}/cancel`,
+      {
+        method: "POST",
+        headers: {
+          cookie,
+          origin,
+          "content-type": "application/json",
+          "x-harness-csrf": csrf,
+        },
+        body: JSON.stringify({
+          expected_digest: schedulerBody.data.control.expected_digest,
+          actor: "human:unconfirmed-test",
+        }),
+      },
+    );
+
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toMatchObject({
+      code: "write_conflict",
+      detail: expect.stringMatching(/could not confirm Agent termination/u),
+    });
+    expect(
+      readCurrentOperation(
+        { projectRoot: harness.projectRoot, readBaseline: () => headOf(harness.projectRoot) },
+        harness.workflowOperationId,
+      ),
+    ).toEqual(before);
+    expect(fake.cancellations).toHaveLength(1);
   });
 
   it("returns 409 without aborting the Workflow when cancel meets a real held Driver Lock", async () => {

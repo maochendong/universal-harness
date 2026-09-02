@@ -122,7 +122,11 @@ interface DrivenProject {
  * every record committed through the production write path.
  */
 async function makeDrivenProject(
-  options: { readonly sqliteProjection?: boolean; readonly abortableRun?: boolean } = {},
+  options: {
+    readonly sqliteProjection?: boolean;
+    readonly abortableRun?: boolean;
+    readonly ignoreAbort?: boolean;
+  } = {},
 ): Promise<DrivenProject> {
   // One shared mint across bootstrap and setup: the Ledger rejects two events
   // with the same id and different content, so separate counters collide.
@@ -142,6 +146,7 @@ async function makeDrivenProject(
   // setup sequence would collide identical id strings with different content.
   const hostIds = sequentialIds();
   const hostNewId = (kind: string): string => `host_${hostIds(kind)}`;
+  let adapterRunCount = 0;
   let markRunStarted: (() => void) | undefined;
   const runStarted = new Promise<void>((resolve) => {
     markRunStarted = resolve;
@@ -311,6 +316,7 @@ async function makeDrivenProject(
         name: "fake-slot-adapter",
         manifest: FAKE_MANIFEST,
         run: (envelope, runOptions) => {
+          adapterRunCount += 1;
           // The Driver Lock must be held while any task executes.
           expect(existsSync(lockDirectory)).toBe(true);
           const writeScope = envelope.proposed_write_paths[0];
@@ -322,18 +328,22 @@ async function makeDrivenProject(
             `export const task = ${JSON.stringify(envelope.task_id)};\n`,
           );
           markRunStarted?.();
-          if (options.abortableRun) {
+          if (options.abortableRun || (options.ignoreAbort && adapterRunCount === 1)) {
             return new Promise<AgentRunResult>((resolve) => {
               runOptions.signal?.addEventListener(
                 "abort",
                 () =>
-                  resolve({
-                    ...stubResult(),
-                    outcome: "partial",
-                    termination_reason: "user_cancellation",
-                    completion_claimed: false,
-                    summary: "cancelled cooperatively",
-                  }),
+                  resolve(
+                    options.ignoreAbort
+                      ? stubResult()
+                      : {
+                          ...stubResult(),
+                          outcome: "partial",
+                          termination_reason: "user_cancellation",
+                          completion_claimed: false,
+                          summary: "cancelled cooperatively",
+                        },
+                  ),
                 { once: true },
               );
             });
@@ -447,6 +457,40 @@ describe("createProjectSchedulerHost", () => {
     });
     expect(cancelled.read_model.projection.tasks[0]?.status).toBe("cancelled");
     expect(existsSync(fixture.lockDirectory)).toBe(false);
+  }, 60_000);
+
+  it("returns unconfirmed and preserves normal completion when the live Adapter ignores abort", async () => {
+    const fixture = await makeDrivenProject({ ignoreAbort: true });
+    const drive = fixture.host.parallelExecution.port.run({
+      operation_id: fixture.operationId,
+      iteration_id: ITERATION_ID,
+      capability_plan_digest: fixture.capabilityPlan.record_digest,
+      expected_plan_digest: fixture.planContentDigest,
+      driver_lock: fixture.host.parallelExecution.driverLock(),
+    });
+    await fixture.runStarted;
+
+    const cancellation = await fixture.host.cancelOperation(
+      fixture.operationId,
+      "human requested cancellation",
+    );
+    expect(cancellation.status).toBe("unconfirmed");
+    await drive;
+
+    const facts = await createLedgerSchedulerAuthority({ deps: fixture.deps }).readFacts(
+      fixture.operationId,
+    );
+    expect(facts.leases.at(-1)?.state).toBe("released");
+    expect(facts.runs.at(-1)).toMatchObject({
+      record_kind: "run_terminated",
+      termination_reason: "completion",
+    });
+    expect(
+      facts.runs.some(
+        (run) =>
+          run.record_kind === "run_terminated" && run.termination_reason === "user_cancellation",
+      ),
+    ).toBe(false);
   }, 60_000);
 
   it("reports inactive_by_profile when the operation has no parallel capability", async () => {

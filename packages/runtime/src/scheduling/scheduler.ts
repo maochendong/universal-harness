@@ -20,7 +20,7 @@ import {
   type Protocol13TaskSpecification,
 } from "../planning/task.js";
 
-import { AgentPoolError, type LocalAgentPool } from "./agent-pool.js";
+import { AgentPoolError, type AgentPoolCancelOutcome, type LocalAgentPool } from "./agent-pool.js";
 import {
   remainingBudget,
   reserveTaskBudget,
@@ -133,6 +133,12 @@ export interface SchedulerDriveResult {
   readonly read_model: SchedulerReadModel;
 }
 
+export interface SchedulerCancelResult {
+  readonly status: "cancelled" | "unconfirmed";
+  readonly operation_id: string;
+  readonly read_model: SchedulerReadModel;
+}
+
 /**
  * One authoritative scheduler transition. `create_finding` carries the core
  * FeedbackRecord — the repository's only Finding authority (Task 8
@@ -169,7 +175,12 @@ export type SchedulerTransition =
       readonly record: WaveIntegrationRecord;
     }
   | { readonly kind: "request_approval"; readonly request: ApprovalRequestRecord }
-  | { readonly kind: "create_finding"; readonly finding: FeedbackRecord }
+  | {
+      readonly kind: "create_finding";
+      readonly finding: FeedbackRecord;
+      /** Required when a finding is the batch's only operation-naming fact. */
+      readonly operation_id?: string;
+    }
   | { readonly kind: "append_event"; readonly event: SchedulerEventSpec }
   | { readonly kind: "record_run"; readonly record: RunRecord };
 
@@ -304,7 +315,7 @@ export interface LocalTaskSchedulerOptions {
 export interface LocalTaskScheduler {
   drive(input: SchedulerDriveInput): Promise<SchedulerDriveResult>;
   recover(input: SchedulerRecoverInput): Promise<SchedulerDriveResult>;
-  cancel(input: SchedulerCancelInput): Promise<SchedulerDriveResult>;
+  cancel(input: SchedulerCancelInput): Promise<SchedulerCancelResult>;
   read(operationId: string): Promise<SchedulerReadModel>;
 }
 
@@ -422,6 +433,13 @@ export function createLocalTaskScheduler(
   const { authority, pool } = options;
   /** Process-local cancellation memory; durable cancellation is §15.2 state. */
   const cancelledOperations = new Set<string>();
+  const cancellationAttempts = new Map<
+    string,
+    {
+      readonly settled: Promise<"confirmed" | "unconfirmed">;
+      readonly resolve: (status: "confirmed" | "unconfirmed") => void;
+    }
+  >();
 
   const assertDriverLock = (lock: DriverLockHandle, operationId: string): void => {
     if (lock.operation_id !== operationId) {
@@ -1289,9 +1307,14 @@ export function createLocalTaskScheduler(
       // of the pass started — never at first-completion time.
       for (const entry of running) {
         const settled = await entry.settled;
-        // cancel() owns the authoritative Run/Lease terminal transition. A
-        // concurrently settling drive must not classify the same result a
-        // second time after cooperative cancellation released the Adapter.
+        // A cooperative cancel and its owning drive observe the same Adapter
+        // settlement. Wait until cancel() decides who owns classification:
+        // confirmed cancellation is committed there; every other real result
+        // remains the drive owner's responsibility.
+        const cancellation = cancellationAttempts.get(input.operation_id);
+        if ((await cancellation?.settled) === "confirmed") {
+          return cancelledResult(dag, input.operation_id);
+        }
         if (cancelledOperations.has(input.operation_id)) {
           return cancelledResult(dag, input.operation_id);
         }
@@ -1498,80 +1521,116 @@ export function createLocalTaskScheduler(
 
     async cancel(input) {
       assertDriverLock(input.driver_lock, input.operation_id);
-      cancelledOperations.add(input.operation_id);
       const dag = await options.dag_port.readApproved({ operation_id: input.operation_id });
-      const facts = await authority.readFacts(input.operation_id);
-      const chain = buildTaskLeaseChain(facts.leases);
-      const active = [...chain.latest_by_task.values()]
-        .filter((record) => record.state === "granted")
-        .sort((left, right) => left.task_id.localeCompare(right.task_id));
-      for (const lease of active) {
-        let confirmed = true;
-        try {
-          // Cooperative cancellation: the adapter's own result is the only
-          // termination accounting; intent alone proves nothing (§15.2).
-          await pool.cancel(lease.run_id);
-        } catch (error) {
-          if (error instanceof AgentPoolError && error.kind === "unknown_run") {
-            confirmed = false;
-          } else {
-            throw error;
-          }
-        }
-        const transitions: SchedulerTransition[] = [
-          {
-            kind: "record_run",
-            record: runTerminatedRecord({
-              operation_id: dag.operation_id,
-              task_id: lease.task_id,
-              run_id: lease.run_id,
-              outcome: "partial",
-              termination_reason: "user_cancellation",
-            }),
-          },
-          {
-            kind: "terminate_lease",
-            record: terminateTaskLease(lease, {
-              state: "revoked",
-              consumed_budget: lease.consumed_budget,
-              command_id: digestId("command", {
-                purpose: "cancel-revoke",
-                command_id: input.command_id,
-                task_id: lease.task_id,
-                attempt_number: lease.attempt_number,
-              }),
-            }),
-          },
-        ];
-        if (!confirmed) {
-          // Uncertain external effects follow the existing semantics: they
-          // must be reconciled before any retry, so the Task also earns a
-          // blocking Finding alongside its cancelled projection. The lease
-          // binds a Task of the approved plan, so the lookup always succeeds.
-          const cancelledTask = dag.tasks.find((candidate) => candidate.id === lease.task_id);
-          if (cancelledTask === undefined) {
-            throw new SchedulerError(
-              "scheduling_loop_inconclusive",
-              `lease ${lease.lease_id} names task ${lease.task_id}, which has no specification in the approved plan`,
-            );
-          }
-          transitions.push({
-            kind: "create_finding",
-            finding: blockingFinding({
-              dag,
-              task_id: cancelledTask.id,
-              task_digest: lease.task_digest,
-              rule: "cancellation_uncertain",
-              summary:
-                `cancellation of task ${lease.task_id} could not be confirmed (run ${lease.run_id} ` +
-                "was not live); reconcile external side effects before any retry",
-            }),
-          });
-        }
-        await authority.commit(transitions);
+      const existingAttempt = cancellationAttempts.get(input.operation_id);
+      if (existingAttempt !== undefined) {
+        const status = await existingAttempt.settled;
+        return {
+          status: status === "confirmed" ? "cancelled" : "unconfirmed",
+          operation_id: input.operation_id,
+          read_model: await buildReadModel(dag, await authority.readFacts(input.operation_id)),
+        };
       }
-      // Diagnostic evidence and worktrees are preserved: nothing is discarded.
-      return cancelledResult(dag, input.operation_id);
+      let settleAttempt: (status: "confirmed" | "unconfirmed") => void = () => undefined;
+      const settled = new Promise<"confirmed" | "unconfirmed">((resolve) => {
+        settleAttempt = resolve;
+      });
+      cancellationAttempts.set(input.operation_id, { settled, resolve: settleAttempt });
+      let attemptStatus: "confirmed" | "unconfirmed" = "unconfirmed";
+      try {
+        const facts = await authority.readFacts(input.operation_id);
+        const chain = buildTaskLeaseChain(facts.leases);
+        const active = [...chain.latest_by_task.values()]
+          .filter((record) => record.state === "granted")
+          .sort((left, right) => left.task_id.localeCompare(right.task_id));
+        const outcomes: {
+          readonly lease: TaskLeaseRecord;
+          readonly outcome: AgentPoolCancelOutcome;
+        }[] = [];
+        for (const lease of active) {
+          try {
+            outcomes.push({ lease, outcome: await pool.cancel(lease.run_id) });
+          } catch (error) {
+            if (error instanceof AgentPoolError && error.kind === "unknown_run") {
+              outcomes.push({ lease, outcome: { status: "failed", error } });
+            } else {
+              throw error;
+            }
+          }
+        }
+        const confirmed = outcomes.every((entry) => entry.outcome.status === "confirmed");
+        if (confirmed) {
+          for (const { lease, outcome } of outcomes) {
+            if (outcome.status !== "confirmed") continue;
+            await authority.commit([
+              {
+                kind: "record_run",
+                record: runTerminatedRecord({
+                  operation_id: dag.operation_id,
+                  task_id: lease.task_id,
+                  run_id: lease.run_id,
+                  outcome: outcome.result.outcome,
+                  termination_reason: "user_cancellation",
+                }),
+              },
+              {
+                kind: "terminate_lease",
+                record: terminateTaskLease(lease, {
+                  state: "revoked",
+                  consumed_budget: meteredConsumption(outcome.result),
+                  command_id: digestId("command", {
+                    purpose: "cancel-revoke",
+                    command_id: input.command_id,
+                    task_id: lease.task_id,
+                    attempt_number: lease.attempt_number,
+                  }),
+                }),
+              },
+            ]);
+          }
+          cancelledOperations.add(input.operation_id);
+        } else {
+          for (const { lease, outcome } of outcomes) {
+            if (outcome.status === "confirmed") continue;
+            const cancelledTask = dag.tasks.find((candidate) => candidate.id === lease.task_id);
+            if (cancelledTask === undefined) {
+              throw new SchedulerError(
+                "scheduling_loop_inconclusive",
+                `lease ${lease.lease_id} names task ${lease.task_id}, which has no specification in the approved plan`,
+              );
+            }
+            const actual =
+              outcome.status === "unconfirmed"
+                ? `Adapter settled as ${outcome.result.termination_reason}`
+                : `Adapter settlement failed: ${messageOf(outcome.error)}`;
+            await authority.commit([
+              {
+                kind: "create_finding",
+                operation_id: input.operation_id,
+                finding: blockingFinding({
+                  dag,
+                  task_id: cancelledTask.id,
+                  task_digest: lease.task_digest,
+                  rule: "cancellation_uncertain",
+                  summary:
+                    `cancellation of task ${lease.task_id} could not be confirmed ` +
+                    `(run ${lease.run_id}; ${actual}); reconcile the actual result before retry`,
+                }),
+              },
+            ]);
+          }
+        }
+        attemptStatus = confirmed ? "confirmed" : "unconfirmed";
+        // Diagnostic evidence and worktrees are preserved: nothing is discarded.
+        return {
+          status: confirmed ? "cancelled" : "unconfirmed",
+          operation_id: input.operation_id,
+          read_model: await buildReadModel(dag, await authority.readFacts(input.operation_id)),
+        };
+      } finally {
+        settleAttempt(attemptStatus);
+        cancellationAttempts.delete(input.operation_id);
+      }
     },
 
     async read(operationId) {

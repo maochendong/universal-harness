@@ -8,10 +8,7 @@ import {
   type TaskLeaseRecord,
   type WaveIntegrationRecord,
 } from "@universal-harness-internal/core";
-import type {
-  AgentRunResult,
-  AgentTaskEnvelope,
-} from "@universal-harness-internal/plugin-sdk";
+import type { AgentRunResult, AgentTaskEnvelope } from "@universal-harness-internal/plugin-sdk";
 
 import type { ApprovalRequestRecord } from "../../src/approval/request.js";
 import type { GateEvidenceRecord } from "../../src/gates/evidence.js";
@@ -23,7 +20,11 @@ import {
   type PolicyDecision,
 } from "../../src/policy/decision.js";
 import { taskSemanticDigest, type Protocol13TaskSpecification } from "../../src/planning/task.js";
-import { AgentPoolError, type AgentPoolRunInput } from "../../src/scheduling/agent-pool.js";
+import {
+  AgentPoolError,
+  type AgentPoolCancelOutcome,
+  type AgentPoolRunInput,
+} from "../../src/scheduling/agent-pool.js";
 import type { DriverLockHandle } from "../../src/scheduling/driver-lock.js";
 import { buildTaskLeaseChain, grantTaskLease } from "../../src/scheduling/lease.js";
 import {
@@ -126,7 +127,13 @@ function crashResult(): AgentRunResult {
     },
     budget_observations: [
       { dimension: "steps", availability: "measured", used: 2, limit: 10, enforcement: "harness" },
-      { dimension: "tokens", availability: "measured", used: 100, limit: 1000, enforcement: "harness" },
+      {
+        dimension: "tokens",
+        availability: "measured",
+        used: 100,
+        limit: 1000,
+        enforcement: "harness",
+      },
     ],
   });
 }
@@ -195,6 +202,7 @@ type PoolScript =
   | { readonly kind: "complete"; readonly result?: Partial<AgentRunResult> }
   | { readonly kind: "crash" }
   | { readonly kind: "abortable" }
+  | { readonly kind: "oblivious" }
   | { readonly kind: "hang" };
 
 /**
@@ -209,6 +217,7 @@ class FakePool {
   private readonly slots: AgentPoolSlot[];
   private readonly controllers = new Map<string, AbortController>();
   private readonly settled = new Map<string, Promise<void>>();
+  private readonly cancellationOutcomes = new Map<string, Promise<AgentPoolCancelOutcome>>();
   private readonly callsPerTask = new Map<string, number>();
 
   constructor(
@@ -245,7 +254,9 @@ class FakePool {
     const controller = new AbortController();
     this.controllers.set(input.run_id, controller);
 
-    const finish = (result: AgentRunResult): { slot_id: string; task_id: string; run_id: string; result: AgentRunResult } => {
+    const finish = (
+      result: AgentRunResult,
+    ): { slot_id: string; task_id: string; run_id: string; result: AgentRunResult } => {
       slot.state = "idle";
       delete slot.task_id;
       delete slot.run_id;
@@ -263,7 +274,7 @@ class FakePool {
       return pending;
     }
     if (script.kind === "abortable") {
-      const result = await new Promise<AgentRunResult>((resolve) => {
+      const resultPromise = new Promise<AgentRunResult>((resolve) => {
         controller.signal.addEventListener("abort", () => {
           resolve(
             stubResult({
@@ -274,6 +285,22 @@ class FakePool {
           );
         });
       });
+      this.cancellationOutcomes.set(
+        input.run_id,
+        resultPromise.then((result) => ({ status: "confirmed" as const, result })),
+      );
+      const result = await resultPromise;
+      return finish(result);
+    }
+    if (script.kind === "oblivious") {
+      const resultPromise = new Promise<AgentRunResult>((resolve) => {
+        controller.signal.addEventListener("abort", () => resolve(stubResult()));
+      });
+      this.cancellationOutcomes.set(
+        input.run_id,
+        resultPromise.then((result) => ({ status: "unconfirmed" as const, result })),
+      );
+      const result = await resultPromise;
       return finish(result);
     }
     if (script.kind === "crash") {
@@ -282,14 +309,18 @@ class FakePool {
     return finish(stubResult(script.result ?? {}));
   }
 
-  async cancel(runId: string): Promise<void> {
+  async cancel(runId: string): Promise<AgentPoolCancelOutcome> {
     const controller = this.controllers.get(runId);
     if (controller === undefined) {
       throw new AgentPoolError("unknown_run", `no active run ${runId}`);
     }
     this.cancelled.push(runId);
     controller.abort();
-    await this.settled.get(runId);
+    const outcome = this.cancellationOutcomes.get(runId);
+    if (outcome === undefined) {
+      return { status: "failed", error: new Error(`run ${runId} has no cancellation outcome`) };
+    }
+    return outcome;
   }
 }
 
@@ -410,7 +441,12 @@ function harness(options: {
     adapter_control_profile: MANAGED_PROFILE,
     adapter_capabilities: options.adapterCapabilities ?? ["code-edit"],
     unattended_eligible: true,
-    ceilings: { profile_limit: 2, installation_limit: 8, project_limit: 8, local_resource_limit: 8 },
+    ceilings: {
+      profile_limit: 2,
+      installation_limit: 8,
+      project_limit: 8,
+      local_resource_limit: 8,
+    },
     effective_policy_digest: EFFECTIVE.digest,
     callbacks: {
       assembleContext: async ({ task, run_id }) => ({
@@ -635,9 +671,9 @@ describe("policy outcomes", () => {
     expect(second.status).toBe("completed");
     const lease = authority.latestLease("task_b");
     expect(lease?.state).toBe("released");
-    expect(authority.leases.find((record) => record.task_id === "task_b")?.approval_digests).toEqual(
-      [approvalDigest],
-    );
+    expect(
+      authority.leases.find((record) => record.task_id === "task_b")?.approval_digests,
+    ).toEqual([approvalDigest]);
   });
 
   it("deny produces a blocking Finding and no Lease", async () => {
@@ -746,7 +782,10 @@ describe("executor retry and fencing", () => {
     // The retry consumed exactly the original budget minus the first crash.
     expect(grants[1]?.reserved_budget).toEqual({ steps: 8, tokens: 900 });
     const finding = authority.findings.at(-1);
-    const extension = finding?.extensions?.["harness.finding"] as { rule: string; blocks: string[] };
+    const extension = finding?.extensions?.["harness.finding"] as {
+      rule: string;
+      blocks: string[];
+    };
     expect(extension.rule).toBe("retry_exhausted");
     expect(extension.blocks).toEqual(["task_a"]);
     expect(
@@ -767,13 +806,25 @@ describe("executor retry and fencing", () => {
     await scheduler.drive(driveInput());
 
     await expect(
-      scheduler.acceptRunResult({ operation_id: OPERATION_ID, task_id: "task_a", fencing_token: 1 }),
+      scheduler.acceptRunResult({
+        operation_id: OPERATION_ID,
+        task_id: "task_a",
+        fencing_token: 1,
+      }),
     ).rejects.toThrow(/fencing token/u);
     await expect(
-      scheduler.acceptRunResult({ operation_id: OPERATION_ID, task_id: "task_a", fencing_token: 1 }),
+      scheduler.acceptRunResult({
+        operation_id: OPERATION_ID,
+        task_id: "task_a",
+        fencing_token: 1,
+      }),
     ).rejects.toMatchObject({ kind: "stale_fencing_token" });
     await expect(
-      scheduler.acceptRunResult({ operation_id: OPERATION_ID, task_id: "task_a", fencing_token: 2 }),
+      scheduler.acceptRunResult({
+        operation_id: OPERATION_ID,
+        task_id: "task_a",
+        fencing_token: 2,
+      }),
     ).resolves.toBeUndefined();
   });
 });
@@ -808,10 +859,7 @@ describe("cancellation", () => {
     expect(result.status).toBe("cancelled");
     expect(pool.cancelled).toEqual(["run_cancel_a"]);
     const batch = authority.batches.at(-1);
-    expect(batch?.map((transition) => transition.kind)).toEqual([
-      "record_run",
-      "terminate_lease",
-    ]);
+    expect(batch?.map((transition) => transition.kind)).toEqual(["record_run", "terminate_lease"]);
     const terminal = authority.latestLease("task_a");
     expect(terminal?.state).toBe("revoked");
     const run = authority.runs.at(-1);
@@ -848,14 +896,52 @@ describe("cancellation", () => {
       driver_lock: driverLock,
     });
 
-    expect(result.status).toBe("cancelled");
-    expect(authority.latestLease("task_a")?.state).toBe("revoked");
+    expect(result.status).toBe("unconfirmed");
+    expect(authority.latestLease("task_a")?.state).toBe("granted");
     const finding = authority.findings.at(-1);
     const extension = finding?.extensions?.["harness.finding"] as { rule: string };
     expect(extension.rule).toBe("cancellation_uncertain");
     expect(
       result.read_model.projection.tasks.find((entry) => entry.task_id === "task_a")?.status,
-    ).toBe("cancelled");
+    ).toBe("blocked");
+  });
+
+  it("lets the drive owner classify normal completion when the adapter ignores cancellation", async () => {
+    const { scheduler, authority, pool } = harness({
+      tasks: [schedTask("task_a")],
+      script: () => ({ kind: "oblivious" }),
+    });
+    const drive = scheduler.drive(driveInput());
+    while (pool.startedRuns.length === 0) {
+      await new Promise((resolve) => setTimeout(resolve, 1));
+    }
+
+    const cancellation = await scheduler.cancel({
+      operation_id: OPERATION_ID,
+      command_id: "command_cancel_unconfirmed",
+      reason: "user requested abort",
+      driver_lock: driverLock,
+    });
+    await drive;
+
+    expect(cancellation.status).toBe("unconfirmed");
+    expect(authority.latestLease("task_a")?.state).toBe("released");
+    expect(authority.runs.at(-1)).toMatchObject({
+      record_kind: "run_terminated",
+      termination_reason: "completion",
+    });
+    expect(
+      authority.runs.some(
+        (run) =>
+          run.record_kind === "run_terminated" && run.termination_reason === "user_cancellation",
+      ),
+    ).toBe(false);
+    const finding = authority.findings.find(
+      (candidate) =>
+        (candidate.extensions?.["harness.finding"] as { rule?: string } | undefined)?.rule ===
+        "cancellation_uncertain",
+    );
+    expect(finding).toBeDefined();
   });
 });
 

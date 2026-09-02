@@ -89,9 +89,15 @@ export interface AgentPoolRunOutcome {
 export interface LocalAgentPool {
   readonly capacity: number;
   run(input: AgentPoolRunInput): Promise<AgentPoolRunOutcome>;
-  cancel(runId: string): Promise<void>;
+  cancel(runId: string): Promise<AgentPoolCancelOutcome>;
   snapshot(): readonly AgentPoolSlot[];
 }
+
+/** The Adapter's actual settlement after a cooperative abort request. */
+export type AgentPoolCancelOutcome =
+  | { readonly status: "confirmed"; readonly result: AgentRunResult }
+  | { readonly status: "unconfirmed"; readonly result: AgentRunResult }
+  | { readonly status: "failed"; readonly error: unknown };
 
 export interface LocalAgentPoolOptions {
   readonly factory: AgentSlotFactory;
@@ -119,8 +125,11 @@ interface ActiveRun {
   readonly slot_ids: readonly string[];
   readonly controller: AbortController;
   readonly started_ms: number;
-  /** Settles (never rejects) when the Adapter run promise settles. */
-  readonly settled: Promise<void>;
+  /** Settles (never rejects) with the Adapter's actual accounting. */
+  readonly settled: Promise<
+    | { readonly ok: true; readonly result: AgentRunResult }
+    | { readonly ok: false; readonly error: unknown }
+  >;
 }
 
 type MutableObservation = {
@@ -253,8 +262,8 @@ export function createLocalAgentPool(options: LocalAgentPoolOptions): LocalAgent
         controller,
         started_ms: startedMs,
         settled: runPromise.then(
-          () => undefined,
-          () => undefined,
+          (result) => ({ ok: true as const, result }),
+          (error: unknown) => ({ ok: false as const, error }),
         ),
       };
       activeRuns.set(input.run_id, active);
@@ -278,7 +287,7 @@ export function createLocalAgentPool(options: LocalAgentPoolOptions): LocalAgent
       }
     },
 
-    async cancel(runId: string): Promise<void> {
+    async cancel(runId: string): Promise<AgentPoolCancelOutcome> {
       const active = activeRuns.get(runId);
       if (active === undefined) {
         throw new AgentPoolError(
@@ -294,7 +303,11 @@ export function createLocalAgentPool(options: LocalAgentPoolOptions): LocalAgent
       // accounting. If the Adapter ignores the signal, its normal result
       // stands and cancellation remains unconfirmed.
       active.controller.abort();
-      await active.settled;
+      const settled = await active.settled;
+      if (!settled.ok) return { status: "failed", error: settled.error };
+      return settled.result.termination_reason === "user_cancellation"
+        ? { status: "confirmed", result: settled.result }
+        : { status: "unconfirmed", result: settled.result };
     },
 
     snapshot(): readonly AgentPoolSlot[] {

@@ -340,9 +340,13 @@ describe("local agent pool cancellation", () => {
     });
 
     expect(pool.snapshot().find((slot) => slot.run_id === "run_a")?.state).toBe("running");
-    await pool.cancel("run_a");
+    const cancellation = await pool.cancel("run_a");
     const outcome = await running;
 
+    expect(cancellation).toMatchObject({
+      status: "confirmed",
+      result: { termination_reason: "user_cancellation" },
+    });
     expect(outcome.result.termination_reason).toBe("user_cancellation");
     expect(recorded[0]?.options.signal?.aborted).toBe(true);
     expect(pool.snapshot().every((slot) => slot.state === "idle")).toBe(true);
@@ -366,12 +370,47 @@ describe("local agent pool cancellation", () => {
     const pool = createLocalAgentPool({ factory, capacity: 1, operation_id: "operation_1" });
     const running = pool.run(slotInput("task_a", "run_a"));
 
-    await pool.cancel("run_a");
+    const cancellation = await pool.cancel("run_a");
     const outcome = await running;
 
     // Termination-unconfirmed: the adapter completed normally, so the pool
     // reports the adapter's own result -- never an invented cancellation.
     expect(outcome.result.termination_reason).toBe("completion");
+    expect(cancellation).toMatchObject({
+      status: "unconfirmed",
+      result: { termination_reason: "completion" },
+    });
+  });
+
+  it("returns the adapter failure without invoking the adapter a second time", async () => {
+    let calls = 0;
+    let rejectRun: ((error: Error) => void) | undefined;
+    const factory: AgentSlotFactory = {
+      adapter_manifest_digest: "f".repeat(64),
+      manifest: ELIGIBLE_MANIFEST,
+      create: () => ({
+        name: "failing",
+        manifest: ELIGIBLE_MANIFEST,
+        run: () => {
+          calls += 1;
+          return new Promise<AgentRunResult>((_resolve, reject) => {
+            rejectRun = reject;
+          });
+        },
+      }),
+    };
+    const pool = createLocalAgentPool({ factory, capacity: 1, operation_id: "operation_1" });
+    const running = pool.run(slotInput("task_a", "run_a"));
+    await vi.waitFor(() => expect(calls).toBe(1));
+    const cancelling = pool.cancel("run_a");
+    rejectRun?.(new Error("adapter failed while cancelling"));
+
+    await expect(cancelling).resolves.toMatchObject({
+      status: "failed",
+      error: expect.objectContaining({ message: "adapter failed while cancelling" }),
+    });
+    await expect(running).rejects.toThrow("adapter failed while cancelling");
+    expect(calls).toBe(1);
   });
 
   it("rejects cancelling an unknown run", async () => {

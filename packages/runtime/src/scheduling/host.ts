@@ -70,9 +70,9 @@ import { readSchedulerModel, type SchedulerReadModel } from "./read-model.js";
 import {
   createLocalTaskScheduler,
   type LocalTaskScheduler,
+  type SchedulerCancelResult,
   type SchedulerCeilingBounds,
   type SchedulerDispatchCallbacks,
-  type SchedulerDriveResult,
 } from "./scheduler.js";
 import {
   createInMemorySchedulerProjectionStore,
@@ -148,7 +148,7 @@ export interface ProjectSchedulerHost {
   readonly parallelExecution: ParallelExecutionBinding;
   readSchedulerModel(operationId: string): Promise<SchedulerReadModel>;
   acquireDriverLock(operationId: string): Promise<DriverLockHandle>;
-  cancelOperation(operationId: string, reason: string): Promise<SchedulerDriveResult>;
+  cancelOperation(operationId: string, reason: string): Promise<SchedulerCancelResult>;
 }
 
 const DEFAULT_CEILINGS: SchedulerCeilingBounds = {

@@ -1888,10 +1888,16 @@ export function createOrchestratedRuntimeService(
                   "the Scheduler read branch changed; refresh before cancelling",
                 );
               }
-              await host.cancelOperation(
+              const cancellation = await host.cancelOperation(
                 input.operationId,
                 `dashboard cancellation requested by ${input.actor}`,
               );
+              if (cancellation.status !== "cancelled") {
+                throw new DashboardWriteError(
+                  "conflict",
+                  "the Scheduler could not confirm Agent termination; Workflow remains active for reconciliation",
+                );
+              }
               const aborted = await resumeRuntime.abort({
                 projectRoot: request.projectRoot,
                 workflowOperationId: input.operationId,
