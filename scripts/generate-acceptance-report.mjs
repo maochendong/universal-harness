@@ -24,6 +24,14 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { evaluateCiPlatformEvidence } from "./write-ci-platform-evidence.mjs";
+import {
+  CANONICAL_RELEASE_COMMANDS,
+  M4_RESULTS_SCHEMA_VERSION,
+  assertCanonicalSuiteReports,
+  digestTrackedEvidence,
+  renderM4Markdown,
+  verifyM4ReportCommit,
+} from "./lib/m4-release-evidence.mjs";
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const reportsDirectory = join(repositoryRoot, ".reports", "acceptance");
@@ -55,10 +63,22 @@ const baselineDirectory = join(
 const REQUIRED_SUITES = ["main", "security", "fault", "performance"];
 const CRITERION_COUNT = 28;
 const STATUS_PRECEDENCE = ["failed", "blocked", "passed", "not_verified", "not_run"];
+const currentCommit = execFileSync("git", ["rev-parse", "HEAD"], {
+  cwd: repositoryRoot,
+  encoding: "utf8",
+}).trim();
 
 function fail(message) {
   console.error(`acceptance report: ${message}`);
   process.exit(1);
+}
+
+if (process.argv.slice(2).includes("--verify-report-commit")) {
+  const verified = verifyM4ReportCommit(repositoryRoot);
+  console.log(
+    `M4 report commit ${verified.report_commit} directly follows implementation ${verified.implementation_commit}.`,
+  );
+  process.exit(0);
 }
 
 // --- Load the criterion statements from the approved design -------------------
@@ -93,6 +113,11 @@ for (const suite of REQUIRED_SUITES) {
   }
   suiteReports.set(suite, JSON.parse(readFileSync(path, "utf8")));
 }
+assertCanonicalSuiteReports(
+  suiteReports,
+  Object.fromEntries(REQUIRED_SUITES.map((suite) => [suite, CANONICAL_RELEASE_COMMANDS[suite]])),
+  currentCommit,
+);
 // Optional extra suites (for example a standalone `pnpm test:e2e` run) merge
 // in; "partial" reports from narrow local runs never affect the gate.
 for (const entry of readdirSync(reportsDirectory)) {
@@ -141,10 +166,6 @@ const allSuitesGreen = [...suiteReports.values()].every(
 );
 
 const requiredCiPlatforms = ["ubuntu-latest", "macos-latest", "windows-latest"];
-const currentCommit = execFileSync("git", ["rev-parse", "HEAD"], {
-  cwd: repositoryRoot,
-  encoding: "utf8",
-}).trim();
 const ciArtifacts = existsSync(ciPlatformEvidenceDirectory)
   ? readdirSync(ciPlatformEvidenceDirectory)
       .filter((entry) => entry.endsWith(".json"))
@@ -803,11 +824,27 @@ const m4ReportPath = join(
   "m4-local-multi-agent-scheduling-completion.md",
 );
 const m4MachineResultPath = join(reportsDirectory, "m4-results.json");
+const m4TrackedResultPath = join(
+  repositoryRoot,
+  "docs",
+  "evidence",
+  "m4-local-multi-agent-scheduling-results.json",
+);
 const m4DogfoodPath = join(reportsDirectory, "m4-dogfood.json");
 const m4Dogfood = existsSync(m4DogfoodPath)
   ? JSON.parse(readFileSync(m4DogfoodPath, "utf8"))
   : undefined;
-const m4ImplementationCommit = m4Dogfood?.implementation_commit ?? currentCommit;
+const m4ImplementationCommit = currentCommit;
+const m4RequiredReports = new Map();
+for (const suite of Object.keys(CANONICAL_RELEASE_COMMANDS)) {
+  const path = join(reportsDirectory, `${suite}.json`);
+  if (existsSync(path)) m4RequiredReports.set(suite, JSON.parse(readFileSync(path, "utf8")));
+}
+const m4SuiteInvocationIds = assertCanonicalSuiteReports(
+  m4RequiredReports,
+  CANONICAL_RELEASE_COMMANDS,
+  m4ImplementationCommit,
+);
 
 function m4Statements() {
   const section = readFileSync(m4DesignPath, "utf8")
@@ -837,6 +874,7 @@ function m4Statements() {
 const m4Matrix = [
   {
     command: "pnpm test",
+    requiredSuites: ["main"],
     evidence: [
       "packages/runtime/test/planning/waves.test.ts",
       "packages/runtime/test/scheduling/task-dag-port.test.ts",
@@ -845,10 +883,12 @@ const m4Matrix = [
   },
   {
     command: "pnpm test",
+    requiredSuites: ["main"],
     evidence: ["packages/runtime/test/planning/waves.test.ts"],
   },
   {
     command: "pnpm test && pnpm test:performance",
+    requiredSuites: ["main", "performance"],
     evidence: [
       "packages/runtime/test/planning/waves.test.ts",
       "tests/performance/m4-wave-compiler.test.ts",
@@ -856,6 +896,7 @@ const m4Matrix = [
   },
   {
     command: "pnpm test",
+    requiredSuites: ["main"],
     evidence: [
       "packages/runtime/test/orchestration/capability-plan-routing.test.ts",
       "tests/e2e/m4-sequential-compatibility.test.ts",
@@ -863,6 +904,7 @@ const m4Matrix = [
   },
   {
     command: "pnpm test && pnpm dogfood:m4",
+    requiredSuites: ["main"],
     evidence: [
       "packages/conformance/test/scheduling.conformance.test.ts",
       "packages/runtime/test/scheduling/agent-pool.test.ts",
@@ -872,11 +914,13 @@ const m4Matrix = [
   },
   {
     command: "pnpm dogfood:m4",
+    requiredSuites: [],
     evidence: [".reports/acceptance/m4-dogfood.json"],
     blockedReason: "真实 dsh Adapter 仅支持受监督单槽位，未形成两个真实 Agent Run 的时间重叠证据",
   },
   {
     command: "pnpm test && pnpm test:e2e",
+    requiredSuites: ["main", "e2e"],
     evidence: [
       "packages/runtime/test/scheduling/workspace-manager.test.ts",
       "packages/runtime/test/scheduling/agent-pool.test.ts",
@@ -885,6 +929,7 @@ const m4Matrix = [
   },
   {
     command: "pnpm test && pnpm test:fault",
+    requiredSuites: ["main", "fault"],
     evidence: [
       "packages/runtime/test/scheduling/recovery.test.ts",
       "tests/fault/m4-scheduler-crash-matrix.test.ts",
@@ -892,6 +937,7 @@ const m4Matrix = [
   },
   {
     command: "pnpm test && pnpm test:e2e",
+    requiredSuites: ["main", "e2e"],
     evidence: [
       "packages/runtime/test/scheduling/budget.test.ts",
       "tests/e2e/m4-local-multi-agent.test.ts",
@@ -899,6 +945,7 @@ const m4Matrix = [
   },
   {
     command: "pnpm test && pnpm test:fault",
+    requiredSuites: ["main", "fault"],
     evidence: [
       "packages/runtime/test/scheduling/policy-decision-port.test.ts",
       "packages/runtime/test/scheduling/scheduler.test.ts",
@@ -906,6 +953,7 @@ const m4Matrix = [
   },
   {
     command: "pnpm test && pnpm test:e2e",
+    requiredSuites: ["main", "e2e"],
     evidence: [
       "packages/runtime/test/scheduling/integration.test.ts",
       "tests/e2e/m4-local-multi-agent.test.ts",
@@ -913,6 +961,7 @@ const m4Matrix = [
   },
   {
     command: "pnpm test && pnpm test:fault",
+    requiredSuites: ["main", "fault"],
     evidence: [
       "packages/runtime/test/scheduling/scheduler.test.ts",
       "tests/fault/m4-scheduler-crash-matrix.test.ts",
@@ -920,6 +969,7 @@ const m4Matrix = [
   },
   {
     command: "pnpm test && pnpm test:security",
+    requiredSuites: ["main", "security"],
     evidence: [
       "packages/runtime/test/scheduling/scheduler.test.ts",
       "tests/security/m4-scheduler-boundaries.test.ts",
@@ -927,6 +977,7 @@ const m4Matrix = [
   },
   {
     command: "pnpm test:fault",
+    requiredSuites: ["fault"],
     evidence: [
       "packages/runtime/test/scheduling/recovery.test.ts",
       "tests/fault/m4-scheduler-crash-matrix.test.ts",
@@ -934,6 +985,7 @@ const m4Matrix = [
   },
   {
     command: "pnpm test && pnpm test:e2e",
+    requiredSuites: ["main", "e2e"],
     evidence: [
       "packages/runtime/test/scheduling/integration.test.ts",
       "tests/e2e/m4-local-multi-agent.test.ts",
@@ -941,6 +993,7 @@ const m4Matrix = [
   },
   {
     command: "pnpm test && pnpm test:e2e:dashboard",
+    requiredSuites: ["main", "playwright-dashboard"],
     evidence: [
       "packages/dashboard/test/scheduler-api.test.ts",
       "tests/e2e/dashboard-m4-scheduler.test.ts",
@@ -951,6 +1004,7 @@ const m4Matrix = [
   },
   {
     command: "pnpm test && pnpm test:fault",
+    requiredSuites: ["main", "fault"],
     evidence: [
       "packages/cli/test/m4-scheduling.test.ts",
       "tests/fault/m4-scheduler-crash-matrix.test.ts",
@@ -960,10 +1014,12 @@ const m4Matrix = [
   },
   {
     command: "pnpm test:performance",
+    requiredSuites: ["performance"],
     evidence: ["tests/performance/m4-sqlite-rebuild.test.ts"],
   },
   {
     command: "pnpm test && pnpm test:e2e",
+    requiredSuites: ["main", "e2e"],
     evidence: [
       "packages/core/test/protocol/protocol-1.3.test.ts",
       "tests/e2e/m4-sequential-compatibility.test.ts",
@@ -971,6 +1027,7 @@ const m4Matrix = [
   },
   {
     command: "pnpm test:release && pnpm dogfood:m4",
+    requiredSuites: ["main", "security", "fault", "performance", "e2e", "playwright-dashboard"],
     evidence: [
       "scripts/dogfood-m4-local-scheduler.mjs",
       "scripts/dogfood-m4-redaction.mjs",
@@ -981,30 +1038,51 @@ const m4Matrix = [
   },
 ];
 
-function m4EvidenceDigest(paths, statuses) {
+function m4EvidenceDigest(paths) {
+  const tracked = paths.filter((path) => !path.startsWith(".reports/"));
   const hash = createHash("sha256");
-  for (const path of paths) {
+  hash.update(digestTrackedEvidence(repositoryRoot, m4ImplementationCommit, tracked));
+  for (const path of paths.filter((entry) => entry.startsWith(".reports/")).sort()) {
     const absolute = join(repositoryRoot, path);
     hash.update(path);
     hash.update("\0");
     if (existsSync(absolute)) hash.update(readFileSync(absolute));
     hash.update("\0");
-    hash.update(statuses.get(path) ?? "artifact");
-    hash.update("\0");
   }
   return hash.digest("hex");
+}
+
+function m4FileState(path, requiredSuites) {
+  const states = requiredSuites.flatMap((suite) =>
+    (m4RequiredReports.get(suite)?.files ?? [])
+      .filter((file) => file.path === path)
+      .map((file) => file.state),
+  );
+  if (states.includes("fail")) return "fail";
+  if (states.includes("pass")) return "pass";
+  return "missing";
 }
 
 const m4DesignStatements = m4Statements();
 const m4Results = m4Matrix.map((entry, index) => {
   const statement = m4DesignStatements[index];
   const missing = entry.evidence.filter((path) => {
-    if (path.startsWith("scripts/")) return !existsSync(join(repositoryRoot, path));
-    if (path.startsWith(".reports/")) return !existsSync(join(repositoryRoot, path));
-    if (path.startsWith("tests/e2e/dashboard-")) return !playwrightPassed;
-    return executedFiles.get(path) !== "pass";
+    if (path.startsWith(".reports/")) {
+      return (
+        !existsSync(join(repositoryRoot, path)) ||
+        (path === ".reports/acceptance/m4-dogfood.json" &&
+          m4Dogfood?.implementation_commit !== m4ImplementationCommit)
+      );
+    }
+    if (path.startsWith("scripts/")) return false;
+    return m4FileState(path, entry.requiredSuites) === "missing";
   });
-  const failed = entry.evidence.some((path) => executedFiles.get(path) === "fail");
+  const failed = entry.evidence.some(
+    (path) =>
+      !path.startsWith(".reports/") &&
+      !path.startsWith("scripts/") &&
+      m4FileState(path, entry.requiredSuites) === "fail",
+  );
   const ineligibleProofValid =
     entry.dogfoodIneligibleProof !== true ||
     (m4Dogfood?.implementation_commit === m4ImplementationCommit &&
@@ -1023,12 +1101,19 @@ const m4Results = m4Matrix.map((entry, index) => {
     acceptance_id: statement.id,
     statement: statement.statement,
     status,
-    command: entry.command,
+    required_suites: entry.requiredSuites,
+    suite_invocation_ids: Object.fromEntries(
+      entry.requiredSuites.map((suite) => [suite, m4SuiteInvocationIds[suite]]),
+    ),
+    commands: [
+      ...entry.requiredSuites.map((suite) => CANONICAL_RELEASE_COMMANDS[suite]),
+      ...(entry.evidence.includes(".reports/acceptance/m4-dogfood.json")
+        ? ["pnpm dogfood:m4"]
+        : []),
+    ],
     evidence: entry.evidence,
-    evidence_digest: m4EvidenceDigest(entry.evidence, executedFiles),
+    evidence_digest: m4EvidenceDigest(entry.evidence),
     design_section: "§24",
-    implementation_commit: m4ImplementationCommit,
-    report_source_commit: currentCommit,
     detail:
       entry.blockedReason ??
       (failed
@@ -1041,52 +1126,18 @@ const m4Results = m4Matrix.map((entry, index) => {
   };
 });
 const m4Passed = m4Results.filter((entry) => entry.status === "passed").length;
-const m4Blocked = m4Results.filter((entry) => entry.status === "blocked").length;
-writeFileSync(
-  m4MachineResultPath,
-  `${JSON.stringify(
-    {
-      milestone: "M4",
-      implementation_commit: m4ImplementationCommit,
-      report_source_commit: currentCommit,
-      generated_at: new Date().toISOString(),
-      results: m4Results,
-    },
-    null,
-    2,
-  )}\n`,
-  "utf8",
-);
-
-const m4Lines = [
-  "# M4 本地 Multi-Agent 调度完成证据",
-  "",
-  "本文件由 `scripts/generate-acceptance-report.mjs` 从结构化测试结果、性能基线和真实 dsh dogfood Evidence 生成；结果区禁止人工改写。M4 必须 20/20 才能声明完成。",
-  "",
-  `- 被评估实现 commit：\`${m4ImplementationCommit}\``,
-  `- 报告输入 commit：\`${currentCommit}\`（包含本文件的 Git commit 由提交历史记录，避免 SHA 自引用）`,
-  `- 汇总：${String(m4Passed)}/20 通过，${String(m4Blocked)} 项阻塞`,
-  "",
-  "| AC | 必须证明的结果 | 命令 | Evidence digest | 结果 | 说明 |",
-  "|---|---|---|---|---|---|",
-  ...m4Results.map(
-    (entry) =>
-      `| ${entry.acceptance_id} | ${entry.statement} | \`${entry.command}\` | \`${entry.evidence_digest.slice(0, 16)}\` | ${entry.status} | ${entry.detail} |`,
-  ),
-  "",
-  "## 真实 dsh Evidence",
-  "",
-  m4Dogfood === undefined
-    ? "- 未找到 `.reports/acceptance/m4-dogfood.json`。"
-    : `- provider=${String(m4Dogfood.provider)} ${String(m4Dogfood.provider_version)}；exit=${String(m4Dogfood.exit_code)}；监督探针=${String(m4Dogfood.supervised_probe?.outcome)}/${String(m4Dogfood.supervised_probe?.termination_reason)}；requested concurrency=${String(m4Dogfood.requested_max_concurrency)}，effective concurrency=${String(m4Dogfood.effective_max_concurrency)}；blocker=${String(m4Dogfood.blocker)}。`,
-  "- 发布报告不包含原始 transcript、凭据或机器绝对路径；只保存脱敏后的结构化结果与 digest。",
-  "",
-  m4Passed === 20
-    ? "M4 AC-01～20 全部具有同一实现提交的通过证据，完成声明成立。"
-    : "M4 完成声明不成立；blocked/not_run 项必须补齐机器 Evidence 后重新生成。",
-  "",
-];
-writeFileSync(m4ReportPath, m4Lines.join("\n"), "utf8");
+const m4Sidecar = {
+  schema_version: M4_RESULTS_SCHEMA_VERSION,
+  milestone: "M4",
+  implementation_commit: m4ImplementationCommit,
+  generated_at: new Date().toISOString(),
+  suite_invocation_ids: m4SuiteInvocationIds,
+  results: m4Results,
+};
+const m4SidecarJson = `${JSON.stringify(m4Sidecar, null, 2)}\n`;
+writeFileSync(m4MachineResultPath, m4SidecarJson, "utf8");
+writeFileSync(m4TrackedResultPath, m4SidecarJson, "utf8");
+writeFileSync(m4ReportPath, renderM4Markdown(m4Sidecar, m4Dogfood), "utf8");
 
 if (
   counts.passed !== CRITERION_COUNT ||

@@ -3,13 +3,7 @@ import { randomUUID } from "node:crypto";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join, relative, sep } from "node:path";
 
-import type {
-  FullConfig,
-  FullResult,
-  Reporter,
-  TestCase,
-  TestResult,
-} from "@playwright/test/reporter";
+import type { FullResult, Reporter, TestCase, TestResult } from "@playwright/test/reporter";
 
 import {
   reportPathForInvocation,
@@ -26,10 +20,6 @@ import {
 export default class PlaywrightAcceptanceReporter implements Reporter {
   private root = process.cwd();
   private readonly results = new Map<string, { file: string; state: SuiteFileResult["state"] }>();
-
-  onBegin(config: FullConfig): void {
-    this.root = config.rootDir;
-  }
 
   onTestEnd(test: TestCase, result: TestResult): void {
     const state: SuiteFileResult["state"] =
