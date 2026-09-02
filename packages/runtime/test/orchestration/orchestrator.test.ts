@@ -929,100 +929,104 @@ describe("phase orchestrator", { timeout: 30000 * TEST_TIMEOUT_SCALE }, () => {
     60_000 * TEST_TIMEOUT_SCALE,
   );
 
-  it("regenerates the tasks.md projection at snapshot and refuses hand edits", async () => {
-    const newId = sequentialIds();
-    const parent = makeTempDir("harness-orch-tasks-md-");
-    const bootstrapped = await createNewProject(
-      { parentDirectory: parent, name: "orch-tasks-md", intent: INTENT },
-      { vcs: createGitVcsAdapter(), now: () => FIXED_NOW, newId: (kind) => newId(kind) },
-    );
-    if (!bootstrapped.ok) throw new Error(bootstrapped.error.message);
-    const projectRoot = bootstrapped.value.projectRoot;
-    const deps = makeDeps(projectRoot, newId, {
-      execute: recordingExecutor().executor,
-      tasksProjection: renderTasksProjection,
-    });
-
-    const driveToCompletion = async (
-      intent: string,
-      iterationId?: string,
-    ): Promise<OrchestrationOutcome> => {
-      let outcome = await runIteration(deps, {
-        intent,
-        ...(iterationId === undefined ? {} : { iterationId }),
+  it(
+    "regenerates the tasks.md projection at snapshot and refuses hand edits",
+    async () => {
+      const newId = sequentialIds();
+      const parent = makeTempDir("harness-orch-tasks-md-");
+      const bootstrapped = await createNewProject(
+        { parentDirectory: parent, name: "orch-tasks-md", intent: INTENT },
+        { vcs: createGitVcsAdapter(), now: () => FIXED_NOW, newId: (kind) => newId(kind) },
+      );
+      if (!bootstrapped.ok) throw new Error(bootstrapped.error.message);
+      const projectRoot = bootstrapped.value.projectRoot;
+      const deps = makeDeps(projectRoot, newId, {
+        execute: recordingExecutor().executor,
+        tasksProjection: renderTasksProjection,
       });
-      while (outcome.status === "approval_required") {
-        outcome = await approveAndResume(deps, outcome);
-      }
-      return outcome;
-    };
 
-    // Independent re-render over the current ledger state: the file on disk
-    // must equal these bytes exactly.
-    const expectedRender = (): string => {
-      const completed = new Set<string>();
-      const snapshotsDirectory = join(projectRoot, ".harness", "artifacts", "snapshots");
-      for (const name of readdirSync(snapshotsDirectory)
-        .filter((entry) => entry.endsWith(".json"))
-        .sort()) {
-        const record = JSON.parse(
-          readFileSync(join(snapshotsDirectory, name), "utf8"),
-        ) as SnapshotRecord;
-        for (const verdict of record.task_verdicts ?? []) {
-          if (verdict.verdict === "passed") completed.add(verdict.task_id);
+      const driveToCompletion = async (
+        intent: string,
+        iterationId?: string,
+      ): Promise<OrchestrationOutcome> => {
+        let outcome = await runIteration(deps, {
+          intent,
+          ...(iterationId === undefined ? {} : { iterationId }),
+        });
+        while (outcome.status === "approval_required") {
+          outcome = await approveAndResume(deps, outcome);
         }
-      }
-      const { database } = materializeLedger({ projectRoot, databasePath: ":memory:" });
-      try {
-        const nodes: NodeRecord[] = [];
-        let cursor: string | undefined;
-        do {
-          const page = pageNodes(database, {
-            limit: 500,
-            ...(cursor === undefined ? {} : { cursor }),
-          });
-          nodes.push(...page.items);
-          cursor = page.nextCursor;
-        } while (cursor !== undefined);
-        const edges: EdgeRecord[] = [];
-        let edgeCursor: string | undefined;
-        do {
-          const page = pageEdges(database, {
-            limit: 500,
-            ...(edgeCursor === undefined ? {} : { cursor: edgeCursor }),
-          });
-          edges.push(...page.items);
-          edgeCursor = page.nextCursor;
-        } while (edgeCursor !== undefined);
-        return renderTasksProjection({ nodes, edges }, { completedTasks: [...completed].sort() })
-          .markdown;
-      } finally {
-        database.close();
-      }
-    };
+        return outcome;
+      };
 
-    const first = await driveToCompletion(INTENT, bootstrapped.value.iterationId);
-    expect(first.status).toBe("completed");
+      // Independent re-render over the current ledger state: the file on disk
+      // must equal these bytes exactly.
+      const expectedRender = (): string => {
+        const completed = new Set<string>();
+        const snapshotsDirectory = join(projectRoot, ".harness", "artifacts", "snapshots");
+        for (const name of readdirSync(snapshotsDirectory)
+          .filter((entry) => entry.endsWith(".json"))
+          .sort()) {
+          const record = JSON.parse(
+            readFileSync(join(snapshotsDirectory, name), "utf8"),
+          ) as SnapshotRecord;
+          for (const verdict of record.task_verdicts ?? []) {
+            if (verdict.verdict === "passed") completed.add(verdict.task_id);
+          }
+        }
+        const { database } = materializeLedger({ projectRoot, databasePath: ":memory:" });
+        try {
+          const nodes: NodeRecord[] = [];
+          let cursor: string | undefined;
+          do {
+            const page = pageNodes(database, {
+              limit: 500,
+              ...(cursor === undefined ? {} : { cursor }),
+            });
+            nodes.push(...page.items);
+            cursor = page.nextCursor;
+          } while (cursor !== undefined);
+          const edges: EdgeRecord[] = [];
+          let edgeCursor: string | undefined;
+          do {
+            const page = pageEdges(database, {
+              limit: 500,
+              ...(edgeCursor === undefined ? {} : { cursor: edgeCursor }),
+            });
+            edges.push(...page.items);
+            edgeCursor = page.nextCursor;
+          } while (edgeCursor !== undefined);
+          return renderTasksProjection({ nodes, edges }, { completedTasks: [...completed].sort() })
+            .markdown;
+        } finally {
+          database.close();
+        }
+      };
 
-    const tasksPath = join(projectRoot, ".harness", "projections", "views", "tasks.md");
-    expect(existsSync(tasksPath)).toBe(true);
-    const generated = readFileSync(tasksPath, "utf8");
-    expect(generated).toContain("do not edit");
-    expect(generated).toContain("- [x] T001 ");
-    expect(generated).toBe(expectedRender());
+      const first = await driveToCompletion(INTENT, bootstrapped.value.iterationId);
+      expect(first.status).toBe("completed");
 
-    // A hand edit is drift: the next completing snapshot refuses to overwrite
-    // the user's bytes, and drift detection proves the staleness.
-    writeFileSync(tasksPath, `${generated}hand edit\n`);
-    const second = await driveToCompletion("add the second capability");
-    expect(second.status).toBe("completed");
-    expect(readFileSync(tasksPath, "utf8")).toBe(`${generated}hand edit\n`);
-    const drift = detectProjectionDrift(harnessRootFor(projectRoot), {
-      path: "views/tasks.md",
-      expectedDigest: sha256Hex(expectedRender()),
-    });
-    expect(drift.status).toBe("drifted");
-  });
+      const tasksPath = join(projectRoot, ".harness", "projections", "views", "tasks.md");
+      expect(existsSync(tasksPath)).toBe(true);
+      const generated = readFileSync(tasksPath, "utf8");
+      expect(generated).toContain("do not edit");
+      expect(generated).toContain("- [x] T001 ");
+      expect(generated).toBe(expectedRender());
+
+      // A hand edit is drift: the next completing snapshot refuses to overwrite
+      // the user's bytes, and drift detection proves the staleness.
+      writeFileSync(tasksPath, `${generated}hand edit\n`);
+      const second = await driveToCompletion("add the second capability");
+      expect(second.status).toBe("completed");
+      expect(readFileSync(tasksPath, "utf8")).toBe(`${generated}hand edit\n`);
+      const drift = detectProjectionDrift(harnessRootFor(projectRoot), {
+        path: "views/tasks.md",
+        expectedDigest: sha256Hex(expectedRender()),
+      });
+      expect(drift.status).toBe("drifted");
+    },
+    60_000 * TEST_TIMEOUT_SCALE,
+  );
 
   it("commits a structured quality record per task at verify", async () => {
     const newId = sequentialIds();
