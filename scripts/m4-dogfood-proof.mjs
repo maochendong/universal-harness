@@ -57,6 +57,8 @@ function usageCount(value, label) {
 export function parseDshSessionEvidence(jsonl, options = {}) {
   const requestIdentities = new Set();
   const assistantIdentities = new Set();
+  const chunkUsages = new Map();
+  const messageUsages = new Map();
   const usage = {
     metering: "dsh_session_observed",
     model_call_count: 0,
@@ -75,18 +77,39 @@ export function parseDshSessionEvidence(jsonl, options = {}) {
     } catch {
       throw new Error(`dsh session contains invalid JSON at line ${String(index + 1)}`);
     }
-    if (record?.type === "request/context") {
+    if (record?.type === "session" && options.expectedCwd !== undefined) {
+      if (resolve(record.cwd ?? "") !== resolve(options.expectedCwd)) {
+        throw new Error("dsh session does not belong to the expected cwd");
+      }
+    } else if (record?.type === "request/context") {
       requestIdentities.add(requiredIdentity(record.data, "request/context"));
     }
-    if (record?.type !== "assistant/message") continue;
-
-    assistantIdentities.add(
-      requiredIdentity(record.data?.message?.source, "assistant/message source"),
-    );
-    const reported = record.data?.usage;
-    if (reported === undefined || reported === null || typeof reported !== "object") {
-      throw new Error("dsh session assistant/message is missing usage");
+    const isChunkUsage = record?.type === "assistant/chunk" && record.data?.chunk?.type === "usage";
+    const isMessageUsage = record?.type === "assistant/message";
+    if (!isChunkUsage && !isMessageUsage) continue;
+    if (isMessageUsage) {
+      assistantIdentities.add(
+        requiredIdentity(record.data?.message?.source, "assistant/message source"),
+      );
     }
+    const reported = isChunkUsage ? record.data.chunk.usage : record.data?.usage;
+    if (reported === undefined || reported === null || typeof reported !== "object") {
+      throw new Error("dsh session usage record is missing usage");
+    }
+    if (!Number.isSafeInteger(record.seq) || record.seq < 0) {
+      throw new Error("dsh session usage record is missing a valid sequence");
+    }
+    const target = isChunkUsage ? chunkUsages : messageUsages;
+    const canonical = JSON.stringify(reported);
+    if (target.has(record.seq) && target.get(record.seq) !== canonical) {
+      throw new Error("dsh session repeats a usage sequence with different values");
+    }
+    target.set(record.seq, canonical);
+  }
+
+  const selectedUsages = chunkUsages.size > 0 ? chunkUsages : messageUsages;
+  for (const canonical of selectedUsages.values()) {
+    const reported = JSON.parse(canonical);
     const inputTokens = usageCount(reported.inputTokens, "inputTokens");
     const cacheReadTokens = usageCount(reported.cacheReadTokens, "cacheReadTokens");
     const outputTokens = usageCount(reported.outputTokens, "outputTokens");
@@ -99,12 +122,12 @@ export function parseDshSessionEvidence(jsonl, options = {}) {
     usage.total_tokens += inputTokens + cacheReadTokens + outputTokens;
   }
 
-  if (requestIdentities.size !== 1 || assistantIdentities.size !== 1) {
+  if (requestIdentities.size !== 1 || assistantIdentities.size > 1) {
     throw new Error("dsh session identity is missing or inconsistent");
   }
   const requestIdentity = [...requestIdentities][0];
   const assistantIdentity = [...assistantIdentities][0];
-  if (requestIdentity !== assistantIdentity) {
+  if (assistantIdentity !== undefined && requestIdentity !== assistantIdentity) {
     throw new Error("dsh session identity is inconsistent between request and assistant records");
   }
   if (usage.model_call_count === 0) {
@@ -149,8 +172,48 @@ function dshSessionFiles(sessionRoot) {
 export function captureDshSessionBoundary(input) {
   return {
     session_root: resolve(input.sessionRoot),
+    expected_cwd: resolve(input.expectedCwd),
     files: dshSessionFiles(input.sessionRoot),
   };
+}
+
+function sessionHeader(jsonl) {
+  for (const line of String(jsonl).split(/\r?\n/u)) {
+    if (line.trim() === "") continue;
+    const record = JSON.parse(line);
+    if (record?.type === "session") return record;
+  }
+  throw new Error("dsh session header is missing");
+}
+
+function encodeSegment(raw) {
+  if (raw === ".") return "~002E";
+  if (raw === "..") return "~002E~002E";
+  let encoded = "";
+  for (const character of raw) {
+    encoded += /^[A-Za-z0-9._-]$/u.test(character)
+      ? character
+      : `~${character.charCodeAt(0).toString(16).toUpperCase().padStart(4, "0")}`;
+  }
+  return encoded;
+}
+
+function dshProjectKey(cwd) {
+  let readable = "";
+  let separatorRun = false;
+  for (const character of cwd) {
+    if (["/", "\\", ":"].includes(character)) {
+      if (!separatorRun) readable += "-";
+      separatorRun = true;
+    } else if (/^[A-Za-z0-9._-]$/u.test(character)) {
+      readable += character;
+      separatorRun = false;
+    } else {
+      readable += `~${character.charCodeAt(0).toString(16).toUpperCase().padStart(4, "0")}`;
+      separatorRun = false;
+    }
+  }
+  return `--${(readable.replace(/^-+/u, "") || "root").slice(0, 251)}--`;
 }
 
 /** Read the one session created or changed by the bounded dsh invocation. */
@@ -159,18 +222,20 @@ export function readDshInvocationEvidence(input) {
   if (resolve(input.beforeBoundary?.session_root ?? "") !== sessionRoot) {
     throw new Error("dsh session boundary belongs to a different session root");
   }
+  const expectedCwd = resolve(input.expectedCwd);
+  if (input.beforeBoundary.expected_cwd !== expectedCwd) {
+    throw new Error("dsh session boundary belongs to a different cwd");
+  }
   const before = new Map(
     input.beforeBoundary.files.map((file) => [
       file.path,
       `${String(file.size)}:${String(file.mtime_ms)}`,
     ]),
   );
-  const candidates = dshSessionFiles(sessionRoot).filter(
-    (file) => before.get(file.path) !== `${String(file.size)}:${String(file.mtime_ms)}`,
-  );
+  const candidates = dshSessionFiles(sessionRoot).filter((file) => !before.has(file.path));
   if (candidates.length !== 1) {
     throw new Error(
-      `dsh invocation produced ${String(candidates.length)} observable session files; expected exactly one`,
+      `dsh invocation produced ${String(candidates.length)} observable new session files; expected exactly one`,
     );
   }
   const bytes = readFileSync(resolve(sessionRoot, candidates[0].path));
@@ -184,8 +249,21 @@ export function readDshInvocationEvidence(input) {
         maxBuffer: 100 * 1024 * 1024,
       },
     );
+  const header = sessionHeader(jsonl);
+  if (resolve(header.cwd ?? "") !== expectedCwd) {
+    throw new Error("dsh session does not belong to the expected cwd");
+  }
+  const expectedPath = join(
+    dshProjectKey(header.cwd),
+    encodeSegment(header.id),
+    "session.jsonl.zstd",
+  );
+  if (candidates[0].path !== expectedPath) {
+    throw new Error("dsh session header does not derive the observed session path");
+  }
   const parsed = parseDshSessionEvidence(jsonl, {
     requestedProviderModel: input.requestedProviderModel,
+    expectedCwd,
   });
   return {
     ...parsed,

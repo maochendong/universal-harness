@@ -298,11 +298,15 @@ if (trackedStatus !== "") {
         const transcriptRelativePath =
           ".harness/raw-traces/agent-dsh/transcript-task_real_dsh_probe.json";
         const proofBoundary = captureWorkspaceProofBoundary({ repositoryRoot: scratchRoot });
-        const dshSessionBoundary = captureDshSessionBoundary({ sessionRoot: dshSessionRoot });
+        const dshSessionBoundary = captureDshSessionBoundary({
+          sessionRoot: dshSessionRoot,
+          expectedCwd: scratchRoot,
+        });
         const result = await adapter.run(envelope, { mode: "supervised" });
         const dshSessionEvidence = readDshInvocationEvidence({
           sessionRoot: dshSessionRoot,
           beforeBoundary: dshSessionBoundary,
+          expectedCwd: scratchRoot,
           requestedProviderModel: process.env.DEEPSEEK_MODEL,
         });
         const transcriptEvidence = result.evidence.find((entry) => entry.kind === "transcript");

@@ -516,6 +516,9 @@ describe("M4 Markdown projection", () => {
     ["embedded POSIX path", "model error x,/Users/private/model"],
     ["labelled POSIX path", "model error path:/Users/private/model"],
     ["prefixed POSIX path", "model error x/Users/private/model"],
+    ["prefixed arbitrary POSIX path", "model error x/workspace/project/file"],
+    ["backtick POSIX path", "model error `/workspace/project/file`"],
+    ["semicolon POSIX path", "model error;/mnt/data/file"],
     ["bracketed Windows path", String.raw`model error [C:\private\model]`],
     ["UNC path", String.raw`model error \\server\share\model`],
   ])("rejects %s in release-safe text", (_name, providerModel) => {
@@ -541,6 +544,26 @@ describe("M4 Markdown projection", () => {
           requested_provider_model:
             "https://models.example.invalid/path/C:/model?redirect=/Users/private#C:/temp",
         },
+        COMMIT_A,
+      ),
+    ).not.toThrow();
+  });
+
+  it("allows a requested/observed model mismatch only as its exact blocked result", () => {
+    const mismatch = {
+      ...blockedDogfood(COMMIT_A),
+      requested_provider_model: "deepseek-v4-pro",
+      requested_provider_model_matches_observed: false,
+    };
+    expect(() =>
+      buildCanonicalDogfoodProof({ ...mismatch, status: "passed", blocker: null }, COMMIT_A),
+    ).toThrow(/model contract mismatch/u);
+    expect(() => buildCanonicalDogfoodProof(mismatch, COMMIT_A)).toThrow(
+      /model contract mismatch/u,
+    );
+    expect(() =>
+      buildCanonicalDogfoodProof(
+        { ...mismatch, blocker: "provider_model_contract_mismatch" },
         COMMIT_A,
       ),
     ).not.toThrow();

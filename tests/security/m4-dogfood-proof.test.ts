@@ -42,6 +42,7 @@ describe("M4 real-provider dogfood proof", () => {
       },
       {
         type: "assistant/message",
+        seq: 1,
         data: {
           message: {
             source: { provider: "deepseek-official", model: "deepseek-v4-flash" },
@@ -56,6 +57,7 @@ describe("M4 real-provider dogfood proof", () => {
       },
       {
         type: "assistant/message",
+        seq: 2,
         data: {
           message: {
             source: { provider: "deepseek-official", model: "deepseek-v4-flash" },
@@ -102,6 +104,7 @@ describe("M4 real-provider dogfood proof", () => {
       }),
       JSON.stringify({
         type: "assistant/message",
+        seq: 1,
         data: {
           message: { source: { provider: "other-provider", model: "other-model" } },
           usage: { inputTokens: 1, outputTokens: 1 },
@@ -112,23 +115,57 @@ describe("M4 real-provider dogfood proof", () => {
     expect(() => parseDshSessionEvidence(session)).toThrow(/identity is inconsistent/u);
   });
 
+  it("uses deduplicated assistant/chunk usage and only falls back to assistant/message", () => {
+    const usage = { inputTokens: 7, cacheReadTokens: 11, outputTokens: 3, reasoningTokens: 2 };
+    const session = [
+      { type: "request/context", data: { provider: "p", model: "m" } },
+      { type: "assistant/chunk", seq: 10, data: { chunk: { type: "usage", usage } } },
+      { type: "assistant/chunk", seq: 10, data: { chunk: { type: "usage", usage } } },
+      {
+        type: "assistant/chunk",
+        seq: 11,
+        data: { chunk: { type: "usage", usage: { inputTokens: 1, outputTokens: 1 } } },
+      },
+      {
+        type: "assistant/message",
+        seq: 12,
+        data: { message: { source: { provider: "p", model: "m" } }, usage },
+      },
+    ]
+      .map((entry) => JSON.stringify(entry))
+      .join("\n");
+
+    expect(parseDshSessionEvidence(session).usage).toEqual({
+      metering: "dsh_session_observed",
+      model_call_count: 2,
+      input_tokens: 8,
+      cache_read_input_tokens: 11,
+      output_tokens: 4,
+      reasoning_tokens: 2,
+      total_tokens: 23,
+    });
+  });
+
   it("observes only the dsh session created after the invocation boundary", () => {
     const root = mkdtempSync(join(tmpdir(), "harness-dsh-sessions-"));
     roots.push(root);
     const previousDirectory = join(root, "previous", "session-old");
     mkdirSync(previousDirectory, { recursive: true });
     writeFileSync(join(previousDirectory, "session.jsonl.zstd"), "old compressed bytes\n");
-    const boundary = captureDshSessionBoundary({ sessionRoot: root });
+    const expectedCwd = "/tmp/dogfood-scratch";
+    const boundary = captureDshSessionBoundary({ sessionRoot: root, expectedCwd });
 
-    const currentDirectory = join(root, "current", "session-current");
+    const currentDirectory = join(root, "--tmp-dogfood-scratch--", "session-current");
     mkdirSync(currentDirectory, { recursive: true });
     const session = [
+      JSON.stringify({ type: "session", id: "session-current", cwd: expectedCwd }),
       JSON.stringify({
         type: "request/context",
         data: { provider: "deepseek-official", model: "deepseek-v4-flash" },
       }),
       JSON.stringify({
         type: "assistant/message",
+        seq: 1,
         data: {
           message: {
             source: { provider: "deepseek-official", model: "deepseek-v4-flash" },
@@ -148,6 +185,7 @@ describe("M4 real-provider dogfood proof", () => {
       readDshInvocationEvidence({
         sessionRoot: root,
         beforeBoundary: boundary,
+        expectedCwd,
         requestedProviderModel: "deepseek-v4-pro",
         decompressSession: () => `${session}\n`,
       }),
@@ -168,6 +206,49 @@ describe("M4 real-provider dogfood proof", () => {
         total_tokens: 32,
       },
     });
+  });
+
+  it("rejects modified pre-boundary sessions and sessions owned by another cwd", () => {
+    const root = mkdtempSync(join(tmpdir(), "harness-dsh-session-owner-"));
+    roots.push(root);
+    const directory = join(root, "--tmp-dogfood-scratch--", "session-current");
+    mkdirSync(directory, { recursive: true });
+    const artifact = join(directory, "session.jsonl.zstd");
+    writeFileSync(artifact, "before\n");
+    const boundary = captureDshSessionBoundary({
+      sessionRoot: root,
+      expectedCwd: "/tmp/dogfood-scratch",
+    });
+    writeFileSync(artifact, "after with different size\n");
+    expect(() =>
+      readDshInvocationEvidence({
+        sessionRoot: root,
+        beforeBoundary: boundary,
+        expectedCwd: "/tmp/dogfood-scratch",
+        decompressSession: () => "",
+      }),
+    ).toThrow(/0 observable new session files/u);
+
+    const other = join(root, "--tmp-other--", "session-other");
+    mkdirSync(other, { recursive: true });
+    writeFileSync(join(other, "session.jsonl.zstd"), "new\n");
+    expect(() =>
+      readDshInvocationEvidence({
+        sessionRoot: root,
+        beforeBoundary: boundary,
+        expectedCwd: "/tmp/dogfood-scratch",
+        decompressSession: () =>
+          [
+            JSON.stringify({ type: "session", id: "session-other", cwd: "/tmp/other" }),
+            JSON.stringify({ type: "request/context", data: { provider: "p", model: "m" } }),
+            JSON.stringify({
+              type: "assistant/chunk",
+              seq: 1,
+              data: { chunk: { type: "usage", usage: { inputTokens: 1, outputTokens: 1 } } },
+            }),
+          ].join("\n"),
+      }),
+    ).toThrow(/does not belong to the expected cwd/u);
   });
 
   it("uses a portable dsh command unless an explicit path is configured", () => {

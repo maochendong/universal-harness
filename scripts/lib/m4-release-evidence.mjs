@@ -528,7 +528,8 @@ function containsMachineAbsolutePath(value) {
       isAbsolute(inspected) ||
       /[A-Za-z]:[\\/]/u.test(inspected) ||
       /\\\\[^\\/\s]+[\\/][^\\/\s]+/u.test(inspected) ||
-      /(?:^|[\s"'=:(,\u005b])\/(?!\/)[^\s]+/u.test(inspected) ||
+      /(?:^|[^A-Za-z0-9@._~+%/-])\/(?!\/)[^\s]+/u.test(inspected) ||
+      /\/(?!\/)[^/\s]+\/[^/\s]+/u.test(inspected) ||
       /\/(?:Users|home|private|tmp|var|opt|usr|etc|root|Volumes|Applications|System|Library|dev|proc|run)(?:[\\/]|$)/u.test(
         inspected,
       )
@@ -707,6 +708,16 @@ function assertCanonicalDogfoodProof(proof, implementationCommit) {
     proof.provider_model_source !== "dsh_session_request_context_and_assistant_source"
   ) {
     throw new ReleaseEvidenceError("M4 dogfood provider model observation is inconsistent");
+  }
+  const modelContractMismatch = proof.requested_provider_model_matches_observed === false;
+  if (
+    (modelContractMismatch &&
+      (proof.status !== "blocked" || proof.blocker !== "provider_model_contract_mismatch")) ||
+    (!modelContractMismatch && proof.blocker === "provider_model_contract_mismatch")
+  ) {
+    throw new ReleaseEvidenceError(
+      "M4 dogfood model contract mismatch must be the exact blocked result",
+    );
   }
   if (!SHA256_PATTERN.test(proof.adapter_manifest_digest ?? "")) {
     throw new ReleaseEvidenceError("M4 dogfood Adapter manifest digest is invalid");
