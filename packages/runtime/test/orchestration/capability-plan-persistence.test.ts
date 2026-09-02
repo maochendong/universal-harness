@@ -114,6 +114,7 @@ interface PersistenceHarness {
   readonly compilerCalls: CapabilityPlanCompilationRequest[];
   readonly compiledPlans: CapabilityPlanRecord[];
   readonly runCalls: Parameters<ParallelTaskExecutionPort["run"]>[0][];
+  readonly sourceViewCalls: string[];
 }
 
 /**
@@ -123,7 +124,7 @@ interface PersistenceHarness {
  */
 async function driveCompiledPipeline(
   name: string,
-  options: { readonly parallel: boolean },
+  options: { readonly parallel: boolean; readonly bindParallelForLegacy?: boolean },
 ): Promise<PersistenceHarness & { readonly first: OrchestrationOutcome }> {
   const newId = sequentialIds();
   const created = await createNewProject(
@@ -136,6 +137,7 @@ async function driveCompiledPipeline(
   const compilerCalls: CapabilityPlanCompilationRequest[] = [];
   const compiledPlans: CapabilityPlanRecord[] = [];
   const runCalls: Parameters<ParallelTaskExecutionPort["run"]>[0][] = [];
+  const sourceViewCalls: string[] = [];
   const lockHolder: { lock?: DriverLockHandle } = {};
   const parallelExecution: ParallelExecutionBinding = {
     port: {
@@ -155,6 +157,14 @@ async function driveCompiledPipeline(
         throw new Error("driver lock requested before the operation id exists");
       }
       return lock;
+    },
+    openSourceView: (operationId) => {
+      sourceViewCalls.push(operationId);
+      return Promise.resolve({
+        root: projectRoot,
+        commit: headOf(projectRoot),
+        release: () => Promise.resolve(),
+      });
     },
   };
   const deps: OrchestratorDependencies = {
@@ -178,7 +188,7 @@ async function driveCompiledPipeline(
       deterministic: true,
       execute: createDirectExecutor(),
     },
-    ...(options.parallel ? { parallelExecution } : {}),
+    ...(options.parallel || options.bindParallelForLegacy ? { parallelExecution } : {}),
   };
 
   const first = await runIteration(deps, { intent: INTENT });
@@ -208,6 +218,7 @@ async function driveCompiledPipeline(
     compilerCalls,
     compiledPlans,
     runCalls,
+    sourceViewCalls,
     first: executed,
   };
 }
@@ -279,6 +290,21 @@ describe("capability plan persistence", { timeout: 30000 * TEST_TIMEOUT_SCALE },
     });
     expect(continued).toMatchObject({ status: "advanced", completedPhase: "verify" });
     expect(harness.compilerCalls).toHaveLength(1);
+  });
+
+  it("does not open an M4 source view when a Protocol 1.1 operation resumes at verify", async () => {
+    const harness = await driveCompiledPipeline("plan-persist-11-source-view", {
+      parallel: false,
+      bindParallelForLegacy: true,
+    });
+
+    const continued = await resumeIteration(harness.deps, harness.workflowOperationId, {
+      intent: "",
+      untilPhase: "verify",
+    });
+
+    expect(continued).toMatchObject({ status: "advanced", completedPhase: "verify" });
+    expect(harness.sourceViewCalls).toEqual([]);
   });
 
   it("fails closed on a persisted plan with an unknown protocol version", () => {

@@ -5533,6 +5533,12 @@ export async function drivePipeline(
   if (
     ctx.sourceView === undefined &&
     phaseRank(fromPhase) >= phaseRank("verify") &&
+    ctx.capabilityPlan?.protocol_version === PROTOCOL_1_3_VERSION &&
+    ctx.capabilityPlan.operation_dag.nodes.some(
+      (node) =>
+        node.node_id === "execute" &&
+        (node.subgraph as string | undefined) === "parallel_task_execution",
+    ) &&
     ctx.deps.parallelExecution?.openSourceView !== undefined
   ) {
     ctx.sourceView = await ctx.deps.parallelExecution.openSourceView(ctx.workflowOperationId);
