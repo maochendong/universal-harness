@@ -9,6 +9,7 @@ import {
   PLAN_EXTENSION_KEY,
   issueGrant,
   mergePolicyLayers,
+  type IsolatedWorkspacePort,
   type CapabilityGrant,
   type ExecutionPlanContent,
   type ImpactCoverageAssessment,
@@ -17,11 +18,18 @@ import {
   type PolicyLayerInput,
   type PolicyMergeOperator,
 } from "@universal-harness-internal/runtime";
+import {
+  assessUnattendedEligibility,
+  type AgentControlLevel,
+  type AgentProviderManifest,
+} from "@universal-harness-internal/plugin-sdk";
 
 import type { Protocol13TaskSpecification } from "../../runtime/src/planning/task.js";
 import type { ParallelWave } from "../../runtime/src/planning/waves.js";
 import type {
   PolicyDecisionPort,
+  SchedulerLiveSnapshot,
+  SchedulerProjectionStore,
   SchedulerPolicyInput,
   TaskDagPort,
 } from "../../runtime/src/scheduling/ports.js";
@@ -802,6 +810,242 @@ export function policyDecisionPortConformanceCases(
           /retry_kind|invalid/iu,
           "retry_task without a retry kind must be rejected",
         );
+      },
+    },
+  ];
+}
+
+// --- Workspace / live projection / Agent control conformance -----------------
+
+/** One isolated workspace Adapter prepared against a known baseline. */
+export interface WorkspaceConformanceFixture {
+  readonly port: IsolatedWorkspacePort;
+  readonly baseline_commit: string;
+  readonly cleanup?: () => void | Promise<void>;
+}
+
+export type WorkspaceFactory = () =>
+  WorkspaceConformanceFixture | Promise<WorkspaceConformanceFixture>;
+
+async function withWorkspaceFixture(
+  factory: WorkspaceFactory,
+  run: (fixture: WorkspaceConformanceFixture) => Promise<void>,
+): Promise<void> {
+  const fixture = await factory();
+  try {
+    await run(fixture);
+  } finally {
+    await fixture.cleanup?.();
+  }
+}
+
+/**
+ * Shared IsolatedWorkspacePort cases (M4 plan Task 14 step 1). Both the real
+ * Git worktree Adapter and the InMemory Adapter must expose the same public
+ * create/apply/diff/reset/destroy behavior for the M4 task_execution purpose.
+ */
+export function workspaceConformanceCases(factory: WorkspaceFactory): ConformanceCase[] {
+  return [
+    {
+      name: "isolates task_execution changes and reports a stable sorted diff",
+      run: () =>
+        withWorkspaceFixture(factory, async ({ port, baseline_commit }) => {
+          const first = await port.create({ baseline_commit, purpose: "task_execution" });
+          const second = await port.create({ baseline_commit, purpose: "task_execution" });
+          try {
+            await port.applyFiles(first, [
+              { path: "zeta.txt", content: "zeta\n" },
+              { path: "alpha.txt", content: "alpha\n" },
+            ]);
+            assertDeepEqual(
+              await port.diff(first),
+              [
+                { path: "alpha.txt", content: "alpha\n" },
+                { path: "zeta.txt", content: "zeta\n" },
+              ],
+              "changed files are normalized and sorted",
+            );
+            assertDeepEqual(await port.diff(second), [], "a sibling workspace stays isolated");
+          } finally {
+            await port.destroy(first);
+            await port.destroy(second);
+          }
+        }),
+    },
+    {
+      name: "reset discards task changes without changing the baseline binding",
+      run: () =>
+        withWorkspaceFixture(factory, async ({ port, baseline_commit }) => {
+          const handle = await port.create({ baseline_commit, purpose: "task_execution" });
+          try {
+            assertEqual(handle.baseline_commit, baseline_commit, "workspace baseline");
+            assertEqual(handle.purpose, "task_execution", "workspace purpose");
+            await port.applyFiles(handle, [{ path: "change.txt", content: "changed\n" }]);
+            assert((await port.diff(handle)).length === 1, "the change is observable before reset");
+            await port.reset(handle);
+            assertDeepEqual(await port.diff(handle), [], "reset restores the bound baseline");
+          } finally {
+            await port.destroy(handle);
+          }
+        }),
+    },
+    {
+      name: "destroy makes a workspace handle unusable",
+      run: () =>
+        withWorkspaceFixture(factory, async ({ port, baseline_commit }) => {
+          const handle = await port.create({ baseline_commit, purpose: "task_execution" });
+          await port.destroy(handle);
+          await assertRejects(
+            () => port.diff(handle),
+            /unknown workspace/iu,
+            "a destroyed workspace cannot be observed or reused",
+          );
+        }),
+    },
+  ];
+}
+
+export interface ProjectionConformanceFixture {
+  readonly store: SchedulerProjectionStore;
+  readonly cleanup?: () => void | Promise<void>;
+}
+
+export type SchedulerProjectionFactory = () =>
+  ProjectionConformanceFixture | Promise<ProjectionConformanceFixture>;
+
+async function withProjectionFixture(
+  factory: SchedulerProjectionFactory,
+  run: (fixture: ProjectionConformanceFixture) => Promise<void>,
+): Promise<void> {
+  const fixture = await factory();
+  try {
+    await run(fixture);
+  } finally {
+    await fixture.cleanup?.();
+  }
+}
+
+function schedulerProjectionFixture(operationId = "operation_projection_a"): SchedulerLiveSnapshot {
+  return {
+    operation_id: operationId,
+    observed_at: NOW,
+    slots: [
+      { slot_id: "slot_1", state: "running", task_id: "task_alpha", run_id: "run_alpha" },
+      { slot_id: "slot_2", state: "idle" },
+    ],
+    tasks: [
+      {
+        task_id: "task_alpha",
+        pid: null,
+        heartbeat_at: NOW,
+        output_tail: "compiling <redacted-path>",
+        steps: null,
+        tokens: null,
+        duration_ms: 25,
+        worktree_id: "worktree_0123456789ab",
+      },
+    ],
+  };
+}
+
+/** Shared disposable SchedulerProjectionStore cases for SQLite and InMemory. */
+export function schedulerProjectionConformanceCases(
+  factory: SchedulerProjectionFactory,
+): ConformanceCase[] {
+  return [
+    {
+      name: "atomically replaces and reads one complete live snapshot",
+      run: () =>
+        withProjectionFixture(factory, async ({ store }) => {
+          const first = schedulerProjectionFixture();
+          await store.replace(first);
+          assertDeepEqual(await store.read(first.operation_id), first, "first projection read");
+          const replacement: SchedulerLiveSnapshot = {
+            ...first,
+            observed_at: "2026-08-31T00:00:01.000Z",
+            slots: [{ slot_id: "slot_1", state: "idle" }],
+            tasks: [],
+          };
+          await store.replace(replacement);
+          assertDeepEqual(
+            await store.read(first.operation_id),
+            replacement,
+            "replacement is all-or-nothing",
+          );
+        }),
+    },
+    {
+      name: "isolates operation snapshots and clears only the requested operation",
+      run: () =>
+        withProjectionFixture(factory, async ({ store }) => {
+          const first = schedulerProjectionFixture("operation_projection_a");
+          const second = schedulerProjectionFixture("operation_projection_b");
+          await store.replace(first);
+          await store.replace(second);
+          await store.clear(first.operation_id);
+          assertEqual(await store.read(first.operation_id), null, "cleared operation");
+          assertDeepEqual(
+            await store.read(second.operation_id),
+            second,
+            "other operation survives",
+          );
+        }),
+    },
+    {
+      name: "returns null for an unknown operation without inventing authority",
+      run: () =>
+        withProjectionFixture(factory, async ({ store }) => {
+          assertEqual(await store.read("operation_missing"), null, "unknown operation");
+        }),
+    },
+  ];
+}
+
+export interface AgentFixtureFactory {
+  create(control: AgentControlLevel): { readonly manifest: AgentProviderManifest };
+}
+
+/**
+ * One control-profile suite is reused for managed/delegated/manual fixtures.
+ * It proves the classification boundary the Scheduler consumes; it does not
+ * claim a provider is unattended merely because a test fixture can run.
+ */
+export function agentControlProfileCases(factory: AgentFixtureFactory): ConformanceCase[] {
+  const controls = ["managed", "delegated", "manual"] as const;
+  return [
+    {
+      name: "preserves the declared control profile for every Agent fixture",
+      run() {
+        for (const control of controls) {
+          const fixture = factory.create(control);
+          assertEqual(fixture.manifest.control, control, `${control} control profile`);
+          assert(fixture.manifest.provider.length > 0, `${control} provider identity is present`);
+        }
+        return Promise.resolve();
+      },
+    },
+    {
+      name: "allows only manifests that prove the unattended contract",
+      run() {
+        const managed = assessUnattendedEligibility(factory.create("managed").manifest);
+        const delegated = assessUnattendedEligibility(factory.create("delegated").manifest);
+        const manual = assessUnattendedEligibility(factory.create("manual").manifest);
+        assertEqual(managed.eligible, true, "managed fixture unattended eligibility");
+        assertEqual(delegated.eligible, true, "fully controlled delegated fixture eligibility");
+        assertEqual(manual.eligible, false, "manual fixture unattended eligibility");
+        assert(
+          manual.reasons.some((reason) => /manual/iu.test(reason)),
+          "manual rejection explains the control boundary",
+        );
+        return Promise.resolve();
+      },
+    },
+    {
+      name: "keeps provider identities distinct across control profiles",
+      run() {
+        const providers = controls.map((control) => factory.create(control).manifest.provider);
+        assertEqual(new Set(providers).size, controls.length, "provider identities are distinct");
+        return Promise.resolve();
       },
     },
   ];

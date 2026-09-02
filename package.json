@@ -9,6 +9,7 @@
   },
   "scripts": {
     "build": "pnpm -r --if-present build && node scripts/check-workspace-exports.mjs",
+    "dogfood:m4": "node scripts/dogfood-m4-local-scheduler.mjs",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "lint": "eslint .",
