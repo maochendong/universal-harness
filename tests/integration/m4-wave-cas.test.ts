@@ -42,7 +42,6 @@ import {
   type WaveGatePort,
   type WaveIntegrationGitPort,
 } from "../../packages/runtime/src/scheduling/integration.js";
-import { terminateTaskLease } from "../../packages/runtime/src/scheduling/lease.js";
 import { schedulerPolicyAction } from "../../packages/runtime/src/scheduling/policy-adapters.js";
 import type { TaskDagSnapshot } from "../../packages/runtime/src/scheduling/ports.js";
 import type {
@@ -347,16 +346,24 @@ async function prepareValidated(
     expires_at: "2026-09-01T01:00:00.000Z",
     command_id: "command_cas_lease_1",
   });
-  const lease = terminateTaskLease(granted, {
-    state: "released",
-    consumed_budget: { steps: 1, tokens: 10 },
-    command_id: "command_cas_lease_1_close",
+  h.authority.leases.push(granted);
+  h.authority.runs.push({
+    protocol_version: "1.3.0",
+    record_kind: "run_terminated",
+    run_id: granted.run_id,
+    task_id: h.taskSpec.id,
+    workflow_operation_id: OPERATION_ID,
+    attempt_id: "attempt_task_a",
+    sequence: 2,
+    timestamp: NOW,
+    outcome: "handoff",
+    termination_reason: "completion",
+    extensions: { "harness.scheduler": { consumed_budget: { steps: 1, tokens: 10 } } },
   });
-  h.authority.leases.push(granted, lease);
   const taskEvidence = schedulingEvidence({
     id: "evidence_task_task_a",
     task: h.taskSpec,
-    lease,
+    lease: granted,
     commit: h.base,
     layer: "task",
   });
@@ -378,7 +385,7 @@ async function prepareValidated(
   const validation = await h.controller.validateTaskCandidate({
     candidate,
     task: h.taskSpec,
-    lease,
+    lease: granted,
     evidence: [
       {
         kind: "gate_result",
@@ -404,6 +411,7 @@ async function prepareValidated(
     action_digest: actionDigest(schedulerPolicyAction(policyInput)),
     effective: POLICY,
   });
+  const lease = h.authority.leases.at(-1) as TaskLeaseRecord;
   return { candidate, validation, decision, lease };
 }
 

@@ -295,11 +295,10 @@ export function driveParallelTaskExecution(
           .find((candidate) => !integrated.has(candidate.wave_index));
         if (wave === undefined) return finish("completed");
 
-        // Every Task of the wave must be candidate_validated (Ledger-derived)
-        // or freshly verified: "verifying" with a queued patch and a released
-        // lease is a completed run awaiting the layer-2 candidate gates that
-        // validateTaskCandidate runs below. A provisional or unfinished
-        // result — or a still-granted lease — blocks instead of integrating.
+        // Every Task of the wave must have a queued patch, fresh layer-1
+        // Evidence and the still-granted Lease that covers layer-2 candidate
+        // validation. validateTaskCandidate releases that Lease atomically
+        // with the candidate Evidence and candidate_validated Event.
         const projection = projectSchedulerState({ dag, ...facts }, null);
         const statusOf = new Map(
           projection.tasks.map((task) => [task.task_id, task.status] as const),
@@ -311,10 +310,12 @@ export function driveParallelTaskExecution(
         if (
           !wave.task_ids.every((taskId) => {
             const status = statusOf.get(taskId);
+            const leaseState = latestLeases.get(taskId)?.state;
             return (
               queuedByTask.has(taskId) &&
-              latestLeases.get(taskId)?.state === "released" &&
-              (status === "candidate_validated" || status === "verifying")
+              ((leaseState === "granted" &&
+                (status === "integration_queued" || status === "verifying")) ||
+                (leaseState === "released" && status === "candidate_validated"))
             );
           })
         ) {
@@ -359,21 +360,40 @@ export function driveParallelTaskExecution(
               locator: `ledger://evidence/${record.evidence_id}`,
               digest: record.digest,
             }));
-          validations.push(
-            await options.integration.validateTaskCandidate({
-              candidate,
-              task,
-              lease,
-              evidence,
-            }),
-          );
+          if (lease.state === "released") {
+            const candidateEvidence = facts.gate_evidence
+              .filter((record) => {
+                if (record.provisional) return false;
+                const binding = schedulingEvidenceBindingOf(record);
+                return binding?.layer === "candidate" && binding.task_id === taskId;
+              })
+              .map((record) => record.digest);
+            validations.push({
+              task_id: taskId,
+              status: "candidate_validated" as const,
+              evidence_digests: [...evidence.map((record) => record.digest), ...candidateEvidence],
+            });
+          } else {
+            validations.push(
+              await options.integration.validateTaskCandidate({
+                candidate,
+                task,
+                lease,
+                evidence,
+              }),
+            );
+          }
         }
 
+        // Candidate validation changed every Lease from granted to released;
+        // the integrate_wave action and Approval must bind those fresh facts,
+        // never the pre-validation reservation view.
+        const validatedFacts = await options.authority.readFacts(input.operation_id);
         const policyInput = waveIntegrationPolicyInput({
           dag,
           wave,
           base_commit: candidate.base_commit,
-          leases: facts.leases,
+          leases: validatedFacts.leases,
           adapter_manifest_digest: options.adapter_manifest_digest,
           adapter_control_profile: options.adapter_control_profile,
           effective_policy_digest: options.effective_policy_digest,
@@ -387,7 +407,7 @@ export function driveParallelTaskExecution(
           // Exactly one digest-bound request per wave action; a resumed driver
           // facing the same unresolved decision never duplicates it.
           const objectDigest = actionDigest(schedulerPolicyAction(policyInput));
-          const existing = facts.approvals.some(
+          const existing = validatedFacts.approvals.some(
             (request) => request.object_digest === objectDigest,
           );
           if (!existing) {

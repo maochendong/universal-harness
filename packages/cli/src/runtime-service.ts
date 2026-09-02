@@ -956,6 +956,11 @@ export function createOrchestratedRuntimeService(
       // Design §10.1 deviation (host.ts): the manifest declares no capability
       // list, matching the kernel's production compile with allowedCapabilities [].
       adapterCapabilities: [],
+      // Reuse the same committed project Gate definitions as the generic
+      // verify phase, but bind each invocation to the exact managed Task or
+      // candidate worktree supplied by the Scheduler Host.
+      gateSuiteForWorkspace: (workspaceRoot) =>
+        createConfiguredGateSuite(workspaceRoot, runtimeConfig),
       ...(request.maxConcurrency === undefined ? {} : { maxConcurrency: request.maxConcurrency }),
       ceilings: CLI_SCHEDULER_CEILINGS,
       driverKind: request.driverKind,

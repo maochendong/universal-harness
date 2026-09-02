@@ -1,4 +1,6 @@
+import { execFileSync } from "node:child_process";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { dirname, resolve } from "node:path";
 import {
   LedgerRepository,
   PROTOCOL_VERSION,
@@ -302,6 +304,26 @@ export function createDefaultGateSuite(projectRoot: string): {
   readonly gates: readonly GateDefinition[];
   readonly registry: ToolRegistry;
 } {
+  // A scheduling Gate is constructed for the actual detached Task/candidate
+  // worktree. The universal ledger-integrity implementation still resolves
+  // the one authoritative project Ledger through Git's common directory;
+  // this keeps authority out of the agent worktree without silently running
+  // workspace-sensitive project Gates in the main checkout.
+  let authorityRoot = projectRoot;
+  if (!existsSync(harnessRootFor(authorityRoot))) {
+    try {
+      const commonGitDir = execFileSync(
+        "git",
+        ["rev-parse", "--path-format=absolute", "--git-common-dir"],
+        { cwd: projectRoot, encoding: "utf8" },
+      ).trim();
+      const candidate = resolve(dirname(commonGitDir));
+      if (existsSync(harnessRootFor(candidate))) authorityRoot = candidate;
+    } catch {
+      // The gate below reports the precise materialization failure; discovery
+      // never turns a missing repository into an implicit pass.
+    }
+  }
   const registry = new ToolRegistry();
   registry.register(
     {
@@ -336,7 +358,7 @@ export function createDefaultGateSuite(projectRoot: string): {
       try {
         // materializeLedger asserts graph integrity internally over every
         // committed revision; a violating ledger throws and fails the gate.
-        const graph = materializeProjectGraph(projectRoot);
+        const graph = materializeProjectGraph(authorityRoot);
         try {
           return {
             exit_code: 0,

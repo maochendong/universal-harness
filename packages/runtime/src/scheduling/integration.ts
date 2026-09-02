@@ -28,7 +28,7 @@ import {
   waveGateCompletedEvent,
   waveIntegratedEvent,
 } from "./events.js";
-import { buildTaskLeaseChain } from "./lease.js";
+import { buildTaskLeaseChain, terminateTaskLease } from "./lease.js";
 import { schedulerPolicyAction } from "./policy-adapters.js";
 import type { SchedulerPolicyInput, TaskDagSnapshot } from "./ports.js";
 import { deriveIterationDeadline, type SchedulerAuthority } from "./scheduler.js";
@@ -123,17 +123,22 @@ export interface SchedulingEvidenceBinding {
   readonly layer: "task" | "candidate" | "wave";
 }
 
-/** Attach the scheduling binding to a gate evidence record (post-digest metadata). */
+/** Attach the scheduling binding and seal it into the scheduling Evidence digest. */
 export function bindSchedulingEvidence(
   record: GateEvidenceRecord,
   binding: SchedulingEvidenceBinding,
 ): GateEvidenceRecord {
+  const extensions = {
+    ...record.extensions,
+    [SCHEDULING_EVIDENCE_EXTENSION_KEY]: { ...binding },
+  };
   return {
     ...record,
-    extensions: {
-      ...record.extensions,
-      [SCHEDULING_EVIDENCE_EXTENSION_KEY]: { ...binding },
-    },
+    // The generic Gate digest seals the normalized outcome/bindings. The M4
+    // digest additionally seals Plan/Task/Run/Lease/workspace-layer identity,
+    // so mutating metadata can never preserve an accepted Evidence digest.
+    digest: contentDigest({ gate_evidence_digest: record.digest, scheduling_binding: binding }),
+    extensions,
   };
 }
 
@@ -924,11 +929,11 @@ export function createCandidateIntegrationController(
             `lease of task ${taskSpec.id}`,
         );
       }
-      if (lease.state !== "released") {
+      if (lease.state !== "granted") {
         throw new CandidateIntegrationError(
           "lease_not_released",
-          `lease ${lease.lease_id} is ${lease.state}; only a released current lease whose ` +
-            "terminal state validated the candidate may integrate",
+          `lease ${lease.lease_id} is ${lease.state}; candidate validation requires the current ` +
+            "granted Lease and releases it only in the successful validation transaction",
         );
       }
       if (lease.task_id !== taskSpec.id || lease.task_digest !== taskSemanticDigest(taskSpec)) {
@@ -994,6 +999,24 @@ export function createCandidateIntegrationController(
           task: taskSpec,
         });
       }
+      for (const gateId of taskSpec.required_gates) {
+        const definition = gates.definitions().find((candidate) => candidate.gate_id === gateId);
+        if (definition === undefined) {
+          throw new CandidateIntegrationError(
+            "evidence_stale",
+            `required gate ${gateId} has no current definition`,
+          );
+        }
+        const matches = taskEvidence.filter(
+          (record) => readGateEvidenceExtension(record)?.gate_id === gateId,
+        );
+        if (matches.length !== 1) {
+          throw new CandidateIntegrationError(
+            "evidence_binding_mismatch",
+            `required gate ${gateId} has ${String(matches.length)} fresh Task Evidence records`,
+          );
+        }
+      }
 
       // Layer 2: the task's relevant gates re-run on the current candidate tree.
       const candidateEvidence = await gates.runCandidateGates({
@@ -1009,7 +1032,25 @@ export function createCandidateIntegrationController(
         ...candidateEvidence.map((record) => record.digest),
       ];
       let gateFailure: string | undefined;
+      const requiredCandidateGateIds =
+        taskSpec.required_gates.length === 0
+          ? gates.definitions().map((definition) => definition.gate_id)
+          : [...taskSpec.required_gates];
+      for (const gateId of requiredCandidateGateIds) {
+        if (!gates.definitions().some((definition) => definition.gate_id === gateId)) {
+          gateFailure = `required candidate gate ${gateId} has no current definition`;
+          break;
+        }
+        const matches = candidateEvidence.filter(
+          (record) => readGateEvidenceExtension(record)?.gate_id === gateId,
+        );
+        if (matches.length !== 1) {
+          gateFailure = `required candidate gate ${gateId} produced ${String(matches.length)} Evidence records`;
+          break;
+        }
+      }
       for (const record of candidateEvidence) {
+        if (gateFailure !== undefined) break;
         try {
           assertEvidenceValid(record, {
             layer: "candidate",
@@ -1042,8 +1083,47 @@ export function createCandidateIntegrationController(
         return { task_id: taskSpec.id, status: "blocked", evidence_digests: digests };
       }
 
+      const terminalRun = facts.runs.find(
+        (record) => record.run_id === lease.run_id && record.record_kind === "run_terminated",
+      );
+      const usage = terminalRun?.extensions?.["harness.scheduler"] as
+        | { readonly consumed_budget?: { readonly steps?: unknown; readonly tokens?: unknown } }
+        | undefined;
+      const steps = usage?.consumed_budget?.steps;
+      const tokens = usage?.consumed_budget?.tokens;
+      if (
+        typeof steps !== "number" ||
+        !Number.isInteger(steps) ||
+        steps < 0 ||
+        steps > lease.reserved_budget.steps ||
+        typeof tokens !== "number" ||
+        !Number.isInteger(tokens) ||
+        tokens < 0 ||
+        tokens > lease.reserved_budget.tokens
+      ) {
+        throw new CandidateIntegrationError(
+          "evidence_binding_mismatch",
+          `run ${lease.run_id} has no valid authoritative consumed-budget observation`,
+        );
+      }
+
       await authority.commit([
         { kind: "append_gate_evidence", records: candidateEvidence },
+        {
+          kind: "terminate_lease",
+          record: terminateTaskLease(lease, {
+            state: "released",
+            consumed_budget: { steps, tokens },
+            command_id: digestId("command", {
+              purpose: "candidate-validated-release",
+              operation_id: lease.operation_id,
+              task_id: taskSpec.id,
+              run_id: lease.run_id,
+              fencing_token: lease.fencing_token,
+              candidate_commit: candidate.candidate_commit,
+            }),
+          }),
+        },
         {
           kind: "append_event",
           event: taskCandidateValidatedEvent({

@@ -27,7 +27,7 @@ import {
   type WaveGatePort,
   type WaveIntegrationGitPort,
 } from "../../src/scheduling/integration.js";
-import { terminateTaskLease } from "../../src/scheduling/lease.js";
+import { buildTaskLeaseChain, terminateTaskLease } from "../../src/scheduling/lease.js";
 import { schedulerPolicyAction } from "../../src/scheduling/policy-adapters.js";
 import type { TaskDagSnapshot } from "../../src/scheduling/ports.js";
 import type { SchedulerEventSpec } from "../../src/scheduling/events.js";
@@ -340,6 +340,8 @@ class FakeWaveGit implements WaveIntegrationGitPort {
 
 class FakeWaveGates implements WaveGatePort {
   candidateFailureFor = new Set<string>();
+  candidateThrowsFor = new Set<string>();
+  omitCandidateEvidenceFor = new Set<string>();
   waveFails = false;
 
   definitions(): readonly GateDefinition[] {
@@ -351,6 +353,10 @@ class FakeWaveGates implements WaveGatePort {
     candidate_commit: string;
     lease: TaskLeaseRecord;
   }): Promise<readonly GateEvidenceRecord[]> {
+    if (this.candidateThrowsFor.has(input.task.id)) {
+      throw new Error(`injected candidate gate crash for ${input.task.id}`);
+    }
+    if (this.omitCandidateEvidenceFor.has(input.task.id)) return [];
     const passed = !this.candidateFailureFor.has(input.task.id);
     return [
       schedulingEvidence({
@@ -449,19 +455,32 @@ function preloadTaskFacts(
   taskSpec: Protocol13TaskSpecification,
   candidateCommit: string,
 ): { lease: TaskLeaseRecord; taskEvidence: GateEvidenceRecord } {
-  const chain = leaseChainFor(taskSpec, { token: 1, state: "released" });
+  const chain = leaseChainFor(taskSpec, { token: 1 });
   h.authority.leases.push(...chain);
-  const released = chain[1] as TaskLeaseRecord;
+  const granted = chain[0] as TaskLeaseRecord;
+  h.authority.runs.push({
+    protocol_version: "1.3.0",
+    record_kind: "run_terminated",
+    run_id: granted.run_id,
+    task_id: taskSpec.id,
+    workflow_operation_id: OPERATION_ID,
+    attempt_id: `attempt_${taskSpec.id}`,
+    sequence: 2,
+    timestamp: NOW,
+    outcome: "handoff",
+    termination_reason: "completion",
+    extensions: { "harness.scheduler": { consumed_budget: { steps: 1, tokens: 10 } } },
+  });
   const taskEvidence = schedulingEvidence({
     id: `evidence_task_${taskSpec.id}`,
     task: taskSpec,
-    lease: released,
+    lease: granted,
     commit: BASE_COMMIT,
     layer: "task",
   });
   h.authority.gateEvidence.push(taskEvidence);
   void candidateCommit;
-  return { lease: released, taskEvidence };
+  return { lease: granted, taskEvidence };
 }
 
 async function validateOne(
@@ -670,6 +689,80 @@ describe("validateTaskCandidate", () => {
     expect(validation.task_id).toBe("task_a");
     expect(validation.evidence_digests.length).toBe(2);
     expect(h.authority.events.map((event) => event.eventType)).toContain("TaskCandidateValidated");
+    expect(h.authority.batches.at(-1)?.map((transition) => transition.kind)).toEqual([
+      "append_gate_evidence",
+      "terminate_lease",
+      "append_event",
+    ]);
+    expect(buildTaskLeaseChain(h.authority.leases).latest_by_task.get(taskA.id)?.state).toBe(
+      "released",
+    );
+  });
+
+  it("rejects empty layer-1 Evidence when the Task requires a Gate", async () => {
+    const h = harness();
+    const taskA = task("task_a", { required_gates: [GATE.gate_id] });
+    const { candidate } = await prepareCandidate(h, [taskA]);
+    const chain = leaseChainFor(taskA, { token: 1 });
+    h.authority.leases.push(...chain);
+    const lease = chain[0] as TaskLeaseRecord;
+
+    await expect(
+      h.controller.validateTaskCandidate({ candidate, task: taskA, lease, evidence: [] }),
+    ).rejects.toMatchObject({ kind: "evidence_binding_mismatch" });
+    expect(buildTaskLeaseChain(h.authority.leases).latest_by_task.get(taskA.id)?.state).toBe(
+      "granted",
+    );
+  });
+
+  it("rejects a required Gate id without a current definition", async () => {
+    const h = harness();
+    const taskA = task("task_a", { required_gates: ["gate_unknown"] });
+    const { candidate } = await prepareCandidate(h, [taskA]);
+    const chain = leaseChainFor(taskA, { token: 1 });
+    h.authority.leases.push(...chain);
+    const lease = chain[0] as TaskLeaseRecord;
+
+    await expect(
+      h.controller.validateTaskCandidate({ candidate, task: taskA, lease, evidence: [] }),
+    ).rejects.toMatchObject({ kind: "evidence_stale" });
+  });
+
+  it("keeps the Lease granted when candidate Gate execution crashes before the atomic release", async () => {
+    const h = harness();
+    const taskA = task("task_a");
+    const { candidate } = await prepareCandidate(h, [taskA]);
+    const { lease, taskEvidence } = preloadTaskFacts(h, taskA, candidate.candidate_commit);
+    h.gates.candidateThrowsFor.add(taskA.id);
+
+    await expect(
+      h.controller.validateTaskCandidate({
+        candidate,
+        task: taskA,
+        lease,
+        evidence: [evidenceRef(taskEvidence)],
+      }),
+    ).rejects.toThrow("injected candidate gate crash");
+    expect(buildTaskLeaseChain(h.authority.leases).latest_by_task.get(taskA.id)?.state).toBe(
+      "granted",
+    );
+  });
+
+  it("fails closed when a required candidate Gate produces no Evidence", async () => {
+    const h = harness();
+    const taskA = task("task_a");
+    const { candidate } = await prepareCandidate(h, [taskA]);
+    const { lease, taskEvidence } = preloadTaskFacts(h, taskA, candidate.candidate_commit);
+    h.gates.omitCandidateEvidenceFor.add(taskA.id);
+
+    const result = await h.controller.validateTaskCandidate({
+      candidate,
+      task: taskA,
+      lease,
+      evidence: [evidenceRef(taskEvidence)],
+    });
+    expect(result.status).toBe("blocked");
+    expect(findingRules(h.authority)).toContain("candidate_gate_failed");
   });
 
   it("rejects when the lease is not the current one for the task", async () => {
@@ -678,6 +771,13 @@ describe("validateTaskCandidate", () => {
     const { candidate } = await prepareCandidate(h, [taskA]);
     const { lease, taskEvidence } = preloadTaskFacts(h, taskA, candidate.candidate_commit);
     // A newer attempt superseded the validating lease.
+    h.authority.leases.push(
+      terminateTaskLease(lease, {
+        state: "revoked",
+        consumed_budget: { steps: 1, tokens: 10 },
+        command_id: "command_supersede_task_a",
+      }),
+    );
     h.authority.leases.push(
       ...leaseChainFor(taskA, { token: 2, state: "released", runId: "run_task_a_2" }),
     );
@@ -993,6 +1093,7 @@ describe("acceptWave", () => {
 
   it("wave gate failure leaves the ref unchanged, records wave_gate_failed and never retries tasks", async () => {
     const { h, dag, wave, candidate, validations } = await validatedWave(["task_a"]);
+    const batchesBeforeWaveGate = h.authority.batches.length;
     h.gates.waveFails = true;
     const decision = allowWaveDecision(dag, wave, candidate.base_commit, h.authority);
     await expect(
@@ -1011,6 +1112,7 @@ describe("acceptWave", () => {
     // No lease or run transition: validated Tasks never return to retry_pending.
     expect(
       h.authority.batches
+        .slice(batchesBeforeWaveGate)
         .flat()
         .some((t) => t.kind === "terminate_lease" || t.kind === "record_run"),
     ).toBe(false);

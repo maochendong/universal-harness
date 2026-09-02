@@ -41,7 +41,6 @@ import {
   type WaveGatePort,
   type WaveIntegrationGitPort,
 } from "../../packages/runtime/src/scheduling/integration.js";
-import { terminateTaskLease } from "../../packages/runtime/src/scheduling/lease.js";
 import { schedulerPolicyAction } from "../../packages/runtime/src/scheduling/policy-adapters.js";
 import type { TaskDagSnapshot } from "../../packages/runtime/src/scheduling/ports.js";
 import type {
@@ -155,12 +154,27 @@ function leaseChainFor(
     expires_at: "2026-09-01T01:00:00.000Z",
     command_id: commandId,
   });
-  const released = terminateTaskLease(granted, {
-    state: "released",
-    consumed_budget: { steps: 1, tokens: 10 },
-    command_id: `${commandId}_close`,
+  return [granted];
+}
+
+function recordCompletedRun(
+  authority: FaultAuthority,
+  taskSpec: Protocol13TaskSpecification,
+  lease: TaskLeaseRecord,
+): void {
+  authority.runs.push({
+    protocol_version: "1.3.0",
+    record_kind: "run_terminated",
+    run_id: lease.run_id,
+    task_id: taskSpec.id,
+    workflow_operation_id: OPERATION_ID,
+    attempt_id: `attempt_${taskSpec.id}`,
+    sequence: 2,
+    timestamp: NOW,
+    outcome: "handoff",
+    termination_reason: "completion",
+    extensions: { "harness.scheduler": { consumed_budget: { steps: 1, tokens: 10 } } },
   });
-  return [granted, released];
 }
 
 const GATE = normalizeGateDefinition({
@@ -412,12 +426,13 @@ async function prepareValidated(
   const wave: ParallelWave = { wave_index: 0, task_ids: [taskSpec.id] };
   const dag = dagFor([taskSpec], [wave], FAKE_BASE);
   h.authority.leases.push(...leaseChainFor(taskSpec, { token: 1, baseline: FAKE_BASE }));
-  const released = h.authority.leases[1] as TaskLeaseRecord;
+  const granted = h.authority.leases[0] as TaskLeaseRecord;
+  recordCompletedRun(h.authority, taskSpec, granted);
   h.authority.gateEvidence.push(
     schedulingEvidence({
       id: `evidence_task_${taskSpec.id}`,
       task: taskSpec,
-      lease: released,
+      lease: granted,
       commit: FAKE_BASE,
       layer: "task",
     }),
@@ -431,7 +446,7 @@ async function prepareValidated(
   const validation = await h.controller.validateTaskCandidate({
     candidate,
     task: taskSpec,
-    lease: released,
+    lease: granted,
     evidence: [
       {
         kind: "gate_result",
@@ -602,11 +617,12 @@ describe("m4 wave integration failure boundaries", () => {
     const wave: ParallelWave = { wave_index: 0, task_ids: ["task_a"] };
     const dag = dagFor([taskA], [wave], FAKE_BASE);
     h.authority.leases.push(...leaseChainFor(taskA, { token: 1, baseline: FAKE_BASE }));
-    const released = h.authority.leases[1] as TaskLeaseRecord;
+    const granted = h.authority.leases[0] as TaskLeaseRecord;
+    recordCompletedRun(h.authority, taskA, granted);
     const taskEvidence = schedulingEvidence({
       id: "evidence_task_task_a",
       task: taskA,
-      lease: released,
+      lease: granted,
       commit: FAKE_BASE,
       layer: "task",
     });
@@ -622,7 +638,7 @@ describe("m4 wave integration failure boundaries", () => {
     const validation = await h.controller.validateTaskCandidate({
       candidate,
       task: taskA,
-      lease: released,
+      lease: granted,
       evidence: [
         {
           kind: "gate_result",

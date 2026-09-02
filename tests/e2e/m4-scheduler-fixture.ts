@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 import {
@@ -22,6 +22,7 @@ import { createGitVcsAdapter } from "../../adapters/vcs-git/src/index.js";
 
 import {
   createLedgerSchedulerAuthority,
+  createDefaultGateSuite,
   createNewProject,
   createProjectSchedulerHost,
   type ProjectSchedulerHost,
@@ -163,6 +164,7 @@ export interface M4E2eFixture {
   readonly deps: WorkflowDependencies;
   readonly intervals: TaskInterval[];
   readonly operationRef: string;
+  readonly gateWorkspaceRoots: readonly string[];
 }
 
 /**
@@ -342,6 +344,7 @@ export async function createM4E2eFixture(): Promise<M4E2eFixture> {
 
   const barrier = twoPartyBarrier();
   const intervals: TaskInterval[] = [];
+  const gateWorkspaceRoots: string[] = [];
   const hostIds = ids("host");
   const host = createProjectSchedulerHost({
     projectRoot,
@@ -360,6 +363,13 @@ export async function createM4E2eFixture(): Promise<M4E2eFixture> {
           mkdirSync(directory, { recursive: true });
           if (envelope.task_id === "task_api" || envelope.task_id === "task_ui") {
             await barrier.wait();
+          }
+          if (envelope.task_id === "task_contract") {
+            readFileSync(join(worktree_root, "src/task_api/outcome.ts"), "utf8");
+            readFileSync(join(worktree_root, "src/task_ui/outcome.ts"), "utf8");
+          }
+          if (envelope.task_id === "task_release") {
+            readFileSync(join(worktree_root, "src/task_contract/outcome.ts"), "utf8");
           }
           writeFileSync(
             join(directory, "outcome.ts"),
@@ -388,6 +398,10 @@ export async function createM4E2eFixture(): Promise<M4E2eFixture> {
         effective: mergePolicyLayers([]).effective,
       }),
     projectionStorePath: ":memory:",
+    gateSuiteForWorkspace: (workspaceRoot) => {
+      gateWorkspaceRoots.push(workspaceRoot);
+      return createDefaultGateSuite(workspaceRoot);
+    },
     now: () => FIXED_NOW,
     newId: hostIds,
   });
@@ -400,6 +414,7 @@ export async function createM4E2eFixture(): Promise<M4E2eFixture> {
     deps,
     intervals,
     operationRef: operationRefFor(operationId),
+    gateWorkspaceRoots,
   };
 }
 

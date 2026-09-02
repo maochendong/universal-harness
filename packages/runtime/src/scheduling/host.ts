@@ -136,6 +136,14 @@ export interface ProjectSchedulerHostOptions {
   readonly ceilings?: SchedulerCeilingBounds;
   /** Live-projection SQLite path; ":memory:" selects the InMemory store. */
   readonly projectionStorePath?: string;
+  /**
+   * Production/fault-injection seam for workspace-bound Gate suites. The
+   * default builds the repository Gate suite for the exact Task/candidate
+   * worktree; callers cannot supply Gate outcomes directly.
+   */
+  readonly gateSuiteForWorkspace?: (
+    workspaceRoot: string,
+  ) => ReturnType<typeof createDefaultGateSuite>;
   /** Driver identity recorded in the lock owner metadata; defaults to "cli". */
   readonly driverKind?: DriverKind;
   /** ISO clock; injectable so replays are byte-deterministic. */
@@ -350,22 +358,35 @@ export function createProjectSchedulerHost(
     commitIdentity: { name: "universal-harness", email: "harness@localhost" },
   });
   const gateSuite = createDefaultGateSuite(options.projectRoot);
+  const gateSuiteForWorkspace =
+    options.gateSuiteForWorkspace ??
+    ((workspaceRoot: string) => createDefaultGateSuite(workspaceRoot));
 
   const runSchedulingGate = async (input: {
     readonly gateId: string;
-    readonly layer: "candidate" | "wave";
+    readonly layer: "task" | "candidate" | "wave";
     readonly subjectId: string;
     readonly candidateCommit: string;
+    readonly workspaceRoot: string;
+    readonly artifactDigests?: readonly string[];
     readonly uniqueness: unknown;
   }): Promise<GateEvidenceRecord> => {
-    const gate = gateSuite.gates.find((definition) => definition.gate_id === input.gateId);
-    if (gate === undefined) {
+    const canonicalGate = gateSuite.gates.find((definition) => definition.gate_id === input.gateId);
+    if (canonicalGate === undefined) {
       throw new ParallelTaskExecutionError(
         "capability_plan_binding_drift",
         `gate ${input.gateId} has no definition in the host gate suite`,
       );
     }
-    const outcome = await runGate(gateSuite.registry, gate, {
+    const executionSuite = gateSuiteForWorkspace(input.workspaceRoot);
+    const gate = executionSuite.gates.find((definition) => definition.gate_id === input.gateId);
+    if (gate === undefined || gate.digest !== canonicalGate.digest) {
+      throw new ParallelTaskExecutionError(
+        "capability_plan_binding_drift",
+        `gate ${input.gateId} is missing or changed in workspace ${digestId("workspace", input.workspaceRoot)}`,
+      );
+    }
+    const outcome = await runGate(executionSuite.registry, gate, {
       intentId: digestId("gate-intent", {
         gate_id: input.gateId,
         layer: input.layer,
@@ -387,7 +408,7 @@ export function createProjectSchedulerHost(
       // suite-wide default subject.
       outcome: { ...outcome, subject_id: input.subjectId },
       bindings: {
-        artifact_digests: [],
+        artifact_digests: [...(input.artifactDigests ?? [])],
         code_digests: [input.candidateCommit],
         gate_digest: gate.digest,
         evaluation_case_digests: [],
@@ -398,7 +419,13 @@ export function createProjectSchedulerHost(
 
   const waveGates: WaveGatePort = {
     definitions: () => gateSuite.gates,
-    async runCandidateGates({ task, candidate_commit, lease }) {
+    async runCandidateGates({ task, candidate_commit, lease, worktree_root }) {
+      if (worktree_root === undefined) {
+        throw new ParallelTaskExecutionError(
+          "capability_plan_binding_drift",
+          `candidate ${candidate_commit} has no managed worktree for Gate execution`,
+        );
+      }
       // A task with no required_gates selects the full suite; otherwise
       // exactly the gates the approved plan names (design §13.3 layer 2).
       const selected =
@@ -414,6 +441,7 @@ export function createProjectSchedulerHost(
           layer: "candidate",
           subjectId: task.id,
           candidateCommit: candidate_commit,
+          workspaceRoot: worktree_root,
           uniqueness: { run_id: lease.run_id, fencing_token: lease.fencing_token },
         });
         records.push(
@@ -431,7 +459,13 @@ export function createProjectSchedulerHost(
       }
       return records;
     },
-    async runWaveGates({ dag, wave_index, candidate_commit, tasks, leases }) {
+    async runWaveGates({ dag, wave_index, candidate_commit, tasks, leases, worktree_root }) {
+      if (worktree_root === undefined) {
+        throw new ParallelTaskExecutionError(
+          "capability_plan_binding_drift",
+          `wave ${String(wave_index)} candidate ${candidate_commit} has no managed worktree for Gate execution`,
+        );
+      }
       const anchorTask = tasks[0];
       const anchorLease = leases[0];
       const records: GateEvidenceRecord[] = [];
@@ -441,6 +475,7 @@ export function createProjectSchedulerHost(
           layer: "wave",
           subjectId: `wave_${String(wave_index)}`,
           candidateCommit: candidate_commit,
+          workspaceRoot: worktree_root,
           uniqueness: { wave_index },
         });
         records.push(
@@ -642,6 +677,34 @@ export function createProjectSchedulerHost(
           stale_input_behavior: "recompile",
         }),
       evidenceDir: ({ task_id, run_id }) => join(harnessRoot, "evidence", task_id, run_id),
+      taskGateDefinitions: () => gateSuite.gates,
+      async runTaskGates({ task, lease, workspace, baseline_commit, source_tree_digest }) {
+        const records: GateEvidenceRecord[] = [];
+        for (const gateId of task.required_gates) {
+          const record = await runSchedulingGate({
+            gateId,
+            layer: "task",
+            subjectId: task.id,
+            candidateCommit: baseline_commit,
+            workspaceRoot: workspace.root,
+            artifactDigests: [source_tree_digest],
+            uniqueness: { run_id: lease.run_id, fencing_token: lease.fencing_token },
+          });
+          records.push(
+            bindSchedulingEvidence(record, {
+              plan_digest: lease.plan_digest,
+              task_digest: taskSemanticDigest(task),
+              task_id: task.id,
+              run_id: lease.run_id,
+              lease_id: lease.lease_id,
+              fencing_token: lease.fencing_token,
+              commit: baseline_commit,
+              layer: "task",
+            }),
+          );
+        }
+        return records;
+      },
     };
     const scheduler = createLocalTaskScheduler({
       dag_port: dagPort,

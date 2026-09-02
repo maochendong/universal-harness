@@ -153,6 +153,26 @@ class RecordingAuthority implements SchedulerAuthority {
 
   async readFacts(operationId: string) {
     if (operationId !== OPERATION_ID) throw new Error(`unknown operation ${operationId}`);
+    const queued = this.events
+      .filter((event) => event.eventType === "TaskIntegrationQueued")
+      .flatMap((event) => {
+        const taskId = event.payload["task_id"];
+        const runId = event.payload["run_id"];
+        const patchDigest = event.payload["patch_digest"];
+        const evidence = this.appendedEvidence.find(
+          (entry) => entry.kind === "task_candidate_patch" && entry.digest === patchDigest,
+        );
+        return typeof taskId === "string" && typeof runId === "string" && evidence !== undefined
+          ? [
+              {
+                task_id: taskId,
+                run_id: runId,
+                patch_locator: evidence.locator,
+                patch_digest: evidence.digest,
+              },
+            ]
+          : [];
+      });
     return {
       leases: [...this.leases],
       runs: [...this.runs],
@@ -160,6 +180,7 @@ class RecordingAuthority implements SchedulerAuthority {
       approvals: [...this.approvals],
       findings: [...this.findings],
       wave_integrations: [...this.wave_integrations],
+      candidate_patches: queued,
     };
   }
 
@@ -202,6 +223,9 @@ class RecordingAuthority implements SchedulerAuthority {
           break;
         case "append_evidence":
           this.appendedEvidence.push(...transition.evidence);
+          break;
+        case "append_gate_evidence":
+          this.gate_evidence.push(...transition.records);
           break;
         case "append_event":
           this.events.push(transition.event);
@@ -556,6 +580,27 @@ function preloadGrantedLease(
 }
 
 describe("drive dispatch transaction", () => {
+  it("fails closed instead of releasing a Lease when a required Task Gate has no Evidence", async () => {
+    const task = schedTask("task_a", [], { required_gates: ["gate_required"] });
+    const { scheduler, authority } = harness({
+      tasks: [task],
+      script: () => ({ kind: "complete" }),
+    });
+
+    const result = await scheduler.drive(driveInput());
+
+    expect(result.status).toBe("blocked");
+    expect(authority.latestLease(task.id)?.state).toBe("revoked");
+    expect(authority.gate_evidence).toEqual([]);
+    expect(
+      authority.findings.some(
+        (finding) =>
+          (finding.extensions?.["harness.finding"] as { rule?: string } | undefined)?.rule ===
+          "task_gate_failed",
+      ),
+    ).toBe(true);
+  });
+
   it("commits the reservation and granted Lease before the pool starts", async () => {
     const { scheduler, authority, pool } = harness({
       tasks: [schedTask("task_a")],
@@ -568,7 +613,7 @@ describe("drive dispatch transaction", () => {
     expect(batchKinds(authority)).toEqual([
       ["grant_lease", "append_event"],
       ["record_run", "append_event"],
-      ["record_run", "append_evidence", "terminate_lease", "append_event"],
+      ["record_run", "append_evidence", "append_event"],
     ]);
     const grant = authority.batches[0]?.[0];
     if (grant?.kind !== "grant_lease") throw new Error("expected a grant_lease transition");
@@ -583,9 +628,9 @@ describe("drive dispatch transaction", () => {
       "TaskIntegrationQueued",
     ]);
     // completion_claimed alone changed nothing until verification ran: the
-    // terminal Lease is released and the Task now waits for evidence.
+    // Lease remains granted while the Task waits for candidate validation.
     const latest = authority.latestLease("task_a");
-    expect(latest?.state).toBe("released");
+    expect(latest?.state).toBe("granted");
     const status = result.read_model.projection.tasks.find((task) => task.task_id === "task_a");
     expect(status?.status).toBe("verifying");
   });
@@ -692,7 +737,7 @@ describe("policy outcomes", () => {
     const second = await scheduler.drive(driveInput());
     expect(second.status).toBe("completed");
     const lease = authority.latestLease("task_b");
-    expect(lease?.state).toBe("released");
+    expect(lease?.state).toBe("granted");
     expect(
       authority.leases.find((record) => record.task_id === "task_b")?.approval_digests,
     ).toEqual([approvalDigest]);
@@ -1005,7 +1050,7 @@ describe("cancellation", () => {
     await drive;
 
     expect(cancellation.status).toBe("unconfirmed");
-    expect(authority.latestLease("task_a")?.state).toBe("released");
+    expect(authority.latestLease("task_a")?.state).toBe("granted");
     expect(authority.runs.at(-1)).toMatchObject({
       record_kind: "run_terminated",
       termination_reason: "completion",

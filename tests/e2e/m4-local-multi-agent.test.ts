@@ -54,7 +54,7 @@ describe("M4 real-Git local multi-agent release proof", () => {
       expect(grants.reduce((sum, lease) => sum + lease.reserved_budget.steps, 0)).toBe(40);
       expect(grants.reduce((sum, lease) => sum + lease.reserved_budget.tokens, 0)).toBe(4_000);
       expect(facts.wave_integrations).toHaveLength(3);
-      expect(facts.gate_evidence.length).toBeGreaterThanOrEqual(7);
+      expect(facts.gate_evidence).toHaveLength(11);
       expect(
         facts.gate_evidence.every((evidence) => {
           const gate = evidence.extensions?.["harness.gate"] as
@@ -62,6 +62,20 @@ describe("M4 real-Git local multi-agent release proof", () => {
           return gate?.passed === true && evidence.extensions?.["harness.scheduling"] !== undefined;
         }),
       ).toBe(true);
+      for (const taskId of ["task_api", "task_ui", "task_contract", "task_release"]) {
+        const layers = facts.gate_evidence
+          .filter((evidence) => evidence.subject_id === taskId)
+          .map(
+            (evidence) =>
+              (evidence.extensions?.["harness.scheduling"] as { layer?: string } | undefined)
+                ?.layer,
+          )
+          .sort();
+        expect(layers).toEqual(["candidate", "task"]);
+      }
+      expect(fixture.gateWorkspaceRoots).toHaveLength(11);
+      expect(fixture.gateWorkspaceRoots.every((root) => root !== fixture.projectRoot)).toBe(true);
+      expect(new Set(fixture.gateWorkspaceRoots).size).toBeGreaterThanOrEqual(7);
 
       for (const taskId of ["task_api", "task_ui", "task_contract", "task_release"]) {
         expect(

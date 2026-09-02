@@ -10,7 +10,12 @@ import {
 import type { AgentRunResult, AgentTaskEnvelope } from "@universal-harness-internal/plugin-sdk";
 
 import { buildApprovalRequest, type ApprovalRequestRecord } from "../approval/request.js";
-import type { GateEvidenceRecord } from "../gates/evidence.js";
+import {
+  evidenceBindingsOf,
+  readGateEvidenceExtension,
+  type GateEvidenceRecord,
+} from "../gates/evidence.js";
+import type { GateDefinition } from "../gates/provider.js";
 import { actionDigest, type AdapterControlProfile } from "../policy/action.js";
 import type { CapabilityGrant } from "../policy/capability-grant.js";
 import type { PolicyDecision } from "../policy/decision.js";
@@ -276,6 +281,19 @@ export interface SchedulerDispatchCallbacks {
   }): AgentTaskEnvelope;
   /** Managed evidence directory for one run; never inside the task worktree. */
   evidenceDir(input: { readonly task_id: string; readonly run_id: string }): string;
+  /**
+   * Layer-1 Task Gates run against the actual Task execution workspace. The
+   * scheduler revalidates every returned record; the callback cannot declare
+   * a required Gate passed merely by returning an arbitrary Evidence object.
+   */
+  taskGateDefinitions?(): readonly GateDefinition[];
+  runTaskGates?(input: {
+    readonly task: Protocol13TaskSpecification;
+    readonly lease: TaskLeaseRecord;
+    readonly workspace: TaskExecutionWorkspace;
+    readonly baseline_commit: string;
+    readonly source_tree_digest: string;
+  }): Promise<readonly GateEvidenceRecord[]>;
   /** Context freshness view; defaults to "nothing is stale". */
   readStaleContextTaskIds?(dag: TaskDagSnapshot, facts: SchedulerLedgerFacts): readonly string[];
 }
@@ -426,6 +444,110 @@ function hasDurableCancellation(facts: SchedulerLedgerFacts, operationId: string
   );
 }
 
+interface TaskSchedulingEvidenceBinding {
+  readonly plan_digest?: unknown;
+  readonly task_digest?: unknown;
+  readonly task_id?: unknown;
+  readonly run_id?: unknown;
+  readonly lease_id?: unknown;
+  readonly fencing_token?: unknown;
+  readonly commit?: unknown;
+  readonly layer?: unknown;
+}
+
+/**
+ * Revalidate layer-1 Gate Evidence at the scheduler boundary. Required Gate
+ * ids, the current definition digest, workspace tree, Plan/Task/Run/Lease and
+ * actual baseline are all mandatory. Missing callbacks, definitions or rows
+ * are failures, never an implicit pass (M4 design §13.2/§17).
+ */
+function taskGateFailure(input: {
+  readonly task: Protocol13TaskSpecification;
+  readonly lease: TaskLeaseRecord;
+  readonly definitions: readonly GateDefinition[];
+  readonly records: readonly GateEvidenceRecord[];
+  readonly baseline_commit: string;
+  readonly source_tree_digest: string;
+  readonly effective_policy_digest: string;
+}): string | undefined {
+  const definitions = new Map(
+    input.definitions.map((definition) => [definition.gate_id, definition]),
+  );
+  for (const gateId of input.task.required_gates) {
+    const definition = definitions.get(gateId);
+    if (definition === undefined) return `required gate ${gateId} has no current definition`;
+    const matching = input.records.filter(
+      (record) => readGateEvidenceExtension(record)?.gate_id === gateId,
+    );
+    if (matching.length !== 1) {
+      return `required gate ${gateId} produced ${String(matching.length)} Evidence records`;
+    }
+    const record = matching[0] as GateEvidenceRecord;
+    const gate = readGateEvidenceExtension(record);
+    const bindings = evidenceBindingsOf(record);
+    const scheduling = record.extensions?.["harness.scheduling"] as
+      TaskSchedulingEvidenceBinding | undefined;
+    if (record.provisional || gate === undefined || !gate.passed || bindings === undefined) {
+      return `required gate ${gateId} did not produce fresh passed Evidence`;
+    }
+    if (
+      bindings.gate_digest !== definition.digest ||
+      bindings.policy_digest !== input.effective_policy_digest ||
+      !bindings.code_digests.includes(input.baseline_commit) ||
+      !bindings.artifact_digests.includes(input.source_tree_digest)
+    ) {
+      return `required gate ${gateId} Evidence bindings are stale`;
+    }
+    if (
+      scheduling?.layer !== "task" ||
+      scheduling.commit !== input.baseline_commit ||
+      scheduling.plan_digest !== input.lease.plan_digest ||
+      scheduling.task_id !== input.task.id ||
+      scheduling.task_digest !== input.lease.task_digest ||
+      scheduling.run_id !== input.lease.run_id ||
+      scheduling.lease_id !== input.lease.lease_id ||
+      scheduling.fencing_token !== input.lease.fencing_token
+    ) {
+      return `required gate ${gateId} does not bind the current Task Run and Lease`;
+    }
+  }
+  return undefined;
+}
+
+/** Frozen code view a Task in this wave must receive. */
+function taskWaveBaseCommit(
+  dag: TaskDagSnapshot,
+  facts: SchedulerLedgerFacts,
+  waveIndex: number,
+): string {
+  if (waveIndex === 0) return dag.baseline_commit;
+  const previous = facts.wave_integrations.find(
+    (record) => record.operation_id === dag.operation_id && record.wave_index === waveIndex - 1,
+  );
+  if (previous === undefined || previous.plan_digest !== dag.plan_digest) {
+    throw new SchedulerError(
+      "scheduling_loop_inconclusive",
+      `wave ${String(waveIndex)} has no accepted predecessor commit under plan ${dag.plan_digest}`,
+    );
+  }
+  return previous.candidate_commit;
+}
+
+/** A completed run whose patch was durably queued is awaiting candidate validation, not orphaned. */
+function isPendingCandidate(facts: SchedulerLedgerFacts, lease: TaskLeaseRecord): boolean {
+  const queued = (facts.candidate_patches ?? []).some(
+    (candidate) => candidate.task_id === lease.task_id && candidate.run_id === lease.run_id,
+  );
+  if (!queued) return false;
+  return facts.runs.some(
+    (record) =>
+      record.run_id === lease.run_id &&
+      record.record_kind === "run_terminated" &&
+      record.termination_reason === "completion" &&
+      record.outcome === "handoff",
+  );
+}
+
 export function createLocalTaskScheduler(
   options: LocalTaskSchedulerOptions,
 ): DeterministicLocalTaskScheduler {
@@ -565,6 +687,7 @@ export function createLocalTaskScheduler(
       | "user_cancellation"
       | "manual_stop"
       | "process_interruption";
+    readonly consumed_budget?: BudgetAmount;
   }): RunRecord => ({
     protocol_version: PROTOCOL_1_3_VERSION,
     record_kind: "run_terminated",
@@ -576,6 +699,13 @@ export function createLocalTaskScheduler(
     timestamp: now(),
     outcome: input.outcome,
     termination_reason: input.termination_reason,
+    ...(input.consumed_budget === undefined
+      ? {}
+      : {
+          extensions: {
+            "harness.scheduler": { consumed_budget: input.consumed_budget },
+          },
+        }),
   });
 
   const runInterruptedRecord = (input: {
@@ -639,6 +769,7 @@ export function createLocalTaskScheduler(
         | "user_cancellation"
         | "manual_stop"
         | "process_interruption",
+      consumed_budget?: BudgetAmount,
     ): SchedulerTransition => ({
       kind: "record_run",
       record: runTerminatedRecord({
@@ -647,6 +778,7 @@ export function createLocalTaskScheduler(
         run_id: entry.run_id,
         outcome: outcome === "success" ? "handoff" : outcome,
         termination_reason: reason,
+        ...(consumed_budget === undefined ? {} : { consumed_budget }),
       }),
     });
 
@@ -713,15 +845,78 @@ export function createLocalTaskScheduler(
 
     if (result.termination_reason === "completion" && result.completion_claimed) {
       // The claim alone changes nothing: the workspace manager re-derives the
-      // candidate from the worktree and attests the write set first.
+      // candidate from the worktree, attests the write set, and runs every
+      // required layer-1 Gate in that exact workspace. The Lease remains
+      // granted until layer-2 candidate validation succeeds (§8.3/§13.2).
       try {
         const patch = await options.workspaces.collectTaskCandidate({
           task,
           workspace: entry.workspace,
           task_grant: entry.grant,
         });
+        let taskGateEvidence: readonly GateEvidenceRecord[] = [];
+        let gateFailure: string | undefined;
+        if (task.required_gates.length > 0) {
+          if (
+            options.callbacks.taskGateDefinitions === undefined ||
+            options.callbacks.runTaskGates === undefined
+          ) {
+            gateFailure = "required Task Gates are not configured";
+          } else {
+            try {
+              taskGateEvidence = await options.callbacks.runTaskGates({
+                task,
+                lease,
+                workspace: entry.workspace,
+                baseline_commit: lease.baseline_commit,
+                source_tree_digest: patch.source_tree_digest,
+              });
+              gateFailure = taskGateFailure({
+                task,
+                lease,
+                definitions: options.callbacks.taskGateDefinitions(),
+                records: taskGateEvidence,
+                baseline_commit: lease.baseline_commit,
+                source_tree_digest: patch.source_tree_digest,
+                effective_policy_digest: options.effective_policy_digest,
+              });
+            } catch (error) {
+              gateFailure = messageOf(error);
+            }
+          }
+        }
+        if (gateFailure !== undefined) {
+          await authority.commit([
+            terminated("failed", "gate_failure", consumed),
+            ...(taskGateEvidence.length === 0
+              ? []
+              : [{ kind: "append_gate_evidence" as const, records: taskGateEvidence }]),
+            {
+              kind: "terminate_lease",
+              record: terminateTaskLease(lease, {
+                state: "revoked",
+                consumed_budget: consumed,
+                command_id: closeCommand("task-gate-revoke"),
+              }),
+            },
+            {
+              kind: "create_finding",
+              finding: blockingFinding({
+                dag,
+                task_id: task.id,
+                task_digest: candidate.task_digest,
+                rule: "task_gate_failed",
+                summary: `task ${task.id} required Gate verification failed: ${gateFailure}`,
+              }),
+            },
+          ]);
+          return;
+        }
         await authority.commit([
-          terminated(result.outcome, "completion"),
+          terminated(result.outcome, "completion", consumed),
+          ...(taskGateEvidence.length === 0
+            ? []
+            : [{ kind: "append_gate_evidence" as const, records: taskGateEvidence }]),
           {
             kind: "append_evidence",
             evidence: [
@@ -736,14 +931,6 @@ export function createLocalTaskScheduler(
                 digest: patch.patch_digest,
               },
             ],
-          },
-          {
-            kind: "terminate_lease",
-            record: terminateTaskLease(lease, {
-              state: "released",
-              consumed_budget: consumed,
-              command_id: closeCommand("completion-release"),
-            }),
           },
           {
             kind: "append_event",
@@ -884,6 +1071,7 @@ export function createLocalTaskScheduler(
     slotId: string,
   ): Promise<{ readonly entry?: DispatchEntry; readonly account: IterationBudgetAccount }> => {
     const task = candidate.task;
+    const taskBaselineCommit = taskWaveBaseCommit(dag, facts, candidate.wave_index);
     const deadline = deriveIterationDeadline(dag, facts.leases, now());
     const iterationRemaining = remainingBudget(account);
     const policyInput: SchedulerPolicyInput = {
@@ -893,7 +1081,7 @@ export function createLocalTaskScheduler(
       plan_digest: dag.plan_digest,
       task_digest: candidate.task_digest,
       wave_index: candidate.wave_index,
-      baseline_commit: dag.baseline_commit,
+      baseline_commit: taskBaselineCommit,
       risk: task.risk,
       capabilities: task.capabilities,
       tools: task.tools,
@@ -961,7 +1149,7 @@ export function createLocalTaskScheduler(
         objectId: task.id,
         objectType: "scheduler_action",
         objectDigest: expectedActionDigest,
-        baselineDigest: contentDigest({ baseline_commit: dag.baseline_commit }),
+        baselineDigest: contentDigest({ baseline_commit: taskBaselineCommit }),
         policyDigest: decision.effective_policy_digest,
         impactPath: [],
         risk: task.risk,
@@ -1015,7 +1203,7 @@ export function createLocalTaskScheduler(
       task_digest: candidate.task_digest,
       run_id: runId,
       slot_id: slotId,
-      baseline_commit: dag.baseline_commit,
+      baseline_commit: taskBaselineCommit,
       agent_adapter_digest: options.adapter_manifest_digest,
       reserved_budget: reservation.reserved_budget,
       issued_at: now(),
@@ -1042,7 +1230,7 @@ export function createLocalTaskScheduler(
       // design §9 step 9: worktree → ContextBundle → CapabilityGrant → envelope.
       const workspace = await options.workspaces.prepareTaskWorkspace({
         task,
-        baseline_commit: dag.baseline_commit,
+        baseline_commit: taskBaselineCommit,
         slot_id: slotId,
       });
       const context = await options.callbacks.assembleContext({
@@ -1443,7 +1631,7 @@ export function createLocalTaskScheduler(
       }
       const chain = buildTaskLeaseChain(facts.leases);
       const orphaned = [...chain.latest_by_task.values()].filter(
-        (record) => record.state === "granted",
+        (record) => record.state === "granted" && !isPendingCandidate(facts, record),
       );
       if (orphaned.length > 0) {
         throw new SchedulerError(
@@ -1470,7 +1658,7 @@ export function createLocalTaskScheduler(
       }
       const chain = buildTaskLeaseChain(facts.leases);
       const orphaned = [...chain.latest_by_task.values()]
-        .filter((record) => record.state === "granted")
+        .filter((record) => record.state === "granted" && !isPendingCandidate(facts, record))
         .sort((left, right) => left.task_id.localeCompare(right.task_id));
       if (orphaned.length > 0) {
         const transitions: SchedulerTransition[] = [];
