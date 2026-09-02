@@ -5530,11 +5530,16 @@ export async function drivePipeline(
   fromPhase: OrchestrationPhase,
   untilPhase: OrchestrationPhase | undefined,
 ): Promise<OrchestrationOutcome> {
+  // A pipeline resumed at verify (or the verify→snapshot tail) has no
+  // in-memory CapabilityPlan; fall back to the latest persisted plan, the
+  // same source the plan phase trusts on resume, so a parallel operation
+  // still verifies against its accepted source view.
+  const capabilityPlan = ctx.capabilityPlan ?? loadCapabilityPlans(ctx).at(-1);
   const parallelPlan =
-    ctx.capabilityPlan !== undefined &&
-    (ctx.capabilityPlan as { readonly protocol_version?: string }).protocol_version ===
+    capabilityPlan !== undefined &&
+    (capabilityPlan as { readonly protocol_version?: string }).protocol_version ===
       PROTOCOL_1_3_VERSION &&
-    ctx.capabilityPlan.operation_dag.nodes.some(
+    capabilityPlan.operation_dag.nodes.some(
       (node) =>
         node.node_id === "execute" &&
         (node.subgraph as string | undefined) === "parallel_task_execution",
