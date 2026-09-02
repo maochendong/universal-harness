@@ -1,4 +1,6 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { existsSync, writeFileSync } from "node:fs";
+
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { createGitVcsAdapter } from "@universal-harness-internal/adapter-vcs-git";
 
@@ -15,7 +17,9 @@ import {
   createDirectExecutor,
   createNewProject,
   LedgerDagCheckpointStore,
+  ToolRegistry,
   materializeProjectGraph,
+  normalizeGateDefinition,
   readCurrentOperation,
   readExecutionPlanContent,
   resolveApproval,
@@ -23,6 +27,7 @@ import {
   runIteration,
   type OrchestrationOutcome,
   type OrchestratorDependencies,
+  type GateDefinition,
   type ParallelExecutionBinding,
   type ParallelTaskExecutionOutcome,
   type ParallelTaskExecutionPort,
@@ -31,6 +36,7 @@ import type { DriverLockHandle } from "../../src/scheduling/driver-lock.js";
 import {
   FIXED_NOW,
   cleanupDirectories,
+  git,
   headOf,
   makeTempDir,
   sequentialIds,
@@ -118,7 +124,14 @@ async function driveToParallelExecute(
   options: {
     readonly outcome: (input: { readonly operation_id: string }) => ParallelTaskExecutionOutcome;
     readonly withBinding?: boolean;
-    readonly untilPhase?: "execute";
+    readonly untilPhase?: "execute" | "verify";
+    readonly prepareSourceView?: (projectRoot: string) => string;
+    readonly gates?: readonly GateDefinition[];
+    readonly toolRegistry?: ToolRegistry;
+    readonly gateSuiteForWorkspace?: (workspaceRoot: string) => {
+      readonly gates: readonly GateDefinition[];
+      readonly registry: ToolRegistry;
+    };
   },
 ): Promise<ParallelHarness & { readonly outcome: OrchestrationOutcome }> {
   const newId = sequentialIds();
@@ -128,6 +141,7 @@ async function driveToParallelExecute(
   );
   if (!outcome0.ok) throw new Error(outcome0.error.message);
   const projectRoot = outcome0.value.projectRoot;
+  const sourceViewRoot = options.prepareSourceView?.(projectRoot);
 
   const holder: { plan?: CapabilityPlanRecord; lock?: DriverLockHandle } = {};
   const runCalls: Parameters<ParallelTaskExecutionPort["run"]>[0][] = [];
@@ -146,6 +160,16 @@ async function driveToParallelExecute(
       }
       return lock;
     },
+    ...(sourceViewRoot === undefined
+      ? {}
+      : {
+          openSourceView: () =>
+            Promise.resolve({
+              root: sourceViewRoot,
+              commit: headOf(sourceViewRoot),
+              release: () => Promise.resolve(),
+            }),
+        }),
   };
   const deps: OrchestratorDependencies = {
     projectRoot,
@@ -168,6 +192,11 @@ async function driveToParallelExecute(
     get capabilityPlan() {
       return holder.plan;
     },
+    ...(options.gates === undefined ? {} : { gates: options.gates }),
+    ...(options.toolRegistry === undefined ? {} : { toolRegistry: options.toolRegistry }),
+    ...(options.gateSuiteForWorkspace === undefined
+      ? {}
+      : { gateSuiteForWorkspace: options.gateSuiteForWorkspace }),
   };
 
   const first = await runIteration(deps, { intent: INTENT });
@@ -301,6 +330,81 @@ describe("kernel parallel execute branch", { timeout: 30000 * TEST_TIMEOUT_SCALE
     expect(executeEntries[0]?.plan_digest).toBe(harness.plan.record_digest);
     expect(executeEntries[0]?.output_digests["wave_integration"]).toBe(expectedWaveDigest);
     expect(currentOperationState(harness)).not.toBe("blocked");
+  });
+
+  it("rebinds configured generic verify gates to the accepted operation source view", async () => {
+    let sourceRoot: string | undefined;
+    const gate = normalizeGateDefinition({
+      gate_id: "gate_operation_source",
+      layer: "project",
+      name: "operation source gate",
+      mandatory: true,
+      subject_id: "project_operation_source",
+      tool: "check_operation_source",
+      parameters: {},
+    });
+    const registryFor = (root: string): ToolRegistry => {
+      const registry = new ToolRegistry();
+      registry.register(
+        {
+          name: "check_operation_source",
+          version: "1.0.0",
+          description: "verify the exact operation source view",
+          input_schema: { type: "object", properties: {}, additionalProperties: false },
+          output_schema: {
+            type: "object",
+            properties: { exit_code: { type: "integer" }, summary: { type: "string" } },
+            required: ["exit_code", "summary"],
+            additionalProperties: false,
+          },
+          allowed_phases: ["verification"],
+          resource_patterns: [],
+          risk: "low",
+          side_effect_class: "none",
+          requires_approval: false,
+          timeout_ms: 1_000,
+          retry_class: "none",
+          max_retries: 0,
+          max_invocations_per_run: 10,
+          idempotent: true,
+          reconciliation: "provider",
+        },
+        () => ({
+          exit_code: existsSync(`${root}/operation-only.txt`) ? 0 : 1,
+          summary: root,
+        }),
+      );
+      return registry;
+    };
+    const workspaceFactory = vi.fn((root: string) => ({
+      gates: [gate],
+      registry: registryFor(root),
+    }));
+
+    const harness = await driveToParallelExecute("parallel-operation-gates", {
+      untilPhase: "verify",
+      outcome: ({ operation_id }) => ({
+        status: "completed",
+        operation_id,
+        wave_integration_digests: WAVE_INTEGRATION_DIGESTS,
+        scheduler_state_digest: SCHEDULER_STATE_DIGEST,
+      }),
+      prepareSourceView: (projectRoot) => {
+        sourceRoot = makeTempDir("harness-operation-source-");
+        git(projectRoot, "worktree", "add", "--detach", sourceRoot, "HEAD");
+        writeFileSync(`${sourceRoot}/operation-only.txt`, "accepted candidate\n", "utf8");
+        git(sourceRoot, "add", "operation-only.txt");
+        git(sourceRoot, "commit", "-m", "operation-only candidate");
+        return sourceRoot;
+      },
+      gates: [gate],
+      toolRegistry: registryFor("/path/that-is-not-the-operation-source"),
+      gateSuiteForWorkspace: workspaceFactory,
+    });
+
+    expect(harness.outcome).toMatchObject({ status: "advanced", completedPhase: "verify" });
+    expect(sourceRoot).toBeDefined();
+    expect(workspaceFactory).toHaveBeenCalledWith(sourceRoot);
   });
 
   it("maps a paused drive to an awaiting_approval block with the resume command", async () => {

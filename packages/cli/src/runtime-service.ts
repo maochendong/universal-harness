@@ -659,19 +659,21 @@ export function createOrchestratedRuntimeService(
       options.execute === undefined && runtimeConfig.agent !== undefined
         ? createConfiguredAgentExecutor(projectRoot, runtimeConfig.agent)
         : undefined;
+    const configuredGateSuiteFor = (workspaceRoot: string) =>
+      createConfiguredGateSuite(workspaceRoot, runtimeConfig, {
+        ...(options.providerRegistry === undefined
+          ? {}
+          : { providerRegistry: options.providerRegistry }),
+        ...(options.providerEnvironment === undefined
+          ? {}
+          : { ambientEnvironment: options.providerEnvironment }),
+        ...(options.providerFetch === undefined
+          ? {}
+          : { judgeTransport: { fetch: options.providerFetch } }),
+      });
     const configuredGateSuite =
       options.gates === undefined && options.toolRegistry === undefined
-        ? createConfiguredGateSuite(projectRoot, runtimeConfig, {
-            ...(options.providerRegistry === undefined
-              ? {}
-              : { providerRegistry: options.providerRegistry }),
-            ...(options.providerEnvironment === undefined
-              ? {}
-              : { ambientEnvironment: options.providerEnvironment }),
-            ...(options.providerFetch === undefined
-              ? {}
-              : { judgeTransport: { fetch: options.providerFetch } }),
-          })
+        ? configuredGateSuiteFor(projectRoot)
         : undefined;
     const injectedExecutor = options.execute;
     const createObservationPublisher =
@@ -771,6 +773,9 @@ export function createOrchestratedRuntimeService(
           ? {}
           : { toolRegistry: configuredGateSuite.registry }
         : { toolRegistry: options.toolRegistry }),
+      ...(configuredGateSuite === undefined
+        ? {}
+        : { gateSuiteForWorkspace: configuredGateSuiteFor }),
       ...(prompter === undefined ? {} : { prompter }),
       ...(options.onPhaseProgress === undefined
         ? {}

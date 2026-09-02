@@ -4862,6 +4862,18 @@ function gateSuiteFor(ctx: PipelineContext): {
   readonly gates: readonly GateDefinition[];
   readonly registry: ToolRegistry;
 } {
+  if (ctx.sourceView !== undefined) {
+    if (ctx.deps.gateSuiteForWorkspace !== undefined) {
+      return ctx.deps.gateSuiteForWorkspace(sourceRootOf(ctx));
+    }
+    if (ctx.deps.gates !== undefined) {
+      throw new OrchestrationError(
+        "configuration",
+        "configured gates cannot verify a parallel operation source without gateSuiteForWorkspace",
+      );
+    }
+    return createDefaultGateSuite(sourceRootOf(ctx));
+  }
   return ctx.deps.gates === undefined
     ? createDefaultGateSuite(sourceRootOf(ctx))
     : {

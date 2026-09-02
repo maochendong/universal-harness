@@ -255,6 +255,15 @@ export interface OrchestratorDependencies {
    */
   readonly gates?: readonly GateDefinition[];
   readonly toolRegistry?: ToolRegistry;
+  /**
+   * Rebuilds configured generic verify gates for an accepted operation source
+   * view. Required when `gates` are rooted in the project worktree and
+   * parallel execution verifies a detached operation ref.
+   */
+  readonly gateSuiteForWorkspace?: (workspaceRoot: string) => {
+    readonly gates: readonly GateDefinition[];
+    readonly registry: ToolRegistry;
+  };
   readonly evaluate?: EvaluationPort;
   /**
    * T13 plan proposal port; mutually exclusive with the legacy `planTasks`
