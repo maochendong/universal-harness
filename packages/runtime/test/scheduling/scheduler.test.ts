@@ -1071,6 +1071,39 @@ describe("cancellation", () => {
 });
 
 describe("recovery", () => {
+  it("keeps an orphan's unmeasured reservation charged and blocks automatic retry", async () => {
+    const task = schedTask("task_a");
+    const { scheduler, authority, pool } = harness({
+      tasks: [task],
+      script: () => ({ kind: "complete" }),
+    });
+    const lease = preloadGrantedLease(authority, task, "run_orphan_unknown_usage");
+    authority.leases.push(lease);
+
+    const recovered = await scheduler.recover({
+      ...driveInput(),
+      recovery_command_id: "command_recovery_unknown_usage",
+    });
+
+    const revoked = authority.leases.find(
+      (record) => record.lease_id === lease.lease_id && record.state === "revoked",
+    );
+    expect(revoked?.consumed_budget).toEqual(lease.reserved_budget);
+    expect(pool.startedRuns).toEqual([]);
+    expect(recovered.status).toBe("blocked");
+    expect(recovered.read_model.budget.remaining).toEqual({
+      steps: 100 - lease.reserved_budget.steps,
+      tokens: 100_000 - lease.reserved_budget.tokens,
+    });
+    expect(
+      authority.findings.some(
+        (finding) =>
+          (finding.extensions?.["harness.finding"] as { rule?: string } | undefined)?.rule ===
+          "budget_usage_unknown",
+      ),
+    ).toBe(true);
+  });
+
   it("fails closed when a granted Lease has no live driver, then recover() revokes and retries", async () => {
     const task = schedTask("task_a");
     const { scheduler, authority } = harness({
@@ -1079,6 +1112,19 @@ describe("recovery", () => {
     });
     const lease = preloadGrantedLease(authority, task, "run_orphan_a");
     authority.leases.push(lease);
+    authority.runs.push({
+      protocol_version: "1.3.0",
+      record_kind: "run_terminated",
+      run_id: lease.run_id,
+      task_id: task.id,
+      workflow_operation_id: OPERATION_ID,
+      attempt_id: "attempt_run_orphan_a",
+      sequence: 2,
+      timestamp: NOW,
+      outcome: "failed",
+      termination_reason: "adapter_failure",
+      extensions: { "harness.scheduler": { consumed_budget: { steps: 2, tokens: 100 } } },
+    });
 
     await expect(scheduler.drive(driveInput())).rejects.toMatchObject({
       name: "SchedulerError",
@@ -1093,12 +1139,14 @@ describe("recovery", () => {
 
     const recoveryBatch = authority.batches[0];
     expect(recoveryBatch?.map((transition) => transition.kind)).toEqual([
-      "record_run",
       "terminate_lease",
       "append_event",
     ]);
-    const interrupted = authority.runs[0];
-    expect(interrupted?.record_kind).toBe("run_interrupted");
+    expect(
+      authority.runs.some(
+        (record) => record.run_id === lease.run_id && record.record_kind === "run_interrupted",
+      ),
+    ).toBe(false);
     const revoked = authority.leases.find(
       (record) => record.lease_id === lease.lease_id && record.state === "revoked",
     );

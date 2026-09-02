@@ -43,6 +43,7 @@ import {
   contentDigest,
   type FeedbackRecord,
   type RunRecord,
+  type TaskLeaseRecord,
 } from "@universal-harness-internal/core";
 
 import type { GateEvidenceRecord } from "../gates/evidence.js";
@@ -58,6 +59,7 @@ import { buildTaskLeaseChain, terminateTaskLease } from "./lease.js";
 import type { SchedulerProjectionStore, TaskDagPort, TaskDagSnapshot } from "./ports.js";
 import { projectSchedulerState } from "./projection.js";
 import {
+  authoritativeTerminalBudget,
   isPendingCandidateLease,
   type SchedulerAuthority,
   type SchedulerLedgerFacts,
@@ -160,6 +162,44 @@ function isOpenFinding(finding: FeedbackRecord): boolean {
   );
 }
 
+function unknownBudgetFinding(input: {
+  readonly dag: TaskDagSnapshot;
+  readonly lease: TaskLeaseRecord;
+  readonly now: string;
+}): FeedbackRecord {
+  const content = {
+    protocol_version: PROTOCOL_1_3_VERSION,
+    record_kind: "feedback" as const,
+    id: digestId("finding", {
+      iteration_id: input.dag.iteration_id,
+      task_id: input.lease.task_id,
+      rule: "budget_usage_unknown",
+    }),
+    type: "Finding" as const,
+    iteration_id: input.dag.iteration_id,
+    status: "proposed" as const,
+    summary:
+      `task ${input.lease.task_id} ended without authoritative usage metering; ` +
+      "its full reservation remains charged and automatic retry is blocked",
+    created_at: input.now,
+    extensions: {
+      "harness.finding": {
+        origin: "scheduler",
+        blocking: true,
+        violates: [],
+        blocks: [input.lease.task_id],
+        evidence: [],
+        rule: "budget_usage_unknown",
+        severity: "error",
+        actionability: "human_review",
+        subject_ids: [input.lease.task_id],
+        subject_digests: [input.lease.task_digest],
+      },
+    },
+  };
+  return { ...content, digest: contentDigest(content) };
+}
+
 /** Candidate replay stops while a wave-level failure Finding is open. */
 const REPLAY_BLOCKING_RULES = new Set(["wave_gate_failed", "baseline_drift"]);
 
@@ -204,20 +244,24 @@ export async function recoverSchedulingOperation(
       } catch (error) {
         if (!(error instanceof AgentPoolError && error.kind === "unknown_run")) throw error;
       }
-      transitions.push({
-        kind: "record_run",
-        record: runInterruptedRecord({
-          operation_id: dag.operation_id,
-          task_id: lease.task_id,
-          run_id: lease.run_id,
-          now: now(),
-        }),
-      });
+      const observedBudget = authoritativeTerminalBudget(initialFacts, lease);
+      const budgetUnknown = observedBudget === undefined;
+      if (budgetUnknown) {
+        transitions.push({
+          kind: "record_run",
+          record: runInterruptedRecord({
+            operation_id: dag.operation_id,
+            task_id: lease.task_id,
+            run_id: lease.run_id,
+            now: now(),
+          }),
+        });
+      }
       transitions.push({
         kind: "terminate_lease",
         record: terminateTaskLease(lease, {
           state: "revoked",
-          consumed_budget: lease.consumed_budget,
+          consumed_budget: observedBudget ?? lease.reserved_budget,
           command_id: digestId("command", {
             purpose: "recovery-revoke",
             recovery_command_id: input.recovery_command_id,
@@ -226,6 +270,12 @@ export async function recoverSchedulingOperation(
           }),
         }),
       });
+      if (budgetUnknown) {
+        transitions.push({
+          kind: "create_finding",
+          finding: unknownBudgetFinding({ dag, lease, now: now() }),
+        });
+      }
       revokedLeaseIds.push(lease.lease_id);
     }
     transitions.push({

@@ -527,11 +527,37 @@ function recoveryHarness(tasks: readonly Protocol13TaskSpecification[]): Recover
 }
 
 describe("recoverSchedulingOperation", () => {
+  it("retains the full reservation and blocks when orphan usage has no terminal measurement", async () => {
+    const taskA = task("task_a");
+    const h = recoveryHarness([taskA]);
+    const orphan = grantedLease(taskA, { runId: "run_orphan_unknown_usage" });
+    h.authority.leases.push(orphan);
+
+    const report = await h.recover();
+
+    const revoked = h.authority.leases.find(
+      (record) => record.lease_id === orphan.lease_id && record.state === "revoked",
+    );
+    expect(revoked?.consumed_budget).toEqual(orphan.reserved_budget);
+    expect(report.dispositions).toEqual([{ task_id: taskA.id, disposition: "blocked" }]);
+    expect(
+      h.authority.findings.some(
+        (finding) =>
+          (finding.extensions?.["harness.finding"] as { rule?: string } | undefined)?.rule ===
+          "budget_usage_unknown",
+      ),
+    ).toBe(true);
+  });
+
   it("revokes orphan leases, terminates located PIDs and reports retry_pending dispositions", async () => {
     const taskA = task("task_a");
     const h = recoveryHarness([taskA]);
     const orphan = grantedLease(taskA, { runId: "run_orphan_a" });
     h.authority.leases.push(orphan);
+    h.authority.runs.push({
+      ...runTerminated(taskA.id, orphan.run_id, "adapter_failure"),
+      extensions: { "harness.scheduler": { consumed_budget: { steps: 1, tokens: 10 } } },
+    });
     h.projections.snapshot = {
       operation_id: OPERATION_ID,
       observed_at: NOW,
@@ -558,8 +584,12 @@ describe("recoverSchedulingOperation", () => {
     const revoked = h.authority.leases.at(-1);
     expect(revoked?.state).toBe("revoked");
     expect(revoked?.fencing_token).toBe(orphan.fencing_token);
-    const interrupted = h.authority.runs.find((record) => record.record_kind === "run_interrupted");
-    expect(interrupted?.run_id).toBe("run_orphan_a");
+    expect(
+      h.authority.runs.some(
+        (record) => record.run_id === orphan.run_id && record.record_kind === "run_interrupted",
+      ),
+    ).toBe(false);
+    expect(revoked?.consumed_budget).toEqual({ steps: 1, tokens: 10 });
     expect(h.authority.events.map((event) => event.eventType)).toContain("SchedulerRecovered");
     expect(report.dispositions).toEqual([{ task_id: "task_a", disposition: "retry_pending" }]);
     expect(report.candidate_replay).toBe("completed");

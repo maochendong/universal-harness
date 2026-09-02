@@ -538,18 +538,12 @@ function taskWaveBaseCommit(
  * Candidate validation and integration-conflict cleanup share this parser so
  * they can never release the same Lease with different budget semantics.
  */
-export function terminalCompletionBudget(
-  facts: SchedulerLedgerFacts,
+function meteredBudgetOf(
+  terminal: RunRecord | undefined,
   lease: TaskLeaseRecord,
 ): BudgetAmount | undefined {
-  const terminal = facts.runs.find(
-    (record) =>
-      record.run_id === lease.run_id &&
-      record.record_kind === "run_terminated" &&
-      record.termination_reason === "completion" &&
-      record.outcome === "handoff",
-  );
-  const usage = terminal?.extensions?.["harness.scheduler"] as
+  if (terminal?.record_kind !== "run_terminated") return undefined;
+  const usage = terminal.extensions?.["harness.scheduler"] as
     | { readonly consumed_budget?: { readonly steps?: unknown; readonly tokens?: unknown } }
     | undefined;
   const steps = usage?.consumed_budget?.steps;
@@ -567,6 +561,31 @@ export function terminalCompletionBudget(
     return undefined;
   }
   return { steps, tokens };
+}
+
+/** Exact metered usage from an authoritative terminal Run, when one exists. */
+export function authoritativeTerminalBudget(
+  facts: SchedulerLedgerFacts,
+  lease: TaskLeaseRecord,
+): BudgetAmount | undefined {
+  const terminal = facts.runs.find(
+    (record) => record.run_id === lease.run_id && record.record_kind === "run_terminated",
+  );
+  return meteredBudgetOf(terminal, lease);
+}
+
+export function terminalCompletionBudget(
+  facts: SchedulerLedgerFacts,
+  lease: TaskLeaseRecord,
+): BudgetAmount | undefined {
+  const terminal = facts.runs.find(
+    (record) =>
+      record.run_id === lease.run_id &&
+      record.record_kind === "run_terminated" &&
+      record.termination_reason === "completion" &&
+      record.outcome === "handoff",
+  );
+  return meteredBudgetOf(terminal, lease);
 }
 
 /** A completed run whose patch was durably queued is awaiting candidate validation, not orphaned. */
@@ -1760,21 +1779,25 @@ export function createLocalTaskScheduler(
           } catch (error) {
             if (!(error instanceof AgentPoolError && error.kind === "unknown_run")) throw error;
           }
-          // The orphan's external effects are uncertain: the interruption is
-          // authoritative, its output can only ever be provisional (§16).
-          transitions.push({
-            kind: "record_run",
-            record: runInterruptedRecord({
-              operation_id: dag.operation_id,
-              task_id: lease.task_id,
-              run_id: lease.run_id,
-            }),
-          });
+          const observedBudget = authoritativeTerminalBudget(facts, lease);
+          const budgetUnknown = observedBudget === undefined;
+          if (budgetUnknown) {
+            // No terminal usage exists: the interruption is authoritative,
+            // but its exact consumption is unknowable after process loss.
+            transitions.push({
+              kind: "record_run",
+              record: runInterruptedRecord({
+                operation_id: dag.operation_id,
+                task_id: lease.task_id,
+                run_id: lease.run_id,
+              }),
+            });
+          }
           transitions.push({
             kind: "terminate_lease",
             record: terminateTaskLease(lease, {
               state: "revoked",
-              consumed_budget: lease.consumed_budget,
+              consumed_budget: observedBudget ?? lease.reserved_budget,
               command_id: digestId("command", {
                 purpose: "recovery-revoke",
                 recovery_command_id: input.recovery_command_id,
@@ -1783,6 +1806,20 @@ export function createLocalTaskScheduler(
               }),
             }),
           });
+          if (budgetUnknown) {
+            transitions.push({
+              kind: "create_finding",
+              finding: blockingFinding({
+                dag,
+                task_id: lease.task_id,
+                task_digest: lease.task_digest,
+                rule: "budget_usage_unknown",
+                summary:
+                  `task ${lease.task_id} ended without authoritative usage metering; ` +
+                  "its full reservation remains charged and automatic retry is blocked",
+              }),
+            });
+          }
         }
         transitions.push({
           kind: "append_event",
