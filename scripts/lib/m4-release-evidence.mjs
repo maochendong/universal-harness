@@ -217,13 +217,15 @@ export class ReleaseEvidenceError extends Error {
 }
 
 function expectedConfigPath(repositoryRoot, suite) {
-  const relativePath =
-    suite === "performance"
-      ? "vitest.performance.ts"
-      : suite === "playwright-dashboard"
-        ? "playwright.dashboard.config.ts"
-        : "vitest.workspace.ts";
-  return resolve(repositoryRoot, relativePath);
+  return resolve(repositoryRoot, expectedConfigRepositoryPath(suite));
+}
+
+function expectedConfigRepositoryPath(suite) {
+  return suite === "performance"
+    ? "vitest.performance.ts"
+    : suite === "playwright-dashboard"
+      ? "playwright.dashboard.config.ts"
+      : "vitest.workspace.ts";
 }
 
 function isObject(value) {
@@ -598,6 +600,7 @@ export function assertM4AcceptanceSidecar(sidecar, options = {}) {
       if (
         proof.suite !== suite ||
         proof.command !== CANONICAL_RELEASE_COMMANDS[suite] ||
+        proof.config_path !== expectedConfigRepositoryPath(suite) ||
         proof.coverage !== "full" ||
         proof.implementation_commit !== sidecar.implementation_commit ||
         proof.started_commit !== sidecar.implementation_commit ||
@@ -745,7 +748,7 @@ export function renderM4Markdown(sidecar) {
     );
   }
   lines.push("", "## 真实 dsh Evidence", "");
-  const dogfood = sidecar.dogfood_summary;
+  const dogfood = sidecar.dogfood_result;
   lines.push(
     !isObject(dogfood) || dogfood.present !== true
       ? "- 未找到 `.reports/acceptance/m4-dogfood.json`。"
