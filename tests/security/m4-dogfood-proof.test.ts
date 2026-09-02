@@ -44,6 +44,8 @@ describe("M4 real-provider dogfood proof", () => {
         type: "assistant/message",
         seq: 1,
         data: {
+          turn: 1,
+          step: 1,
           message: {
             source: { provider: "deepseek-official", model: "deepseek-v4-flash" },
           },
@@ -59,6 +61,8 @@ describe("M4 real-provider dogfood proof", () => {
         type: "assistant/message",
         seq: 2,
         data: {
+          turn: 1,
+          step: 2,
           message: {
             source: { provider: "deepseek-official", model: "deepseek-v4-flash" },
           },
@@ -106,6 +110,8 @@ describe("M4 real-provider dogfood proof", () => {
         type: "assistant/message",
         seq: 1,
         data: {
+          turn: 1,
+          step: 1,
           message: { source: { provider: "other-provider", model: "other-model" } },
           usage: { inputTokens: 1, outputTokens: 1 },
         },
@@ -119,17 +125,30 @@ describe("M4 real-provider dogfood proof", () => {
     const usage = { inputTokens: 7, cacheReadTokens: 11, outputTokens: 3, reasoningTokens: 2 };
     const session = [
       { type: "request/context", data: { provider: "p", model: "m" } },
-      { type: "assistant/chunk", seq: 10, data: { chunk: { type: "usage", usage } } },
-      { type: "assistant/chunk", seq: 10, data: { chunk: { type: "usage", usage } } },
       {
         type: "assistant/chunk",
+        seq: 10,
+        data: { turn: 1, step: 1, chunk: { type: "usage", usage } },
+      },
+      {
+        type: "assistant/chunk",
+        seq: 10,
+        data: { turn: 1, step: 1, chunk: { type: "usage", usage } },
+      },
+      {
+        type: "assistant/message",
         seq: 11,
-        data: { chunk: { type: "usage", usage: { inputTokens: 1, outputTokens: 1 } } },
+        data: { turn: 1, step: 1, message: { source: { provider: "p", model: "m" } }, usage },
       },
       {
         type: "assistant/message",
         seq: 12,
-        data: { message: { source: { provider: "p", model: "m" } }, usage },
+        data: {
+          turn: 1,
+          step: 2,
+          message: { source: { provider: "p", model: "m" } },
+          usage: { inputTokens: 1, outputTokens: 1 },
+        },
       },
     ]
       .map((entry) => JSON.stringify(entry))
@@ -167,6 +186,8 @@ describe("M4 real-provider dogfood proof", () => {
         type: "assistant/message",
         seq: 1,
         data: {
+          turn: 1,
+          step: 1,
           message: {
             source: { provider: "deepseek-official", model: "deepseek-v4-flash" },
           },
@@ -244,7 +265,11 @@ describe("M4 real-provider dogfood proof", () => {
             JSON.stringify({
               type: "assistant/chunk",
               seq: 1,
-              data: { chunk: { type: "usage", usage: { inputTokens: 1, outputTokens: 1 } } },
+              data: {
+                turn: 1,
+                step: 1,
+                chunk: { type: "usage", usage: { inputTokens: 1, outputTokens: 1 } },
+              },
             }),
           ].join("\n"),
       }),

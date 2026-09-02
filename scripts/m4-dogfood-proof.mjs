@@ -57,8 +57,7 @@ function usageCount(value, label) {
 export function parseDshSessionEvidence(jsonl, options = {}) {
   const requestIdentities = new Set();
   const assistantIdentities = new Set();
-  const chunkUsages = new Map();
-  const messageUsages = new Map();
+  const usageByStep = new Map();
   const usage = {
     metering: "dsh_session_observed",
     model_call_count: 0,
@@ -99,7 +98,13 @@ export function parseDshSessionEvidence(jsonl, options = {}) {
     if (!Number.isSafeInteger(record.seq) || record.seq < 0) {
       throw new Error("dsh session usage record is missing a valid sequence");
     }
-    const target = isChunkUsage ? chunkUsages : messageUsages;
+    if (!Number.isSafeInteger(record.data?.turn) || !Number.isSafeInteger(record.data?.step)) {
+      throw new Error("dsh session usage record is missing a valid turn/step identity");
+    }
+    const stepKey = `${String(record.data.turn)}:${String(record.data.step)}`;
+    const grouped = usageByStep.get(stepKey) ?? { chunks: new Map(), messages: new Map() };
+    usageByStep.set(stepKey, grouped);
+    const target = isChunkUsage ? grouped.chunks : grouped.messages;
     const canonical = JSON.stringify(reported);
     if (target.has(record.seq) && target.get(record.seq) !== canonical) {
       throw new Error("dsh session repeats a usage sequence with different values");
@@ -107,19 +112,21 @@ export function parseDshSessionEvidence(jsonl, options = {}) {
     target.set(record.seq, canonical);
   }
 
-  const selectedUsages = chunkUsages.size > 0 ? chunkUsages : messageUsages;
-  for (const canonical of selectedUsages.values()) {
-    const reported = JSON.parse(canonical);
-    const inputTokens = usageCount(reported.inputTokens, "inputTokens");
-    const cacheReadTokens = usageCount(reported.cacheReadTokens, "cacheReadTokens");
-    const outputTokens = usageCount(reported.outputTokens, "outputTokens");
-    const reasoningTokens = usageCount(reported.reasoningTokens, "reasoningTokens");
-    usage.model_call_count += 1;
-    usage.input_tokens += inputTokens;
-    usage.cache_read_input_tokens += cacheReadTokens;
-    usage.output_tokens += outputTokens;
-    usage.reasoning_tokens += reasoningTokens;
-    usage.total_tokens += inputTokens + cacheReadTokens + outputTokens;
+  for (const grouped of usageByStep.values()) {
+    const selectedUsages = grouped.chunks.size > 0 ? grouped.chunks : grouped.messages;
+    for (const canonical of selectedUsages.values()) {
+      const reported = JSON.parse(canonical);
+      const inputTokens = usageCount(reported.inputTokens, "inputTokens");
+      const cacheReadTokens = usageCount(reported.cacheReadTokens, "cacheReadTokens");
+      const outputTokens = usageCount(reported.outputTokens, "outputTokens");
+      const reasoningTokens = usageCount(reported.reasoningTokens, "reasoningTokens");
+      usage.model_call_count += 1;
+      usage.input_tokens += inputTokens;
+      usage.cache_read_input_tokens += cacheReadTokens;
+      usage.output_tokens += outputTokens;
+      usage.reasoning_tokens += reasoningTokens;
+      usage.total_tokens += inputTokens + cacheReadTokens + outputTokens;
+    }
   }
 
   if (requestIdentities.size !== 1 || assistantIdentities.size > 1) {
