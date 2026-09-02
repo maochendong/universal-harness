@@ -27,10 +27,33 @@ export interface ResolveFindingGroupWrite {
   readonly evidenceId?: string;
 }
 
+export interface CancelSchedulerOperationWrite {
+  readonly operationId: string;
+  readonly expectedDigest: string;
+  readonly actor: string;
+}
+
+export interface SchedulerPolicyProposalWrite {
+  readonly operationId: string;
+  readonly proposalKind: "budget" | "concurrency";
+  readonly expectedDigest: string;
+  readonly actor: string;
+  readonly maxConcurrency?: number;
+  readonly budget?: {
+    readonly steps: number;
+    readonly tokens: number;
+    readonly durationMs: number;
+  };
+}
+
 export interface DashboardWriteApi {
   decideApproval(input: ApprovalDecisionWrite): Promise<unknown>;
   resumeWorkflow(input: ResumeWorkflowWrite): Promise<unknown>;
   resolveFindingGroup(input: ResolveFindingGroupWrite): Promise<unknown>;
+  /** The service applies Policy and persists cancellation Evidence. */
+  cancelSchedulerOperation?(input: CancelSchedulerOperationWrite): Promise<unknown>;
+  /** Proposes a Policy revision; it never mutates an effective limit directly. */
+  proposeSchedulerPolicy?(input: SchedulerPolicyProposalWrite): Promise<unknown>;
 }
 
 export type DashboardWriteErrorKind = "conflict" | "not_found" | "unavailable" | "invalid";

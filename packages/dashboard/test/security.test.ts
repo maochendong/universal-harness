@@ -133,4 +133,41 @@ describe("Dashboard security", () => {
     expect(noCsrf.status).toBe(403);
     await expect(noCsrf.json()).resolves.toMatchObject({ code: "csrf_mismatch" });
   });
+
+  it("guards Scheduler reads and rejects unregistered force actions before any mutation", async () => {
+    const server = await startDashboardServer({ projectRoot: await project() });
+    servers.push(server);
+
+    const anonymous = await fetch(
+      `${server.origin}/api/v1/scheduler?operation_id=operation_security`,
+    );
+    expect(anonymous.status).toBe(401);
+
+    const exchange = await fetch(server.bootstrapUrl, { redirect: "manual" });
+    const cookie = (exchange.headers.get("set-cookie") ?? "").split(";", 1)[0] ?? "";
+    const session = await fetch(`${server.origin}/api/v1/session`, { headers: { cookie } });
+    const csrf = ((await session.json()) as { data: { csrf_token: string } }).data.csrf_token;
+
+    const crossOrigin = await fetch(
+      `${server.origin}/api/v1/scheduler?operation_id=operation_security`,
+      { headers: { cookie, origin: "https://evil.example" } },
+    );
+    expect(crossOrigin.status).toBe(403);
+
+    const force = await fetch(`${server.origin}/api/v1/scheduler/actions/force_task_success`, {
+      method: "POST",
+      headers: {
+        cookie,
+        origin: server.origin,
+        "content-type": "application/json",
+        "x-harness-csrf": csrf,
+      },
+      body: JSON.stringify({
+        expected_digest: "a".repeat(64),
+        actor: "human:security-test",
+      }),
+    });
+    expect(force.status).toBe(404);
+    await expect(force.json()).resolves.toMatchObject({ code: "route_not_found" });
+  });
 });

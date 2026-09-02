@@ -172,12 +172,17 @@ export function createDashboardReadApi(projectRoot: string): DashboardReadApi {
   return {
     project: () => {
       const status = collectProjectStatus(projectRoot);
+      const schedulerOperationId = readCommittedOperations(harnessRootFor(projectRoot)).at(-1)
+        ?.manifest.workflow_operation_id;
       // M3 (design §18.2): the local Ledger's connection fact rides along so
       // the Overview can render Connection Status without a second request.
       // Never-connected projects keep the exact pre-M3 payload (§19.3).
       const connection = readLocalConnection(projectRoot);
       return {
         ...status,
+        ...(schedulerOperationId === undefined
+          ? {}
+          : { scheduler_operation_id: schedulerOperationId }),
         ...(connection === undefined
           ? {}
           : {

@@ -15,6 +15,8 @@ const model = {
   heartbeatByRun: new Map(),
   unknownRuns: new Set(),
   approvalById: new Map(),
+  schedulerOperationId: undefined,
+  schedulerView: undefined,
   // undefined = not loaded yet; null = unavailable. Active only when the
   // project Ledger carries an active connection (design §19.3).
   collaborationView: undefined,
@@ -603,6 +605,435 @@ async function loadFindings({ append = false } = {}) {
   }
 }
 
+const schedulerReasonLabels = {
+  no_wave_assignment: "未绑定已批准波次",
+  exclusive_resources: "声明了独占资源，按 Plan 串行",
+};
+
+const schedulerRecoveryLabels = {
+  open_approval: "打开审批卡",
+  submit_budget_policy_proposal: "提交预算 Policy Proposal，或缩小 Plan",
+  inspect_retry: "检查自动恢复配额与失败证据",
+  inspect_candidate_conflict: "检查候选分支与冲突路径",
+  revise_plan_resources: "返回 Plan 修订资源声明",
+  return_to_impact_and_plan: "返回 Impact / Plan 重新确认",
+  open_gate_evidence_and_replan: "打开 Gate Evidence 并生成修复 Task",
+  change_adapter_or_supervise: "更换 Adapter 或降级为监督单槽位",
+};
+
+function schedulerReason(reason) {
+  if (schedulerReasonLabels[reason]) return schedulerReasonLabels[reason];
+  const [kind, peer] = String(reason).split(":", 2);
+  if (kind === "depends_on_wave_peer") return `依赖同波次 Task ${peer}`;
+  if (kind === "write_path_overlap") return `与 ${peer} 的写路径重叠`;
+  if (kind === "exclusive_resource_conflict") return `与 ${peer} 争用独占资源`;
+  return reason;
+}
+
+function schedulerSource(authority) {
+  const badge = node("span", `source-key source-${authority}`);
+  badge.textContent =
+    authority === "authoritative"
+      ? "权威 / Ledger"
+      : authority === "live"
+        ? "实时 / Live"
+        : "候选 / Provisional";
+  return badge;
+}
+
+function schedulerAudit(task) {
+  const details = node("details", "audit-details scheduler-audit");
+  details.append(node("summary", "audit-summary", "技术详情"));
+  const table = node("dl", "audit-table");
+  table.append(...pair("TASK ID", task.task_id));
+  if (task.current_run_id) table.append(...pair("RUN", task.current_run_id));
+  if (task.technical_details?.lease_digest)
+    table.append(...pair("LEASE DIGEST", task.technical_details.lease_digest));
+  details.append(table);
+  return details;
+}
+
+function schedulerPhaseState(task, phase) {
+  const order = ["lease", "context", "execute", "verify", "integrate", "release"];
+  const activeByStatus = {
+    waiting_dependency: -1,
+    ready: 0,
+    awaiting_approval: 0,
+    running: 2,
+    verifying: 3,
+    integration_queued: 4,
+    candidate_validated: 4,
+    retry_pending: 2,
+    blocked: 2,
+    cancelled: 5,
+    integrated: 6,
+  };
+  const phaseIndex = order.indexOf(phase);
+  const activeIndex = activeByStatus[task.status] ?? -1;
+  if (task.status === "integrated" || task.status === "cancelled") return "complete";
+  if (phaseIndex < activeIndex) return "complete";
+  if (phaseIndex === activeIndex) return "active";
+  return "pending";
+}
+
+function renderSchedulerTaskDetail(task) {
+  const detail = $("#scheduler-task-detail");
+  clear(detail);
+  detail.append(node("span", "crosshair"), node("p", "eyebrow", "TASK DOSSIER"));
+  const heading = node("h3", "", task.title);
+  heading.id = "scheduler-detail-title";
+  detail.append(heading, schedulerSource(task.authority));
+
+  const timeline = node("ol", "scheduler-task-timeline");
+  const phaseLabels = {
+    lease: "Lease",
+    context: "Context",
+    execute: "Execute",
+    verify: "Verify",
+    integrate: "Integrate",
+    release: "Release",
+  };
+  for (const [phase, label] of Object.entries(phaseLabels)) {
+    const item = node("li", "", label);
+    item.dataset.state = schedulerPhaseState(task, phase);
+    timeline.append(item);
+  }
+  const dependencyCopy = task.dependency_ids.length ? task.dependency_ids.join("、") : "无前置依赖";
+  const reasons = node("ul", "scheduler-reason-list");
+  const reasonValues = task.non_parallel_reasons.length
+    ? task.non_parallel_reasons.map(schedulerReason)
+    : ["本 Task 在已批准波次内没有额外串行约束"];
+  for (const reason of reasonValues) reasons.append(node("li", "", reason));
+  const evidence = node("div", "scheduler-evidence-note");
+  evidence.append(
+    node("strong", "", "Assertions / Gates / Evidence"),
+    node(
+      "p",
+      "",
+      "状态只按 Ledger 证据投影；当前 Scheduler Read Model 未暴露逐项列表时，不以 Agent 自述补齐。",
+    ),
+    node(
+      "p",
+      "",
+      "active_operation / read_branch：Provider 未提供；无法判定 mismatch、missing 或 stale 时，不把分支状态推断为安全。",
+    ),
+  );
+  detail.append(
+    node("p", "scheduler-task-status", `${task.status_label} · Wave ${task.wave_index + 1}`),
+    timeline,
+    node("p", "plot-label", `DEPENDENCIES · ${dependencyCopy}`),
+    reasons,
+    evidence,
+    schedulerAudit(task),
+  );
+}
+
+function schedulerTaskCard(task) {
+  const button = node("button", `scheduler-task-card authority-${task.authority}`);
+  button.type = "button";
+  button.dataset.status = task.status;
+  button.setAttribute("aria-label", `查看 Task：${task.title}`);
+  const heading = node("span", "scheduler-task-heading");
+  heading.append(node("strong", "", task.title), node("small", "", task.status_label));
+  const dependencies = task.dependency_ids.length
+    ? `依赖 ${task.dependency_ids.join("、")}`
+    : "可独立启动";
+  button.append(
+    schedulerSource(task.authority),
+    heading,
+    node("span", "scheduler-task-deps", dependencies),
+  );
+  if (task.non_parallel_reasons.length)
+    button.append(
+      node("span", "scheduler-task-reason", schedulerReason(task.non_parallel_reasons[0])),
+    );
+  button.addEventListener("click", () => renderSchedulerTaskDetail(task));
+  return button;
+}
+
+function renderSchedulerWaves(view) {
+  const register = $("#scheduler-waves");
+  clear(register);
+  if (!view.waves.length) {
+    register.append(node("p", "scheduler-empty", "当前 Profile 未激活并行 Task 波次。"));
+    return;
+  }
+  for (const wave of view.waves) {
+    const article = node("article", "scheduler-wave");
+    if (wave.wave_index === view.summary.current_wave) article.classList.add("is-current");
+    const header = node("header", "scheduler-wave-header");
+    header.append(
+      node("span", "scheduler-wave-index", String(wave.wave_index + 1).padStart(2, "0")),
+      node("strong", "", `Wave ${wave.wave_index + 1}`),
+      node("small", "", `${wave.tasks.length} Task`),
+    );
+    const tasks = node("div", "scheduler-wave-tasks");
+    for (const task of wave.tasks) tasks.append(schedulerTaskCard(task));
+    article.append(header, tasks);
+    register.append(article);
+  }
+}
+
+function renderSchedulerPool(view) {
+  const pool = $("#scheduler-agent-pool");
+  clear(pool);
+  if (view.operation.live_state === "rebuilding") {
+    const rebuilding = node("article", "scheduler-rebuilding");
+    rebuilding.append(
+      node("strong", "", "正在从 Ledger 重建"),
+      node("p", "", "实时投影丢失；权威 Task 进度保持不变，当前不推断 Slot 成败。"),
+    );
+    pool.append(rebuilding);
+    return;
+  }
+  if (!view.slots.length) {
+    pool.append(node("p", "scheduler-empty", "没有活动 Agent Slot。"));
+    return;
+  }
+  for (const slot of view.slots) {
+    const task = view.tasks.find((candidate) => candidate.task_id === slot.task_id);
+    const zombie =
+      slot.state === "running" && task && !["running", "verifying"].includes(task.status);
+    const card = node("article", `agent-slot slot-${slot.state}${zombie ? " is-zombie" : ""}`);
+    const header = node("header", "");
+    header.append(node("strong", "", slot.slot_id), schedulerSource("live"));
+    card.append(
+      header,
+      node("p", "agent-slot-task", task?.title || slot.task_id || "等待 Task"),
+      node("p", "agent-slot-run", slot.run_id ? `Run ${slot.run_id}` : "无活动 Run"),
+      node(
+        "p",
+        "agent-slot-lease",
+        task?.technical_details?.lease_digest
+          ? "Lease 已绑定（digest 见 Task 技术详情）"
+          : "Lease：Provider 未提供",
+      ),
+      node(
+        "p",
+        "agent-slot-observation",
+        zombie
+          ? "疑似僵尸进程 · 等待 Ledger 对账"
+          : slot.observed_at || "heartbeat / observed_at：Provider 未提供",
+      ),
+      node("p", "agent-slot-usage", "steps / tokens / duration：Provider 未提供"),
+      node("p", "agent-slot-worktree", "worktree：仅展示脱敏标识（当前未提供）"),
+    );
+    pool.append(card);
+  }
+}
+
+async function schedulerApprovalDecision(approval, decision, card) {
+  const actorInput = $("input", card);
+  const actorValue = actorInput?.value.trim();
+  if (!actorValue) {
+    status("scheduler", "请输入可审计的审批人身份。", "error");
+    actorInput?.focus();
+    return;
+  }
+  status("scheduler", `正在提交 ${decision}：${approval.request_id}…`);
+  try {
+    const result = await apiWrite(
+      `/api/v1/approvals/${encodeURIComponent(approval.request_id)}/decision`,
+      {
+        decision,
+        expected_digest: approval.bindings.object_digest,
+        actor: actorValue,
+      },
+    );
+    card.dataset.decision = decision;
+    const outcome = node("p", "scheduler-decision-recorded", "审批决议已写入 Ledger");
+    card.append(outcome);
+    if (decision === "approve") {
+      if (result.workflow_operation_id && result.workflow_digest) {
+        const resume = node("button", "command", "恢复 Operation");
+        resume.type = "button";
+        resume.addEventListener("click", async () => {
+          resume.disabled = true;
+          try {
+            await apiWrite(
+              `/api/v1/workflows/${encodeURIComponent(result.workflow_operation_id)}/resume`,
+              { expected_digest: result.workflow_digest, actor: actorValue },
+            );
+            await loadScheduler();
+            status("scheduler", "Operation 已恢复；正在刷新调度状态。", "ready");
+          } catch (error) {
+            status("scheduler", error.message, "error");
+          } finally {
+            resume.disabled = false;
+          }
+        });
+        card.append(resume);
+      } else {
+        card.append(node("code", "scheduler-resume-command", approval.resume_command));
+      }
+    } else {
+      await loadScheduler();
+    }
+  } catch (error) {
+    status("scheduler", error.message, "error");
+  }
+}
+
+function renderSchedulerApprovals(view) {
+  const list = $("#scheduler-approvals");
+  clear(list);
+  if (!view.approvals.length) {
+    list.append(node("p", "scheduler-empty", "当前没有待处理 Scheduler 审批。"));
+    return;
+  }
+  for (const approval of view.approvals) {
+    const card = node("article", "scheduler-approval-card");
+    const heading = node("header", "");
+    heading.append(
+      node("strong", "", approval.objective),
+      node("span", "risk-chip", approval.risk_label),
+    );
+    const form = node("form", "scheduler-approval-form");
+    const label = node("label", "", "审批人身份");
+    const input = node("input");
+    input.name = "actor";
+    input.required = true;
+    input.placeholder = "human:operator";
+    input.setAttribute("aria-label", `审批人身份：${approval.objective}`);
+    label.append(input);
+    const actions = node("div", "scheduler-approval-actions");
+    for (const decision of approval.allowed_decisions) {
+      const button = node(
+        "button",
+        `scheduler-decision decision-${decision}`,
+        decision.toUpperCase(),
+      );
+      button.type = "button";
+      button.addEventListener(
+        "click",
+        () => void schedulerApprovalDecision(approval, decision, card),
+      );
+      actions.append(button);
+    }
+    form.append(label, actions);
+    const bindings = node("details", "audit-details");
+    bindings.append(node("summary", "audit-summary", "审批绑定与恢复命令"));
+    const table = node("dl", "audit-table");
+    table.append(
+      ...pair("ACTION", approval.action),
+      ...pair("REASON", approval.reason),
+      ...pair("OBJECT DIGEST", approval.bindings.object_digest),
+      ...pair("BASELINE", approval.bindings.baseline_digest),
+      ...pair("POLICY", approval.bindings.policy_digest),
+      ...pair("RESUME", approval.resume_command),
+    );
+    bindings.append(table);
+    card.append(heading, node("p", "", approval.reason), form, bindings);
+    card.append(
+      node(
+        "p",
+        "scheduler-provider-note",
+        "write paths / 独占资源 / Adapter / 预算 / grounded brief：仅在权威 Read Model 提供时展示；当前未提供。",
+      ),
+    );
+    list.append(card);
+  }
+}
+
+function renderSchedulerFindings(view) {
+  const list = $("#scheduler-findings");
+  clear(list);
+  if (!view.findings.length) {
+    list.append(node("p", "scheduler-empty", "没有阻塞当前波次的 Finding。"));
+    return;
+  }
+  for (const finding of view.findings) {
+    const card = node("article", "scheduler-finding-card");
+    card.append(
+      node("strong", "", finding.summary),
+      node("span", "scheduler-finding-rule", finding.rule || "未分类 Finding"),
+      node(
+        "p",
+        "scheduler-recovery-action",
+        schedulerRecoveryLabels[finding.recovery_action] || "打开 Finding 证据后处理",
+      ),
+    );
+    list.append(card);
+  }
+}
+
+function renderSchedulerSummary(view) {
+  const currentWave = view.summary.current_wave;
+  setText(
+    "#scheduler-wave-metric",
+    currentWave === null
+      ? `完成 / ${view.summary.total_waves}`
+      : `${currentWave + 1} / ${view.summary.total_waves}`,
+  );
+  setText("#scheduler-slot-metric", `${view.summary.running_slots} / ${view.summary.total_slots}`);
+  setText(
+    "#scheduler-task-metric",
+    `${view.summary.task_progress.completed} / ${view.summary.task_progress.total}`,
+  );
+  setText(
+    "#scheduler-control-metric",
+    `${view.summary.blocking_findings} / ${view.summary.pending_approvals}`,
+  );
+  const budget = view.budget;
+  const tokenLimit = Math.max(1, budget.limit.tokens);
+  const usedPercent = Math.min(100, (budget.consumed_tokens / tokenLimit) * 100);
+  const reservedPercent = Math.min(100 - usedPercent, (budget.reserved_tokens / tokenLimit) * 100);
+  $("#scheduler-budget-used").style.width = `${usedPercent}%`;
+  $("#scheduler-budget-reserved").style.width = `${reservedPercent}%`;
+  $("#scheduler-budget-reserved").style.left = `${usedPercent}%`;
+  setText(
+    "#scheduler-budget-metric",
+    `${budget.consumed_tokens + budget.reserved_tokens} / ${budget.limit.tokens} tokens`,
+  );
+  setText(
+    "#scheduler-budget-copy",
+    `已用 ${budget.consumed_steps} steps · 预留 ${budget.reserved_steps} steps · deadline ${budget.limit.duration_ms}ms`,
+  );
+  setText("#scheduler-live-state", view.operation.live_state_label);
+}
+
+async function loadScheduler() {
+  status("scheduler", "正在读取 Ledger、Plan 与可丢弃实时投影…");
+  try {
+    if (!model.schedulerOperationId) {
+      const project = await api("/api/v1/project");
+      model.schedulerOperationId = project.scheduler_operation_id;
+    }
+    if (!model.schedulerOperationId) {
+      throw new Error("当前项目还没有可读取的 Operation。");
+    }
+    const view = await api(
+      `/api/v1/scheduler?operation_id=${encodeURIComponent(model.schedulerOperationId)}`,
+    );
+    model.schedulerView = view;
+    renderSchedulerSummary(view);
+    renderSchedulerWaves(view);
+    renderSchedulerPool(view);
+    renderSchedulerApprovals(view);
+    renderSchedulerFindings(view);
+    const selected =
+      view.tasks.find((task) => task.wave_index === view.summary.current_wave) || view.tasks[0];
+    if (selected) renderSchedulerTaskDetail(selected);
+    status(
+      "scheduler",
+      view.operation.live_state === "rebuilding"
+        ? "实时投影缺失；权威进度已从 Ledger 恢复。"
+        : `Operation ${view.operation.operation_id} · ${view.tasks.length} Task`,
+      view.operation.live_state === "rebuilding" ? "empty" : "ready",
+    );
+  } catch (error) {
+    for (const target of [
+      "#scheduler-waves",
+      "#scheduler-agent-pool",
+      "#scheduler-approvals",
+      "#scheduler-findings",
+    ])
+      clear($(target));
+    $("#scheduler-waves").append(node("p", "scheduler-empty", error.message));
+    status("scheduler", error.message, "error");
+  }
+}
+
 function liveKey(item) {
   return item.event.observation_key || item.event.payload?.observation_key || item.id;
 }
@@ -1109,6 +1540,7 @@ const loaders = {
   iterations: loadIterations,
   evidence: loadEvidence,
   findings: loadFindings,
+  scheduler: loadScheduler,
   live: async () => startLive(),
   approvals: async () => {
     await ensureConnection();
@@ -1148,6 +1580,7 @@ $("#evidence-controls").addEventListener("submit", (event) => {
 });
 $("#evidence-more").addEventListener("click", () => void loadEvidence({ append: true }));
 $("#finding-more").addEventListener("click", () => void loadFindings({ append: true }));
+$("#scheduler-refresh").addEventListener("click", () => void loadScheduler());
 $("#approval-refresh").addEventListener("click", () => {
   void Promise.all([loadApprovals(), loadRemoteInbox(), loadConflicts()]);
 });

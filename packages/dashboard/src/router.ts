@@ -21,6 +21,7 @@ import {
   sendProblem,
 } from "./problem.js";
 import type { DashboardReadApi } from "./read-api.js";
+import type { DashboardSchedulerApi } from "./scheduler-api.js";
 import type { DashboardSessionStore } from "./session.js";
 import { loadDashboardAsset, type DashboardAssetName } from "./assets.js";
 import { streamDashboardEvents } from "./sse.js";
@@ -46,6 +47,7 @@ export interface DashboardRouterOptions {
   readonly origin: string;
   readonly sessions: DashboardSessionStore;
   readonly readApi: DashboardReadApi;
+  readonly schedulerApi: DashboardSchedulerApi;
   readonly eventStream: EventStreamPort;
   readonly writeApi: DashboardWriteApi;
   readonly collaborationApi: DashboardCollaborationApi;
@@ -267,6 +269,23 @@ function expectedDigest(body: Record<string, unknown>): string {
   return value;
 }
 
+function bodyPositiveInteger(body: Record<string, unknown>, key: string): number {
+  const value = body[key];
+  if (!Number.isSafeInteger(value) || (value as number) <= 0) {
+    throw new DashboardProblem(400, "invalid_write", "Bad Request", `${key} must be positive`);
+  }
+  return value as number;
+}
+
+function unavailableSchedulerWrite(): never {
+  throw new DashboardProblem(
+    503,
+    "write_operations_unavailable",
+    "Unavailable",
+    "this Dashboard host did not configure the requested Scheduler write service",
+  );
+}
+
 export function createDashboardRouter(options: DashboardRouterOptions) {
   return async (request: IncomingMessage, response: ServerResponse): Promise<void> => {
     try {
@@ -358,6 +377,68 @@ export function createDashboardRouter(options: DashboardRouterOptions) {
               workflowOperationId: decodedIdentifier(workflow[1] ?? "", "workflow id"),
               expectedDigest: expectedDigest(body),
               actor: actor(body),
+            }),
+          );
+          return;
+        }
+        const schedulerCancel = /^\/api\/v1\/scheduler\/operations\/(.+)\/cancel$/u.exec(
+          url.pathname,
+        );
+        if (schedulerCancel !== null) {
+          bodyKeys(body, new Set(["expected_digest", "actor"]));
+          const cancel = options.writeApi.cancelSchedulerOperation;
+          if (cancel === undefined) unavailableSchedulerWrite();
+          sendJson(
+            response,
+            await cancel({
+              operationId: decodedIdentifier(schedulerCancel[1] ?? "", "operation id"),
+              expectedDigest: expectedDigest(body),
+              actor: actor(body),
+            }),
+          );
+          return;
+        }
+        if (url.pathname === "/api/v1/scheduler/policy-proposals") {
+          bodyKeys(
+            body,
+            new Set([
+              "operation_id",
+              "proposal_kind",
+              "expected_digest",
+              "actor",
+              "max_concurrency",
+              "steps",
+              "tokens",
+              "duration_ms",
+            ]),
+          );
+          const proposalKind = bodyString(body, "proposal_kind");
+          if (proposalKind !== "budget" && proposalKind !== "concurrency") {
+            throw new DashboardProblem(
+              400,
+              "invalid_write",
+              "Bad Request",
+              "proposal_kind must be budget or concurrency",
+            );
+          }
+          const propose = options.writeApi.proposeSchedulerPolicy;
+          if (propose === undefined) unavailableSchedulerWrite();
+          sendJson(
+            response,
+            await propose({
+              operationId: identifier(bodyString(body, "operation_id"), "operation_id"),
+              proposalKind,
+              expectedDigest: expectedDigest(body),
+              actor: actor(body),
+              ...(proposalKind === "concurrency"
+                ? { maxConcurrency: bodyPositiveInteger(body, "max_concurrency") }
+                : {
+                    budget: {
+                      steps: bodyPositiveInteger(body, "steps"),
+                      tokens: bodyPositiveInteger(body, "tokens"),
+                      durationMs: bodyPositiveInteger(body, "duration_ms"),
+                    },
+                  }),
             }),
           );
           return;
@@ -496,6 +577,12 @@ export function createDashboardRouter(options: DashboardRouterOptions) {
       if (url.pathname === "/api/v1/project") {
         queryKeys(url.searchParams, new Set());
         sendJson(response, options.readApi.project());
+        return;
+      }
+      if (url.pathname === "/api/v1/scheduler") {
+        queryKeys(url.searchParams, new Set(["operation_id"]));
+        const operationId = identifier(one(url.searchParams, "operation_id"), "operation_id");
+        sendJson(response, await options.schedulerApi.read({ operation_id: operationId }));
         return;
       }
       if (url.pathname === "/api/v1/approvals") {

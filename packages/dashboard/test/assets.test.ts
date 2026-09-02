@@ -65,6 +65,20 @@ describe("Dashboard assets", () => {
     expect(javascript).toContain("/api/v1/collaboration/integrations/");
     expect(css).toContain(".projection-note");
     expect(css).toContain(".remote-fact-card");
+    // M4: one Observatory-native Scheduler control surface, not a second app.
+    expect(html).toContain('data-panel="scheduler"');
+    expect(html).toContain('id="scheduler-waves"');
+    expect(html).toContain('id="scheduler-agent-pool"');
+    expect(html).toContain('id="scheduler-task-detail"');
+    expect(html).toContain('id="scheduler-approvals"');
+    expect(javascript).toContain("/api/v1/scheduler?operation_id=");
+    expect(javascript).toContain("正在从 Ledger 重建");
+    expect(javascript).toContain("疑似僵尸进程");
+    expect(javascript).not.toMatch(
+      /force_task_success|skip_gate|move_task_to_slot|force_release_lease|force_merge_candidate|ignore_baseline_drift/u,
+    );
+    expect(css).toContain(".scheduler-grid");
+    expect(css).toContain(".source-provisional");
     for (const component of [".business-heading", ".business-badges", ".audit-details"]) {
       expect(css).toContain(component);
     }

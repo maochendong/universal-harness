@@ -18,6 +18,17 @@ export { DashboardSessionStore, type DashboardSession } from "./session.js";
 export { DashboardProblem, type ProblemDetails } from "./problem.js";
 export { createDashboardReadApi, type DashboardPage, type DashboardReadApi } from "./read-api.js";
 export {
+  createDashboardSchedulerApi,
+  unavailableDashboardSchedulerApi,
+  type DashboardSchedulerApi,
+  type DashboardSchedulerApiOptions,
+  type DashboardSchedulerApproval,
+  type DashboardSchedulerFinding,
+  type DashboardSchedulerSlot,
+  type DashboardSchedulerTask,
+  type DashboardSchedulerView,
+} from "./scheduler-api.js";
+export {
   presentApproval,
   presentCapabilityStatus,
   presentEdge,
@@ -49,10 +60,12 @@ export {
   DashboardWriteError,
   unavailableDashboardWriteApi,
   type ApprovalDecisionWrite,
+  type CancelSchedulerOperationWrite,
   type DashboardApprovalDecision,
   type DashboardFindingAction,
   type DashboardWriteApi,
   type DashboardWriteErrorKind,
   type ResolveFindingGroupWrite,
   type ResumeWorkflowWrite,
+  type SchedulerPolicyProposalWrite,
 } from "./write-api.js";

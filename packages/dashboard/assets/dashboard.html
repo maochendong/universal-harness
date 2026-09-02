@@ -41,8 +41,9 @@
           >
           <a class="nav-link" href="#evidence" data-view="evidence"><span>05</span> Evidence</a>
           <a class="nav-link" href="#findings" data-view="findings"><span>06</span> Findings</a>
-          <a class="nav-link" href="#live" data-view="live"><span>07</span> Live</a>
-          <a class="nav-link" href="#approvals" data-view="approvals"><span>08</span> Approvals</a>
+          <a class="nav-link" href="#scheduler" data-view="scheduler"><span>07</span> Scheduler</a>
+          <a class="nav-link" href="#live" data-view="live"><span>08</span> Live</a>
+          <a class="nav-link" href="#approvals" data-view="approvals"><span>09</span> Approvals</a>
         </nav>
         <div class="rail-note">
           <span>MODE</span><strong>OBSERVE / GOVERN</strong>
@@ -275,8 +276,93 @@
           <p class="state-line" data-state="findings" role="status">Loading governance groups…</p>
         </section>
 
+        <section class="panel" data-panel="scheduler" aria-labelledby="scheduler-title" hidden>
+          <div class="section-kicker"><span>07</span> LOCAL TASK CONTROL</div>
+          <div class="section-heading scheduler-heading">
+            <div>
+              <p class="eyebrow">AUTHORITATIVE DAG / LIVE AGENT POOL</p>
+              <h2 id="scheduler-title">本地任务调度</h2>
+            </div>
+            <div class="scheduler-toolbar">
+              <p id="scheduler-live-state">正在读取权威状态…</p>
+              <button class="command" id="scheduler-refresh" type="button">刷新调度状态</button>
+            </div>
+          </div>
+
+          <div class="scheduler-summary" aria-label="调度摘要">
+            <article><span>当前波次</span><strong id="scheduler-wave-metric">—</strong></article>
+            <article><span>Agent 槽位</span><strong id="scheduler-slot-metric">—</strong></article>
+            <article><span>Task 进度</span><strong id="scheduler-task-metric">—</strong></article>
+            <article>
+              <span>阻塞 / 审批</span><strong id="scheduler-control-metric">—</strong>
+            </article>
+            <article class="scheduler-budget-summary">
+              <span>Iteration 预算</span><strong id="scheduler-budget-metric">—</strong>
+              <div class="budget-meter" aria-label="Iteration budget usage">
+                <i id="scheduler-budget-used"></i><b id="scheduler-budget-reserved"></b>
+              </div>
+              <small id="scheduler-budget-copy">等待预算投影</small>
+            </article>
+          </div>
+
+          <div class="scheduler-grid">
+            <div class="scheduler-primary">
+              <section class="scheduler-region" aria-labelledby="scheduler-waves-title">
+                <header>
+                  <div>
+                    <span class="source-key source-authoritative">权威 / Ledger</span>
+                    <h3 id="scheduler-waves-title">Task DAG 与并行波次</h3>
+                  </div>
+                  <p>依赖与资源声明决定谁能并行；卡片顺序来自已批准 Plan。</p>
+                </header>
+                <div class="scheduler-waves" id="scheduler-waves"></div>
+              </section>
+
+              <section class="scheduler-region" aria-labelledby="scheduler-pool-title">
+                <header>
+                  <div>
+                    <span class="source-key source-live">实时 / 可丢弃投影</span>
+                    <h3 id="scheduler-pool-title">Agent Pool</h3>
+                  </div>
+                  <p>PID、heartbeat 与输出属于 Live 信号，永不替代 Ledger 结论。</p>
+                </header>
+                <div class="agent-pool" id="scheduler-agent-pool"></div>
+              </section>
+
+              <section
+                class="scheduler-region scheduler-governance"
+                aria-labelledby="scheduler-governance-title"
+              >
+                <header>
+                  <div>
+                    <span class="source-key source-authoritative">治理边界</span>
+                    <h3 id="scheduler-governance-title">审批与恢复</h3>
+                  </div>
+                  <p>只开放具备精确 digest binding 的治理动作；没有任何强制成功或跳过门禁入口。</p>
+                </header>
+                <div class="scheduler-governance-grid">
+                  <div id="scheduler-approvals" class="scheduler-approval-list"></div>
+                  <div id="scheduler-findings" class="scheduler-finding-list"></div>
+                </div>
+              </section>
+            </div>
+
+            <aside
+              class="scheduler-detail"
+              id="scheduler-task-detail"
+              aria-labelledby="scheduler-detail-title"
+            >
+              <span class="crosshair" aria-hidden="true"></span>
+              <p class="eyebrow">TASK DOSSIER</p>
+              <h3 id="scheduler-detail-title">选择一个 Task</h3>
+              <p>查看 Lease → Context → Execute → Verify → Integrate → Release 的证据链。</p>
+            </aside>
+          </div>
+          <p class="state-line" data-state="scheduler" role="status">Scheduler 尚未加载。</p>
+        </section>
+
         <section class="panel" data-panel="live" aria-labelledby="live-title" hidden>
-          <div class="section-kicker"><span>07</span> LIVE TELEMETRY</div>
+          <div class="section-kicker"><span>08</span> LIVE TELEMETRY</div>
           <div class="section-heading">
             <div>
               <p class="eyebrow">LOSSY SIGNAL / AUTHORITATIVE REPLACEMENT</p>
@@ -315,7 +401,7 @@
         </section>
 
         <section class="panel" data-panel="approvals" aria-labelledby="approvals-title" hidden>
-          <div class="section-kicker"><span>08</span> AUTHORITATIVE CONTROL QUEUE</div>
+          <div class="section-kicker"><span>09</span> AUTHORITATIVE CONTROL QUEUE</div>
           <div class="section-heading">
             <div>
               <p class="eyebrow">LEDGER-BACKED / DIGEST-BOUND</p>

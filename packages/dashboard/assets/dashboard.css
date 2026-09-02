@@ -1344,6 +1344,415 @@ h2 {
 .remote-fact-card .command {
   margin-top: 1rem;
 }
+
+/* M4 Scheduler — the control-room language stays industrial and evidence
+   dense: solid amber = Ledger authority, teal = disposable live signal,
+   dashed oxide = provisional candidate. */
+.scheduler-heading {
+  align-items: end;
+}
+.scheduler-toolbar {
+  display: grid;
+  justify-items: end;
+  gap: 0.8rem;
+}
+.scheduler-toolbar p {
+  margin: 0;
+  color: var(--paper-muted);
+  font: 0.62rem/1.5 var(--mono);
+}
+.scheduler-summary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(8rem, 1fr)) minmax(15rem, 1.8fr);
+  margin: 2rem 0;
+  border: 1px solid var(--rule-bright);
+  background: rgba(13, 24, 27, 0.78);
+}
+.scheduler-summary article {
+  min-width: 0;
+  padding: 1.1rem;
+  border-right: 1px solid var(--rule);
+}
+.scheduler-summary article:last-child {
+  border-right: 0;
+}
+.scheduler-summary span,
+.scheduler-summary small {
+  display: block;
+  color: var(--paper-muted);
+  font: 0.58rem/1.45 var(--mono);
+  letter-spacing: 0.09em;
+}
+.scheduler-summary strong {
+  display: block;
+  margin-top: 0.55rem;
+  color: var(--paper);
+  font: 400 1.45rem/1 var(--display);
+}
+.budget-meter {
+  position: relative;
+  height: 0.42rem;
+  margin: 0.8rem 0 0.55rem;
+  overflow: hidden;
+  background: var(--rule);
+}
+.budget-meter i,
+.budget-meter b {
+  position: absolute;
+  inset: 0 auto 0 0;
+}
+.budget-meter i {
+  background: var(--signal);
+}
+.budget-meter b {
+  background: var(--warning);
+}
+.scheduler-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(18rem, 25rem);
+  gap: 1rem;
+  align-items: start;
+  min-width: 0;
+}
+.scheduler-primary {
+  min-width: 0;
+  display: grid;
+  gap: 1rem;
+}
+.scheduler-region,
+.scheduler-detail {
+  min-width: 0;
+  max-width: 100%;
+  border: 1px solid var(--rule-bright);
+  background:
+    linear-gradient(rgba(100, 226, 210, 0.02) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(100, 226, 210, 0.02) 1px, transparent 1px), var(--ink-soft);
+  background-size: 1.5rem 1.5rem;
+}
+.scheduler-region {
+  padding: clamp(1rem, 2vw, 1.6rem);
+}
+.scheduler-region > header {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 2rem;
+  margin-bottom: 1.3rem;
+}
+.scheduler-region h3,
+.scheduler-detail h3 {
+  margin: 0.5rem 0 0;
+  font: 400 1.75rem/1.05 var(--display);
+}
+.scheduler-region > header p {
+  max-width: 29rem;
+  margin: 0;
+  color: var(--paper-muted);
+  font-size: 0.72rem;
+  line-height: 1.55;
+}
+.source-key {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  width: max-content;
+  padding: 0.24rem 0.42rem;
+  border: 1px solid currentColor;
+  color: var(--paper-muted);
+  font: 0.52rem/1 var(--mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.source-key::before {
+  content: "";
+  width: 0.35rem;
+  height: 0.35rem;
+  background: currentColor;
+}
+.source-authoritative {
+  color: var(--warning);
+}
+.source-live {
+  color: var(--signal);
+}
+.source-provisional {
+  border-style: dashed;
+  color: var(--oxide);
+}
+.scheduler-waves {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(17rem, 1fr);
+  gap: 0.8rem;
+  overflow-x: auto;
+  padding: 0.25rem 0 0.8rem;
+}
+.scheduler-wave {
+  min-width: 0;
+  border: 1px solid var(--rule);
+  background: rgba(7, 16, 19, 0.82);
+}
+.scheduler-wave.is-current {
+  border-color: var(--warning);
+  box-shadow: inset 0 0 0 1px rgba(240, 189, 88, 0.2);
+}
+.scheduler-wave-header {
+  display: grid;
+  grid-template-columns: 2.3rem 1fr auto;
+  align-items: baseline;
+  gap: 0.6rem;
+  padding: 0.8rem;
+  border-bottom: 1px solid var(--rule);
+}
+.scheduler-wave-header strong {
+  font: 600 0.72rem/1 var(--mono);
+  letter-spacing: 0.08em;
+}
+.scheduler-wave-header small {
+  color: var(--paper-muted);
+  font: 0.58rem/1 var(--mono);
+}
+.scheduler-wave-index {
+  color: var(--oxide);
+  font: 400 1.25rem/1 var(--display);
+}
+.scheduler-wave-tasks {
+  display: grid;
+  gap: 0.55rem;
+  padding: 0.65rem;
+}
+.scheduler-task-card {
+  display: grid;
+  gap: 0.55rem;
+  width: 100%;
+  padding: 0.85rem;
+  border: 1px solid var(--rule);
+  color: var(--paper);
+  text-align: left;
+  background: var(--panel);
+}
+.scheduler-task-card:hover,
+.scheduler-task-card:focus-visible {
+  border-color: var(--signal);
+  transform: translateY(-1px);
+}
+.scheduler-task-card.authority-provisional {
+  border-style: dashed;
+  border-color: var(--oxide);
+}
+.scheduler-task-card[data-status="integrated"] {
+  box-shadow: inset 0.18rem 0 var(--signal);
+}
+.scheduler-task-card[data-status="blocked"] {
+  box-shadow: inset 0.18rem 0 var(--danger);
+}
+.scheduler-task-heading {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.8rem;
+}
+.scheduler-task-heading strong {
+  font-size: 0.82rem;
+}
+.scheduler-task-heading small,
+.scheduler-task-deps,
+.scheduler-task-reason {
+  color: var(--paper-muted);
+  font: 0.58rem/1.45 var(--mono);
+}
+.scheduler-task-reason {
+  color: var(--warning);
+}
+.agent-pool {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
+  gap: 0.7rem;
+}
+.agent-slot,
+.scheduler-rebuilding,
+.scheduler-approval-card,
+.scheduler-finding-card {
+  padding: 1rem;
+  border: 1px solid var(--rule);
+  background: rgba(7, 16, 19, 0.82);
+}
+.agent-slot {
+  border-style: dashed;
+  border-color: rgba(100, 226, 210, 0.55);
+}
+.agent-slot.is-zombie {
+  border-color: var(--danger);
+}
+.agent-slot header,
+.scheduler-approval-card header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.8rem;
+}
+.agent-slot p {
+  margin: 0.55rem 0 0;
+  color: var(--paper-muted);
+  font: 0.58rem/1.5 var(--mono);
+}
+.agent-slot-task {
+  color: var(--paper) !important;
+  font-size: 0.75rem !important;
+}
+.scheduler-detail {
+  position: sticky;
+  top: 7rem;
+  min-height: 30rem;
+  padding: 1.5rem;
+}
+.scheduler-detail > p:not(.eyebrow):not(.plot-label) {
+  color: var(--paper-muted);
+  font-size: 0.72rem;
+  line-height: 1.6;
+}
+.scheduler-task-status {
+  color: var(--warning) !important;
+  font: 0.63rem/1.4 var(--mono) !important;
+}
+.scheduler-task-timeline {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  padding: 0;
+  margin: 1.5rem 0;
+  list-style: none;
+}
+.scheduler-task-timeline li {
+  position: relative;
+  padding-top: 1.1rem;
+  color: var(--paper-muted);
+  font: 0.48rem/1 var(--mono);
+  text-align: center;
+}
+.scheduler-task-timeline li::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 0.24rem;
+  background: var(--rule);
+}
+.scheduler-task-timeline li[data-state="complete"]::before {
+  background: var(--signal);
+}
+.scheduler-task-timeline li[data-state="active"]::before {
+  background: var(--warning);
+}
+.scheduler-reason-list {
+  margin: 0.7rem 0 1.3rem;
+  padding-left: 1rem;
+  color: var(--paper-muted);
+  font-size: 0.68rem;
+  line-height: 1.6;
+}
+.scheduler-evidence-note {
+  padding: 0.85rem;
+  border-left: 0.18rem solid var(--warning);
+  background: rgba(240, 189, 88, 0.05);
+}
+.scheduler-evidence-note strong {
+  font: 0.6rem/1 var(--mono);
+}
+.scheduler-evidence-note p {
+  margin: 0.45rem 0 0;
+  color: var(--paper-muted);
+  font-size: 0.65rem;
+  line-height: 1.55;
+}
+.scheduler-governance-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(15rem, 0.8fr);
+  gap: 0.7rem;
+}
+.scheduler-approval-list,
+.scheduler-finding-list {
+  display: grid;
+  gap: 0.7rem;
+  align-content: start;
+}
+.scheduler-approval-card {
+  border-top: 0.18rem solid var(--warning);
+}
+.risk-chip,
+.scheduler-finding-rule {
+  color: var(--warning);
+  font: 0.55rem/1 var(--mono);
+}
+.scheduler-approval-card > p,
+.scheduler-finding-card > p {
+  color: var(--paper-muted);
+  font-size: 0.68rem;
+  line-height: 1.55;
+}
+.scheduler-approval-form {
+  display: grid;
+  grid-template-columns: minmax(10rem, 1fr) auto;
+  gap: 0.7rem;
+  align-items: end;
+}
+.scheduler-approval-form label {
+  color: var(--paper-muted);
+  font: 0.55rem/1.4 var(--mono);
+}
+.scheduler-approval-form input {
+  display: block;
+  width: 100%;
+  margin-top: 0.35rem;
+  padding: 0.55rem;
+  border: 1px solid var(--rule-bright);
+  color: var(--paper);
+  background: var(--ink);
+}
+.scheduler-approval-actions {
+  display: flex;
+  gap: 0.35rem;
+}
+.scheduler-decision {
+  padding: 0.58rem;
+  border: 1px solid var(--rule-bright);
+  color: var(--paper);
+  background: transparent;
+  font: 0.52rem/1 var(--mono);
+}
+.scheduler-decision:hover {
+  border-color: var(--signal);
+}
+.decision-reject {
+  color: var(--danger);
+}
+.scheduler-decision-recorded {
+  color: var(--signal) !important;
+}
+.scheduler-resume-command {
+  overflow-wrap: anywhere;
+  display: block;
+  margin-top: 0.8rem;
+  padding: 0.6rem;
+  color: var(--signal);
+  background: var(--ink);
+  font-size: 0.62rem;
+}
+.scheduler-finding-card {
+  display: grid;
+  gap: 0.55rem;
+  border-left: 0.18rem solid var(--danger);
+}
+.scheduler-recovery-action {
+  margin: 0;
+  color: var(--warning) !important;
+}
+.scheduler-empty {
+  margin: 0;
+  padding: 1rem;
+  border: 1px dashed var(--rule-bright);
+  color: var(--paper-muted);
+  font: 0.65rem/1.6 var(--mono);
+}
 .state-line {
   min-height: 1.4rem;
   margin: 1.4rem 0 0;
@@ -1389,6 +1798,15 @@ h2 {
   }
   .metric-strip article:nth-child(-n + 2) {
     border-bottom: 1px solid var(--rule);
+  }
+  .scheduler-summary {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .scheduler-summary article {
+    border-bottom: 1px solid var(--rule);
+  }
+  .scheduler-budget-summary {
+    grid-column: 1 / -1;
   }
 }
 @media (max-width: 52rem) {
@@ -1491,6 +1909,19 @@ h2 {
     align-items: stretch;
     flex-direction: column;
   }
+  .scheduler-grid,
+  .scheduler-governance-grid {
+    grid-template-columns: 1fr;
+  }
+  .scheduler-detail {
+    position: static;
+    min-height: 0;
+  }
+  .scheduler-region > header {
+    align-items: start;
+    flex-direction: column;
+    gap: 0.7rem;
+  }
 }
 @media (max-width: 34rem) {
   .masthead-status #connection-label {
@@ -1539,6 +1970,32 @@ h2 {
   }
   .dossier-grid {
     grid-template-columns: 1fr;
+  }
+  .scheduler-summary {
+    grid-template-columns: 1fr;
+  }
+  .scheduler-summary article,
+  .scheduler-budget-summary {
+    grid-column: auto;
+    border-right: 0;
+  }
+  .scheduler-waves {
+    grid-auto-flow: row;
+    grid-auto-columns: auto;
+  }
+  .scheduler-approval-form {
+    grid-template-columns: 1fr;
+  }
+  .scheduler-approval-actions {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+  }
+  .scheduler-task-timeline {
+    grid-template-columns: repeat(3, 1fr);
+    row-gap: 1rem;
+  }
+  .scheduler-detail .crosshair {
+    right: 0;
   }
 }
 @media (prefers-reduced-motion: reduce) {

@@ -1434,6 +1434,25 @@ describe("serve resumes workflows under the dashboard driver lock", { timeout: 3
     const sessionBody = (await sessionResponse.json()) as { data: { csrf_token: string } };
     const csrf = sessionBody.data.csrf_token;
 
+    const scheduler = await fetch(
+      `${origin}/api/v1/scheduler?operation_id=${harness.workflowOperationId}`,
+      { headers: { cookie } },
+    );
+    expect(scheduler.status).toBe(200);
+    const schedulerBody = (await scheduler.json()) as {
+      data: {
+        operation: { operation_id: string };
+        tasks: { title: string; authority: string }[];
+      };
+    };
+    expect(schedulerBody.data.operation.operation_id).toBe(harness.workflowOperationId);
+    expect(schedulerBody.data.tasks[0]).toMatchObject({
+      title: "Task A",
+      authority: "authoritative",
+    });
+    expect(fake.modelReads).toEqual([harness.workflowOperationId]);
+    expect(fake.acquired).toEqual([]);
+
     const current = readCurrentOperation(
       { projectRoot: harness.projectRoot, readBaseline: () => headOf(harness.projectRoot) },
       harness.workflowOperationId,

@@ -6,6 +6,7 @@ import { join, resolve } from "node:path";
 import { createGitVcsAdapter } from "@universal-harness-internal/adapter-vcs-git";
 import {
   DashboardWriteError,
+  createDashboardSchedulerApi,
   startDashboardServer,
   type DashboardServer,
 } from "@universal-harness-internal/dashboard";
@@ -1686,6 +1687,15 @@ export function createOrchestratedRuntimeService(
 
     serve: async (request: ServeRequest): Promise<CommandResult> => {
       const deps = orchestratorDeps(request.projectRoot);
+      // M4 Task 13 composition seam: reads remain lock-free and delegate to
+      // the same project Scheduler Host used by status/run/resume. The host
+      // is absent for projects without an activated/configured Scheduler, in
+      // which case Dashboard keeps its explicit unavailable projection.
+      const dashboardSchedulerHost = schedulerHostFor({
+        projectRoot: request.projectRoot,
+        driverKind: "dashboard",
+        live: "read",
+      });
       const writeFailure = (error: unknown): never => {
         if (
           (error instanceof OrchestrationError && error.kind === "binding_drift") ||
@@ -1715,6 +1725,14 @@ export function createOrchestratedRuntimeService(
       const server = await startDashboardServer({
         projectRoot: request.projectRoot,
         port: request.port,
+        ...(dashboardSchedulerHost === undefined
+          ? {}
+          : {
+              schedulerApi: createDashboardSchedulerApi({
+                readSchedulerModel: (operationId) =>
+                  dashboardSchedulerHost.readSchedulerModel(operationId),
+              }),
+            }),
         writeApi: {
           decideApproval: async (input) => {
             try {

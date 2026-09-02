@@ -17,6 +17,7 @@ import {
 } from "./collaboration-api.js";
 import { DashboardProblem } from "./problem.js";
 import { createDashboardReadApi, type DashboardReadApi } from "./read-api.js";
+import { unavailableDashboardSchedulerApi, type DashboardSchedulerApi } from "./scheduler-api.js";
 import { createDashboardRouter } from "./router.js";
 import { DashboardSessionStore } from "./session.js";
 import { unavailableDashboardWriteApi, type DashboardWriteApi } from "./write-api.js";
@@ -29,6 +30,8 @@ export interface DashboardServerOptions {
   readonly port?: number;
   readonly eventStream?: EventStreamPort;
   readonly writeApi?: DashboardWriteApi;
+  /** M4 Scheduler read projection; the CLI composition root supplies it. */
+  readonly schedulerApi?: DashboardSchedulerApi;
   /** M3 remote collaboration Adapter; defaults to the Ledger + HTTPS wiring. */
   readonly collaborationApi?: DashboardCollaborationApi;
 }
@@ -163,6 +166,10 @@ export async function startDashboardServer(
       startupProblem === undefined
         ? createDashboardReadApi(options.projectRoot)
         : unavailableReadApi(startupProblem),
+    schedulerApi:
+      startupProblem === undefined
+        ? (options.schedulerApi ?? unavailableDashboardSchedulerApi())
+        : unavailableDashboardSchedulerApi(),
     eventStream: options.eventStream ?? new FileEventStream(options.projectRoot),
     writeApi:
       startupProblem === undefined
