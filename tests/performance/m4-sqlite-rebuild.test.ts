@@ -12,16 +12,14 @@ type SchedulerModel = Awaited<
   ReturnType<Awaited<ReturnType<typeof createM4E2eFixture>>["host"]["readSchedulerModel"]>
 >;
 
-function authorityDigest(model: SchedulerModel): string {
-  return contentDigest({
-    operation_id: model.operation.operation_id,
-    capability_status: model.capability_status,
-    plan: model.plan,
-    tasks: model.tasks,
-    budget: model.budget,
-    approvals: model.approvals,
-    findings: model.findings,
-  });
+/** Canonical durable read model: only the SQLite/live-spool fields are removed. */
+function durableReadModelDigest(model: SchedulerModel): string {
+  const durable = structuredClone(model) as unknown as Record<string, unknown>;
+  delete durable.digest;
+  delete durable.slots;
+  const operation = durable.operation as Record<string, unknown>;
+  delete operation.live_state;
+  return contentDigest(durable);
 }
 
 describe("m4 SQLite rebuild release gate", () => {
@@ -48,7 +46,13 @@ describe("m4 SQLite rebuild release gate", () => {
     const rebuilt = await restarted.readSchedulerModel(fixture.operationId);
     expect(rebuilt.operation.live_state).toBe("rebuilding");
     expect(rebuilt.slots).toEqual([]);
-    expect(authorityDigest(rebuilt)).toBe(authorityDigest(observed));
+    expect(rebuilt.operation).toMatchObject({
+      operation_id: observed.operation.operation_id,
+      iteration_id: observed.operation.iteration_id,
+      status: observed.operation.status,
+    });
+    expect(rebuilt.presentation_map).toEqual(observed.presentation_map);
+    expect(durableReadModelDigest(rebuilt)).toBe(durableReadModelDigest(observed));
     expect(rebuilt.tasks.every((task) => task.status === "integrated")).toBe(true);
   }, 120_000);
 });
