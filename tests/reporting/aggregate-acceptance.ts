@@ -311,6 +311,23 @@ export function resolveSuiteInvocation(
   };
 }
 
+export function resolvePlaywrightInvocation(argv: readonly string[]): SuiteInvocation {
+  const normalized = canonicalArgs(argv);
+  const canonical = ["test", "--config", "playwright.dashboard.config.ts"];
+  if (JSON.stringify(normalized) === JSON.stringify(canonical)) {
+    return {
+      suite: "playwright-dashboard",
+      command: "pnpm test:e2e:dashboard",
+      coverage: "full",
+    };
+  }
+  return {
+    suite: "playwright-dashboard",
+    command: `playwright ${normalized.join(" ")}`.trim(),
+    coverage: "partial",
+  };
+}
+
 /** Repository-relative output below `.reports/acceptance`. */
 export function reportPathForInvocation(invocation: SuiteInvocation, invocationId: string): string {
   if (invocation.coverage === "full") return `${invocation.suite}.json`;

@@ -11,7 +11,7 @@ export default defineConfig({
   fullyParallel: false,
   workers: 1,
   retries: process.env["CI"] === undefined ? 0 : 1,
-  reporter: [["list"], ["json", { outputFile: ".reports/acceptance/playwright-dashboard.json" }]],
+  reporter: [["list"], ["./tests/reporting/playwright-acceptance-reporter.ts"]],
   outputDir: ".reports/playwright-results",
   use: {
     channel: "chrome",

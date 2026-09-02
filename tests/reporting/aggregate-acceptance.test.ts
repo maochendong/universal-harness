@@ -11,6 +11,7 @@ import {
   criteriaForFile,
   mergeSuiteReports,
   reportPathForInvocation,
+  resolvePlaywrightInvocation,
   resolveSuiteInvocation,
   suiteNameFromInvocation,
 } from "./aggregate-acceptance.js";
@@ -110,6 +111,24 @@ describe("release suite provenance", () => {
         "inv-partial",
       ),
     ).toBe("partial/security-inv-partial.json");
+  });
+
+  it("requires the exact dashboard command for full Playwright coverage", () => {
+    expect(
+      resolvePlaywrightInvocation(["test", "--config", "playwright.dashboard.config.ts"]),
+    ).toEqual({
+      suite: "playwright-dashboard",
+      command: "pnpm test:e2e:dashboard",
+      coverage: "full",
+    });
+    expect(
+      resolvePlaywrightInvocation([
+        "test",
+        "--config",
+        "playwright.dashboard.config.ts",
+        "tests/e2e/dashboard-m4-scheduler.test.ts",
+      ]),
+    ).toMatchObject({ suite: "playwright-dashboard", coverage: "partial" });
   });
 });
 
