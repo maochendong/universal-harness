@@ -26,6 +26,9 @@ const BASELINE = "0123456789abcdef0123456789abcdef01234567";
 const TERMINAL_STATES = ["released", "expired", "revoked"] as const;
 const RETRY_KINDS: readonly TaskRetryKind[] = ["executor_retry", "integration_retry"];
 const TASK_IDS = ["task_alpha", "task_beta", "task_gamma"] as const;
+// Four hundred stateful steps deliberately exercise the whole lease chain.
+// Bound this property locally instead of widening every unit test in the suite.
+const PROPERTY_TIMEOUT = 30_000;
 
 interface TaskSim {
   readonly records: TaskLeaseRecord[];
@@ -79,7 +82,7 @@ function allRecords(sims: readonly TaskSim[]): TaskLeaseRecord[] {
   return sims.flatMap((sim) => sim.records);
 }
 
-describe("task lease chain properties", () => {
+describe("task lease chain properties", { timeout: PROPERTY_TIMEOUT }, () => {
   it("fencing strictly increases, old tokens never return, commands are idempotent", () => {
     const random = mulberry32(2026_0831);
     const sims: TaskSim[] = TASK_IDS.map(() => ({

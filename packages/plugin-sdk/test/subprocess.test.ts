@@ -71,23 +71,25 @@ describe("plugin subprocess abort signal", () => {
       // Trap SIGTERM so a second signal would be observable; exit on the first.
       args: [
         "-e",
-        "process.on('SIGTERM', () => { process.stdout.write('sigterm\\n'); process.exit(42); }); setTimeout(() => {}, 5000);",
+        "process.on('SIGTERM', () => { process.stdout.write('sigterm\\n'); process.exit(42); }); process.stdout.write('ready\\n'); setTimeout(() => {}, 5000);",
       ],
       cwd: worktree(),
       env: {},
       timeout_ms: 10_000,
       max_output_bytes: 4_096,
       signal: controller.signal,
+      // Wait until the child proves its handler is installed. A fixed wall-clock
+      // delay races process startup when the full release suite is I/O-bound.
+      on_output: ({ stream, chunk }) => {
+        if (stream === "stdout" && chunk.includes("ready\n")) controller.abort();
+      },
     });
-    setTimeout(() => {
-      controller.abort();
-    }, 100);
     const result = await running;
 
     expect(result.aborted).toBe(true);
     expect(result.timed_out).toBe(false);
     expect(result.output_truncated).toBe(false);
-    expect(result.stdout).toBe("sigterm\n");
+    expect(result.stdout).toBe("ready\nsigterm\n");
     expect(result.exit_code).toBe(42);
   });
 

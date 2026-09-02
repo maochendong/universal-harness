@@ -30,6 +30,10 @@ function captureIo(): CapturedIo {
 }
 
 const roots: string[] = [];
+// Status fixtures bootstrap a complete Git-native control plane before reading
+// it. Keep the larger timeout local to this integration suite so release-suite
+// I/O contention cannot turn the global 5s unit-test limit into a false failure.
+const CLI_INTEGRATION_TIMEOUT = process.platform === "win32" ? 60_000 : 30_000;
 
 function tempRoot(): string {
   const root = realpathSync(mkdtempSync(join(tmpdir(), "harness-cli-status-")));
@@ -41,7 +45,7 @@ afterEach(() => {
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
 });
 
-describe("harness status rendering", () => {
+describe("harness status rendering", { timeout: CLI_INTEGRATION_TIMEOUT }, () => {
   it("shows a live active_run until its disposable stream terminates", async () => {
     const parent = tempRoot();
     await runCli(
