@@ -169,6 +169,7 @@ describe("buildSuiteReport", () => {
         invocation_id: "inv-main",
         command: "pnpm test",
         coverage: "full",
+        config_path: "/repo/vitest.workspace.ts",
       },
     );
     const ac1 = report.records.find((record) => record.criterion_id === "AC-1");
@@ -187,6 +188,7 @@ describe("buildSuiteReport", () => {
       invocation_id: "inv-main",
       command: "pnpm test",
       coverage: "full",
+      config_path: "/repo/vitest.workspace.ts",
     });
   });
 

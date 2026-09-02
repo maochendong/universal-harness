@@ -201,6 +201,7 @@ export interface SuiteAcceptanceReport {
   readonly invocation_id: string;
   readonly command: string;
   readonly coverage: SuiteCoverage;
+  readonly config_path?: string;
   readonly suite: string;
   readonly recorded_at: string;
   readonly files_total: number;
@@ -426,6 +427,7 @@ export function buildSuiteReport(
     invocation_id: provenance.invocation_id,
     command: provenance.command,
     coverage: provenance.coverage,
+    ...(provenance.config_path === undefined ? {} : { config_path: provenance.config_path }),
     suite,
     recorded_at: recordedAt,
     files_total: files.length,
