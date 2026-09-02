@@ -1155,13 +1155,25 @@ const m4Sidecar = {
   implementation_commit: m4ImplementationCommit,
   generated_at: new Date().toISOString(),
   suite_invocation_ids: m4SuiteInvocationIds,
+  dogfood_summary:
+    m4Dogfood === undefined
+      ? { present: false }
+      : {
+          present: true,
+          provider: m4Dogfood.provider,
+          provider_version: m4Dogfood.provider_version,
+          exit_code: m4Dogfood.exit_code,
+          requested_max_concurrency: m4Dogfood.requested_max_concurrency,
+          effective_max_concurrency: m4Dogfood.effective_max_concurrency,
+          blocker: m4Dogfood.blocker,
+        },
   results: m4Results,
 };
 assertM4AcceptanceSidecar(m4Sidecar, { requireComplete: true });
 const m4SidecarJson = `${JSON.stringify(m4Sidecar, null, 2)}\n`;
 writeFileSync(m4MachineResultPath, m4SidecarJson, "utf8");
 writeFileSync(m4TrackedResultPath, m4SidecarJson, "utf8");
-writeFileSync(m4ReportPath, renderM4Markdown(m4Sidecar, m4Dogfood), "utf8");
+writeFileSync(m4ReportPath, renderM4Markdown(m4Sidecar), "utf8");
 
 if (
   counts.passed !== CRITERION_COUNT ||

@@ -144,20 +144,22 @@ describe("tracked Evidence and report commit", () => {
   it("accepts only a direct pure-document successor of the implementation", () => {
     const root = repository();
     const implementation = commitFile(root, "src/app.ts", "export {};\n", "implementation");
+    const sidecar = {
+      schema_version: "harness.m4-acceptance-results/1",
+      implementation_commit: implementation,
+      suite_invocation_ids: completeInvocationIds(),
+      dogfood_summary: { present: false },
+      results: completeResults(),
+    };
     commitFile(
       root,
       "docs/evidence/m4-local-multi-agent-scheduling-results.json",
-      `${JSON.stringify({
-        schema_version: "harness.m4-acceptance-results/1",
-        implementation_commit: implementation,
-        suite_invocation_ids: completeInvocationIds(),
-        results: completeResults(),
-      })}\n`,
+      `${JSON.stringify(sidecar)}\n`,
       "report",
     );
     writeFileSync(
       join(root, "docs/evidence/m4-local-multi-agent-scheduling-completion.md"),
-      "# M4\n",
+      renderM4Markdown(sidecar),
       "utf8",
     );
     git(root, ["add", "docs/evidence/m4-local-multi-agent-scheduling-completion.md"]);
@@ -190,7 +192,7 @@ describe("M4 Markdown projection", () => {
         },
       ],
     };
-    const markdown = renderM4Markdown(sidecar, undefined);
+    const markdown = renderM4Markdown(sidecar);
     expect(markdown).toContain("| AC-01 | typed proof |");
     expect(markdown).toContain("`inv-main`");
     expect(markdown).not.toContain("hand-entered");

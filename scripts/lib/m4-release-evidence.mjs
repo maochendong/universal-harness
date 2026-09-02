@@ -174,7 +174,7 @@ export function assertM4AcceptanceSidecar(sidecar, options = {}) {
 }
 
 /** Render-only projection: every result cell originates in the typed JSON. */
-export function renderM4Markdown(sidecar, dogfood) {
+export function renderM4Markdown(sidecar) {
   assertM4AcceptanceSidecar(sidecar);
   const passed = sidecar.results.filter((entry) => entry?.status === "passed").length;
   const blocked = sidecar.results.filter((entry) => entry?.status === "blocked").length;
@@ -198,8 +198,9 @@ export function renderM4Markdown(sidecar, dogfood) {
     );
   }
   lines.push("", "## 真实 dsh Evidence", "");
+  const dogfood = sidecar.dogfood_summary;
   lines.push(
-    dogfood === undefined
+    !isObject(dogfood) || dogfood.present !== true
       ? "- 未找到 `.reports/acceptance/m4-dogfood.json`。"
       : `- provider=${String(dogfood.provider)} ${String(dogfood.provider_version)}；exit=${String(dogfood.exit_code)}；requested concurrency=${String(dogfood.requested_max_concurrency)}，effective concurrency=${String(dogfood.effective_max_concurrency)}；blocker=${String(dogfood.blocker)}。`,
   );
@@ -262,6 +263,10 @@ export function verifyM4ReportCommit(repositoryRoot, head = "HEAD") {
     throw new ReleaseEvidenceError(
       "report commit must contain both M4 typed JSON and Markdown projection",
     );
+  }
+  const committedMarkdown = git(repositoryRoot, ["show", `${reportCommit}:${completionPath}`]);
+  if (committedMarkdown !== renderM4Markdown(sidecar)) {
+    throw new ReleaseEvidenceError("M4 Markdown is not the exact typed-sidecar projection");
   }
   return { report_commit: reportCommit, implementation_commit: parent, changed_paths: changed };
 }
