@@ -153,7 +153,7 @@ export const M4_ACCEPTANCE_REGISTRY = Object.freeze([
   ac({
     acceptance_id: "AC-14",
     statement: "baseline drift 不会自动 force/rebase。",
-    required_suites: ["fault"],
+    required_suites: ["main", "fault"],
     evidence: [
       "packages/runtime/test/scheduling/recovery.test.ts",
       "tests/fault/m4-scheduler-crash-matrix.test.ts",
