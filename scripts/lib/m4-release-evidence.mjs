@@ -67,6 +67,9 @@ export function assertCanonicalSuiteReports(reports, commands, implementationCom
     if (report.implementation_commit !== implementationCommit) {
       throw new ReleaseEvidenceError(`${suite}: implementation commit is stale or mixed`);
     }
+    if (report.tracked_worktree_clean !== true) {
+      throw new ReleaseEvidenceError(`${suite}: tests did not run from a clean tracked worktree`);
+    }
     assertString(report.invocation_id, "invocation_id", suite);
     if (!Array.isArray(report.files) || report.files.length === 0) {
       throw new ReleaseEvidenceError(`${suite}: no executed files were recorded`);

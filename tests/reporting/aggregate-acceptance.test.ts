@@ -146,6 +146,7 @@ describe("buildSuiteReport", () => {
       {
         schema_version: "harness.acceptance-suite-report/1",
         implementation_commit: "a".repeat(40),
+        tracked_worktree_clean: true,
         invocation_id: "inv-main",
         command: "pnpm test",
         coverage: "full",
@@ -159,6 +160,7 @@ describe("buildSuiteReport", () => {
     expect(report).toMatchObject({
       schema_version: "harness.acceptance-suite-report/1",
       implementation_commit: "a".repeat(40),
+      tracked_worktree_clean: true,
       invocation_id: "inv-main",
       command: "pnpm test",
       coverage: "full",
@@ -173,6 +175,7 @@ describe("buildSuiteReport", () => {
       {
         schema_version: "harness.acceptance-suite-report/1",
         implementation_commit: "a".repeat(40),
+        tracked_worktree_clean: true,
         invocation_id: "inv-security",
         command: "pnpm test:security",
         coverage: "full",
@@ -202,6 +205,7 @@ describe("mergeSuiteReports", () => {
       {
         schema_version: "harness.acceptance-suite-report/1",
         implementation_commit: "a".repeat(40),
+        tracked_worktree_clean: true,
         invocation_id: "inv-main",
         command: "pnpm test",
         coverage: "full",
@@ -214,6 +218,7 @@ describe("mergeSuiteReports", () => {
       {
         schema_version: "harness.acceptance-suite-report/1",
         implementation_commit: "a".repeat(40),
+        tracked_worktree_clean: true,
         invocation_id: "inv-security",
         command: "pnpm test:security",
         coverage: "full",

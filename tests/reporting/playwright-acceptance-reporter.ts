@@ -59,6 +59,11 @@ export default class PlaywrightAcceptanceReporter implements Reporter {
         cwd: this.root,
         encoding: "utf8",
       }).trim(),
+      tracked_worktree_clean:
+        execFileSync("git", ["status", "--porcelain", "--untracked-files=no"], {
+          cwd: this.root,
+          encoding: "utf8",
+        }).trim() === "",
       invocation_id: invocationId,
       ...invocation,
       recorded_at: new Date().toISOString(),

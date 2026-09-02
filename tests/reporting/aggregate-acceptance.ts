@@ -173,6 +173,7 @@ export interface SuiteInvocation {
 export interface SuiteReportProvenance extends SuiteInvocation {
   readonly schema_version: typeof SUITE_REPORT_SCHEMA_VERSION;
   readonly implementation_commit: string;
+  readonly tracked_worktree_clean: boolean;
   readonly invocation_id: string;
 }
 
@@ -185,6 +186,7 @@ export interface SuiteFileResult {
 export interface SuiteAcceptanceReport {
   readonly schema_version: typeof SUITE_REPORT_SCHEMA_VERSION;
   readonly implementation_commit: string;
+  readonly tracked_worktree_clean: boolean;
   readonly invocation_id: string;
   readonly command: string;
   readonly coverage: SuiteCoverage;
@@ -378,6 +380,7 @@ export function buildSuiteReport(
   return {
     schema_version: provenance.schema_version,
     implementation_commit: provenance.implementation_commit,
+    tracked_worktree_clean: provenance.tracked_worktree_clean,
     invocation_id: provenance.invocation_id,
     command: provenance.command,
     coverage: provenance.coverage,

@@ -48,6 +48,10 @@ export default class AcceptanceReporter implements Reporter {
     const root = this.ctx.config.root;
     const invocation = resolveSuiteInvocation(this.ctx.config.configFile, process.argv.slice(2));
     const invocationId = randomUUID();
+    const trackedStatus = execFileSync("git", ["status", "--porcelain", "--untracked-files=no"], {
+      cwd: root,
+      encoding: "utf8",
+    }).trim();
     const report = buildSuiteReport(
       invocation.suite,
       fileResults(root, modules),
@@ -58,6 +62,7 @@ export default class AcceptanceReporter implements Reporter {
           cwd: root,
           encoding: "utf8",
         }).trim(),
+        tracked_worktree_clean: trackedStatus === "",
         invocation_id: invocationId,
         ...invocation,
       },
