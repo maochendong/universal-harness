@@ -20,6 +20,7 @@ import {
   bindSchedulingEvidence,
   createCandidateIntegrationController,
   operationRefFor,
+  schedulingEvidenceBindingOf,
   waveIntegrationPolicyInput,
   type CandidateIntegrationController,
   type TaskCandidateValidation,
@@ -1153,6 +1154,68 @@ describe("acceptWave", () => {
       }),
     ).rejects.toMatchObject({ kind: "lease_not_current" });
     expect(h.authority.waveIntegrations).toHaveLength(0);
+    expect(h.git.refs.get(operationRefFor(OPERATION_ID))).toBeUndefined();
+  });
+
+  it("rechecks stale candidate Evidence after a restart rebuild before accepting the wave", async () => {
+    const { h, dag, wave, candidate, validations } = await validatedWave(["task_a"]);
+
+    // Restart reconstruction may recover the already validated candidate
+    // commit from released-Lease Evidence. This is only a liveness shortcut:
+    // acceptWave must still revalidate the exact Evidence named by the
+    // reconstructed validation before any ref or Ledger acceptance advances.
+    const rebuilt = await h.controller.rebuildWaveCandidate({
+      dag,
+      wave,
+      expected_base_commit: BASE_COMMIT,
+    });
+    expect(rebuilt.candidate_commit).toBe(candidate.candidate_commit);
+    expect(h.git.worktreeBases.at(-1)).toBe(candidate.candidate_commit);
+
+    const taskA = task("task_a");
+    const released = buildTaskLeaseChain(h.authority.leases).latest_by_task.get(taskA.id);
+    if (released === undefined) throw new Error("validated task has no released lease");
+    const staleGate = normalizeGateDefinition({
+      gate_id: GATE.gate_id,
+      layer: GATE.layer,
+      name: GATE.name,
+      mandatory: GATE.mandatory,
+      subject_id: GATE.subject_id,
+      tool: GATE.tool,
+      version: "0.9-stale-before-restart",
+    });
+    const staleCandidateEvidence = schedulingEvidence({
+      id: "evidence_candidate_task_a_stale_restart",
+      task: taskA,
+      lease: released,
+      commit: rebuilt.candidate_commit,
+      layer: "candidate",
+      gate: staleGate,
+    });
+    h.authority.gateEvidence.push(staleCandidateEvidence);
+    const taskEvidenceDigest = validations[0]?.evidence_digests.find((digest) => {
+      const record = h.authority.gateEvidence.find((entry) => entry.digest === digest);
+      return record !== undefined && schedulingEvidenceBindingOf(record)?.layer === "task";
+    });
+    if (taskEvidenceDigest === undefined) throw new Error("validation has no task Evidence");
+    const staleValidation: TaskCandidateValidation = {
+      task_id: taskA.id,
+      status: "candidate_validated",
+      evidence_digests: [taskEvidenceDigest, staleCandidateEvidence.digest],
+    };
+    const decision = allowWaveDecision(dag, wave, rebuilt.base_commit, h.authority);
+
+    await expect(
+      h.controller.acceptWave({
+        dag,
+        candidate: rebuilt,
+        validations: [staleValidation],
+        policy_decision: decision,
+        approval_digests: [],
+        command_id: "command_stale_candidate_restart",
+      }),
+    ).rejects.toMatchObject({ kind: "evidence_stale" });
+    expect(h.authority.waveIntegrations).toEqual([]);
     expect(h.git.refs.get(operationRefFor(OPERATION_ID))).toBeUndefined();
   });
 
