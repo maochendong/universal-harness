@@ -148,6 +148,8 @@ class RecordingAuthority implements SchedulerAuthority {
   readonly appendedEvidence: { kind: string; locator: string; digest: string }[] = [];
   readonly events: SchedulerEventSpec[] = [];
   readonly batches: SchedulerTransition[][] = [];
+  rejectAtomicCancellation = false;
+  private cancellationCommitCount = 0;
 
   async readFacts(operationId: string) {
     if (operationId !== OPERATION_ID) throw new Error(`unknown operation ${operationId}`);
@@ -162,6 +164,26 @@ class RecordingAuthority implements SchedulerAuthority {
   }
 
   async commit(transitions: readonly SchedulerTransition[]): Promise<void> {
+    const cancellationTaskIds = new Set(
+      transitions.flatMap((transition) =>
+        transition.kind === "record_run" &&
+        transition.record.record_kind === "run_terminated" &&
+        transition.record.termination_reason === "user_cancellation"
+          ? [transition.record.task_id]
+          : [],
+      ),
+    );
+    if (this.rejectAtomicCancellation && cancellationTaskIds.size > 0) {
+      this.cancellationCommitCount += 1;
+      // The correct implementation attempts one aggregate transaction and
+      // fails before visibility. The legacy per-Lease loop instead exposes
+      // its first batch and fails on the second, modelling the partial-write
+      // hazard this fixture protects against.
+      if (cancellationTaskIds.size > 1 || this.cancellationCommitCount === 2) {
+        this.rejectAtomicCancellation = false;
+        throw new Error("injected atomic cancellation commit failure");
+      }
+    }
     this.batches.push([...transitions]);
     for (const transition of transitions) {
       switch (transition.kind) {
@@ -878,6 +900,64 @@ describe("cancellation", () => {
     const again = await scheduler.drive(driveInput());
     expect(again.status).toBe("cancelled");
     expect(authority.batches.length).toBe(batchesBefore);
+  });
+
+  it("commits all confirmed cancellations as one authoritative batch", async () => {
+    const { scheduler, authority, pool } = harness({
+      tasks: [schedTask("task_a"), schedTask("task_b")],
+      script: () => ({ kind: "abortable" }),
+    });
+    const drive = scheduler.drive(driveInput());
+    while (pool.startedRuns.length < 2) {
+      await new Promise((resolve) => setTimeout(resolve, 1));
+    }
+
+    const cancellation = await scheduler.cancel({
+      operation_id: OPERATION_ID,
+      command_id: "command_cancel_atomic",
+      reason: "user requested abort",
+      driver_lock: driverLock,
+    });
+    await drive;
+
+    expect(cancellation.status).toBe("cancelled");
+    const terminalBatch = authority.batches.at(-1);
+    expect(terminalBatch?.map((transition) => transition.kind)).toEqual([
+      "record_run",
+      "terminate_lease",
+      "record_run",
+      "terminate_lease",
+    ]);
+  });
+
+  it("exposes no partial cancellation and lets drive classify once when the atomic commit fails", async () => {
+    const { scheduler, authority, pool } = harness({
+      tasks: [schedTask("task_a"), schedTask("task_b")],
+      script: () => ({ kind: "abortable" }),
+    });
+    const drive = scheduler.drive(driveInput());
+    while (pool.startedRuns.length < 2) {
+      await new Promise((resolve) => setTimeout(resolve, 1));
+    }
+    authority.rejectAtomicCancellation = true;
+
+    await expect(
+      scheduler.cancel({
+        operation_id: OPERATION_ID,
+        command_id: "command_cancel_atomic_failure",
+        reason: "user requested abort",
+        driver_lock: driverLock,
+      }),
+    ).rejects.toThrow("injected atomic cancellation commit failure");
+    await drive;
+
+    const terminalRuns = authority.runs.filter(
+      (run): run is Extract<RunRecord, { record_kind: "run_terminated" }> =>
+        run.record_kind === "run_terminated",
+    );
+    expect(terminalRuns.map((run) => run.task_id).sort()).toEqual(["task_a", "task_b"]);
+    const terminalLeases = authority.leases.filter((lease) => lease.state !== "granted");
+    expect(terminalLeases.map((lease) => lease.task_id).sort()).toEqual(["task_a", "task_b"]);
   });
 
   it("records uncertain external effects when the process cannot confirm termination", async () => {

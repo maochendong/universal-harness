@@ -1560,9 +1560,10 @@ export function createLocalTaskScheduler(
         }
         const confirmed = outcomes.every((entry) => entry.outcome.status === "confirmed");
         if (confirmed) {
+          const transitions: SchedulerTransition[] = [];
           for (const { lease, outcome } of outcomes) {
             if (outcome.status !== "confirmed") continue;
-            await authority.commit([
+            transitions.push(
               {
                 kind: "record_run",
                 record: runTerminatedRecord({
@@ -1586,8 +1587,9 @@ export function createLocalTaskScheduler(
                   }),
                 }),
               },
-            ]);
+            );
           }
+          if (transitions.length > 0) await authority.commit(transitions);
           cancelledOperations.add(input.operation_id);
         } else {
           for (const { lease, outcome } of outcomes) {
