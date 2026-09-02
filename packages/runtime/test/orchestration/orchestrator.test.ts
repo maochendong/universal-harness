@@ -386,7 +386,10 @@ async function approveAndResume(
 // timeout there just like the global default in vitest.workspace.ts.
 const TEST_TIMEOUT_SCALE = process.platform === "win32" ? 4 : 1;
 
-describe("phase orchestrator", { timeout: 30000 * TEST_TIMEOUT_SCALE }, () => {
+// Full-iteration tests run git commits, SQLite rebuilds and ledger replays;
+// under the full-suite parallel load the 30s default is not enough, so the
+// suite-level budget matches the per-test overrides below.
+describe("phase orchestrator", { timeout: 60_000 * TEST_TIMEOUT_SCALE }, () => {
   it("binds conflict-aware approval decisions to the expected digest and keeps defer resumable", async () => {
     const newId = sequentialIds();
     const projectRoot = await bootstrapProject("orch-web-approval", newId);
