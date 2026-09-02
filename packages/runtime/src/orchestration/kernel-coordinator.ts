@@ -471,6 +471,18 @@ async function commitVerifiedSourceTree(
     }
   }
 
+  if (ctx.sourceView !== undefined) {
+    const worktreeDigest = hashWorktreeCode(ctx.sourceView.root);
+    const commitDigest = hashCommitCode(ctx.sourceView.root, ctx.sourceView.commit);
+    if (worktreeDigest !== commitDigest) {
+      throw new OrchestrationError(
+        "binding_drift",
+        "the managed operation source view drifted from its accepted candidate commit",
+      );
+    }
+    return ctx.sourceView.commit;
+  }
+
   // Verification can deliberately pause for a human repair. Re-read the VCS
   // truth after the repaired gates pass so an authorized repair is anchored
   // in the same source commit as Agent-produced changes. This observation is
@@ -648,6 +660,15 @@ export interface PipelineContext {
   run?: { readonly runId: string; readonly result: AgentRunResult };
   gateOutcome?: GateSuiteOutcome;
   evaluation?: EvaluationPortResult;
+  /** Ephemeral detached source view returned by the parallel Scheduler host. */
+  sourceView?: {
+    readonly root: string;
+    readonly commit: string;
+    release(): Promise<void>;
+  };
+}
+function sourceRootOf(ctx: PipelineContext): string {
+  return ctx.sourceView?.root ?? ctx.deps.projectRoot;
 }
 export function currentAttemptId(ctx: PipelineContext): string {
   const operation = ctx.engine.getOperation(ctx.workflowOperationId);
@@ -1204,7 +1225,22 @@ export function loadPlan(
       )
       .sort((left, right) => right.revision - left.revision);
     for (const node of candidates) {
-      const content = readExecutionPlanContent(node);
+      const containedTaskIds = new Set(
+        graph.edges
+          .filter((edge) => edge.type === "CONTAINS" && edge.source_id === node.id)
+          .map((edge) => edge.target_id),
+      );
+      const taskNodes = graph.nodes.filter((candidate) => containedTaskIds.has(candidate.id));
+      const planEdges = graph.edges.filter(
+        (edge) =>
+          (edge.type === "CONTAINS" &&
+            edge.source_id === node.id &&
+            containedTaskIds.has(edge.target_id)) ||
+          (edge.type === "DEPENDS_ON" &&
+            containedTaskIds.has(edge.source_id) &&
+            containedTaskIds.has(edge.target_id)),
+      );
+      const content = readExecutionPlanContent(node, { tasks: taskNodes, edges: planEdges });
       if (content.content_digest !== invalidated) return { node, content };
     }
     return undefined;
@@ -1427,8 +1463,37 @@ export function loadCompletedRun(
     if (streamTerminalRecord(stream) === undefined) continue;
     const result = readJsonArtifact<AgentRunResult>(ctx.deps, runResultArtifactPath(stream.runId));
     if (result !== undefined) return { runId: stream.runId, result };
+    const terminal = streamTerminalRecord(stream);
+    const scheduler = terminal?.extensions?.["harness.scheduler"];
+    if (typeof scheduler !== "object" || scheduler === null) continue;
+    const handoff = (scheduler as Record<string, unknown>)["handoff_result"];
+    if (isSchedulerHandoffResult(handoff)) return { runId: stream.runId, result: handoff };
   }
   return undefined;
+}
+
+/** Runtime guard for the narrow, Harness-produced scheduler handoff view. */
+function isSchedulerHandoffResult(value: unknown): value is AgentRunResult {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
+  const candidate = value as Partial<AgentRunResult>;
+  return (
+    candidate.outcome === "handoff" &&
+    candidate.termination_reason === "completion" &&
+    candidate.completion_claimed === true &&
+    typeof candidate.summary === "string" &&
+    candidate.state_proposal === null &&
+    Array.isArray(candidate.dropped_proposal_fields) &&
+    typeof candidate.change_summary === "object" &&
+    candidate.change_summary !== null &&
+    typeof candidate.tool_activity === "object" &&
+    candidate.tool_activity !== null &&
+    typeof candidate.usage === "object" &&
+    candidate.usage !== null &&
+    Array.isArray(candidate.evidence) &&
+    candidate.evidence.length === 0 &&
+    Array.isArray(candidate.undeclared_writes) &&
+    candidate.undeclared_writes.length === 0
+  );
 }
 function loadOpenRunId(ctx: PipelineContext, taskId: string): string | undefined {
   const streams = readRunStreams(workflowDeps(ctx.deps), ctx.workflowOperationId);
@@ -3876,7 +3941,7 @@ function verifyBindings(ctx: PipelineContext): VerifyPhaseArtifact["bindings"] {
       ...(planDigest === undefined ? [] : [planDigest]),
       ...(impactSetDigest === undefined ? [] : [impactSetDigest]),
     ].sort(),
-    code_digests: [hashWorktreeCode(ctx.deps.projectRoot)],
+    code_digests: [hashWorktreeCode(sourceRootOf(ctx))],
     ...(bundle === undefined ? {} : { context_bundle_digest: bundle.digest }),
     evaluation_case_digests: [],
     policy_digest: ctx.workingState.policy_digest,
@@ -4267,7 +4332,7 @@ async function commitScannedDocumentation(ctx: PipelineContext): Promise<void> {
     graph.close();
   }
   if (repository === undefined) return;
-  const scan = scanWorktree(deps.projectRoot);
+  const scan = scanWorktree(sourceRootOf(ctx));
   const manifest = readManagedManifest(deps.projectRoot);
   const context: RecordContext = {
     projectId: `project_${manifest.name}`,
@@ -4384,7 +4449,8 @@ export function snapshotBaseInput(
   Parameters<typeof buildSnapshot>[0],
   "snapshot_id" | "created_at" | "block_reason" | "resume_phase" | "source_commit"
 > {
-  const profile = executionBindingFor(ctx.deps).adapter_profile;
+  const profile =
+    ctx.deps.parallelExecution?.adapterProfile ?? executionBindingFor(ctx.deps).adapter_profile;
   return {
     iteration_id: ctx.iterationId,
     workflow_operation_id: ctx.workflowOperationId,
@@ -4483,6 +4549,13 @@ async function phaseSnapshot(ctx: PipelineContext): Promise<PhaseStep> {
     }
     taskRuns.push({ taskId: task.id, runId: run.runId, result: run.result });
   }
+  // Parallel Scheduler runs are authoritative RunRecord streams rather than
+  // generic run-result artifacts. Project their existing ids into the graph
+  // before TaskVerdict emits EXECUTES/PRODUCES evidence edges; this is an
+  // idempotent graph view, not a second run fact.
+  for (const taskRun of taskRuns) {
+    await commitRunNode(ctx, taskRun.runId, taskRun.taskId);
+  }
   ctx.run = taskRuns.at(-1) as { readonly runId: string; readonly result: AgentRunResult };
   const evaluations = taskRuns.map(
     (taskRun) =>
@@ -4496,7 +4569,7 @@ async function phaseSnapshot(ctx: PipelineContext): Promise<PhaseStep> {
   // snapshot or completed Iteration revision.
   await commitIterationNode(ctx, "running");
   await commitScannedDocumentation(ctx);
-  const suiteGates = ctx.deps.gates ?? createDefaultGateSuite(deps.projectRoot).gates;
+  const suiteGates = ctx.deps.gates ?? createDefaultGateSuite(sourceRootOf(ctx)).gates;
   const bindings = verifyBindings(ctx);
   const verifyStored = loadVerifyArtifact(deps, ctx.iterationId, bindings);
   if (verifyStored !== undefined) {
@@ -4790,7 +4863,7 @@ function gateSuiteFor(ctx: PipelineContext): {
   readonly registry: ToolRegistry;
 } {
   return ctx.deps.gates === undefined
-    ? createDefaultGateSuite(ctx.deps.projectRoot)
+    ? createDefaultGateSuite(sourceRootOf(ctx))
     : {
         gates: ctx.deps.gates,
         registry:
@@ -5006,7 +5079,11 @@ async function driveCapabilityPipeline(
                 ...(operationLease === undefined ? {} : { operation_lease: operationLease }),
               });
               parallelOutcome = outcome;
-              if (outcome.status === "completed") return { continue: true };
+              if (outcome.status === "completed") {
+                const sourceView = await parallel.openSourceView?.(step.workflowOperationId);
+                if (sourceView !== undefined) ctx.sourceView = sourceView;
+                return { continue: true };
+              }
               if (outcome.status === "cancelled") {
                 const cancelDetail = `parallel execution cancelled for ${outcome.operation_id}`;
                 await commitIterationNode(step, "aborted");
@@ -5139,10 +5216,11 @@ async function driveCapabilityPipeline(
               : [];
           },
         ),
-      verify: () =>
-        runPhaseNode(
+      verify: () => {
+        const verifySuite = gateSuiteFor(ctx);
+        return runPhaseNode(
           "verify",
-          (step) => phaseVerify(step, suite.gates, suite.registry),
+          (step) => phaseVerify(step, verifySuite.gates, verifySuite.registry),
           () => {
             const stored = loadVerifyArtifact(ctx.deps, ctx.iterationId, verifyBindings(ctx));
             if (stored === undefined) {
@@ -5153,7 +5231,8 @@ async function driveCapabilityPipeline(
             }
             return [{ kind: "gate_evidence", digest: contentDigest(stored) }];
           },
-        ),
+        );
+      },
       snapshot: () =>
         runPhaseNode("snapshot", phaseSnapshot, () => {
           if (terminal?.status !== "completed") {
@@ -5361,7 +5440,7 @@ async function driveCapabilityPipeline(
   );
 }
 
-export async function drivePipeline(
+async function drivePipelineInner(
   ctx: PipelineContext,
   fromPhase: OrchestrationPhase,
   untilPhase: OrchestrationPhase | undefined,
@@ -5433,6 +5512,26 @@ export async function drivePipeline(
     emitPhaseProgress(ctx, { type: "phase_completed", phase });
   }
   throw new OrchestrationError("configuration", "pipeline ended without a snapshot");
+}
+export async function drivePipeline(
+  ctx: PipelineContext,
+  fromPhase: OrchestrationPhase,
+  untilPhase: OrchestrationPhase | undefined,
+): Promise<OrchestrationOutcome> {
+  if (
+    ctx.sourceView === undefined &&
+    phaseRank(fromPhase) >= phaseRank("verify") &&
+    ctx.deps.parallelExecution?.openSourceView !== undefined
+  ) {
+    ctx.sourceView = await ctx.deps.parallelExecution.openSourceView(ctx.workflowOperationId);
+  }
+  try {
+    return await drivePipelineInner(ctx, fromPhase, untilPhase);
+  } finally {
+    const sourceView = ctx.sourceView;
+    delete ctx.sourceView;
+    await sourceView?.release();
+  }
 }
 function emitPhaseProgress(
   ctx: PipelineContext,

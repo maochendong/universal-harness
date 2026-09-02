@@ -58,6 +58,7 @@ import {
   bindSchedulingEvidence,
   createCandidateIntegrationController,
   createGitWaveIntegrationGit,
+  operationRefFor,
   type WaveGatePort,
 } from "./integration.js";
 import {
@@ -356,6 +357,10 @@ export function createProjectSchedulerHost(
     repositoryRoot: options.projectRoot,
     managedRoot,
     commitIdentity: { name: "universal-harness", email: "harness@localhost" },
+  });
+  const sourceViews = createGitWorktreeWorkspacePort({
+    repositoryRoot: options.projectRoot,
+    workspaceRoot: join(managedRoot, "verification"),
   });
   const gateSuite = createDefaultGateSuite(options.projectRoot);
   const gateSuiteForWorkspace =
@@ -814,6 +819,33 @@ export function createProjectSchedulerHost(
   const parallelExecution: ParallelExecutionBinding = {
     port: parallelPort,
     driverLock: deferredDriverLock,
+    adapterProfile: adapterControlProfile,
+    async openSourceView(operationId) {
+      const commit = await integrationGit.readRef(operationRefFor(operationId));
+      if (commit === undefined) {
+        throw new ParallelTaskExecutionError(
+          "operation_not_found",
+          `operation ${operationId} has no accepted integration ref to verify`,
+        );
+      }
+      const handle = await sourceViews.create({
+        baseline_commit: commit,
+        purpose: "task_execution",
+      });
+      const root = sourceViews.rootOf(handle);
+      if (root === undefined) {
+        await sourceViews.destroy(handle);
+        throw new ParallelTaskExecutionError(
+          "operation_not_found",
+          `operation ${operationId} verification worktree could not be resolved`,
+        );
+      }
+      return {
+        root,
+        commit,
+        release: () => sourceViews.destroy(handle),
+      };
+    },
   };
 
   return {

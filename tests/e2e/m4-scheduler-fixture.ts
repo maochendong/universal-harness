@@ -23,11 +23,20 @@ import { createGitVcsAdapter } from "../../adapters/vcs-git/src/index.js";
 import {
   createLedgerSchedulerAuthority,
   createDefaultGateSuite,
+  createDefaultEvaluationPort,
   createNewProject,
   createProjectSchedulerHost,
+  type OrchestrationOutcome,
+  type OrchestratorDependencies,
   type ProjectSchedulerHost,
 } from "../../packages/runtime/src/index.js";
-import { commitArtifacts } from "../../packages/runtime/src/orchestration/kernel-coordinator.js";
+import {
+  buildPipelineContext,
+  captureProposal,
+  commitArtifacts,
+  drivePipeline,
+} from "../../packages/runtime/src/orchestration/kernel-coordinator.js";
+import { createEvaluationContribution } from "../../packages/runtime/src/orchestration/contributors/evaluation-contributor.js";
 import {
   generateKernelExecutionPlan,
   readExecutionPlanContent,
@@ -36,10 +45,7 @@ import { actionDigest } from "../../packages/runtime/src/policy/action.js";
 import { buildDecision } from "../../packages/runtime/src/policy/decision.js";
 import { mergePolicyLayers } from "../../packages/runtime/src/policy/evaluator.js";
 import { operationRefFor } from "../../packages/runtime/src/scheduling/integration.js";
-import {
-  WorkflowEngine,
-  type WorkflowDependencies,
-} from "../../packages/runtime/src/workflow/operation.js";
+import { WorkflowEngine } from "../../packages/runtime/src/workflow/operation.js";
 import { FIXED_NOW, headOf, makeTempDir } from "../../packages/runtime/test/bootstrap/helpers.js";
 import {
   PLAN_CONSTRAINTS,
@@ -49,8 +55,8 @@ import {
 import { makeStartInput } from "../../packages/runtime/test/workflow/helpers.js";
 
 const ITERATION_ID = "iteration_m4_release_e2e";
-const REQUIREMENT_DIGEST = "a".repeat(64);
 const POLICY_DIGEST = "b".repeat(64);
+const INTENT = "ship four independently governed slices";
 
 const MANIFEST: AgentProviderManifest = {
   provider: "deterministic-managed-release-fixture",
@@ -92,11 +98,12 @@ function ids(namespace: string): (kind: string) => string {
 }
 
 function successResult(taskId: string, durationMs: number): AgentRunResult {
+  const privateEvidenceDigest = contentDigest({ taskId, evidence: "adapter-private-trace" });
   return {
     outcome: "handoff",
     termination_reason: "completion",
     completion_claimed: true,
-    summary: `completed ${taskId}`,
+    summary: `adapter-private-transcript:${taskId}`,
     state_proposal: null,
     dropped_proposal_fields: [],
     change_summary: {
@@ -123,7 +130,13 @@ function successResult(taskId: string, durationMs: number): AgentRunResult {
         enforcement: "harness",
       },
     ],
-    evidence: [],
+    evidence: [
+      {
+        kind: "adapter_trace",
+        locator: `file:///private-agent-output/${taskId}.log`,
+        digest: privateEvidenceDigest,
+      },
+    ],
     undeclared_writes: [],
   };
 }
@@ -161,10 +174,11 @@ export interface M4E2eFixture {
   readonly capabilityPlan: CapabilityPlanRecord;
   readonly planDigest: string;
   readonly host: ProjectSchedulerHost;
-  readonly deps: WorkflowDependencies;
+  readonly deps: OrchestratorDependencies;
   readonly intervals: TaskInterval[];
   readonly operationRef: string;
   readonly gateWorkspaceRoots: readonly string[];
+  runGenericTail(): Promise<OrchestrationOutcome>;
 }
 
 /**
@@ -172,59 +186,95 @@ export interface M4E2eFixture {
  * boundary is deterministic; worktrees, Ledger, Gates, candidate commits,
  * wave CAS, Scheduler host and read model are real.
  */
-export async function createM4E2eFixture(): Promise<M4E2eFixture> {
+export async function createM4E2eFixture(options?: {
+  readonly profileId?: "standard" | "governed";
+}): Promise<M4E2eFixture> {
+  const profileId = options?.profileId ?? "governed";
   const setupIds = ids("setup");
   const created = await createNewProject(
     {
       parentDirectory: makeTempDir("harness-m4-release-e2e-"),
-      name: "m4-release-project",
-      intent: "ship four independently governed slices",
+      name: `m4-${profileId}-release-project`,
+      intent: INTENT,
     },
     { vcs: createGitVcsAdapter(), now: () => FIXED_NOW, newId: setupIds },
   );
   if (!created.ok) throw new Error(created.error.message);
   const projectRoot = created.value.projectRoot;
   const baseline = headOf(projectRoot);
-  const deps: WorkflowDependencies = {
+  const deps: OrchestratorDependencies = {
     projectRoot,
     readBaseline: () => headOf(projectRoot),
     now: () => FIXED_NOW,
     newId: setupIds,
+    prompter: { prompt: () => Promise.resolve("approve") },
+    decisionActor: "human:release-e2e",
+    interpret: () =>
+      Promise.resolve({
+        requirements: [
+          {
+            statement: "ship the governed local scheduling release",
+            acceptance: [
+              {
+                description: "all four release slices pass their required gates",
+                verification: "gate_ledger_integrity",
+              },
+            ],
+          },
+        ],
+      }),
   };
+  const captured = await captureProposal(deps, INTENT);
+  if (captured.status !== "captured") throw new Error("release fixture capture was ambiguous");
+  const requirementDigest = captured.baselineDigest;
   const engine = new WorkflowEngine(deps);
   const started = await engine.startOperation(
     makeStartInput({
       iterationId: ITERATION_ID,
+      goal: INTENT,
       baselineCommit: baseline,
-      requirementBaselineDigest: REQUIREMENT_DIGEST,
+      requirementBaselineDigest: requirementDigest,
       policyDigest: POLICY_DIGEST,
     }),
   );
   const operationId = started.operation.workflow_operation_id;
   const attemptId = started.operation.attempt_id;
-  const capabilityPlan = compileCapabilityPlan({
+  const captureContext = await buildPipelineContext(
+    deps,
+    operationId,
+    ITERATION_ID,
+    { intent: INTENT, intentShape: "structured", deterministicWork: true },
+    {},
+  );
+  if ("outcome" in captureContext) throw new Error("release fixture capture needs input");
+  const captureOutcome = await drivePipeline(captureContext, "capture", "capture");
+  if (captureOutcome.status !== "advanced") {
+    throw new Error(`release fixture capture did not advance: ${captureOutcome.status}`);
+  }
+  const projectProfile = createProjectProfileRecord({
+    project_id: `project_m4-${profileId}-release`,
+    revision: 1,
+    profile_id: profileId,
+    policy_digest: POLICY_DIGEST,
+    actor: "human:release-e2e",
+    effective_from: FIXED_NOW,
+  });
+  const profileDecision = createProfileDecisionRecord({
+    decision_kind: "project_profile_change",
+    project_id: `project_m4-${profileId}-release`,
+    actor: "human:release-e2e",
+    idempotency_key: `profile-decision:${operationId}`,
+    current_profile_id: profileId,
+    decided_profile_id: profileId,
+    policy_digest: POLICY_DIGEST,
+    decided_at: FIXED_NOW,
+  });
+  const compileInput = {
     operation_id: operationId,
-    stage: "final",
     protocol_version: "1.3.0",
-    project_profile: createProjectProfileRecord({
-      project_id: "project_m4-release",
-      revision: 1,
-      profile_id: "governed",
-      policy_digest: POLICY_DIGEST,
-      actor: "human:release-e2e",
-      effective_from: FIXED_NOW,
-    }),
-    profile_decision: createProfileDecisionRecord({
-      decision_kind: "project_profile_change",
-      project_id: "project_m4-release",
-      actor: "human:release-e2e",
-      idempotency_key: `profile-decision:${operationId}`,
-      current_profile_id: "governed",
-      decided_profile_id: "governed",
-      policy_digest: POLICY_DIGEST,
-      decided_at: FIXED_NOW,
-    }),
-    requirement_digest: REQUIREMENT_DIGEST,
+    project_profile: projectProfile,
+    profile_decision: profileDecision,
+    requirement_digest: requirementDigest,
     risk_digest: contentDigest({ risk: "release-e2e" }),
     policy_digest: POLICY_DIGEST,
     baseline_digest: contentDigest({ baseline }),
@@ -232,7 +282,22 @@ export async function createM4E2eFixture(): Promise<M4E2eFixture> {
     providers: ["isolated_workspace_provider", "structured_gate_provider"],
     model_providers: MODEL_PROVIDERS,
     prompt_contract_resolver: createTestPromptContractRegistry(),
-  }) as CapabilityPlanRecord;
+  } as const;
+  const capabilityPlan =
+    profileId === "standard"
+      ? (() => {
+          const provisional = compileCapabilityPlan({ ...compileInput, stage: "provisional" });
+          return compileCapabilityPlan({
+            ...compileInput,
+            stage: "final",
+            accepted_design_set: {
+              design_set_digest: contentDigest({ fixture: "accepted-design" }),
+              test_strategy_digest: contentDigest({ fixture: "accepted-test-strategy" }),
+            },
+            supersedes: provisional,
+          });
+        })()
+      : compileCapabilityPlan({ ...compileInput, stage: "final" });
   await commitArtifacts(deps, operationId, attemptId, [
     {
       path: `artifacts/capability-plans/${capabilityPlan.capability_plan_id}/${String(capabilityPlan.revision)}.json`,
@@ -241,6 +306,15 @@ export async function createM4E2eFixture(): Promise<M4E2eFixture> {
   ]);
 
   const { impactSet } = approvedImpactSet();
+  const assertionsFor = (taskId: string) => [
+    {
+      assertion_id: `assertion_${taskId}`,
+      assertion_kind: "task_internal_assertion" as const,
+      test_ids: ["test_01"],
+      required_gate_ids: ["gate_ledger_integrity"],
+      evidence_requirements: ["gate_evidence"],
+    },
+  ];
   const common = {
     capabilities: ["fs.read", "fs.write"],
     tools: ["tool:fs"],
@@ -259,7 +333,7 @@ export async function createM4E2eFixture(): Promise<M4E2eFixture> {
       deterministicWork: true,
       shared: {
         goal: "prove local multi-agent scheduling",
-        requirement_baseline_digest: REQUIREMENT_DIGEST,
+        requirement_baseline_digest: requirementDigest,
         policy_digest: POLICY_DIGEST,
         baseline_commit: baseline,
         capability_plan_digest: capabilityPlan.record_digest,
@@ -282,6 +356,7 @@ export async function createM4E2eFixture(): Promise<M4E2eFixture> {
           objective: "implement the API slice",
           impact_paths: [entryPath(impactSet, "requirement_01"), entryPath(impactSet, "test_01")],
           expected_outputs: ["requirement_01", "test_01"],
+          assertions: assertionsFor("task_api"),
           dependencies: [],
           write_paths: ["src/task_api"],
         },
@@ -291,6 +366,7 @@ export async function createM4E2eFixture(): Promise<M4E2eFixture> {
           objective: "implement the UI slice",
           impact_paths: [entryPath(impactSet, "decision_01")],
           expected_outputs: ["decision_01"],
+          assertions: assertionsFor("task_ui"),
           dependencies: [],
           write_paths: ["src/task_ui"],
         },
@@ -300,6 +376,7 @@ export async function createM4E2eFixture(): Promise<M4E2eFixture> {
           objective: "integrate API and UI contracts",
           impact_paths: [entryPath(impactSet, "component_01")],
           expected_outputs: ["component_01"],
+          assertions: assertionsFor("task_contract"),
           dependencies: ["task_api", "task_ui"],
           write_paths: ["src/task_contract"],
         },
@@ -309,6 +386,7 @@ export async function createM4E2eFixture(): Promise<M4E2eFixture> {
           objective: "assemble the release slice",
           impact_paths: [entryPath(impactSet, "code_01")],
           expected_outputs: ["code_01"],
+          assertions: assertionsFor("task_release"),
           dependencies: ["task_contract"],
           write_paths: ["src/task_release"],
         },
@@ -415,6 +493,27 @@ export async function createM4E2eFixture(): Promise<M4E2eFixture> {
     intervals,
     operationRef: operationRefFor(operationId),
     gateWorkspaceRoots,
+    async runGenericTail() {
+      const tailDeps: OrchestratorDependencies = {
+        ...deps,
+        vcs: createGitVcsAdapter(),
+        parallelExecution: host.parallelExecution,
+        taskEnvelopeScope: (task) => ({
+          allowed_read_paths: task.write_paths ?? [],
+          proposed_write_paths: task.write_paths ?? [],
+        }),
+        evaluate: createDefaultEvaluationPort(),
+      };
+      const context = await buildPipelineContext(
+        tailDeps,
+        operationId,
+        ITERATION_ID,
+        { intent: INTENT, intentShape: "structured", deterministicWork: true },
+        { evaluate: createEvaluationContribution() },
+      );
+      if ("outcome" in context) return context.outcome;
+      return drivePipeline(context, "verify", undefined);
+    },
   };
 }
 

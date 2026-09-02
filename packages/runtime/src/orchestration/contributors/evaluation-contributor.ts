@@ -16,6 +16,7 @@ import { type ExecutionBinding } from "../execution-binding.js";
 import {
   blockWithSnapshot,
   commitArtifacts,
+  commitRunNode,
   currentAttemptId,
   evaluateArtifactPath,
   executionBindingFor,
@@ -312,6 +313,8 @@ export async function evaluateTaskRun(
     result = stored.result;
   } else {
     const port = deps.evaluate ?? createDefaultEvaluationPort();
+    const adapterProfile =
+      deps.parallelExecution?.adapterProfile ?? executionBindingFor(deps).adapter_profile;
     result = await port({
       taskId,
       iterationId: ctx.iterationId,
@@ -322,13 +325,11 @@ export async function evaluateTaskRun(
         max_tokens: ctx.envelope?.loop_policy.max_tokens ?? 120000,
         max_duration_ms: ctx.envelope?.loop_policy.max_duration_ms ?? 2700000,
       },
-      ...(executionBindingFor(deps).adapter_profile === undefined
+      ...(adapterProfile === undefined
         ? {}
         : {
             adapterProfileDigest: contentDigest(
-              executionBindingFor(deps).adapter_profile as NonNullable<
-                ExecutionBinding["adapter_profile"]
-              >,
+              adapterProfile as NonNullable<ExecutionBinding["adapter_profile"]>,
             ),
           }),
       now: nowOf(deps),
@@ -430,6 +431,7 @@ export async function phaseEvaluate(ctx: PipelineContext): Promise<PhaseStep> {
         `evaluate phase requires a terminated run for task ${task.id}`,
       );
     }
+    await commitRunNode(ctx, run.runId, task.id);
     const result = await evaluateTaskRun(ctx, task.id, run);
     ctx.evaluation = result;
     evaluations.push(result);

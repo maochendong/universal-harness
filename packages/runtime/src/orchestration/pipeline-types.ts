@@ -38,6 +38,7 @@ import { type ExecutionBinding, type OrchestrationExecutor } from "./execution-b
 import type { StrictTddExecutionPort } from "../tdd/execution-runner.js";
 import type { DriverLockHandle } from "../scheduling/driver-lock.js";
 import type { ParallelOperationLease, ParallelTaskExecutionPort } from "./scheduler-runtime.js";
+import type { AdapterControlProfile } from "../policy/action.js";
 
 /**
  * Shared orchestration contracts (plan Task 8-A): the error vocabulary,
@@ -189,6 +190,13 @@ export interface PhaseProgressEvent {
 export interface ParallelExecutionBinding {
   readonly port: ParallelTaskExecutionPort;
   readonly driverLock: () => DriverLockHandle;
+  readonly adapterProfile?: AdapterControlProfile;
+  /** Disposable detached view of the accepted operation ref for final verification. */
+  readonly openSourceView?: (operationId: string) => Promise<{
+    readonly root: string;
+    readonly commit: string;
+    release(): Promise<void>;
+  }>;
   /** Connected mode only; standalone hosts omit it. */
   readonly operationLease?: () => ParallelOperationLease | undefined;
 }

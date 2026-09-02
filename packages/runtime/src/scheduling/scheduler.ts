@@ -688,6 +688,14 @@ export function createLocalTaskScheduler(
       | "manual_stop"
       | "process_interruption";
     readonly consumed_budget?: BudgetAmount;
+    /**
+     * Sanitized scheduler-to-kernel handoff. It intentionally excludes the
+     * adapter summary, state proposal, transcript and evidence locators; the
+     * generic evaluate/snapshot tail only needs the structural completion
+     * claim, metering and attested change summary.
+     */
+    readonly handoff_result?: AgentRunResult;
+    readonly evidence_refs?: readonly { readonly kind: string; readonly digest: string }[];
   }): RunRecord => ({
     protocol_version: PROTOCOL_1_3_VERSION,
     record_kind: "run_terminated",
@@ -699,11 +707,21 @@ export function createLocalTaskScheduler(
     timestamp: now(),
     outcome: input.outcome,
     termination_reason: input.termination_reason,
-    ...(input.consumed_budget === undefined
+    ...(input.consumed_budget === undefined && input.handoff_result === undefined
       ? {}
       : {
           extensions: {
-            "harness.scheduler": { consumed_budget: input.consumed_budget },
+            "harness.scheduler": {
+              ...(input.consumed_budget === undefined
+                ? {}
+                : { consumed_budget: input.consumed_budget }),
+              ...(input.handoff_result === undefined
+                ? {}
+                : {
+                    handoff_result: input.handoff_result,
+                    evidence_refs: input.evidence_refs ?? [],
+                  }),
+            },
           },
         }),
   });
@@ -770,6 +788,10 @@ export function createLocalTaskScheduler(
         | "manual_stop"
         | "process_interruption",
       consumed_budget?: BudgetAmount,
+      handoff?: {
+        readonly result: AgentRunResult;
+        readonly evidence_refs: readonly { readonly kind: string; readonly digest: string }[];
+      },
     ): SchedulerTransition => ({
       kind: "record_run",
       record: runTerminatedRecord({
@@ -779,6 +801,9 @@ export function createLocalTaskScheduler(
         outcome: outcome === "success" ? "handoff" : outcome,
         termination_reason: reason,
         ...(consumed_budget === undefined ? {} : { consumed_budget }),
+        ...(handoff === undefined
+          ? {}
+          : { handoff_result: handoff.result, evidence_refs: handoff.evidence_refs }),
       }),
     });
 
@@ -913,7 +938,40 @@ export function createLocalTaskScheduler(
           return;
         }
         await authority.commit([
-          terminated(result.outcome, "completion", consumed),
+          terminated(result.outcome, "completion", consumed, {
+            result: {
+              outcome: "handoff",
+              termination_reason: "completion",
+              completion_claimed: true,
+              summary: `scheduler validated completion for ${task.id}`,
+              state_proposal: null,
+              dropped_proposal_fields: [],
+              change_summary: {
+                files_changed: patch.changed_paths.length,
+                insertions: 0,
+                deletions: 0,
+                paths: [...patch.changed_paths],
+              },
+              tool_activity: {
+                total_calls: result.tool_activity.total_calls,
+                governed_calls: result.tool_activity.governed_calls,
+                by_tool: {},
+              },
+              usage: result.usage,
+              ...(result.budget_observations === undefined
+                ? {}
+                : { budget_observations: result.budget_observations }),
+              evidence: [],
+              undeclared_writes: [],
+            },
+            evidence_refs: [
+              ...result.evidence.map((evidence) => ({
+                kind: evidence.kind,
+                digest: evidence.digest,
+              })),
+              { kind: "task_candidate_patch", digest: patch.patch_digest },
+            ],
+          }),
           ...(taskGateEvidence.length === 0
             ? []
             : [{ kind: "append_gate_evidence" as const, records: taskGateEvidence }]),
