@@ -25,6 +25,7 @@
   },
   "devDependencies": {
     "@universal-harness-internal/adapter-agent-command": "workspace:*",
+    "@universal-harness-internal/adapter-agent-dsh": "workspace:*",
     "@universal-harness-internal/adapter-agent-manual": "workspace:*",
     "@universal-harness-internal/adapter-projection-markdown": "workspace:*",
     "@universal-harness-internal/adapter-vcs-git": "workspace:*",

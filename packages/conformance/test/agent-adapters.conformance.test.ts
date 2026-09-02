@@ -4,6 +4,10 @@ import { fileURLToPath } from "node:url";
 import { afterEach, describe, it } from "vitest";
 
 import { createCommandAgentAdapter } from "@universal-harness-internal/adapter-agent-command";
+import {
+  createDshAgentAdapter,
+  type DshProcessRunner,
+} from "@universal-harness-internal/adapter-agent-dsh";
 import { createManualAgentAdapter } from "@universal-harness-internal/adapter-agent-manual";
 
 import {
@@ -80,6 +84,46 @@ describe("adapter-agent-command conformance", () => {
     });
     const report = await runConformanceSuite({
       plugin: "adapter-agent-command",
+      kind: "agent",
+      cases: agentAdapterConformanceCases(adapter, fixtureAgentEnvelope()),
+    });
+    assertConformance(report);
+  });
+});
+
+describe("adapter-agent-dsh conformance", () => {
+  it("satisfies the shared agent adapter contract and remains supervised-only", async () => {
+    const worktree = trackedTempDir("harness-conf-dsh-worktree-");
+    const evidenceDir = trackedTempDir("harness-conf-dsh-evidence-");
+    const spawnProcess: DshProcessRunner = (_executable, options) =>
+      Promise.resolve({
+        exit_code: 0,
+        signal: null,
+        stdout: options.args.at(-1) === "--version" ? "0.1.0-rc.6\n" : "done\n",
+        stderr: "",
+        timed_out: false,
+        output_truncated: false,
+        aborted: false,
+        duration_ms: 1,
+      });
+    const adapter = createDshAgentAdapter({
+      executable: "dsh-conformance-fixture",
+      launcher_args: [],
+      expected_version: "0.1.0-rc.6",
+      worktree,
+      evidence_dir: evidenceDir,
+      inspector: {
+        inspect: () =>
+          Promise.resolve({
+            head: "1".repeat(40),
+            changed_paths: [],
+            digest: "a".repeat(64),
+          }),
+      },
+      spawnProcess,
+    });
+    const report = await runConformanceSuite({
+      plugin: "adapter-agent-dsh",
       kind: "agent",
       cases: agentAdapterConformanceCases(adapter, fixtureAgentEnvelope()),
     });
