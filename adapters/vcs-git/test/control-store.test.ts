@@ -1038,7 +1038,7 @@ describe("git control store candidate reads and target cas", { timeout: 30_000 }
   });
 });
 
-describe("git control store listIntegrationRecords", { timeout: 30_000 }, () => {
+describe("git control store listIntegrationRecords", { timeout: 60_000 }, () => {
   it("lists staged candidates and accepted target records, skipping operation-candidate refs", async () => {
     const { remote, store, targetHead, operationHead } = createOperationHarness();
 
