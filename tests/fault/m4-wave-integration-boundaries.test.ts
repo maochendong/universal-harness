@@ -747,6 +747,66 @@ describe("m4 wave integration failure boundaries", () => {
     expect(h.git.casCalls).toBe(1);
   });
 
+  it("lets a fresh driver reconcile an exact candidate ref after CAS succeeds before Ledger acceptance", async () => {
+    const h = fakeHarness();
+    const prepared = await prepareValidated(h, task("task_a"));
+    const ref = operationRefFor(OPERATION_ID);
+    const commandId = "command_fault_fresh_driver_reconcile";
+    h.git.loseSuccessfulCasResponseOnce = true;
+
+    await expect(
+      h.controller.acceptWave({
+        dag: prepared.dag,
+        candidate: prepared.candidate,
+        validations: [prepared.validation],
+        policy_decision: prepared.decision,
+        approval_digests: [],
+        command_id: commandId,
+      }),
+    ).rejects.toThrow("simulated lost CAS success response");
+    expect(h.git.refs.get(ref)).toBe(prepared.candidate.candidate_commit);
+    expect(h.authority.waveIntegrations).toEqual([]);
+
+    // Process-local queue/candidate state is gone. The fresh driver rebuilds
+    // only from the durable queued patch, released Lease, candidate Evidence,
+    // and the exact operation ref left by the successful CAS.
+    const fresh = createCandidateIntegrationController({
+      authority: h.authority,
+      git: h.git,
+      gates: h.gates,
+      effective_policy_digest: POLICY.digest,
+      adapter_manifest_digest: ADAPTER_MANIFEST_DIGEST,
+      adapter_control_profile: CONTROL_PROFILE,
+      now: () => NOW,
+    });
+    await fresh.queueTaskCandidate(patchFor(task("task_a")));
+    const recoveredCandidate = await fresh.rebuildWaveCandidate({
+      dag: prepared.dag,
+      wave: prepared.wave,
+      expected_base_commit: prepared.candidate.base_commit,
+    });
+    expect(recoveredCandidate).toEqual(prepared.candidate);
+
+    const facts = await h.authority.readFacts(OPERATION_ID);
+    const recoveredValidation: TaskCandidateValidation = {
+      task_id: "task_a",
+      status: "candidate_validated",
+      evidence_digests: facts.gate_evidence.map((record) => record.digest),
+    };
+    const accepted = await fresh.acceptWave({
+      dag: prepared.dag,
+      candidate: recoveredCandidate,
+      validations: [recoveredValidation],
+      policy_decision: allowWaveDecision(prepared.dag, prepared.wave, h.authority),
+      approval_digests: [],
+      command_id: commandId,
+    });
+
+    expect(accepted.candidate_commit).toBe(prepared.candidate.candidate_commit);
+    expect(h.authority.waveIntegrations).toHaveLength(1);
+    expect(h.git.casCalls).toBe(1);
+  });
+
   it("rolls back a successful ref CAS when the Ledger acceptance transaction fails", async () => {
     const h = fakeHarness();
     const prepared = await prepareValidated(h, task("task_a"));

@@ -891,7 +891,6 @@ export function createCandidateIntegrationController(
           `wave ${String(wave.wave_index)} base is ${base}, not the expected ${input.expected_base_commit}`,
         );
       }
-      await assertRefAtBase(dag, approved.wave_index, base);
       for (const taskId of approved.task_ids) {
         if (!queue.has(taskId)) {
           throw new CandidateIntegrationError(
@@ -930,6 +929,10 @@ export function createCandidateIntegrationController(
       }
       if (allValidated && validatedCommits.size === 1) {
         const candidateCommit = [...validatedCommits][0] as string;
+        const currentRef = await git.readRef(refOf(dag.operation_id));
+        if (currentRef !== candidateCommit) {
+          await assertRefAtBase(dag, approved.wave_index, base);
+        }
         const root = await git.createCandidateWorktree({
           base_commit: candidateCommit,
           wave_index: approved.wave_index,
@@ -942,6 +945,8 @@ export function createCandidateIntegrationController(
           applied_task_ids: [...approved.task_ids],
         };
       }
+
+      await assertRefAtBase(dag, approved.wave_index, base);
 
       const root = await git.createCandidateWorktree({
         base_commit: base,
