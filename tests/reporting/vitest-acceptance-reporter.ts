@@ -9,14 +9,18 @@
  * `docs/m1-acceptance-report.md`; neither the reporter nor the generator
  * ever rewrites a recorded result.
  */
+import { execFileSync } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import { mkdirSync, writeFileSync } from "node:fs";
-import { join, relative, sep } from "node:path";
+import { dirname, join, relative, sep } from "node:path";
 
 import type { Reporter, TestModule, Vitest } from "vitest/node";
 
 import {
   buildSuiteReport,
-  suiteNameFromInvocation,
+  reportPathForInvocation,
+  resolveSuiteInvocation,
+  SUITE_REPORT_SCHEMA_VERSION,
   type SuiteFileResult,
 } from "./aggregate-acceptance.js";
 
@@ -42,10 +46,25 @@ export default class AcceptanceReporter implements Reporter {
 
   onTestRunEnd(modules: ReadonlyArray<TestModule>): void {
     const root = this.ctx.config.root;
-    const suite = suiteNameFromInvocation(this.ctx.config.configFile, process.argv.slice(2));
-    const report = buildSuiteReport(suite, fileResults(root, modules), new Date().toISOString());
+    const invocation = resolveSuiteInvocation(this.ctx.config.configFile, process.argv.slice(2));
+    const invocationId = randomUUID();
+    const report = buildSuiteReport(
+      invocation.suite,
+      fileResults(root, modules),
+      new Date().toISOString(),
+      {
+        schema_version: SUITE_REPORT_SCHEMA_VERSION,
+        implementation_commit: execFileSync("git", ["rev-parse", "HEAD"], {
+          cwd: root,
+          encoding: "utf8",
+        }).trim(),
+        invocation_id: invocationId,
+        ...invocation,
+      },
+    );
     const directory = join(root, ".reports", "acceptance");
-    mkdirSync(directory, { recursive: true });
-    writeFileSync(join(directory, `${suite}.json`), `${JSON.stringify(report, null, 2)}\n`, "utf8");
+    const outputPath = join(directory, reportPathForInvocation(invocation, invocationId));
+    mkdirSync(dirname(outputPath), { recursive: true });
+    writeFileSync(outputPath, `${JSON.stringify(report, null, 2)}\n`, "utf8");
   }
 }

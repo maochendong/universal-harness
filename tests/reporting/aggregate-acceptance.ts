@@ -160,6 +160,22 @@ export const ACCEPTANCE_CRITERIA: readonly AcceptanceCriterion[] = [
 /** Suites whose structured output a release report must merge. */
 export const REQUIRED_SUITES = ["main", "security", "fault", "performance"] as const;
 
+export const SUITE_REPORT_SCHEMA_VERSION = "harness.acceptance-suite-report/1" as const;
+
+export type SuiteCoverage = "full" | "partial";
+
+export interface SuiteInvocation {
+  readonly suite: string;
+  readonly command: string;
+  readonly coverage: SuiteCoverage;
+}
+
+export interface SuiteReportProvenance extends SuiteInvocation {
+  readonly schema_version: typeof SUITE_REPORT_SCHEMA_VERSION;
+  readonly implementation_commit: string;
+  readonly invocation_id: string;
+}
+
 export interface SuiteFileResult {
   /** Repository-relative test file path using forward slashes. */
   readonly path: string;
@@ -167,6 +183,11 @@ export interface SuiteFileResult {
 }
 
 export interface SuiteAcceptanceReport {
+  readonly schema_version: typeof SUITE_REPORT_SCHEMA_VERSION;
+  readonly implementation_commit: string;
+  readonly invocation_id: string;
+  readonly command: string;
+  readonly coverage: SuiteCoverage;
   readonly suite: string;
   readonly recorded_at: string;
   readonly files_total: number;
@@ -218,6 +239,87 @@ export function suiteNameFromInvocation(
   return filters.length === 0 ? "main" : "partial";
 }
 
+function canonicalArgs(argv: readonly string[]): readonly string[] {
+  const normalized: string[] = [];
+  for (let index = 0; index < argv.length; index += 1) {
+    const arg = argv[index];
+    if (arg === undefined) continue;
+    if (arg === "--config") {
+      const value = argv[index + 1];
+      normalized.push(arg, value?.split(/[\\/]/u).at(-1) ?? "");
+      index += 1;
+      continue;
+    }
+    if (arg.startsWith("--config=")) {
+      normalized.push(`--config=${arg.slice("--config=".length).split(/[\\/]/u).at(-1) ?? ""}`);
+      continue;
+    }
+    normalized.push(arg);
+  }
+  return normalized;
+}
+
+const FULL_INVOCATIONS: readonly {
+  readonly args: readonly string[];
+  readonly suite: string;
+  readonly command: string;
+}[] = [
+  { args: ["run", "--config", "vitest.workspace.ts"], suite: "main", command: "pnpm test" },
+  {
+    args: ["run", "--config", "vitest.workspace.ts", "tests/security"],
+    suite: "security",
+    command: "pnpm test:security",
+  },
+  {
+    args: ["run", "--config", "vitest.workspace.ts", "tests/fault"],
+    suite: "fault",
+    command: "pnpm test:fault",
+  },
+  {
+    args: ["run", "--config", "vitest.workspace.ts", "tests/e2e"],
+    suite: "e2e",
+    command: "pnpm test:e2e",
+  },
+  {
+    args: ["run", "--config", "vitest.performance.ts"],
+    suite: "performance",
+    command: "pnpm test:performance",
+  },
+];
+
+/**
+ * Classify the actual Vitest invocation. Only package.json's exact release
+ * commands are full coverage; adding a filter, flag or file always creates a
+ * partial artifact that cannot replace a release report.
+ */
+export function resolveSuiteInvocation(
+  configFile: string | undefined,
+  argv: readonly string[],
+): SuiteInvocation {
+  const normalized = canonicalArgs(argv);
+  const full = FULL_INVOCATIONS.find(
+    (candidate) => JSON.stringify(candidate.args) === JSON.stringify(normalized),
+  );
+  if (full !== undefined) {
+    return { suite: full.suite, command: full.command, coverage: "full" };
+  }
+  const inferred = suiteNameFromInvocation(configFile, argv);
+  return {
+    suite: inferred,
+    command: `vitest ${normalized.join(" ")}`.trim(),
+    coverage: "partial",
+  };
+}
+
+/** Repository-relative output below `.reports/acceptance`. */
+export function reportPathForInvocation(invocation: SuiteInvocation, invocationId: string): string {
+  if (invocation.coverage === "full") return `${invocation.suite}.json`;
+  if (!/^[A-Za-z0-9._-]+$/u.test(invocationId)) {
+    throw new Error("suite invocation id is not path-safe");
+  }
+  return `partial/${invocation.suite}-${invocationId}.json`;
+}
+
 /** Criteria whose evidence prefixes match the executed file. */
 export function criteriaForFile(path: string): readonly AcceptanceCriterion[] {
   return ACCEPTANCE_CRITERIA.filter(
@@ -235,6 +337,7 @@ export function buildSuiteReport(
   suite: string,
   files: readonly SuiteFileResult[],
   recordedAt: string,
+  provenance: SuiteReportProvenance,
 ): SuiteAcceptanceReport {
   const failedFiles = files.filter((file) => file.state === "fail").map((file) => file.path);
   const records: AcceptanceEvidenceRecord[] = [];
@@ -256,6 +359,11 @@ export function buildSuiteReport(
     records.push(record);
   }
   return {
+    schema_version: provenance.schema_version,
+    implementation_commit: provenance.implementation_commit,
+    invocation_id: provenance.invocation_id,
+    command: provenance.command,
+    coverage: provenance.coverage,
     suite,
     recorded_at: recordedAt,
     files_total: files.length,

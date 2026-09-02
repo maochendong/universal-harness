@@ -10,6 +10,8 @@ import {
   buildSuiteReport,
   criteriaForFile,
   mergeSuiteReports,
+  reportPathForInvocation,
+  resolveSuiteInvocation,
   suiteNameFromInvocation,
 } from "./aggregate-acceptance.js";
 
@@ -72,6 +74,45 @@ describe("suiteNameFromInvocation", () => {
   });
 });
 
+describe("release suite provenance", () => {
+  it("marks only the exact canonical command as full coverage", () => {
+    expect(
+      resolveSuiteInvocation("/repo/vitest.workspace.ts", [
+        "run",
+        "--config",
+        "vitest.workspace.ts",
+      ]),
+    ).toEqual({ suite: "main", command: "pnpm test", coverage: "full" });
+    expect(
+      resolveSuiteInvocation("/repo/vitest.workspace.ts", [
+        "run",
+        "--config",
+        "vitest.workspace.ts",
+        "tests/reporting",
+      ]),
+    ).toMatchObject({ suite: "partial", coverage: "partial" });
+  });
+
+  it("keeps partial invocations in an identity-scoped path", () => {
+    expect(
+      reportPathForInvocation(
+        { suite: "security", command: "pnpm test:security", coverage: "full" },
+        "inv-full",
+      ),
+    ).toBe("security.json");
+    expect(
+      reportPathForInvocation(
+        {
+          suite: "security",
+          command: "vitest run --config vitest.workspace.ts tests/security one.test.ts",
+          coverage: "partial",
+        },
+        "inv-partial",
+      ),
+    ).toBe("partial/security-inv-partial.json");
+  });
+});
+
 describe("buildSuiteReport", () => {
   it("maps executed files onto criteria and fails on any failed file", () => {
     const report = buildSuiteReport(
@@ -83,12 +124,26 @@ describe("buildSuiteReport", () => {
         { path: "tests/e2e/java-new.test.ts", state: "fail" },
       ],
       NOW,
+      {
+        schema_version: "harness.acceptance-suite-report/1",
+        implementation_commit: "a".repeat(40),
+        invocation_id: "inv-main",
+        command: "pnpm test",
+        coverage: "full",
+      },
     );
     const ac1 = report.records.find((record) => record.criterion_id === "AC-1");
     expect(ac1?.status).toBe("failed");
     expect(ac1?.evidence).toContain("tests/e2e/java-new.test.ts");
     expect(report.files_failed).toBe(1);
     expect(report.criteria).toHaveLength(28);
+    expect(report).toMatchObject({
+      schema_version: "harness.acceptance-suite-report/1",
+      implementation_commit: "a".repeat(40),
+      invocation_id: "inv-main",
+      command: "pnpm test",
+      coverage: "full",
+    });
   });
 
   it("skips criteria with no executed evidence and all gate-backed criteria", () => {
@@ -96,6 +151,13 @@ describe("buildSuiteReport", () => {
       "security",
       [{ path: "tests/security/secret-redaction.test.ts", state: "pass" }],
       NOW,
+      {
+        schema_version: "harness.acceptance-suite-report/1",
+        implementation_commit: "a".repeat(40),
+        invocation_id: "inv-security",
+        command: "pnpm test:security",
+        coverage: "full",
+      },
     );
     expect(report.records.some((record) => record.criterion_id === "AC-12")).toBe(true);
     expect(report.records.some((record) => record.criterion_id === "AC-1")).toBe(false);
@@ -118,11 +180,25 @@ describe("mergeSuiteReports", () => {
         { path: "packages/runtime/test/tools/registry.test.ts", state: "pass" },
       ],
       NOW,
+      {
+        schema_version: "harness.acceptance-suite-report/1",
+        implementation_commit: "a".repeat(40),
+        invocation_id: "inv-main",
+        command: "pnpm test",
+        coverage: "full",
+      },
     );
     const security = buildSuiteReport(
       "security",
       [{ path: "tests/security/secret-redaction.test.ts", state: "fail" }],
       NOW,
+      {
+        schema_version: "harness.acceptance-suite-report/1",
+        implementation_commit: "a".repeat(40),
+        invocation_id: "inv-security",
+        command: "pnpm test:security",
+        coverage: "full",
+      },
     );
     const merged = mergeSuiteReports([main, security], NOW);
     const ac1 = merged.find((record) => record.criterion_id === "AC-1");
