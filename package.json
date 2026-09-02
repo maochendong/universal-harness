@@ -24,7 +24,8 @@
     "test:release": "pnpm verify && pnpm test:security && pnpm test:fault && pnpm test:m4:fault-matrix && pnpm test:performance && pnpm test:e2e && pnpm test:e2e:dashboard && pnpm pack:smoke && node scripts/generate-acceptance-report.mjs",
     "test:security": "vitest run --config vitest.workspace.ts tests/security",
     "typecheck": "pnpm -r --if-present typecheck",
-    "verify": "pnpm format:check && pnpm lint && pnpm build && pnpm typecheck && pnpm test && node scripts/check-standalone.mjs"
+    "verify": "pnpm format:check && pnpm lint && pnpm build && pnpm typecheck && pnpm test && node scripts/check-standalone.mjs",
+    "verify:m4:report": "node scripts/generate-acceptance-report.mjs --verify-report-commit"
   },
   "devDependencies": {
     "@playwright/test": "1.55.0",

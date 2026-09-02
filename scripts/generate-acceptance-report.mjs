@@ -29,6 +29,7 @@ import {
   M4_ACCEPTANCE_REGISTRY,
   assertCanonicalSuiteReports,
   buildM4AcceptanceSidecar,
+  isM4ReportCommit,
   renderM4Markdown,
   verifyM4ReportCommit,
 } from "./lib/m4-release-evidence.mjs";
@@ -79,7 +80,7 @@ function fail(message) {
   process.exit(1);
 }
 
-if (process.argv.slice(2).includes("--verify-report-commit")) {
+if (process.argv.slice(2).includes("--verify-report-commit") || isM4ReportCommit(repositoryRoot)) {
   const verified = verifyM4ReportCommit(repositoryRoot);
   console.log(
     `M4 report commit ${verified.report_commit} directly follows implementation ${verified.implementation_commit}.`,

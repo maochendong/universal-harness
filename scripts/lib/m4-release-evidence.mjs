@@ -14,9 +14,9 @@ export const CANONICAL_RELEASE_COMMANDS = Object.freeze({
   "playwright-dashboard": "pnpm test:e2e:dashboard",
 });
 
-function ac(id, statement, required_suites, evidence, dogfood_rule, readiness_rule) {
+function ac({ acceptance_id, statement, required_suites, evidence, dogfood_rule, readiness_rule }) {
   return Object.freeze({
-    acceptance_id: id,
+    acceptance_id,
     statement,
     required_suites: Object.freeze(required_suites),
     evidence: Object.freeze(evidence),
@@ -27,195 +27,201 @@ function ac(id, statement, required_suites, evidence, dogfood_rule, readiness_ru
 
 /** Frozen M4 acceptance contract. Generator and immutable-report verifier share it. */
 export const M4_ACCEPTANCE_REGISTRY = Object.freeze([
-  ac(
-    "AC-01",
-    "Plan 是 Task 规划语义唯一权威源，并原子生成全部 `DEPENDS_ON` 和 digest-bound waves。",
-    ["main"],
-    [
+  ac({
+    acceptance_id: "AC-01",
+    statement:
+      "Plan 是 Task 规划语义唯一权威源，并原子生成全部 `DEPENDS_ON` 和 digest-bound waves。",
+    required_suites: ["main"],
+    evidence: [
       "packages/runtime/test/planning/waves.test.ts",
       "packages/runtime/test/scheduling/task-dag-port.test.ts",
       "tests/e2e/m4-local-multi-agent.test.ts",
     ],
-  ),
-  ac(
-    "AC-02",
-    "循环、缺失依赖、不一致 wave 及不确定拆分被拒绝。",
-    ["main"],
-    ["packages/runtime/test/planning/waves.test.ts"],
-  ),
-  ac(
-    "AC-03",
-    "写路径与独占资源冲突被机械串行化。",
-    ["main", "performance"],
-    ["packages/runtime/test/planning/waves.test.ts", "tests/performance/m4-wave-compiler.test.ts"],
-  ),
-  ac(
-    "AC-04",
-    "`parallel_task_execution` 满足完整 Module Contract；Lite disabled，Standard/Governed required 并按有效上限并行。",
-    ["main"],
-    [
+  }),
+  ac({
+    acceptance_id: "AC-02",
+    statement: "循环、缺失依赖、不一致 wave 及不确定拆分被拒绝。",
+    required_suites: ["main"],
+    evidence: ["packages/runtime/test/planning/waves.test.ts"],
+  }),
+  ac({
+    acceptance_id: "AC-03",
+    statement: "写路径与独占资源冲突被机械串行化。",
+    required_suites: ["main", "performance"],
+    evidence: [
+      "packages/runtime/test/planning/waves.test.ts",
+      "tests/performance/m4-wave-compiler.test.ts",
+    ],
+  }),
+  ac({
+    acceptance_id: "AC-04",
+    statement:
+      "`parallel_task_execution` 满足完整 Module Contract；Lite disabled，Standard/Governed required 并按有效上限并行。",
+    required_suites: ["main"],
+    evidence: [
       "packages/runtime/test/orchestration/capability-plan-routing.test.ts",
       "tests/e2e/m4-sequential-compatibility.test.ts",
     ],
-  ),
-  ac(
-    "AC-05",
-    "不合格 Adapter 不能无人值守并行。",
-    ["main"],
-    [
+  }),
+  ac({
+    acceptance_id: "AC-05",
+    statement: "不合格 Adapter 不能无人值守并行。",
+    required_suites: ["main"],
+    evidence: [
       "packages/conformance/test/scheduling.conformance.test.ts",
       "packages/runtime/test/scheduling/agent-pool.test.ts",
       ".reports/acceptance/m4-dogfood.json",
     ],
-    "adapter_eligibility",
-  ),
-  ac(
-    "AC-06",
-    "至少两个真实 Task 在隔离槽位并行。",
-    [],
-    [".reports/acceptance/m4-dogfood.json"],
-    "parallel_overlap",
-  ),
-  ac(
-    "AC-07",
-    "Context、Budget、Run、worktree 和隐藏历史互不共享；Strict TDD 无嵌套 worktree 且 四层写集取交集。",
-    ["main", "e2e"],
-    [
+    dogfood_rule: "adapter_eligibility",
+  }),
+  ac({
+    acceptance_id: "AC-06",
+    statement: "至少两个真实 Task 在隔离槽位并行。",
+    required_suites: [],
+    evidence: [".reports/acceptance/m4-dogfood.json"],
+    dogfood_rule: "parallel_overlap",
+  }),
+  ac({
+    acceptance_id: "AC-07",
+    statement:
+      "Context、Budget、Run、worktree 和隐藏历史互不共享；Strict TDD 无嵌套 worktree 且 四层写集取交集。",
+    required_suites: ["main", "e2e"],
+    evidence: [
       "packages/runtime/test/scheduling/workspace-manager.test.ts",
       "packages/runtime/test/scheduling/agent-pool.test.ts",
       "tests/e2e/m4-local-multi-agent.test.ts",
     ],
-  ),
-  ac(
-    "AC-08",
-    "Task Lease、fencing、Protocol Envelope 和重启恢复无重复接受。",
-    ["main", "fault"],
-    [
+  }),
+  ac({
+    acceptance_id: "AC-08",
+    statement: "Task Lease、fencing、Protocol Envelope 和重启恢复无重复接受。",
+    required_suites: ["main", "fault"],
+    evidence: [
       "packages/runtime/test/scheduling/recovery.test.ts",
       "tests/fault/m4-scheduler-crash-matrix.test.ts",
     ],
-  ),
-  ac(
-    "AC-09",
-    "并发预算预留不突破 Iteration 总上限。",
-    ["main", "e2e"],
-    ["packages/runtime/test/scheduling/budget.test.ts", "tests/e2e/m4-local-multi-agent.test.ts"],
-  ),
-  ac(
-    "AC-10",
-    "三个调度 Action 及 Policy `allow/deny/requires_approval/block` 四态、Approval 漂移正确生效。",
-    ["main", "fault"],
-    [
+  }),
+  ac({
+    acceptance_id: "AC-09",
+    statement: "并发预算预留不突破 Iteration 总上限。",
+    required_suites: ["main", "e2e"],
+    evidence: [
+      "packages/runtime/test/scheduling/budget.test.ts",
+      "tests/e2e/m4-local-multi-agent.test.ts",
+    ],
+  }),
+  ac({
+    acceptance_id: "AC-10",
+    statement:
+      "三个调度 Action 及 Policy `allow/deny/requires_approval/block` 四态、Approval 漂移正确生效。",
+    required_suites: ["main", "fault", "e2e"],
+    evidence: [
       "packages/runtime/test/scheduling/policy-decision-port.test.ts",
       "packages/runtime/test/scheduling/scheduler.test.ts",
-      ".reports/acceptance/m4-dogfood.json",
     ],
-    undefined,
-    "production_policy_source",
-  ),
-  ac(
-    "AC-11",
-    "三层 Gate 与 wave 原子集成成立。",
-    ["main", "e2e"],
-    [
+    readiness_rule: "production_policy_source",
+  }),
+  ac({
+    acceptance_id: "AC-11",
+    statement: "三层 Gate 与 wave 原子集成成立。",
+    required_suites: ["main", "e2e"],
+    evidence: [
       "packages/runtime/test/scheduling/integration.test.ts",
       "tests/e2e/m4-local-multi-agent.test.ts",
     ],
-  ),
-  ac(
-    "AC-12",
-    "executor retry 和 patch-apply integration retry 均最多一次；语义冲突与 baseline drift 不进入 retry。",
-    ["main", "fault"],
-    [
+  }),
+  ac({
+    acceptance_id: "AC-12",
+    statement:
+      "executor retry 和 patch-apply integration retry 均最多一次；语义冲突与 baseline drift 不进入 retry。",
+    required_suites: ["main", "fault"],
+    evidence: [
       "packages/runtime/test/scheduling/scheduler.test.ts",
       "tests/fault/m4-scheduler-crash-matrix.test.ts",
     ],
-  ),
-  ac(
-    "AC-13",
-    "第二次失败、越权写入和预算耗尽正确阻塞。",
-    ["main", "security"],
-    [
+  }),
+  ac({
+    acceptance_id: "AC-13",
+    statement: "第二次失败、越权写入和预算耗尽正确阻塞。",
+    required_suites: ["main", "security"],
+    evidence: [
       "packages/runtime/test/scheduling/scheduler.test.ts",
       "tests/security/m4-scheduler-boundaries.test.ts",
     ],
-  ),
-  ac(
-    "AC-14",
-    "baseline drift 不会自动 force/rebase。",
-    ["fault"],
-    [
+  }),
+  ac({
+    acceptance_id: "AC-14",
+    statement: "baseline drift 不会自动 force/rebase。",
+    required_suites: ["fault"],
+    evidence: [
       "packages/runtime/test/scheduling/recovery.test.ts",
       "tests/fault/m4-scheduler-crash-matrix.test.ts",
     ],
-  ),
-  ac(
-    "AC-15",
-    "Evidence 绑定 Task、Run、Lease token 和实际基线；丢弃 candidate 后旧 Evidence provisional 且完整重验。",
-    ["main", "e2e"],
-    [
+  }),
+  ac({
+    acceptance_id: "AC-15",
+    statement:
+      "Evidence 绑定 Task、Run、Lease token 和实际基线；丢弃 candidate 后旧 Evidence provisional 且完整重验。",
+    required_suites: ["main", "e2e"],
+    evidence: [
       "packages/runtime/test/scheduling/integration.test.ts",
       "tests/e2e/m4-local-multi-agent.test.ts",
     ],
-  ),
-  ac(
-    "AC-16",
-    "Dashboard 展示完整调度与恢复状态。",
-    ["main", "playwright-dashboard"],
-    [
+  }),
+  ac({
+    acceptance_id: "AC-16",
+    statement: "Dashboard 展示完整调度与恢复状态。",
+    required_suites: ["main", "playwright-dashboard"],
+    evidence: [
       "packages/dashboard/test/scheduler-api.test.ts",
       "tests/e2e/dashboard-m4-scheduler.test.ts",
-      ".reports/acceptance/m4-dogfood.json",
     ],
-    undefined,
-    "dashboard_controls",
-  ),
-  ac(
-    "AC-17",
-    "CLI run/resume/status/watch/abort 形成闭环，CLI 与 Dashboard 对同一 Operation 保持 单驱动。",
-    ["main", "fault"],
-    [
+    readiness_rule: "dashboard_controls",
+  }),
+  ac({
+    acceptance_id: "AC-17",
+    statement:
+      "CLI run/resume/status/watch/abort 形成闭环，CLI 与 Dashboard 对同一 Operation 保持 单驱动。",
+    required_suites: ["main", "fault", "e2e"],
+    evidence: [
       "packages/cli/test/m4-scheduling.test.ts",
       "tests/fault/m4-scheduler-crash-matrix.test.ts",
-      ".reports/acceptance/m4-dogfood.json",
     ],
-    undefined,
-    "approval_live_driver",
-  ),
-  ac(
-    "AC-18",
-    "SQLite 删除后可从 Ledger 恢复权威状态。",
-    ["performance"],
-    ["tests/performance/m4-sqlite-rebuild.test.ts"],
-  ),
-  ac(
-    "AC-19",
-    "Protocol 1.3 Envelope/Reader/`required_reader_version`、M1/M2/M3 与顺序执行回归全部通过。",
-    ["main", "e2e"],
-    [
+    readiness_rule: "approval_live_driver",
+  }),
+  ac({
+    acceptance_id: "AC-18",
+    statement: "SQLite 删除后可从 Ledger 恢复权威状态。",
+    required_suites: ["performance"],
+    evidence: ["tests/performance/m4-sqlite-rebuild.test.ts"],
+  }),
+  ac({
+    acceptance_id: "AC-19",
+    statement:
+      "Protocol 1.3 Envelope/Reader/`required_reader_version`、M1/M2/M3 与顺序执行回归全部通过。",
+    required_suites: ["main", "e2e"],
+    evidence: [
       "packages/core/test/protocol/protocol-1.3.test.ts",
       "tests/e2e/m4-sequential-compatibility.test.ts",
     ],
-  ),
-  ac(
-    "AC-20",
-    "真实 Dogfood 完成并生成绑定当前提交的验收报告。",
-    ["main", "security", "fault", "performance", "e2e", "playwright-dashboard"],
-    [
+  }),
+  ac({
+    acceptance_id: "AC-20",
+    statement: "真实 Dogfood 完成并生成绑定当前提交的验收报告。",
+    required_suites: ["main", "security", "fault", "performance", "e2e", "playwright-dashboard"],
+    evidence: [
       "scripts/dogfood-m4-local-scheduler.mjs",
       "scripts/dogfood-m4-redaction.mjs",
       ".reports/acceptance/m4-dogfood.json",
     ],
-    "full_vertical_dogfood",
-  ),
+    dogfood_rule: "full_vertical_dogfood",
+  }),
 ]);
 
 export function m4Commands(registryEntry) {
   return [
     ...registryEntry.required_suites.map((suite) => CANONICAL_RELEASE_COMMANDS[suite]),
-    ...(registryEntry.dogfood_rule === undefined && registryEntry.readiness_rule === undefined
-      ? []
-      : ["pnpm dogfood:m4"]),
+    ...(registryEntry.dogfood_rule === undefined ? [] : ["pnpm dogfood:m4"]),
   ];
 }
 
@@ -226,6 +232,21 @@ const REPORT_PATHS = new Set([
   "docs/evidence/m4-local-multi-agent-scheduling-completion.md",
   "docs/evidence/m4-local-multi-agent-scheduling-results.json",
 ]);
+
+const M4_READINESS_TESTS = Object.freeze({
+  production_policy_source: Object.freeze({
+    suite: "e2e",
+    path: "tests/e2e/m4-production-policy-source.test.ts",
+  }),
+  dashboard_controls: Object.freeze({
+    suite: "playwright-dashboard",
+    path: "tests/e2e/dashboard-m4-governed-controls.test.ts",
+  }),
+  approval_live_driver: Object.freeze({
+    suite: "e2e",
+    path: "tests/e2e/m4-live-driver-approval.test.ts",
+  }),
+});
 
 export class ReleaseEvidenceError extends Error {
   constructor(message) {
@@ -459,16 +480,6 @@ function supervisedProbeSummary(value) {
   };
 }
 
-function featureReadinessSummary(value) {
-  const source = isObject(value) ? value : {};
-  return {
-    production_policy_source: source.production_policy_source ?? "not_proven",
-    dashboard_provider_context: source.dashboard_provider_context ?? "not_proven",
-    dashboard_policy_proposal: source.dashboard_policy_proposal ?? "not_proven",
-    approval_live_driver_auto_wake: source.approval_live_driver_auto_wake ?? "not_proven",
-  };
-}
-
 function overlapIntervalSummary(value) {
   return publicArray(value).map((entry) => ({
     task_id: isObject(entry) ? (entry.task_id ?? null) : null,
@@ -481,7 +492,11 @@ function overlapIntervalSummary(value) {
 
 function containsMachineAbsolutePath(value) {
   if (typeof value === "string") {
-    return isAbsolute(value) || /(?:^|\s)[A-Za-z]:[\\/]/u.test(value);
+    return (
+      isAbsolute(value) ||
+      /(?:^|[\s"'=:(])[A-Za-z]:[\\/]/u.test(value) ||
+      /(?:^|[\s"'=:(])\/(?!\/)[^\s]+/u.test(value)
+    );
   }
   if (Array.isArray(value)) return value.some(containsMachineAbsolutePath);
   if (isObject(value)) return Object.values(value).some(containsMachineAbsolutePath);
@@ -530,7 +545,6 @@ export function buildCanonicalDogfoodProof(dogfood, implementationCommit) {
     scheduler_eligibility: schedulerEligibilitySummary(dogfood.scheduler_eligibility),
     adapter_reported_usage: usageSummary(dogfood.adapter_reported_usage),
     supervised_probe: supervisedProbeSummary(dogfood.supervised_probe),
-    feature_readiness: featureReadinessSummary(dogfood.feature_readiness),
     overlap_proven: dogfood.overlap_proven ?? false,
     overlap_intervals: overlapIntervalSummary(dogfood.overlap_intervals),
     gate_status: dogfood.gate_status ?? null,
@@ -598,7 +612,6 @@ function assertCanonicalDogfoodProof(proof, implementationCommit) {
       "scheduler_eligibility",
       "adapter_reported_usage",
       "supervised_probe",
-      "feature_readiness",
       "overlap_proven",
       "overlap_intervals",
       "gate_status",
@@ -738,21 +751,6 @@ function assertCanonicalDogfoodProof(proof, implementationCommit) {
       "M4 dogfood overlap interval",
     );
   }
-  assertExactKeys(
-    proof.feature_readiness,
-    [
-      "production_policy_source",
-      "dashboard_provider_context",
-      "dashboard_policy_proposal",
-      "approval_live_driver_auto_wake",
-    ],
-    "M4 dogfood feature readiness",
-  );
-  for (const status of Object.values(proof.feature_readiness)) {
-    if (!["verified", "not_proven"].includes(status)) {
-      throw new ReleaseEvidenceError("M4 dogfood feature readiness status is invalid");
-    }
-  }
 }
 
 function suiteFileState(suiteProofs, requiredSuites, path) {
@@ -813,19 +811,24 @@ function dogfoodRuleStatus(rule, proof) {
       };
 }
 
-function readinessRuleStatus(rule, proof) {
+function readinessRuleStatus(rule, suiteProofs, readinessTestExists = () => true) {
   if (rule === undefined) return { status: "passed", detail: "no extra readiness proof required" };
-  const readiness = proof.feature_readiness;
-  const verified =
-    rule === "production_policy_source"
-      ? readiness?.production_policy_source === "verified"
-      : rule === "dashboard_controls"
-        ? readiness?.dashboard_provider_context === "verified" &&
-          readiness?.dashboard_policy_proposal === "verified"
-        : readiness?.approval_live_driver_auto_wake === "verified";
-  return verified
-    ? { status: "passed", detail: `${rule} readiness is machine-verified` }
-    : { status: "blocked", detail: `${rule} readiness is not machine-verified` };
+  const expected = M4_READINESS_TESTS[rule];
+  if (expected === undefined) {
+    return { status: "blocked", detail: `${String(rule)} has no canonical readiness test` };
+  }
+  const state = suiteFileState(suiteProofs, [expected.suite], expected.path);
+  return state === "pass" && readinessTestExists(expected.path)
+    ? { status: "passed", detail: `${expected.path} passed in canonical ${expected.suite}` }
+    : state === "fail"
+      ? { status: "failed", detail: `${expected.path} failed in canonical ${expected.suite}` }
+      : {
+          status: "blocked",
+          detail:
+            state === "pass"
+              ? `${expected.path} is not tracked by the implementation commit`
+              : `${expected.path} has no passing canonical suite proof`,
+        };
 }
 
 function combineProofStatuses(...proofs) {
@@ -834,6 +837,37 @@ function combineProofStatuses(...proofs) {
     if (match !== undefined) return match;
   }
   return proofs[proofs.length - 1];
+}
+
+function deriveAcceptanceStatus(registryEntry, suiteProofs, dogfoodProof, options = {}) {
+  const testEvidence = registryEntry.evidence.filter(
+    (path) => !path.startsWith("scripts/") && !path.startsWith(".reports/"),
+  );
+  const fileStates = testEvidence.map((path) =>
+    suiteFileState(suiteProofs, registryEntry.required_suites, path),
+  );
+  const suiteStatus = fileStates.includes("fail")
+    ? { status: "failed", detail: "at least one canonical suite Evidence file failed" }
+    : fileStates.includes("missing")
+      ? {
+          status: "not_run",
+          detail: "at least one required Evidence file is absent from canonical suite results",
+        }
+      : { status: "passed", detail: "canonical suite Evidence passed" };
+  if (suiteStatus.status !== "passed") return suiteStatus;
+  return combineProofStatuses(
+    dogfoodRuleStatus(registryEntry.dogfood_rule, dogfoodProof),
+    readinessRuleStatus(registryEntry.readiness_rule, suiteProofs, options.readinessTestExists),
+  );
+}
+
+function trackedPathExists(repositoryRoot, commit, path) {
+  try {
+    git(repositoryRoot, ["cat-file", "-e", `${commit}:${path}`]);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function acceptanceDigestPayload(result) {
@@ -879,25 +913,13 @@ export function buildM4AcceptanceSidecar({
     const requiredSuiteDigests = Object.fromEntries(
       registryEntry.required_suites.map((suite) => [suite, suiteResultDigests[suite]]),
     );
-    const testEvidence = registryEntry.evidence.filter(
-      (path) => !path.startsWith("scripts/") && !path.startsWith(".reports/"),
-    );
-    const fileStates = testEvidence.map((path) =>
-      suiteFileState(suiteResults, registryEntry.required_suites, path),
-    );
-    const suiteStatus = fileStates.includes("fail")
-      ? "failed"
-      : fileStates.includes("missing")
-        ? "not_run"
-        : "passed";
-    const dogfoodStatus = dogfoodRuleStatus(registryEntry.dogfood_rule, dogfoodResult);
-    const readinessStatus = readinessRuleStatus(registryEntry.readiness_rule, dogfoodResult);
-    const supplementalStatus = combineProofStatuses(dogfoodStatus, readinessStatus);
-    const status = suiteStatus === "passed" ? supplementalStatus.status : suiteStatus;
+    const derived = deriveAcceptanceStatus(registryEntry, suiteResults, dogfoodResult, {
+      readinessTestExists: (path) => trackedPathExists(repositoryRoot, implementationCommit, path),
+    });
     const result = {
       acceptance_id: registryEntry.acceptance_id,
       statement: registryEntry.statement,
-      status,
+      status: derived.status,
       required_suites: registryEntry.required_suites,
       suite_invocation_ids: Object.fromEntries(
         registryEntry.required_suites.map((suite) => [suite, suiteInvocationIds[suite]]),
@@ -906,16 +928,11 @@ export function buildM4AcceptanceSidecar({
       evidence: registryEntry.evidence,
       tracked_evidence_digest: trackedEvidenceDigest,
       suite_result_digests: requiredSuiteDigests,
-      ...(registryEntry.dogfood_rule === undefined && registryEntry.readiness_rule === undefined
+      ...(registryEntry.dogfood_rule === undefined
         ? {}
         : { dogfood_result_digest: dogfoodResultDigest }),
       design_section: "§24",
-      detail:
-        suiteStatus === "failed"
-          ? "at least one canonical suite Evidence file failed"
-          : suiteStatus === "not_run"
-            ? "at least one required Evidence file is absent from canonical suite results"
-            : supplementalStatus.detail,
+      detail: derived.detail,
     };
     return { ...result, evidence_digest: digestCanonicalResult(acceptanceDigestPayload(result)) };
   });
@@ -931,7 +948,10 @@ export function buildM4AcceptanceSidecar({
     dogfood_result_digest: dogfoodResultDigest,
     results,
   };
-  assertM4AcceptanceSidecar(sidecar, { requireComplete: true });
+  assertM4AcceptanceSidecar(sidecar, {
+    requireComplete: true,
+    readinessTestExists: (path) => trackedPathExists(repositoryRoot, implementationCommit, path),
+  });
   return sidecar;
 }
 
@@ -1085,7 +1105,7 @@ export function assertM4AcceptanceSidecar(sidecar, options = {}) {
         throw new ReleaseEvidenceError(`${expectedId}: suite result digests drifted`);
       }
       if (
-        registryEntry.dogfood_rule === undefined && registryEntry.readiness_rule === undefined
+        registryEntry.dogfood_rule === undefined
           ? entry.dogfood_result_digest !== undefined
           : entry.dogfood_result_digest !== sidecar.dogfood_result_digest
       ) {
@@ -1095,27 +1115,13 @@ export function assertM4AcceptanceSidecar(sidecar, options = {}) {
       if (entry.evidence_digest !== expectedEvidenceDigest) {
         throw new ReleaseEvidenceError(`${expectedId}: combined Evidence digest mismatch`);
       }
-      const testEvidence = registryEntry.evidence.filter(
-        (path) => !path.startsWith("scripts/") && !path.startsWith(".reports/"),
-      );
-      const fileStates = testEvidence.map((path) =>
-        suiteFileState(sidecar.suite_results, registryEntry.required_suites, path),
-      );
-      const suiteStatus = fileStates.includes("fail")
-        ? "failed"
-        : fileStates.includes("missing")
-          ? "not_run"
-          : "passed";
-      const dogfoodStatus = dogfoodRuleStatus(registryEntry.dogfood_rule, sidecar.dogfood_result);
-      const readinessStatus = readinessRuleStatus(
-        registryEntry.readiness_rule,
+      const expected = deriveAcceptanceStatus(
+        registryEntry,
+        sidecar.suite_results,
         sidecar.dogfood_result,
+        { readinessTestExists: options.readinessTestExists },
       );
-      const expectedStatus =
-        suiteStatus === "passed"
-          ? combineProofStatuses(dogfoodStatus, readinessStatus).status
-          : suiteStatus;
-      if (entry.status !== expectedStatus) {
+      if (entry.status !== expected.status || entry.detail !== expected.detail) {
         throw new ReleaseEvidenceError(`${expectedId}: status is not derived from persisted proof`);
       }
     }
@@ -1173,6 +1179,31 @@ export function renderM4Markdown(sidecar) {
   return lines.join("\n");
 }
 
+function changedPathsAt(repositoryRoot, commit) {
+  return git(repositoryRoot, ["diff-tree", "--no-commit-id", "--name-only", "-r", commit])
+    .trim()
+    .split(/\r?\n/u)
+    .filter(Boolean);
+}
+
+/** Detect a pure M4 report successor without trusting the report contents. */
+export function isM4ReportCommit(repositoryRoot, head = "HEAD") {
+  try {
+    const ancestry = git(repositoryRoot, ["rev-list", "--parents", "-n", "1", head])
+      .trim()
+      .split(/\s+/u);
+    if (ancestry.length !== 2) return false;
+    const changed = changedPathsAt(repositoryRoot, ancestry[0]);
+    return (
+      changed.includes("docs/evidence/m4-local-multi-agent-scheduling-results.json") &&
+      changed.includes("docs/evidence/m4-local-multi-agent-scheduling-completion.md") &&
+      changed.every((path) => REPORT_PATHS.has(path))
+    );
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Verify the immutable report topology after a human/CI has committed the
  * generated files. This is intentionally separate from generation: a report
@@ -1200,7 +1231,10 @@ export function verifyM4ReportCommit(repositoryRoot, head = "HEAD") {
   if (sidecar.implementation_commit !== parent) {
     throw new ReleaseEvidenceError("report parent is not the evaluated implementation commit");
   }
-  assertM4AcceptanceSidecar(sidecar, { requireComplete: true });
+  assertM4AcceptanceSidecar(sidecar, {
+    requireComplete: true,
+    readinessTestExists: (path) => trackedPathExists(repositoryRoot, parent, path),
+  });
   for (const [index, registryEntry] of M4_ACCEPTANCE_REGISTRY.entries()) {
     const trackedPaths = registryEntry.evidence.filter((path) => !path.startsWith(".reports/"));
     const expectedDigest = digestTrackedEvidence(repositoryRoot, parent, trackedPaths);
@@ -1210,16 +1244,7 @@ export function verifyM4ReportCommit(repositoryRoot, head = "HEAD") {
       );
     }
   }
-  const changed = git(repositoryRoot, [
-    "diff-tree",
-    "--no-commit-id",
-    "--name-only",
-    "-r",
-    reportCommit,
-  ])
-    .trim()
-    .split(/\r?\n/u)
-    .filter(Boolean);
+  const changed = changedPathsAt(repositoryRoot, reportCommit);
   if (changed.length === 0 || changed.some((path) => !REPORT_PATHS.has(path))) {
     throw new ReleaseEvidenceError(
       "report commit must change only approved Markdown/typed JSON reports",

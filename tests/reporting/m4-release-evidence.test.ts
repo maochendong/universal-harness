@@ -17,6 +17,7 @@ import {
   CANONICAL_RELEASE_COMMANDS,
   digestCanonicalResult,
   digestTrackedEvidence,
+  isM4ReportCommit,
   m4Commands,
   renderM4Markdown,
   verifyM4ReportCommit,
@@ -128,6 +129,21 @@ function releaseReports(repositoryRoot: string, implementationCommit: string): M
       ];
     }),
   );
+}
+
+function addPassingReadinessTests(reports: Map<string, object>): void {
+  const additions = {
+    e2e: [
+      "tests/e2e/m4-production-policy-source.test.ts",
+      "tests/e2e/m4-live-driver-approval.test.ts",
+    ],
+    "playwright-dashboard": ["tests/e2e/dashboard-m4-governed-controls.test.ts"],
+  } as const;
+  for (const [suite, paths] of Object.entries(additions)) {
+    const current = reports.get(suite) as { files: Array<{ path: string; state: string }> };
+    current.files.push(...paths.map((path) => ({ path, state: "pass" })));
+    Object.assign(current, { files_total: current.files.length });
+  }
 }
 
 function blockedDogfood(implementationCommit: string): Record<string, unknown> {
@@ -285,7 +301,7 @@ function repository(): string {
   return root;
 }
 
-function evidenceBaseline(root: string): string {
+function evidenceBaseline(root: string, options: { readinessTests?: boolean } = {}): string {
   for (const path of new Set(
     M4_ACCEPTANCE_REGISTRY.flatMap((entry) =>
       entry.evidence.filter((candidate) => !candidate.startsWith(".reports/")),
@@ -298,6 +314,17 @@ function evidenceBaseline(root: string): string {
   writeFileSync(join(root, "vitest.workspace.ts"), "export {};\n", "utf8");
   writeFileSync(join(root, "vitest.performance.ts"), "export {};\n", "utf8");
   writeFileSync(join(root, "playwright.dashboard.config.ts"), "export {};\n", "utf8");
+  if (options.readinessTests === true) {
+    for (const path of [
+      "tests/e2e/m4-production-policy-source.test.ts",
+      "tests/e2e/dashboard-m4-governed-controls.test.ts",
+      "tests/e2e/m4-live-driver-approval.test.ts",
+    ]) {
+      const absolute = join(root, path);
+      mkdirSync(dirname(absolute), { recursive: true });
+      writeFileSync(absolute, `black-box proof for ${path}\n`, "utf8");
+    }
+  }
   git(root, ["add", "."]);
   git(root, ["commit", "-m", "implementation"]);
   return git(root, ["rev-parse", "HEAD"]);
@@ -319,7 +346,7 @@ describe("tracked Evidence and report commit", () => {
 
   it("accepts only a direct pure-document successor with real tracked Evidence", () => {
     const root = repository();
-    const implementation = evidenceBaseline(root);
+    const implementation = evidenceBaseline(root, { readinessTests: true });
     const sidecar = buildM4AcceptanceSidecar({
       repositoryRoot: root,
       implementationCommit: implementation,
@@ -340,6 +367,7 @@ describe("tracked Evidence and report commit", () => {
     );
     git(root, ["add", "docs/evidence/m4-local-multi-agent-scheduling-completion.md"]);
     git(root, ["commit", "--amend", "--no-edit"]);
+    expect(isM4ReportCommit(root)).toBe(true);
     expect(verifyM4ReportCommit(root)).toMatchObject({ implementation_commit: implementation });
 
     const tampered = JSON.parse(JSON.stringify(sidecar)) as typeof sidecar;
@@ -378,6 +406,7 @@ describe("tracked Evidence and report commit", () => {
     git(root, ["add", "docs/evidence"]);
     git(root, ["commit", "--amend", "--no-edit"]);
     commitFile(root, "src/drift.ts", "export {};\n", "not pure docs");
+    expect(isM4ReportCommit(root)).toBe(false);
     expect(() => verifyM4ReportCommit(root)).toThrow(ReleaseEvidenceError);
   }, 20_000);
 });
@@ -386,6 +415,12 @@ describe("M4 Markdown projection", () => {
   it("projects the frozen dogfood proof without credentials or machine paths", () => {
     const source = {
       ...blockedDogfood(COMMIT_A),
+      feature_readiness: {
+        production_policy_source: "verified",
+        dashboard_provider_context: "verified",
+        dashboard_policy_proposal: "verified",
+        approval_live_driver_auto_wake: "verified",
+      },
       api_key: "sk-must-not-survive",
       credential_material_hash: "secret-hash-must-not-survive",
       repository_root: "/Users/private/repository",
@@ -422,6 +457,7 @@ describe("M4 Markdown projection", () => {
     expect(serialized).not.toContain("secret-hash-must-not-survive");
     expect(serialized).not.toContain("/Users/private/repository");
     expect(proof).not.toHaveProperty("provider_version");
+    expect(proof).not.toHaveProperty("feature_readiness");
   });
 
   it("rejects dogfood that recorded or hashed credential material", () => {
@@ -433,7 +469,7 @@ describe("M4 Markdown projection", () => {
     ).toThrow(ReleaseEvidenceError);
     expect(() =>
       buildCanonicalDogfoodProof(
-        { ...blockedDogfood(COMMIT_A), provider_model: "/Users/private/model" },
+        { ...blockedDogfood(COMMIT_A), provider_model: "error at /Users/private/model" },
         COMMIT_A,
       ),
     ).toThrow(/absolute path/u);
@@ -461,7 +497,7 @@ describe("M4 Markdown projection", () => {
 
   it("derives formerly hard-coded blockers from persisted suite and dogfood proof", () => {
     const root = repository();
-    const implementation = evidenceBaseline(root);
+    const implementation = evidenceBaseline(root, { readinessTests: true });
     const reports = releaseReports(root, implementation);
     const blocked = buildM4AcceptanceSidecar({
       repositoryRoot: root,
@@ -486,30 +522,49 @@ describe("M4 Markdown projection", () => {
       "blocked",
     );
 
+    const dogfoodCompleted = {
+      ...blockedDogfood(implementation),
+      status: "passed",
+      blocker: null,
+      effective_max_concurrency: 2,
+      unattended_eligible: true,
+      scheduler_eligibility: { status: "eligible", unattended_eligible: true, reasons: [] },
+      feature_readiness: {
+        production_policy_source: "verified",
+        dashboard_provider_context: "verified",
+        dashboard_policy_proposal: "verified",
+        approval_live_driver_auto_wake: "verified",
+      },
+      overlap_proven: true,
+      overlap_intervals: [{ task_id: "a" }, { task_id: "b" }],
+      gate_status: "passed",
+      evaluation_status: "passed",
+      snapshot_status: "completed",
+      wave_integration_count: 3,
+    };
+    const withoutBlackBoxTests = buildM4AcceptanceSidecar({
+      repositoryRoot: root,
+      implementationCommit: implementation,
+      suiteReports: reports,
+      dogfood: dogfoodCompleted,
+      generatedAt: "2026-09-02T00:00:00.000Z",
+    });
+    expect(
+      withoutBlackBoxTests.results.find((entry) => entry.acceptance_id === "AC-10")?.status,
+    ).toBe("blocked");
+    expect(
+      withoutBlackBoxTests.results.find((entry) => entry.acceptance_id === "AC-16")?.status,
+    ).toBe("blocked");
+    expect(
+      withoutBlackBoxTests.results.find((entry) => entry.acceptance_id === "AC-17")?.status,
+    ).toBe("blocked");
+
+    addPassingReadinessTests(reports);
     const completed = buildM4AcceptanceSidecar({
       repositoryRoot: root,
       implementationCommit: implementation,
       suiteReports: reports,
-      dogfood: {
-        ...blockedDogfood(implementation),
-        status: "passed",
-        blocker: null,
-        effective_max_concurrency: 2,
-        unattended_eligible: true,
-        scheduler_eligibility: { status: "eligible", unattended_eligible: true, reasons: [] },
-        feature_readiness: {
-          production_policy_source: "verified",
-          dashboard_provider_context: "verified",
-          dashboard_policy_proposal: "verified",
-          approval_live_driver_auto_wake: "verified",
-        },
-        overlap_proven: true,
-        overlap_intervals: [{ task_id: "a" }, { task_id: "b" }],
-        gate_status: "passed",
-        evaluation_status: "passed",
-        snapshot_status: "completed",
-        wave_integration_count: 3,
-      },
+      dogfood: dogfoodCompleted,
       generatedAt: "2026-09-02T00:00:00.000Z",
     });
     expect(completed.results.find((entry) => entry.acceptance_id === "AC-06")?.status).toBe(
@@ -581,9 +636,12 @@ describe("release command", () => {
         join(dirname(new URL(import.meta.url).pathname), "..", "..", "package.json"),
         "utf8",
       ),
-    ) as { scripts: { "test:release": string } };
+    ) as { scripts: { "test:release": string; "verify:m4:report": string } };
     expect(packageJson.scripts["test:release"]).toMatch(/^pnpm verify && pnpm test:security/u);
     expect(packageJson.scripts["test:release"]).toContain("pnpm test:m4:fault-matrix");
     expect(packageJson.scripts["test:release"]).not.toContain("pnpm verify && pnpm test &&");
+    expect(packageJson.scripts["verify:m4:report"]).toBe(
+      "node scripts/generate-acceptance-report.mjs --verify-report-commit",
+    );
   });
 });
