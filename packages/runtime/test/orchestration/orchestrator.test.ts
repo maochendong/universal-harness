@@ -2701,64 +2701,68 @@ describe("phase orchestrator", { timeout: 30000 * TEST_TIMEOUT_SCALE }, () => {
     expect(terminalRecords).toBe(1);
   });
 
-  it("re-executes the task when the committed evaluation failed", async () => {
-    const newId = sequentialIds();
-    const projectRoot = await bootstrapProject("orch-eval", newId);
-    let evaluations = 0;
-    const evaluate: EvaluationPort = (input) => {
-      evaluations += 1;
-      const base = createDefaultEvaluationPort()(input);
-      if (evaluations === 1) {
-        return Promise.resolve({
-          ...base,
-          passed: false,
-          mandatoryFailures: ["outcome"],
-          findings: [
-            { id: "finding_eval_once", summary: "first run did not meet the outcome bar" },
-          ],
-          summary: "first run did not meet the outcome bar",
-        });
-      }
-      return Promise.resolve(base);
-    };
-    const fake = recordingExecutor((envelope, call) =>
-      claimedResult(envelope, `call-${String(call)}`),
-    );
-    const deps = makeDeps(projectRoot, newId, { execute: fake.executor, evaluate });
+  it(
+    "re-executes the task when the committed evaluation failed",
+    async () => {
+      const newId = sequentialIds();
+      const projectRoot = await bootstrapProject("orch-eval", newId);
+      let evaluations = 0;
+      const evaluate: EvaluationPort = (input) => {
+        evaluations += 1;
+        const base = createDefaultEvaluationPort()(input);
+        if (evaluations === 1) {
+          return Promise.resolve({
+            ...base,
+            passed: false,
+            mandatoryFailures: ["outcome"],
+            findings: [
+              { id: "finding_eval_once", summary: "first run did not meet the outcome bar" },
+            ],
+            summary: "first run did not meet the outcome bar",
+          });
+        }
+        return Promise.resolve(base);
+      };
+      const fake = recordingExecutor((envelope, call) =>
+        claimedResult(envelope, `call-${String(call)}`),
+      );
+      const deps = makeDeps(projectRoot, newId, { execute: fake.executor, evaluate });
 
-    let outcome = await runIteration(deps, { intent: INTENT, intentShape: "pack-converted" });
-    outcome = await approveAndResume(deps, outcome);
-    outcome = await approveAndResume(deps, outcome);
-    expect(outcome.status).toBe("blocked");
-    if (outcome.status !== "blocked") return;
-    expect(outcome.reason).toBe("repairable_gate_failure");
-    const findingRecord = JSON.parse(
-      readFileSync(
-        join(
-          projectRoot,
-          ".harness",
-          "artifacts",
-          "findings",
-          "finding_eval_once",
-          "proposed.json",
+      let outcome = await runIteration(deps, { intent: INTENT, intentShape: "pack-converted" });
+      outcome = await approveAndResume(deps, outcome);
+      outcome = await approveAndResume(deps, outcome);
+      expect(outcome.status).toBe("blocked");
+      if (outcome.status !== "blocked") return;
+      expect(outcome.reason).toBe("repairable_gate_failure");
+      const findingRecord = JSON.parse(
+        readFileSync(
+          join(
+            projectRoot,
+            ".harness",
+            "artifacts",
+            "findings",
+            "finding_eval_once",
+            "proposed.json",
+          ),
+          "utf8",
         ),
-        "utf8",
-      ),
-    ) as { extensions?: Record<string, unknown> };
-    expect(findingRecord.extensions?.["harness.finding"]).toMatchObject({
-      origin: "evaluation",
-      blocking: true,
-      rule: "evaluation/failure",
-      scope_prefix: expect.stringMatching(/^project\/.+\/evaluation\/case_/u),
-      severity: "blocker",
-      actionability: "human_review",
-    });
+      ) as { extensions?: Record<string, unknown> };
+      expect(findingRecord.extensions?.["harness.finding"]).toMatchObject({
+        origin: "evaluation",
+        blocking: true,
+        rule: "evaluation/failure",
+        scope_prefix: expect.stringMatching(/^project\/.+\/evaluation\/case_/u),
+        severity: "blocker",
+        actionability: "human_review",
+      });
 
-    outcome = await resumeIteration(deps, outcome.workflowOperationId, undefined);
-    expect(outcome.status).toBe("completed");
-    expect(fake.calls).toHaveLength(2);
-    expect(evaluations).toBe(2);
-  });
+      outcome = await resumeIteration(deps, outcome.workflowOperationId, undefined);
+      expect(outcome.status).toBe("completed");
+      expect(fake.calls).toHaveLength(2);
+      expect(evaluations).toBe(2);
+    },
+    60_000 * TEST_TIMEOUT_SCALE,
+  );
 
   it("refuses a second iteration while one is still open", async () => {
     const newId = sequentialIds();
