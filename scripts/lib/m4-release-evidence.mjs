@@ -1,6 +1,7 @@
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { isAbsolute, relative, resolve } from "node:path";
+import { URL } from "node:url";
 
 export const SUITE_REPORT_SCHEMA_VERSION = "harness.acceptance-suite-report/1";
 export const M4_RESULTS_SCHEMA_VERSION = "harness.m4-acceptance-results/1";
@@ -462,6 +463,25 @@ function usageSummary(value) {
   };
 }
 
+function dshSessionObservationSummary(value) {
+  if (!isObject(value)) return null;
+  const usage = isObject(value.usage) ? value.usage : {};
+  return {
+    source: value.source ?? null,
+    session_sha256: value.session_sha256 ?? null,
+    raw_session_persisted_in_release_bundle: value.raw_session_persisted_in_release_bundle ?? null,
+    usage: {
+      metering: usage.metering ?? null,
+      model_call_count: usage.model_call_count ?? null,
+      input_tokens: usage.input_tokens ?? null,
+      cache_read_input_tokens: usage.cache_read_input_tokens ?? null,
+      output_tokens: usage.output_tokens ?? null,
+      reasoning_tokens: usage.reasoning_tokens ?? null,
+      total_tokens: usage.total_tokens ?? null,
+    },
+  };
+}
+
 function supervisedProbeSummary(value) {
   if (!isObject(value)) return null;
   return {
@@ -490,13 +510,28 @@ function overlapIntervalSummary(value) {
   }));
 }
 
+function stripReleaseSafeUrls(value) {
+  return value.replace(/https?:\/\/[^\s"'<>]+/giu, (candidate) => {
+    try {
+      const url = new URL(candidate);
+      return url.protocol === "http:" || url.protocol === "https:" ? "" : candidate;
+    } catch {
+      return candidate;
+    }
+  });
+}
+
 function containsMachineAbsolutePath(value) {
   if (typeof value === "string") {
+    const inspected = stripReleaseSafeUrls(value);
     return (
-      isAbsolute(value) ||
-      /(?:^|[^A-Za-z0-9+.-])[A-Za-z]:[\\/]/u.test(value) ||
-      /\\\\[^\\/\s]+[\\/][^\\/\s]+/u.test(value) ||
-      /(?:^|[^A-Za-z0-9._~%+:/-])\/(?!\/)/u.test(value)
+      isAbsolute(inspected) ||
+      /[A-Za-z]:[\\/]/u.test(inspected) ||
+      /\\\\[^\\/\s]+[\\/][^\\/\s]+/u.test(inspected) ||
+      /(?:^|[\s"'=:(,\u005b])\/(?!\/)[^\s]+/u.test(inspected) ||
+      /\/(?:Users|home|private|tmp|var|opt|usr|etc|root|Volumes|Applications|System|Library|dev|proc|run)(?:[\\/]|$)/u.test(
+        inspected,
+      )
     );
   }
   if (Array.isArray(value)) return value.some(containsMachineAbsolutePath);
@@ -526,8 +561,13 @@ export function buildCanonicalDogfoodProof(dogfood, implementationCommit) {
     exit_code: dogfood.exit_code ?? null,
     provider: dogfood.provider ?? null,
     provider_profile: dogfood.provider_profile ?? null,
+    provider_backend: dogfood.provider_backend ?? null,
     provider_model: dogfood.provider_model ?? null,
     provider_model_source: dogfood.provider_model_source ?? null,
+    requested_provider_model: dogfood.requested_provider_model ?? null,
+    requested_provider_model_source: dogfood.requested_provider_model_source ?? null,
+    requested_provider_model_matches_observed:
+      dogfood.requested_provider_model_matches_observed ?? null,
     expected_provider_version: dogfood.expected_provider_version ?? null,
     expected_provider_version_source: dogfood.expected_provider_version_source ?? null,
     observed_provider_version: dogfood.observed_provider_version ?? null,
@@ -545,6 +585,7 @@ export function buildCanonicalDogfoodProof(dogfood, implementationCommit) {
     provider_probe: providerProbeSummary(dogfood.provider_probe),
     scheduler_eligibility: schedulerEligibilitySummary(dogfood.scheduler_eligibility),
     adapter_reported_usage: usageSummary(dogfood.adapter_reported_usage),
+    dsh_session_observation: dshSessionObservationSummary(dogfood.dsh_session_observation),
     supervised_probe: supervisedProbeSummary(dogfood.supervised_probe),
     overlap_proven: dogfood.overlap_proven ?? false,
     overlap_intervals: overlapIntervalSummary(dogfood.overlap_intervals),
@@ -593,8 +634,12 @@ function assertCanonicalDogfoodProof(proof, implementationCommit) {
       "exit_code",
       "provider",
       "provider_profile",
+      "provider_backend",
       "provider_model",
       "provider_model_source",
+      "requested_provider_model",
+      "requested_provider_model_source",
+      "requested_provider_model_matches_observed",
       "expected_provider_version",
       "expected_provider_version_source",
       "observed_provider_version",
@@ -612,6 +657,7 @@ function assertCanonicalDogfoodProof(proof, implementationCommit) {
       "provider_probe",
       "scheduler_eligibility",
       "adapter_reported_usage",
+      "dsh_session_observation",
       "supervised_probe",
       "overlap_proven",
       "overlap_intervals",
@@ -639,8 +685,11 @@ function assertCanonicalDogfoodProof(proof, implementationCommit) {
   for (const [field, value] of Object.entries({
     provider: proof.provider,
     provider_profile: proof.provider_profile,
+    provider_backend: proof.provider_backend,
     provider_model: proof.provider_model,
     provider_model_source: proof.provider_model_source,
+    requested_provider_model: proof.requested_provider_model,
+    requested_provider_model_source: proof.requested_provider_model_source,
     expected_provider_version: proof.expected_provider_version,
     expected_provider_version_source: proof.expected_provider_version_source,
     observed_provider_version: proof.observed_provider_version,
@@ -651,6 +700,13 @@ function assertCanonicalDogfoodProof(proof, implementationCommit) {
   }
   if (proof.expected_provider_version !== proof.observed_provider_version) {
     throw new ReleaseEvidenceError("M4 dogfood provider version does not match its contract");
+  }
+  if (
+    proof.requested_provider_model_matches_observed !==
+      (proof.requested_provider_model === proof.provider_model) ||
+    proof.provider_model_source !== "dsh_session_request_context_and_assistant_source"
+  ) {
+    throw new ReleaseEvidenceError("M4 dogfood provider model observation is inconsistent");
   }
   if (!SHA256_PATTERN.test(proof.adapter_manifest_digest ?? "")) {
     throw new ReleaseEvidenceError("M4 dogfood Adapter manifest digest is invalid");
@@ -701,6 +757,55 @@ function assertCanonicalDogfoodProof(proof, implementationCommit) {
     if (tokenCount !== null && (!Number.isSafeInteger(tokenCount) || tokenCount < 0)) {
       throw new ReleaseEvidenceError("M4 dogfood usage contains an invalid token count");
     }
+  }
+  if (
+    proof.adapter_reported_usage.metering !== "unmetered" ||
+    proof.adapter_reported_usage.input_tokens !== null ||
+    proof.adapter_reported_usage.output_tokens !== null ||
+    proof.adapter_reported_usage.total_tokens !== null
+  ) {
+    throw new ReleaseEvidenceError("M4 dsh Adapter must preserve its unmetered control boundary");
+  }
+  assertExactKeys(
+    proof.dsh_session_observation,
+    ["source", "session_sha256", "raw_session_persisted_in_release_bundle", "usage"],
+    "M4 dsh session observation",
+  );
+  assertExactKeys(
+    proof.dsh_session_observation.usage,
+    [
+      "metering",
+      "model_call_count",
+      "input_tokens",
+      "cache_read_input_tokens",
+      "output_tokens",
+      "reasoning_tokens",
+      "total_tokens",
+    ],
+    "M4 dsh session observed usage",
+  );
+  const observedUsage = proof.dsh_session_observation.usage;
+  const observedCounts = [
+    observedUsage.model_call_count,
+    observedUsage.input_tokens,
+    observedUsage.cache_read_input_tokens,
+    observedUsage.output_tokens,
+    observedUsage.reasoning_tokens,
+    observedUsage.total_tokens,
+  ];
+  if (
+    proof.dsh_session_observation.source !== "dsh_local_zstd_session" ||
+    !SHA256_PATTERN.test(proof.dsh_session_observation.session_sha256 ?? "") ||
+    proof.dsh_session_observation.raw_session_persisted_in_release_bundle !== false ||
+    observedUsage.metering !== "dsh_session_observed" ||
+    observedCounts.some((count) => !Number.isSafeInteger(count) || count < 0) ||
+    observedUsage.model_call_count < 1 ||
+    observedUsage.total_tokens !==
+      observedUsage.input_tokens +
+        observedUsage.cache_read_input_tokens +
+        observedUsage.output_tokens
+  ) {
+    throw new ReleaseEvidenceError("M4 dsh session observation is incomplete or inconsistent");
   }
   assertExactKeys(
     proof.provider_probe,
@@ -1164,7 +1269,9 @@ export function renderM4Markdown(sidecar) {
   if (isObject(dogfood) && dogfood.present === true) {
     lines.push(
       `- credential source=${String(dogfood.credential_source)}；material recorded=${String(dogfood.credential_material_recorded)}；material hashed=${String(dogfood.credential_material_hashed)}。`,
-      `- usage metering=${String(dogfood.adapter_reported_usage?.metering)}；input/output/total=${String(dogfood.adapter_reported_usage?.input_tokens)}/${String(dogfood.adapter_reported_usage?.output_tokens)}/${String(dogfood.adapter_reported_usage?.total_tokens)}。`,
+      `- backend=${String(dogfood.provider_backend)}；requested model=${String(dogfood.requested_provider_model)}（${String(dogfood.requested_provider_model_source)}）；matches observed=${String(dogfood.requested_provider_model_matches_observed)}。`,
+      `- Harness Adapter metering=${String(dogfood.adapter_reported_usage?.metering)}；input/output/total=${String(dogfood.adapter_reported_usage?.input_tokens)}/${String(dogfood.adapter_reported_usage?.output_tokens)}/${String(dogfood.adapter_reported_usage?.total_tokens)}（不代表 dsh 无调用）。`,
+      `- dsh session observed calls=${String(dogfood.dsh_session_observation?.usage?.model_call_count)}；input/cache-read/output/reasoning/total=${String(dogfood.dsh_session_observation?.usage?.input_tokens)}/${String(dogfood.dsh_session_observation?.usage?.cache_read_input_tokens)}/${String(dogfood.dsh_session_observation?.usage?.output_tokens)}/${String(dogfood.dsh_session_observation?.usage?.reasoning_tokens)}/${String(dogfood.dsh_session_observation?.usage?.total_tokens)}；session digest=${String(dogfood.dsh_session_observation?.session_sha256).slice(0, 16)}。`,
       `- build commit=${String(dogfood.build_provenance?.implementation_commit)}；clean archive rebuild=${String(dogfood.build_provenance?.clean_rebuild_from_committed_archive)}；runtime packages=${String(dogfood.build_provenance?.package_count)}；provenance=${String(dogfood.build_provenance?.provenance_sha256).slice(0, 16)}。`,
       `- requested concurrency=${String(dogfood.requested_max_concurrency)}，effective concurrency=${String(dogfood.effective_max_concurrency)}；blocker=${String(dogfood.blocker)}。`,
     );

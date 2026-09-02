@@ -154,8 +154,12 @@ function blockedDogfood(implementationCommit: string): Record<string, unknown> {
     blocker: "real_adapter_unattended_ineligible",
     provider: "dsh",
     provider_profile: "headless",
+    provider_backend: "deepseek-official",
     provider_model: "deepseek-v4-flash",
-    provider_model_source: "project_dotenv_injected_process_env",
+    provider_model_source: "dsh_session_request_context_and_assistant_source",
+    requested_provider_model: "deepseek-v4-flash",
+    requested_provider_model_source: "project_dotenv_injected_process_env",
+    requested_provider_model_matches_observed: true,
     expected_provider_version: "0.1.0-rc.6",
     expected_provider_version_source: "cli_argument",
     observed_provider_version: "0.1.0-rc.6",
@@ -205,6 +209,20 @@ function blockedDogfood(implementationCommit: string): Record<string, unknown> {
       input_tokens: null,
       output_tokens: null,
       total_tokens: null,
+    },
+    dsh_session_observation: {
+      source: "dsh_local_zstd_session",
+      session_sha256: "8".repeat(64),
+      raw_session_persisted_in_release_bundle: false,
+      usage: {
+        metering: "dsh_session_observed",
+        model_call_count: 2,
+        input_tokens: 110,
+        cache_read_input_tokens: 130,
+        output_tokens: 24,
+        reasoning_tokens: 6,
+        total_tokens: 264,
+      },
     },
     supervised_probe: {
       task_id: "task_real_dsh_probe",
@@ -431,7 +449,12 @@ describe("M4 Markdown projection", () => {
       expected_provider_version: "0.1.0-rc.6",
       observed_provider_version: "0.1.0-rc.6",
       provider_profile: "headless",
+      provider_backend: "deepseek-official",
       provider_model: "deepseek-v4-flash",
+      provider_model_source: "dsh_session_request_context_and_assistant_source",
+      requested_provider_model: "deepseek-v4-flash",
+      requested_provider_model_source: "project_dotenv_injected_process_env",
+      requested_provider_model_matches_observed: true,
       credential_source: "project_dotenv_injected_process_env",
       credential_material_recorded: false,
       credential_material_hashed: false,
@@ -440,6 +463,20 @@ describe("M4 Markdown projection", () => {
         input_tokens: null,
         output_tokens: null,
         total_tokens: null,
+      },
+      dsh_session_observation: {
+        source: "dsh_local_zstd_session",
+        session_sha256: "8".repeat(64),
+        raw_session_persisted_in_release_bundle: false,
+        usage: {
+          metering: "dsh_session_observed",
+          model_call_count: 2,
+          input_tokens: 110,
+          cache_read_input_tokens: 130,
+          output_tokens: 24,
+          reasoning_tokens: 6,
+          total_tokens: 264,
+        },
       },
       provider_probe: { verification_status: "verified" },
       build_provenance: {
@@ -477,12 +514,18 @@ describe("M4 Markdown projection", () => {
 
   it.each([
     ["embedded POSIX path", "model error x,/Users/private/model"],
+    ["labelled POSIX path", "model error path:/Users/private/model"],
+    ["prefixed POSIX path", "model error x/Users/private/model"],
     ["bracketed Windows path", String.raw`model error [C:\private\model]`],
     ["UNC path", String.raw`model error \\server\share\model`],
   ])("rejects %s in release-safe text", (_name, providerModel) => {
     expect(() =>
       buildCanonicalDogfoodProof(
-        { ...blockedDogfood(COMMIT_A), provider_model: providerModel },
+        {
+          ...blockedDogfood(COMMIT_A),
+          provider_model: providerModel,
+          requested_provider_model: providerModel,
+        },
         COMMIT_A,
       ),
     ).toThrow(/absolute path/u);
@@ -493,7 +536,10 @@ describe("M4 Markdown projection", () => {
       buildCanonicalDogfoodProof(
         {
           ...blockedDogfood(COMMIT_A),
-          provider_model: "https://models.example.invalid/deepseek-v4-flash",
+          provider_model:
+            "https://models.example.invalid/path/C:/model?redirect=/Users/private#C:/temp",
+          requested_provider_model:
+            "https://models.example.invalid/path/C:/model?redirect=/Users/private#C:/temp",
         },
         COMMIT_A,
       ),

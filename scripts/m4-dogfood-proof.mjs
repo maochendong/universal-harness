@@ -2,7 +2,7 @@ import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { createRequire } from "node:module";
 import { existsSync, lstatSync, readFileSync, readdirSync, realpathSync } from "node:fs";
-import { isAbsolute, relative, resolve, sep } from "node:path";
+import { isAbsolute, join, relative, resolve, sep } from "node:path";
 
 function sha256(bytes) {
   return createHash("sha256").update(bytes).digest("hex");
@@ -20,6 +20,179 @@ export function resolveDshExecutable(input) {
 /** Expected version is an independent project/CLI contract, never the binary's self-report. */
 export function resolveExpectedDshVersion(input) {
   return configured(input.argument);
+}
+
+/** Resolve dsh's own session store without inspecting credential files. */
+export function resolveDshSessionRoot(input) {
+  const home = configured(input.home);
+  const dshHome =
+    configured(input.dshHome) ?? (home === undefined ? undefined : join(home, ".dsh"));
+  if (dshHome === undefined)
+    throw new Error("DSH_HOME or HOME is required to observe dsh sessions");
+  return resolve(dshHome, "sessions");
+}
+
+function requiredIdentity(value, label) {
+  const provider = configured(value?.provider);
+  const model = configured(value?.model);
+  if (provider === undefined || model === undefined) {
+    throw new Error(`dsh session ${label} is missing provider/model identity`);
+  }
+  return `${provider}\0${model}`;
+}
+
+function usageCount(value, label) {
+  if (value === undefined) return 0;
+  if (!Number.isSafeInteger(value) || value < 0) {
+    throw new Error(`dsh session usage ${label} must be a non-negative safe integer`);
+  }
+  return value;
+}
+
+/**
+ * Project release-safe identity and usage from dsh's own persisted session.
+ * This is observation evidence only: it does not upgrade the Adapter's
+ * unmetered control profile or imply that Harness enforced a token ceiling.
+ */
+export function parseDshSessionEvidence(jsonl, options = {}) {
+  const requestIdentities = new Set();
+  const assistantIdentities = new Set();
+  const usage = {
+    metering: "dsh_session_observed",
+    model_call_count: 0,
+    input_tokens: 0,
+    cache_read_input_tokens: 0,
+    output_tokens: 0,
+    reasoning_tokens: 0,
+    total_tokens: 0,
+  };
+
+  for (const [index, line] of String(jsonl).split(/\r?\n/u).entries()) {
+    if (line.trim() === "") continue;
+    let record;
+    try {
+      record = JSON.parse(line);
+    } catch {
+      throw new Error(`dsh session contains invalid JSON at line ${String(index + 1)}`);
+    }
+    if (record?.type === "request/context") {
+      requestIdentities.add(requiredIdentity(record.data, "request/context"));
+    }
+    if (record?.type !== "assistant/message") continue;
+
+    assistantIdentities.add(
+      requiredIdentity(record.data?.message?.source, "assistant/message source"),
+    );
+    const reported = record.data?.usage;
+    if (reported === undefined || reported === null || typeof reported !== "object") {
+      throw new Error("dsh session assistant/message is missing usage");
+    }
+    const inputTokens = usageCount(reported.inputTokens, "inputTokens");
+    const cacheReadTokens = usageCount(reported.cacheReadTokens, "cacheReadTokens");
+    const outputTokens = usageCount(reported.outputTokens, "outputTokens");
+    const reasoningTokens = usageCount(reported.reasoningTokens, "reasoningTokens");
+    usage.model_call_count += 1;
+    usage.input_tokens += inputTokens;
+    usage.cache_read_input_tokens += cacheReadTokens;
+    usage.output_tokens += outputTokens;
+    usage.reasoning_tokens += reasoningTokens;
+    usage.total_tokens += inputTokens + cacheReadTokens + outputTokens;
+  }
+
+  if (requestIdentities.size !== 1 || assistantIdentities.size !== 1) {
+    throw new Error("dsh session identity is missing or inconsistent");
+  }
+  const requestIdentity = [...requestIdentities][0];
+  const assistantIdentity = [...assistantIdentities][0];
+  if (requestIdentity !== assistantIdentity) {
+    throw new Error("dsh session identity is inconsistent between request and assistant records");
+  }
+  if (usage.model_call_count === 0) {
+    throw new Error("dsh session does not contain an assistant/message usage record");
+  }
+
+  const [provider, model] = requestIdentity.split("\0");
+  const requestedModel = configured(options.requestedProviderModel) ?? null;
+  return {
+    provider,
+    model,
+    identity_source: "dsh_session_request_context_and_assistant_source",
+    requested_model: requestedModel,
+    requested_model_matches_observed: requestedModel === null ? null : requestedModel === model,
+    usage,
+  };
+}
+
+function dshSessionFiles(sessionRoot) {
+  const root = resolve(sessionRoot);
+  if (!existsSync(root)) return [];
+  const files = [];
+  const visit = (absolute) => {
+    const stat = lstatSync(absolute);
+    if (stat.isSymbolicLink()) return;
+    if (stat.isDirectory()) {
+      for (const child of readdirSync(absolute).sort()) visit(resolve(absolute, child));
+      return;
+    }
+    if (!stat.isFile() || !absolute.endsWith(`${sep}session.jsonl.zstd`)) return;
+    files.push({
+      path: relative(root, absolute),
+      size: stat.size,
+      mtime_ms: stat.mtimeMs,
+    });
+  };
+  visit(root);
+  return files.sort((left, right) => left.path.localeCompare(right.path));
+}
+
+/** Freeze dsh session file identities immediately before one supervised invocation. */
+export function captureDshSessionBoundary(input) {
+  return {
+    session_root: resolve(input.sessionRoot),
+    files: dshSessionFiles(input.sessionRoot),
+  };
+}
+
+/** Read the one session created or changed by the bounded dsh invocation. */
+export function readDshInvocationEvidence(input) {
+  const sessionRoot = resolve(input.sessionRoot);
+  if (resolve(input.beforeBoundary?.session_root ?? "") !== sessionRoot) {
+    throw new Error("dsh session boundary belongs to a different session root");
+  }
+  const before = new Map(
+    input.beforeBoundary.files.map((file) => [
+      file.path,
+      `${String(file.size)}:${String(file.mtime_ms)}`,
+    ]),
+  );
+  const candidates = dshSessionFiles(sessionRoot).filter(
+    (file) => before.get(file.path) !== `${String(file.size)}:${String(file.mtime_ms)}`,
+  );
+  if (candidates.length !== 1) {
+    throw new Error(
+      `dsh invocation produced ${String(candidates.length)} observable session files; expected exactly one`,
+    );
+  }
+  const bytes = readFileSync(resolve(sessionRoot, candidates[0].path));
+  const jsonl =
+    input.decompressSession?.(bytes) ??
+    execFileSync(
+      input.zstdExecutable ?? "zstd",
+      ["--decompress", "--stdout", "--", resolve(sessionRoot, candidates[0].path)],
+      {
+        encoding: "utf8",
+        maxBuffer: 100 * 1024 * 1024,
+      },
+    );
+  const parsed = parseDshSessionEvidence(jsonl, {
+    requestedProviderModel: input.requestedProviderModel,
+  });
+  return {
+    ...parsed,
+    session_observation_source: "dsh_local_zstd_session",
+    session_sha256: sha256(bytes),
+    raw_session_persisted_in_release_bundle: false,
+  };
 }
 
 function gitPaths(repositoryRoot, args) {

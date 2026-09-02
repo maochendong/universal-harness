@@ -21,9 +21,12 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { redactM4Evidence } from "./dogfood-m4-redaction.mjs";
 import {
+  captureDshSessionBoundary,
   captureWorkspaceProofBoundary,
   collectPackageBuildProvenance,
+  readDshInvocationEvidence,
   resolveDshExecutable,
+  resolveDshSessionRoot,
   resolveExpectedDshVersion,
   verifyProbeWorkspace,
 } from "./m4-dogfood-proof.mjs";
@@ -55,6 +58,10 @@ const dshExecutable = resolveDshExecutable({
 });
 const expectedProviderVersion = resolveExpectedDshVersion({
   argument: argValue("--expected-dsh-version"),
+});
+const dshSessionRoot = resolveDshSessionRoot({
+  dshHome: process.env.DSH_HOME,
+  home: process.env.HOME,
 });
 const outputPath = resolve(
   argValue("--out") ?? join(repositoryRoot, ".reports", "acceptance", "m4-dogfood.json"),
@@ -291,7 +298,13 @@ if (trackedStatus !== "") {
         const transcriptRelativePath =
           ".harness/raw-traces/agent-dsh/transcript-task_real_dsh_probe.json";
         const proofBoundary = captureWorkspaceProofBoundary({ repositoryRoot: scratchRoot });
+        const dshSessionBoundary = captureDshSessionBoundary({ sessionRoot: dshSessionRoot });
         const result = await adapter.run(envelope, { mode: "supervised" });
+        const dshSessionEvidence = readDshInvocationEvidence({
+          sessionRoot: dshSessionRoot,
+          beforeBoundary: dshSessionBoundary,
+          requestedProviderModel: process.env.DEEPSEEK_MODEL,
+        });
         const transcriptEvidence = result.evidence.find((entry) => entry.kind === "transcript");
         const transcript =
           transcriptEvidence === undefined
@@ -314,10 +327,15 @@ if (trackedStatus !== "") {
           exit_code: transcript?.exit_code ?? null,
           provider: "dsh",
           provider_profile: "headless",
-          provider_model: process.env.DEEPSEEK_MODEL,
-          provider_model_source: loadedEnvNames.has("DEEPSEEK_MODEL")
+          provider_backend: dshSessionEvidence.provider,
+          provider_model: dshSessionEvidence.model,
+          provider_model_source: dshSessionEvidence.identity_source,
+          requested_provider_model: dshSessionEvidence.requested_model,
+          requested_provider_model_source: loadedEnvNames.has("DEEPSEEK_MODEL")
             ? "project_dotenv_injected_process_env"
             : "preexisting_process_env",
+          requested_provider_model_matches_observed:
+            dshSessionEvidence.requested_model_matches_observed,
           expected_provider_version: expectedProviderVersion,
           expected_provider_version_source: "cli_argument",
           observed_provider_version: providerVersion,
@@ -356,6 +374,13 @@ if (trackedStatus !== "") {
             output_tokens: result.usage.output_tokens,
             total_tokens: result.usage.total_tokens,
           },
+          dsh_session_observation: {
+            source: dshSessionEvidence.session_observation_source,
+            session_sha256: dshSessionEvidence.session_sha256,
+            raw_session_persisted_in_release_bundle:
+              dshSessionEvidence.raw_session_persisted_in_release_bundle,
+            usage: dshSessionEvidence.usage,
+          },
           supervised_probe: {
             task_id: envelope.task_id,
             outcome: result.outcome,
@@ -373,7 +398,9 @@ if (trackedStatus !== "") {
           command_executable_basename: basename(dshExecutable),
         };
         if (!probePassed) blocked("real_provider_probe_failed", evidence);
-        else if (!eligibility.eligible) blocked("real_adapter_unattended_ineligible", evidence);
+        else if (!dshSessionEvidence.requested_model_matches_observed) {
+          blocked("provider_model_contract_mismatch", evidence);
+        } else if (!eligibility.eligible) blocked("real_adapter_unattended_ineligible", evidence);
         else blocked("full_four_task_scheduler_dogfood_not_executed", evidence);
       } catch (error) {
         blocked("real_provider_probe_error", {

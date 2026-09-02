@@ -6,9 +6,13 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
 import {
+  captureDshSessionBoundary,
   captureWorkspaceProofBoundary,
   collectPackageBuildProvenance,
+  parseDshSessionEvidence,
+  readDshInvocationEvidence,
   resolveDshExecutable,
+  resolveDshSessionRoot,
   resolveExpectedDshVersion,
   verifyProbeWorkspace,
 } from "../../scripts/m4-dogfood-proof.mjs";
@@ -29,12 +33,156 @@ afterEach(() => {
 });
 
 describe("M4 real-provider dogfood proof", () => {
+  it("derives actual provider, model and usage from the dsh session instead of requested env", () => {
+    const session = [
+      { type: "session", id: "session-test" },
+      {
+        type: "request/context",
+        data: { provider: "deepseek-official", model: "deepseek-v4-flash" },
+      },
+      {
+        type: "assistant/message",
+        data: {
+          message: {
+            source: { provider: "deepseek-official", model: "deepseek-v4-flash" },
+          },
+          usage: {
+            inputTokens: 100,
+            outputTokens: 20,
+            cacheReadTokens: 50,
+            reasoningTokens: 5,
+          },
+        },
+      },
+      {
+        type: "assistant/message",
+        data: {
+          message: {
+            source: { provider: "deepseek-official", model: "deepseek-v4-flash" },
+          },
+          usage: {
+            inputTokens: 10,
+            outputTokens: 4,
+            cacheReadTokens: 80,
+            reasoningTokens: 1,
+          },
+        },
+      },
+    ]
+      .map((entry) => JSON.stringify(entry))
+      .join("\n");
+
+    expect(
+      parseDshSessionEvidence(session, {
+        requestedProviderModel: "deepseek-v4-pro",
+      }),
+    ).toEqual({
+      provider: "deepseek-official",
+      model: "deepseek-v4-flash",
+      identity_source: "dsh_session_request_context_and_assistant_source",
+      requested_model: "deepseek-v4-pro",
+      requested_model_matches_observed: false,
+      usage: {
+        metering: "dsh_session_observed",
+        model_call_count: 2,
+        input_tokens: 110,
+        cache_read_input_tokens: 130,
+        output_tokens: 24,
+        reasoning_tokens: 6,
+        total_tokens: 264,
+      },
+    });
+  });
+
+  it("rejects a dsh session whose request and assistant identities disagree", () => {
+    const session = [
+      JSON.stringify({
+        type: "request/context",
+        data: { provider: "deepseek-official", model: "deepseek-v4-flash" },
+      }),
+      JSON.stringify({
+        type: "assistant/message",
+        data: {
+          message: { source: { provider: "other-provider", model: "other-model" } },
+          usage: { inputTokens: 1, outputTokens: 1 },
+        },
+      }),
+    ].join("\n");
+
+    expect(() => parseDshSessionEvidence(session)).toThrow(/identity is inconsistent/u);
+  });
+
+  it("observes only the dsh session created after the invocation boundary", () => {
+    const root = mkdtempSync(join(tmpdir(), "harness-dsh-sessions-"));
+    roots.push(root);
+    const previousDirectory = join(root, "previous", "session-old");
+    mkdirSync(previousDirectory, { recursive: true });
+    writeFileSync(join(previousDirectory, "session.jsonl.zstd"), "old compressed bytes\n");
+    const boundary = captureDshSessionBoundary({ sessionRoot: root });
+
+    const currentDirectory = join(root, "current", "session-current");
+    mkdirSync(currentDirectory, { recursive: true });
+    const session = [
+      JSON.stringify({
+        type: "request/context",
+        data: { provider: "deepseek-official", model: "deepseek-v4-flash" },
+      }),
+      JSON.stringify({
+        type: "assistant/message",
+        data: {
+          message: {
+            source: { provider: "deepseek-official", model: "deepseek-v4-flash" },
+          },
+          usage: {
+            inputTokens: 10,
+            outputTokens: 2,
+            cacheReadTokens: 20,
+            reasoningTokens: 1,
+          },
+        },
+      }),
+    ].join("\n");
+    writeFileSync(join(currentDirectory, "session.jsonl.zstd"), "new compressed bytes\n");
+
+    expect(
+      readDshInvocationEvidence({
+        sessionRoot: root,
+        beforeBoundary: boundary,
+        requestedProviderModel: "deepseek-v4-pro",
+        decompressSession: () => `${session}\n`,
+      }),
+    ).toMatchObject({
+      provider: "deepseek-official",
+      model: "deepseek-v4-flash",
+      requested_model_matches_observed: false,
+      session_observation_source: "dsh_local_zstd_session",
+      raw_session_persisted_in_release_bundle: false,
+      session_sha256: expect.stringMatching(/^[a-f0-9]{64}$/u),
+      usage: {
+        metering: "dsh_session_observed",
+        model_call_count: 1,
+        input_tokens: 10,
+        cache_read_input_tokens: 20,
+        output_tokens: 2,
+        reasoning_tokens: 1,
+        total_tokens: 32,
+      },
+    });
+  });
+
   it("uses a portable dsh command unless an explicit path is configured", () => {
     expect(resolveDshExecutable({})).toBe("dsh");
     expect(resolveDshExecutable({ environment: "/opt/harness/dsh" })).toBe("/opt/harness/dsh");
     expect(resolveDshExecutable({ argument: "./tools/dsh", environment: "/opt/harness/dsh" })).toBe(
       "./tools/dsh",
     );
+  });
+
+  it("resolves the dsh session store from DSH_HOME before HOME", () => {
+    expect(resolveDshSessionRoot({ dshHome: "/opt/dsh-state", home: "/home/test" })).toBe(
+      "/opt/dsh-state/sessions",
+    );
+    expect(resolveDshSessionRoot({ home: "/home/test" })).toBe("/home/test/.dsh/sessions");
   });
 
   it("requires the expected dsh version from an independent CLI binding", () => {
