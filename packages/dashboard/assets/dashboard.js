@@ -803,6 +803,12 @@ function renderSchedulerPool(view) {
     const card = node("article", `agent-slot slot-${slot.state}${zombie ? " is-zombie" : ""}`);
     const header = node("header", "");
     header.append(node("strong", "", slot.slot_id), schedulerSource("live"));
+    if (slot.state === "cancelling") {
+      // M4 pending-cancel projection: the cancellation is recorded but still
+      // awaits confirmed agent termination; surface it instead of hiding it
+      // behind a bare CSS class.
+      header.append(node("span", "risk-chip agent-slot-cancel-pending", "取消待确认"));
+    }
     card.append(
       header,
       node("p", "agent-slot-task", task?.title || slot.task_id || "等待 Task"),

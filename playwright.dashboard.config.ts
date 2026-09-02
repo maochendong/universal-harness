@@ -7,6 +7,7 @@ export default defineConfig({
     "dashboard-live-approval.test.ts",
     "dashboard-m3-collaboration.test.ts",
     "dashboard-m4-scheduler.test.ts",
+    "dashboard-m4-governed-controls.test.ts",
   ],
   fullyParallel: false,
   workers: 1,
