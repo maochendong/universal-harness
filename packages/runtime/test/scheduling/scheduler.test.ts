@@ -1079,6 +1079,17 @@ describe("recovery", () => {
     });
     const lease = preloadGrantedLease(authority, task, "run_orphan_unknown_usage");
     authority.leases.push(lease);
+    authority.runs.push({
+      protocol_version: "1.3.0",
+      record_kind: "run_started",
+      run_id: lease.run_id,
+      task_id: task.id,
+      workflow_operation_id: OPERATION_ID,
+      attempt_id: "attempt_run_orphan_unknown_usage",
+      sequence: 1,
+      timestamp: NOW,
+      context_bundle_id: "context_bundle_orphan",
+    });
 
     const recovered = await scheduler.recover({
       ...driveInput(),

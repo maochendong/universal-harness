@@ -23,7 +23,7 @@ const BOUNDARIES = [
 
 describe("M4 scheduler fault-injection release matrix", () => {
   it(
-    "executes all twelve exact production-seam cases and proves six invariants per boundary",
+    "executes all twelve exact production-seam cases without overstating invariant coverage",
     { timeout: 240_000 },
     () => {
       expect(M4_FAULT_CASES.map((faultCase) => faultCase.id)).toEqual(BOUNDARIES);
@@ -33,16 +33,31 @@ describe("M4 scheduler fault-injection release matrix", () => {
 
       const report = runM4FaultMatrix();
 
-      expect(report.coverage).toBe("full");
-      expect(report.status).toBe("passed");
+      expect(report.coverage).toBe("partial");
+      expect(report.execution_status).toBe("passed");
+      expect(report.status).toBe("failed");
       expect(report.results).toHaveLength(12);
-      for (const result of report.results) {
+      for (const [index, result] of report.results.entries()) {
         expect(result.status, result.boundary_id).toBe("passed");
         expect(result.exit_code, result.boundary_id).toBe(0);
         expect(result.case_identity, result.boundary_id).toContain("::");
-        expect(result.invariants.map((invariant) => invariant.id)).toEqual(M4_FAULT_INVARIANTS);
+        expect(result.invariants.map((invariant) => invariant.id)).toEqual(
+          M4_FAULT_CASES[index]?.invariants.map((invariant) => invariant.id),
+        );
+        expect(result.invariants.every((invariant) => invariant.assertion.length > 0)).toBe(true);
         expect(result.invariants.every((invariant) => invariant.status === "passed")).toBe(true);
       }
+      expect(report.coverage_gaps.length).toBeGreaterThan(0);
+      expect(
+        report.coverage_gaps.some(
+          (gap) =>
+            gap.boundary_id === "driver_lock_acquisition_driver_exit" &&
+            gap.invariant_id === "no_ref_ledger_split",
+        ),
+      ).toBe(true);
+      expect(
+        new Set(report.results.flatMap((result) => result.invariants.map(({ id }) => id))),
+      ).toEqual(new Set(M4_FAULT_INVARIANTS));
     },
   );
 });

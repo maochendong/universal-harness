@@ -19,61 +19,195 @@ export const M4_FAULT_CASES = [
     id: "lease_commit_before_process",
     file: "tests/fault/m4-lease-budget-boundaries.test.ts",
     test: "treats a kill at the commit point as durable and replays idempotently",
+    invariants: [
+      {
+        id: "no_duplicate_process_acceptance",
+        assertion: "replay starts no process after the granted Lease command is already committed",
+      },
+      {
+        id: "no_incorrect_budget_return",
+        assertion: "the recovered account retains the durable granted Lease reservation",
+      },
+      {
+        id: "no_false_success",
+        assertion: "the crash leaves one granted Lease, never a terminal success",
+      },
+    ],
   },
   {
     id: "process_start_before_pid_projection",
     file: "packages/runtime/test/scheduling/scheduler.test.ts",
-    test: "fails closed when a granted Lease has no live driver, then recover() revokes and retries",
+    test: "keeps an orphan's unmeasured reservation charged and blocks automatic retry",
+    invariants: [
+      {
+        id: "no_duplicate_process_acceptance",
+        assertion: "a fresh driver starts no replacement process while usage is unknown",
+      },
+      {
+        id: "no_incorrect_budget_return",
+        assertion: "the revoked Lease conservatively charges the full reservation",
+      },
+      {
+        id: "no_false_success",
+        assertion: "recovery returns blocked with a budget_usage_unknown Finding",
+      },
+    ],
   },
   {
     id: "agent_result_before_evidence",
     file: "packages/runtime/test/scheduling/scheduler.test.ts",
     test: "rejects results carrying a stale fencing token",
+    invariants: [
+      {
+        id: "no_stale_fencing_acceptance",
+        assertion: "the old fencing token is rejected twice while the current token is accepted",
+      },
+      {
+        id: "no_false_success",
+        assertion: "a stale Agent result cannot advance Task authority",
+      },
+    ],
   },
   {
     id: "task_gate_before_integration_queue",
     file: "packages/runtime/test/scheduling/scheduler.test.ts",
     test: "fails closed instead of releasing a Lease when a required Task Gate has no Evidence",
+    invariants: [
+      {
+        id: "no_false_success",
+        assertion: "missing required Gate Evidence blocks the Task and records task_gate_failed",
+      },
+    ],
   },
   {
     id: "task_commit_before_candidate_gate",
     file: "tests/fault/m4-wave-integration-boundaries.test.ts",
     test: "blocks on a candidate gate failure without consuming the integration retry",
+    invariants: [
+      {
+        id: "no_duplicate_integration",
+        assertion: "candidate Gate failure writes no WaveIntegration record",
+      },
+      {
+        id: "no_ref_ledger_split",
+        assertion: "candidate Gate failure leaves both operation ref and WaveIntegration absent",
+      },
+      {
+        id: "no_false_success",
+        assertion: "the semantic conflict is blocked and never becomes an integration retry",
+      },
+    ],
   },
   {
     id: "candidate_gate_before_lease_release",
     file: "packages/runtime/test/scheduling/integration.test.ts",
     test: "keeps the Lease granted when candidate Gate execution crashes before the atomic release",
+    invariants: [
+      {
+        id: "no_incorrect_budget_return",
+        assertion: "the granted Lease keeps its reservation when candidate Gate execution crashes",
+      },
+      {
+        id: "no_false_success",
+        assertion: "the crash produces no candidate_validated terminal state",
+      },
+    ],
   },
   {
     id: "wave_gate_before_cas",
     file: "tests/fault/m4-wave-integration-boundaries.test.ts",
     test: "keeps the ref unchanged and never retries when a mandatory wave gate fails",
+    invariants: [
+      {
+        id: "no_duplicate_integration",
+        assertion: "wave Gate failure writes no WaveIntegration record",
+      },
+      {
+        id: "no_ref_ledger_split",
+        assertion: "wave Gate failure leaves the operation ref and Ledger acceptance unchanged",
+      },
+      {
+        id: "no_false_success",
+        assertion: "wave Gate failure records a blocker and never retries",
+      },
+    ],
   },
   {
     id: "cas_preparation_before_ledger_transaction",
     file: "tests/fault/m4-wave-integration-boundaries.test.ts",
     test: "rolls back a successful ref CAS when the Ledger acceptance transaction fails",
+    invariants: [
+      {
+        id: "no_duplicate_integration",
+        assertion: "the failed Ledger transaction leaves no WaveIntegration record",
+      },
+      {
+        id: "no_ref_ledger_split",
+        assertion: "the exact reverse CAS restores the ref when Ledger acceptance fails in-process",
+      },
+      {
+        id: "no_false_success",
+        assertion: "the acceptance call rejects instead of returning an accepted wave",
+      },
+    ],
   },
   {
     id: "cas_success_lost_response",
     file: "tests/fault/m4-wave-integration-boundaries.test.ts",
-    test: "recovers a successful CAS with a lost response without duplicate integration",
+    test: "lets a fresh driver reconcile an exact candidate ref after CAS succeeds before Ledger acceptance",
+    invariants: [
+      {
+        id: "no_duplicate_integration",
+        assertion: "fresh-driver reconciliation records the wave once without a second CAS",
+      },
+      {
+        id: "no_ref_ledger_split",
+        assertion:
+          "the exact candidate ref is reconciled into one authoritative WaveIntegration record",
+      },
+      {
+        id: "no_false_success",
+        assertion:
+          "the first process reports failure until a fresh driver reruns validation and records acceptance",
+      },
+    ],
   },
   {
     id: "approval_request_decision_arrival",
     file: "packages/runtime/test/scheduling/scheduler.test.ts",
     test: "requires_approval creates one digest-bound request and pauses only that Task",
+    invariants: [
+      {
+        id: "no_duplicate_process_acceptance",
+        assertion: "the unapproved Task is not dispatched while its independent peer runs once",
+      },
+      {
+        id: "no_false_success",
+        assertion: "the unapproved Task remains paused without a Lease",
+      },
+    ],
   },
   {
     id: "driver_lock_acquisition_driver_exit",
     file: "tests/fault/m4-driver-lock-recovery.test.ts",
     test: "reclaims a dead same-host owner's lock; the old handle cannot release it",
+    invariants: [
+      {
+        id: "no_duplicate_process_acceptance",
+        assertion: "the stale driver owner cannot release or supersede the recovered live owner",
+      },
+    ],
   },
   {
     id: "coordinator_restart_sqlite_deletion",
     file: "packages/runtime/test/scheduling/host.test.ts",
     test: "rebuilds from Ledger authority after the real SQLite live projection is deleted",
+    invariants: [
+      {
+        id: "no_false_success",
+        assertion: "deleting live SQLite preserves the exact authority-derived Task statuses",
+      },
+    ],
   },
 ];
 
@@ -164,19 +298,34 @@ export function runM4FaultMatrix(options = {}) {
       exit_code: processResult.status ?? 1,
       implementation_commit: implementationCommit,
       design_section: "M4 §23.3 / plan Task 14 Step 3",
-      invariants: M4_FAULT_INVARIANTS.map((invariant) => ({ id: invariant, status })),
+      invariants: faultCase.invariants.map((invariant) => ({ ...invariant, status })),
       detail: selected.detail,
     };
   });
+
+  const coverageGaps = results.flatMap((result) => {
+    const covered = new Set(result.invariants.map((invariant) => invariant.id));
+    return M4_FAULT_INVARIANTS.filter((invariant) => !covered.has(invariant)).map((invariant) => ({
+      boundary_id: result.boundary_id,
+      invariant_id: invariant,
+    }));
+  });
+  const executionStatus = results.every((result) => result.status === "passed")
+    ? "passed"
+    : "failed";
+  const coverage = coverageGaps.length === 0 ? "full" : "partial";
 
   const report = {
     schema_version: "1.0.0",
     suite: "m4_fault_matrix",
     invocation_id: invocationId,
     implementation_commit: implementationCommit,
-    coverage: "full",
+    coverage,
+    coverage_basis: "each boundary must bind every required invariant to an executed assertion",
+    coverage_gaps: coverageGaps,
     command: ["pnpm", "test:m4:fault-matrix"],
-    status: results.every((result) => result.status === "passed") ? "passed" : "failed",
+    execution_status: executionStatus,
+    status: executionStatus === "passed" && coverage === "full" ? "passed" : "failed",
     results,
   };
   const outputPath = resolve(
