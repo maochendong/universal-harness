@@ -1,5 +1,6 @@
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
+import { relative, resolve } from "node:path";
 
 export const SUITE_REPORT_SCHEMA_VERSION = "harness.acceptance-suite-report/1";
 export const M4_RESULTS_SCHEMA_VERSION = "harness.m4-acceptance-results/1";
@@ -215,6 +216,16 @@ export class ReleaseEvidenceError extends Error {
   }
 }
 
+function expectedConfigPath(repositoryRoot, suite) {
+  const relativePath =
+    suite === "performance"
+      ? "vitest.performance.ts"
+      : suite === "playwright-dashboard"
+        ? "playwright.dashboard.config.ts"
+        : "vitest.workspace.ts";
+  return resolve(repositoryRoot, relativePath);
+}
+
 function isObject(value) {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
@@ -230,7 +241,12 @@ function assertString(value, field, suite) {
  * reports loaded from canonical full-report paths; partial artifacts never
  * enter this map.
  */
-export function assertCanonicalSuiteReports(reports, commands, implementationCommit) {
+export function assertCanonicalSuiteReports(
+  reports,
+  commands,
+  implementationCommit,
+  repositoryRoot,
+) {
   const invocationIds = {};
   for (const [suite, command] of Object.entries(commands)) {
     const report = reports.get(suite);
@@ -250,6 +266,12 @@ export function assertCanonicalSuiteReports(reports, commands, implementationCom
       throw new ReleaseEvidenceError(
         `${suite}: command does not match the canonical release command`,
       );
+    }
+    if (
+      repositoryRoot !== undefined &&
+      report.config_path !== expectedConfigPath(repositoryRoot, suite)
+    ) {
+      throw new ReleaseEvidenceError(`${suite}: config is not the repository canonical config`);
     }
     if (report.implementation_commit !== implementationCommit) {
       throw new ReleaseEvidenceError(`${suite}: implementation commit is stale or mixed`);
@@ -279,6 +301,241 @@ export function assertCanonicalSuiteReports(reports, commands, implementationCom
     invocationIds[suite] = report.invocation_id;
   }
   return invocationIds;
+}
+
+function canonicalize(value) {
+  if (Array.isArray(value)) return value.map(canonicalize);
+  if (isObject(value)) {
+    return Object.fromEntries(
+      Object.keys(value)
+        .sort()
+        .map((key) => [key, canonicalize(value[key])]),
+    );
+  }
+  return value;
+}
+
+export function digestCanonicalResult(value) {
+  return createHash("sha256")
+    .update(JSON.stringify(canonicalize(value)))
+    .digest("hex");
+}
+
+/** Persistable, redacted proof of exactly what a canonical suite executed. */
+export function buildCanonicalSuiteProof(report, repositoryRoot) {
+  if (!isObject(report)) throw new ReleaseEvidenceError("suite proof source is malformed");
+  const configPath = expectedConfigPath(repositoryRoot, report.suite);
+  if (report.config_path !== configPath) {
+    throw new ReleaseEvidenceError(`${String(report.suite)}: suite proof config drifted`);
+  }
+  const files = [...report.files]
+    .map((file) => ({ path: file.path, state: file.state }))
+    .sort((left, right) => left.path.localeCompare(right.path));
+  return {
+    schema_version: report.schema_version,
+    suite: report.suite,
+    implementation_commit: report.implementation_commit,
+    started_commit: report.started_commit,
+    finished_commit: report.finished_commit,
+    invocation_id: report.invocation_id,
+    command: report.command,
+    coverage: report.coverage,
+    config_path: relative(repositoryRoot, configPath).split("\\").join("/"),
+    tracked_worktree_clean_at_start: report.tracked_worktree_clean_at_start,
+    tracked_worktree_clean_at_finish: report.tracked_worktree_clean_at_finish,
+    files_total: report.files_total,
+    files_failed: report.files_failed,
+    failed_files: [...report.failed_files].sort(),
+    files,
+    exit_semantics: {
+      runner: report.suite === "playwright-dashboard" ? "playwright" : "vitest",
+      success_condition: "no_failed_files_and_runner_success",
+      observed_success:
+        report.files_failed === 0 && (report.status === undefined || report.status === "passed"),
+    },
+  };
+}
+
+export function buildCanonicalDogfoodProof(dogfood, implementationCommit) {
+  if (!isObject(dogfood)) return { present: false, implementation_commit: implementationCommit };
+  if (dogfood.implementation_commit !== implementationCommit) {
+    throw new ReleaseEvidenceError("M4 dogfood implementation commit is stale");
+  }
+  return {
+    present: true,
+    schema_version: dogfood.schema_version,
+    implementation_commit: dogfood.implementation_commit,
+    status: dogfood.status,
+    blocker: dogfood.blocker ?? null,
+    command: dogfood.command ?? null,
+    exit_code: dogfood.exit_code ?? null,
+    provider: dogfood.provider ?? null,
+    provider_version: dogfood.provider_version ?? null,
+    adapter_manifest_digest: dogfood.adapter_manifest_digest ?? null,
+    requested_task_count: dogfood.requested_task_count ?? null,
+    requested_max_concurrency: dogfood.requested_max_concurrency ?? null,
+    requested_wave_count: dogfood.requested_wave_count ?? null,
+    effective_max_concurrency: dogfood.effective_max_concurrency ?? null,
+    unattended_eligible: dogfood.unattended_eligible ?? null,
+    provider_probe: dogfood.provider_probe ?? null,
+    scheduler_eligibility: dogfood.scheduler_eligibility ?? null,
+    overlap_proven: dogfood.overlap_proven ?? false,
+    overlap_intervals: dogfood.overlap_intervals ?? [],
+    gate_status: dogfood.gate_status ?? null,
+    evaluation_status: dogfood.evaluation_status ?? null,
+    snapshot_status: dogfood.snapshot_status ?? null,
+    wave_integration_count: dogfood.wave_integration_count ?? null,
+  };
+}
+
+function suiteFileState(suiteProofs, requiredSuites, path) {
+  const states = requiredSuites.flatMap((suite) =>
+    (suiteProofs[suite]?.files ?? [])
+      .filter((file) => file.path === path)
+      .map((file) => file.state),
+  );
+  if (states.includes("fail")) return "fail";
+  if (states.includes("pass")) return "pass";
+  return "missing";
+}
+
+function dogfoodRuleStatus(rule, proof) {
+  if (rule === undefined) return { status: "passed", detail: "canonical suites passed" };
+  if (proof.present !== true) return { status: "not_run", detail: "dogfood Evidence is missing" };
+  if (proof.status === "failed") return { status: "failed", detail: "dogfood execution failed" };
+  if (rule === "adapter_eligibility") {
+    const ineligibleBlocked =
+      proof.provider_probe?.status === "passed" &&
+      proof.unattended_eligible === false &&
+      proof.effective_max_concurrency === 1 &&
+      proof.scheduler_eligibility?.status === "blocked" &&
+      proof.blocker === "real_adapter_unattended_ineligible";
+    return ineligibleBlocked
+      ? { status: "passed", detail: "real ineligible Adapter was mechanically clamped and blocked" }
+      : { status: "blocked", detail: "Adapter eligibility proof is incomplete" };
+  }
+  const parallelComplete =
+    proof.status === "passed" &&
+    proof.requested_task_count >= 4 &&
+    proof.requested_wave_count >= 2 &&
+    proof.effective_max_concurrency >= 2 &&
+    proof.overlap_proven === true &&
+    Array.isArray(proof.overlap_intervals) &&
+    proof.overlap_intervals.length >= 2;
+  if (rule === "parallel_overlap") {
+    return parallelComplete
+      ? { status: "passed", detail: "real Task intervals prove parallel overlap" }
+      : { status: "blocked", detail: "real parallel overlap proof is incomplete" };
+  }
+  const verticalComplete =
+    parallelComplete &&
+    proof.gate_status === "passed" &&
+    proof.evaluation_status === "passed" &&
+    proof.snapshot_status === "completed" &&
+    proof.wave_integration_count >= 2;
+  return verticalComplete
+    ? { status: "passed", detail: "real dogfood completed Gate/Evaluate/Snapshot" }
+    : {
+        status: "blocked",
+        detail: "full real Scheduler/Gate/Evaluate/Snapshot dogfood is incomplete",
+      };
+}
+
+function acceptanceDigestPayload(result) {
+  return {
+    acceptance_id: result.acceptance_id,
+    tracked_evidence_digest: result.tracked_evidence_digest,
+    suite_result_digests: result.suite_result_digests,
+    dogfood_result_digest: result.dogfood_result_digest ?? null,
+  };
+}
+
+export function buildM4AcceptanceSidecar({
+  repositoryRoot,
+  implementationCommit,
+  suiteReports,
+  dogfood,
+  generatedAt,
+}) {
+  const suiteInvocationIds = assertCanonicalSuiteReports(
+    suiteReports,
+    CANONICAL_RELEASE_COMMANDS,
+    implementationCommit,
+    repositoryRoot,
+  );
+  const suiteResults = Object.fromEntries(
+    Object.keys(CANONICAL_RELEASE_COMMANDS).map((suite) => [
+      suite,
+      buildCanonicalSuiteProof(suiteReports.get(suite), repositoryRoot),
+    ]),
+  );
+  const suiteResultDigests = Object.fromEntries(
+    Object.entries(suiteResults).map(([suite, proof]) => [suite, digestCanonicalResult(proof)]),
+  );
+  const dogfoodResult = buildCanonicalDogfoodProof(dogfood, implementationCommit);
+  const dogfoodResultDigest = digestCanonicalResult(dogfoodResult);
+  const results = M4_ACCEPTANCE_REGISTRY.map((registryEntry) => {
+    const trackedPaths = registryEntry.evidence.filter((path) => !path.startsWith(".reports/"));
+    const trackedEvidenceDigest = digestTrackedEvidence(
+      repositoryRoot,
+      implementationCommit,
+      trackedPaths,
+    );
+    const requiredSuiteDigests = Object.fromEntries(
+      registryEntry.required_suites.map((suite) => [suite, suiteResultDigests[suite]]),
+    );
+    const testEvidence = registryEntry.evidence.filter(
+      (path) => !path.startsWith("scripts/") && !path.startsWith(".reports/"),
+    );
+    const fileStates = testEvidence.map((path) =>
+      suiteFileState(suiteResults, registryEntry.required_suites, path),
+    );
+    const suiteStatus = fileStates.includes("fail")
+      ? "failed"
+      : fileStates.includes("missing")
+        ? "not_run"
+        : "passed";
+    const dogfoodStatus = dogfoodRuleStatus(registryEntry.dogfood_rule, dogfoodResult);
+    const status = suiteStatus === "passed" ? dogfoodStatus.status : suiteStatus;
+    const result = {
+      acceptance_id: registryEntry.acceptance_id,
+      statement: registryEntry.statement,
+      status,
+      required_suites: registryEntry.required_suites,
+      suite_invocation_ids: Object.fromEntries(
+        registryEntry.required_suites.map((suite) => [suite, suiteInvocationIds[suite]]),
+      ),
+      commands: m4Commands(registryEntry),
+      evidence: registryEntry.evidence,
+      tracked_evidence_digest: trackedEvidenceDigest,
+      suite_result_digests: requiredSuiteDigests,
+      ...(registryEntry.dogfood_rule === undefined
+        ? {}
+        : { dogfood_result_digest: dogfoodResultDigest }),
+      design_section: "§24",
+      detail:
+        suiteStatus === "failed"
+          ? "at least one canonical suite Evidence file failed"
+          : suiteStatus === "not_run"
+            ? "at least one required Evidence file is absent from canonical suite results"
+            : dogfoodStatus.detail,
+    };
+    return { ...result, evidence_digest: digestCanonicalResult(acceptanceDigestPayload(result)) };
+  });
+  const sidecar = {
+    schema_version: M4_RESULTS_SCHEMA_VERSION,
+    milestone: "M4",
+    implementation_commit: implementationCommit,
+    generated_at: generatedAt,
+    suite_invocation_ids: suiteInvocationIds,
+    suite_results: suiteResults,
+    suite_result_digests: suiteResultDigests,
+    dogfood_result: dogfoodResult,
+    dogfood_result_digest: dogfoodResultDigest,
+    results,
+  };
+  assertM4AcceptanceSidecar(sidecar, { requireComplete: true });
+  return sidecar;
 }
 
 function git(repositoryRoot, args, encoding = "utf8") {
@@ -334,6 +591,37 @@ export function assertM4AcceptanceSidecar(sidecar, options = {}) {
     }
     for (const suite of Object.keys(CANONICAL_RELEASE_COMMANDS)) {
       assertString(sidecar.suite_invocation_ids[suite], "invocation_id", suite);
+      const proof = sidecar.suite_results?.[suite];
+      if (!isObject(proof)) {
+        throw new ReleaseEvidenceError(`${suite}: persisted suite proof is missing`);
+      }
+      if (
+        proof.suite !== suite ||
+        proof.command !== CANONICAL_RELEASE_COMMANDS[suite] ||
+        proof.coverage !== "full" ||
+        proof.implementation_commit !== sidecar.implementation_commit ||
+        proof.started_commit !== sidecar.implementation_commit ||
+        proof.finished_commit !== sidecar.implementation_commit ||
+        proof.tracked_worktree_clean_at_start !== true ||
+        proof.tracked_worktree_clean_at_finish !== true ||
+        proof.files_failed !== 0 ||
+        proof.files_total !== proof.files?.length ||
+        proof.exit_semantics?.observed_success !== true
+      ) {
+        throw new ReleaseEvidenceError(`${suite}: persisted suite proof is not release-passing`);
+      }
+      if (proof.invocation_id !== sidecar.suite_invocation_ids[suite]) {
+        throw new ReleaseEvidenceError(`${suite}: persisted invocation identity drifted`);
+      }
+      if (sidecar.suite_result_digests?.[suite] !== digestCanonicalResult(proof)) {
+        throw new ReleaseEvidenceError(`${suite}: persisted result digest mismatch`);
+      }
+    }
+    if (
+      !isObject(sidecar.dogfood_result) ||
+      sidecar.dogfood_result_digest !== digestCanonicalResult(sidecar.dogfood_result)
+    ) {
+      throw new ReleaseEvidenceError("M4 dogfood result digest mismatch");
     }
   }
   const seen = new Set();
@@ -386,6 +674,47 @@ export function assertM4AcceptanceSidecar(sidecar, options = {}) {
     }
     if (!["passed", "failed", "blocked", "not_run"].includes(entry.status)) {
       throw new ReleaseEvidenceError(`${expectedId}: invalid status`);
+    }
+    if (options.requireComplete === true) {
+      if (!/^[a-f0-9]{64}$/u.test(entry.tracked_evidence_digest ?? "")) {
+        throw new ReleaseEvidenceError(`${expectedId}: tracked Evidence digest is invalid`);
+      }
+      const expectedSuiteDigests = Object.fromEntries(
+        registryEntry.required_suites.map((suite) => [suite, sidecar.suite_result_digests[suite]]),
+      );
+      if (JSON.stringify(entry.suite_result_digests) !== JSON.stringify(expectedSuiteDigests)) {
+        throw new ReleaseEvidenceError(`${expectedId}: suite result digests drifted`);
+      }
+      if (
+        registryEntry.dogfood_rule === undefined
+          ? entry.dogfood_result_digest !== undefined
+          : entry.dogfood_result_digest !== sidecar.dogfood_result_digest
+      ) {
+        throw new ReleaseEvidenceError(`${expectedId}: dogfood result digest drifted`);
+      }
+      const expectedEvidenceDigest = digestCanonicalResult(acceptanceDigestPayload(entry));
+      if (entry.evidence_digest !== expectedEvidenceDigest) {
+        throw new ReleaseEvidenceError(`${expectedId}: combined Evidence digest mismatch`);
+      }
+      const testEvidence = registryEntry.evidence.filter(
+        (path) => !path.startsWith("scripts/") && !path.startsWith(".reports/"),
+      );
+      const fileStates = testEvidence.map((path) =>
+        suiteFileState(sidecar.suite_results, registryEntry.required_suites, path),
+      );
+      const suiteStatus = fileStates.includes("fail")
+        ? "failed"
+        : fileStates.includes("missing")
+          ? "not_run"
+          : "passed";
+      const dogfoodStatus = dogfoodRuleStatus(
+        registryEntry.dogfood_rule,
+        sidecar.dogfood_result,
+      ).status;
+      const expectedStatus = suiteStatus === "passed" ? dogfoodStatus : suiteStatus;
+      if (entry.status !== expectedStatus) {
+        throw new ReleaseEvidenceError(`${expectedId}: status is not derived from persisted proof`);
+      }
     }
   }
   return sidecar;
@@ -461,6 +790,15 @@ export function verifyM4ReportCommit(repositoryRoot, head = "HEAD") {
     throw new ReleaseEvidenceError("report parent is not the evaluated implementation commit");
   }
   assertM4AcceptanceSidecar(sidecar, { requireComplete: true });
+  for (const [index, registryEntry] of M4_ACCEPTANCE_REGISTRY.entries()) {
+    const trackedPaths = registryEntry.evidence.filter((path) => !path.startsWith(".reports/"));
+    const expectedDigest = digestTrackedEvidence(repositoryRoot, parent, trackedPaths);
+    if (sidecar.results[index]?.tracked_evidence_digest !== expectedDigest) {
+      throw new ReleaseEvidenceError(
+        `${registryEntry.acceptance_id}: tracked Evidence does not match the implementation parent`,
+      );
+    }
+  }
   const changed = git(repositoryRoot, [
     "diff-tree",
     "--no-commit-id",

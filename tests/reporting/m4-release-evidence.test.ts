@@ -11,6 +11,10 @@ import {
   M4_ACCEPTANCE_REGISTRY,
   assertM4AcceptanceSidecar,
   assertCanonicalSuiteReports,
+  buildM4AcceptanceSidecar,
+  buildCanonicalSuiteProof,
+  CANONICAL_RELEASE_COMMANDS,
+  digestCanonicalResult,
   digestTrackedEvidence,
   m4Commands,
   renderM4Markdown,
@@ -66,11 +70,83 @@ function report(
     suite,
     command,
     coverage: "full",
+    config_path:
+      suite === "performance"
+        ? "/repo/vitest.performance.ts"
+        : suite === "playwright-dashboard"
+          ? "/repo/playwright.dashboard.config.ts"
+          : "/repo/vitest.workspace.ts",
     files_total: 1,
     files_failed: 0,
     failed_files: [],
     files: [{ path: `${suite}.test.ts`, state: "pass" }],
     ...overrides,
+  };
+}
+
+function releaseReports(repositoryRoot: string, implementationCommit: string): Map<string, object> {
+  const filesBySuite = new Map<string, Set<string>>(
+    Object.keys(CANONICAL_RELEASE_COMMANDS).map((suite) => [suite, new Set()]),
+  );
+  for (const entry of M4_ACCEPTANCE_REGISTRY) {
+    for (const path of entry.evidence) {
+      if (path.startsWith("scripts/") || path.startsWith(".reports/")) continue;
+      if (path === "tests/e2e/dashboard-m4-scheduler.test.ts") {
+        filesBySuite.get("playwright-dashboard")?.add(path);
+      } else if (path.startsWith("tests/performance/")) {
+        filesBySuite.get("performance")?.add(path);
+      } else if (path.startsWith("tests/fault/")) {
+        filesBySuite.get("fault")?.add(path);
+      } else if (path.startsWith("tests/security/")) {
+        filesBySuite.get("security")?.add(path);
+      } else {
+        filesBySuite.get("main")?.add(path);
+        if (path.startsWith("tests/e2e/")) filesBySuite.get("e2e")?.add(path);
+      }
+    }
+  }
+  return new Map(
+    Object.entries(CANONICAL_RELEASE_COMMANDS).map(([suite, command]) => {
+      const files = [...(filesBySuite.get(suite) ?? [])].map((path) => ({ path, state: "pass" }));
+      return [
+        suite,
+        report(suite, command, {
+          implementation_commit: implementationCommit,
+          started_commit: implementationCommit,
+          finished_commit: implementationCommit,
+          invocation_id: `inv-${suite}`,
+          config_path:
+            suite === "performance"
+              ? join(repositoryRoot, "vitest.performance.ts")
+              : suite === "playwright-dashboard"
+                ? join(repositoryRoot, "playwright.dashboard.config.ts")
+                : join(repositoryRoot, "vitest.workspace.ts"),
+          files,
+          files_total: files.length,
+        }),
+      ];
+    }),
+  );
+}
+
+function blockedDogfood(implementationCommit: string): Record<string, unknown> {
+  return {
+    schema_version: 1,
+    implementation_commit: implementationCommit,
+    status: "blocked",
+    blocker: "real_adapter_unattended_ineligible",
+    provider: "dsh",
+    provider_version: "test",
+    exit_code: 0,
+    requested_task_count: 4,
+    requested_wave_count: 3,
+    requested_max_concurrency: 2,
+    effective_max_concurrency: 1,
+    unattended_eligible: false,
+    provider_probe: { status: "passed" },
+    scheduler_eligibility: { status: "blocked" },
+    overlap_proven: false,
+    overlap_intervals: [],
   };
 }
 
@@ -87,7 +163,7 @@ describe("canonical M4 release suite reports", () => {
       ["security", report("security", commands.security)],
       ["fault", report("fault", commands.fault)],
     ]);
-    expect(assertCanonicalSuiteReports(reports, commands, COMMIT_A)).toEqual({
+    expect(assertCanonicalSuiteReports(reports, commands, COMMIT_A, "/repo")).toEqual({
       main: "inv-main",
       security: "inv-security",
       fault: "inv-fault",
@@ -111,9 +187,22 @@ describe("canonical M4 release suite reports", () => {
       changedSuite,
       report(changedSuite, commands[changedSuite as keyof typeof commands], overrides),
     );
-    expect(() => assertCanonicalSuiteReports(reports, commands, COMMIT_A)).toThrow(
+    expect(() => assertCanonicalSuiteReports(reports, commands, COMMIT_A, "/repo")).toThrow(
       ReleaseEvidenceError,
     );
+  });
+
+  it("digests canonical executed-result payload rather than source names alone", () => {
+    const first = buildCanonicalSuiteProof(report("main", "pnpm test"), "/repo");
+    const second = buildCanonicalSuiteProof(
+      report("main", "pnpm test", {
+        invocation_id: "inv-main-2",
+        files: [{ path: "main.test.ts", state: "skip" }],
+      }),
+      "/repo",
+    );
+    expect(first.config_path).toBe("vitest.workspace.ts");
+    expect(digestCanonicalResult(first)).not.toBe(digestCanonicalResult(second));
   });
 });
 
@@ -138,6 +227,24 @@ function repository(): string {
   return root;
 }
 
+function evidenceBaseline(root: string): string {
+  for (const path of new Set(
+    M4_ACCEPTANCE_REGISTRY.flatMap((entry) =>
+      entry.evidence.filter((candidate) => !candidate.startsWith(".reports/")),
+    ),
+  )) {
+    const absolute = join(root, path);
+    mkdirSync(dirname(absolute), { recursive: true });
+    writeFileSync(absolute, `proof for ${path}\n`, "utf8");
+  }
+  writeFileSync(join(root, "vitest.workspace.ts"), "export {};\n", "utf8");
+  writeFileSync(join(root, "vitest.performance.ts"), "export {};\n", "utf8");
+  writeFileSync(join(root, "playwright.dashboard.config.ts"), "export {};\n", "utf8");
+  git(root, ["add", "."]);
+  git(root, ["commit", "-m", "implementation"]);
+  return git(root, ["rev-parse", "HEAD"]);
+}
+
 describe("tracked Evidence and report commit", () => {
   it("digests bytes from git show instead of the mutable worktree", () => {
     const root = repository();
@@ -154,14 +261,14 @@ describe("tracked Evidence and report commit", () => {
 
   it("accepts only a direct pure-document successor of the implementation", () => {
     const root = repository();
-    const implementation = commitFile(root, "src/app.ts", "export {};\n", "implementation");
-    const sidecar = {
-      schema_version: "harness.m4-acceptance-results/1",
-      implementation_commit: implementation,
-      suite_invocation_ids: completeInvocationIds(),
-      dogfood_summary: { present: false },
-      results: completeResults(),
-    };
+    const implementation = evidenceBaseline(root);
+    const sidecar = buildM4AcceptanceSidecar({
+      repositoryRoot: root,
+      implementationCommit: implementation,
+      suiteReports: releaseReports(root, implementation),
+      dogfood: blockedDogfood(implementation),
+      generatedAt: "2026-09-02T00:00:00.000Z",
+    });
     commitFile(
       root,
       "docs/evidence/m4-local-multi-agent-scheduling-results.json",
@@ -203,6 +310,70 @@ describe("M4 Markdown projection", () => {
     ).toThrow(ReleaseEvidenceError);
   });
 
+  it("derives formerly hard-coded blockers from persisted suite and dogfood proof", () => {
+    const root = repository();
+    const implementation = evidenceBaseline(root);
+    const reports = releaseReports(root, implementation);
+    const blocked = buildM4AcceptanceSidecar({
+      repositoryRoot: root,
+      implementationCommit: implementation,
+      suiteReports: reports,
+      dogfood: blockedDogfood(implementation),
+      generatedAt: "2026-09-02T00:00:00.000Z",
+    });
+    expect(blocked.results.find((entry) => entry.acceptance_id === "AC-16")?.status).toBe("passed");
+    expect(blocked.results.find((entry) => entry.acceptance_id === "AC-17")?.status).toBe("passed");
+    expect(blocked.results.find((entry) => entry.acceptance_id === "AC-06")?.status).toBe(
+      "blocked",
+    );
+    expect(blocked.results.find((entry) => entry.acceptance_id === "AC-20")?.status).toBe(
+      "blocked",
+    );
+
+    const completed = buildM4AcceptanceSidecar({
+      repositoryRoot: root,
+      implementationCommit: implementation,
+      suiteReports: reports,
+      dogfood: {
+        ...blockedDogfood(implementation),
+        status: "passed",
+        blocker: null,
+        effective_max_concurrency: 2,
+        unattended_eligible: true,
+        overlap_proven: true,
+        overlap_intervals: [{ task_id: "a" }, { task_id: "b" }],
+        gate_status: "passed",
+        evaluation_status: "passed",
+        snapshot_status: "completed",
+        wave_integration_count: 3,
+      },
+      generatedAt: "2026-09-02T00:00:00.000Z",
+    });
+    expect(completed.results.find((entry) => entry.acceptance_id === "AC-06")?.status).toBe(
+      "passed",
+    );
+    expect(completed.results.find((entry) => entry.acceptance_id === "AC-20")?.status).toBe(
+      "passed",
+    );
+  });
+
+  it("rejects tampering with persisted canonical result digests", () => {
+    const root = repository();
+    const implementation = evidenceBaseline(root);
+    const sidecar = buildM4AcceptanceSidecar({
+      repositoryRoot: root,
+      implementationCommit: implementation,
+      suiteReports: releaseReports(root, implementation),
+      dogfood: blockedDogfood(implementation),
+      generatedAt: "2026-09-02T00:00:00.000Z",
+    });
+    const tampered = JSON.parse(JSON.stringify(sidecar)) as typeof sidecar;
+    tampered.suite_results.main.invocation_id = "forged";
+    expect(() => assertM4AcceptanceSidecar(tampered, { requireComplete: true })).toThrow(
+      ReleaseEvidenceError,
+    );
+  });
+
   it("renders rows only from the typed sidecar", () => {
     const entry = M4_ACCEPTANCE_REGISTRY[0];
     const sidecar = {
@@ -232,13 +403,15 @@ describe("M4 Markdown projection", () => {
 });
 
 describe("release command", () => {
-  it("runs the full main suite before specialized release suites", () => {
+  it("runs verify and the executable M4 fault matrix without repeating the main suite", () => {
     const packageJson = JSON.parse(
       readFileSync(
         join(dirname(new URL(import.meta.url).pathname), "..", "..", "package.json"),
         "utf8",
       ),
     ) as { scripts: { "test:release": string } };
-    expect(packageJson.scripts["test:release"]).toMatch(/^pnpm test && pnpm test:security/u);
+    expect(packageJson.scripts["test:release"]).toMatch(/^pnpm verify && pnpm test:security/u);
+    expect(packageJson.scripts["test:release"]).toContain("pnpm test:m4:fault-matrix");
+    expect(packageJson.scripts["test:release"]).not.toContain("pnpm verify && pnpm test &&");
   });
 });

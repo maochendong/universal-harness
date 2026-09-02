@@ -26,10 +26,9 @@ import { fileURLToPath } from "node:url";
 import { evaluateCiPlatformEvidence } from "./write-ci-platform-evidence.mjs";
 import {
   CANONICAL_RELEASE_COMMANDS,
-  M4_RESULTS_SCHEMA_VERSION,
-  assertM4AcceptanceSidecar,
+  M4_ACCEPTANCE_REGISTRY,
   assertCanonicalSuiteReports,
-  digestTrackedEvidence,
+  buildM4AcceptanceSidecar,
   renderM4Markdown,
   verifyM4ReportCommit,
 } from "./lib/m4-release-evidence.mjs";
@@ -128,6 +127,7 @@ assertCanonicalSuiteReports(
   suiteReports,
   Object.fromEntries(REQUIRED_SUITES.map((suite) => [suite, CANONICAL_RELEASE_COMMANDS[suite]])),
   currentCommit,
+  repositoryRoot,
 );
 const canonicalReleaseReports = new Map(suiteReports);
 for (const suite of M4_REQUIRED_SUITES) {
@@ -138,10 +138,11 @@ for (const suite of M4_REQUIRED_SUITES) {
   }
   canonicalReleaseReports.set(suite, JSON.parse(readFileSync(path, "utf8")));
 }
-const canonicalReleaseInvocationIds = assertCanonicalSuiteReports(
+assertCanonicalSuiteReports(
   canonicalReleaseReports,
   CANONICAL_RELEASE_COMMANDS,
   currentCommit,
+  repositoryRoot,
 );
 // Optional extra suites (for example a standalone `pnpm test:e2e` run) merge
 // in; "partial" reports from narrow local runs never affect the gate.
@@ -867,7 +868,6 @@ const m4Dogfood = existsSync(m4DogfoodPath)
   : undefined;
 const m4ImplementationCommit = currentCommit;
 const m4RequiredReports = canonicalReleaseReports;
-const m4SuiteInvocationIds = canonicalReleaseInvocationIds;
 
 function m4Statements() {
   const section = readFileSync(m4DesignPath, "utf8")
@@ -894,283 +894,25 @@ function m4Statements() {
   return statements;
 }
 
-const m4Matrix = [
-  {
-    command: "pnpm test",
-    requiredSuites: ["main"],
-    evidence: [
-      "packages/runtime/test/planning/waves.test.ts",
-      "packages/runtime/test/scheduling/task-dag-port.test.ts",
-      "tests/e2e/m4-local-multi-agent.test.ts",
-    ],
-  },
-  {
-    command: "pnpm test",
-    requiredSuites: ["main"],
-    evidence: ["packages/runtime/test/planning/waves.test.ts"],
-  },
-  {
-    command: "pnpm test && pnpm test:performance",
-    requiredSuites: ["main", "performance"],
-    evidence: [
-      "packages/runtime/test/planning/waves.test.ts",
-      "tests/performance/m4-wave-compiler.test.ts",
-    ],
-  },
-  {
-    command: "pnpm test",
-    requiredSuites: ["main"],
-    evidence: [
-      "packages/runtime/test/orchestration/capability-plan-routing.test.ts",
-      "tests/e2e/m4-sequential-compatibility.test.ts",
-    ],
-  },
-  {
-    command: "pnpm test && pnpm dogfood:m4",
-    requiredSuites: ["main"],
-    evidence: [
-      "packages/conformance/test/scheduling.conformance.test.ts",
-      "packages/runtime/test/scheduling/agent-pool.test.ts",
-      ".reports/acceptance/m4-dogfood.json",
-    ],
-    dogfoodIneligibleProof: true,
-  },
-  {
-    command: "pnpm dogfood:m4",
-    requiredSuites: [],
-    evidence: [".reports/acceptance/m4-dogfood.json"],
-    blockedReason: "真实 dsh Adapter 仅支持受监督单槽位，未形成两个真实 Agent Run 的时间重叠证据",
-  },
-  {
-    command: "pnpm test && pnpm test:e2e",
-    requiredSuites: ["main", "e2e"],
-    evidence: [
-      "packages/runtime/test/scheduling/workspace-manager.test.ts",
-      "packages/runtime/test/scheduling/agent-pool.test.ts",
-      "tests/e2e/m4-local-multi-agent.test.ts",
-    ],
-  },
-  {
-    command: "pnpm test && pnpm test:fault",
-    requiredSuites: ["main", "fault"],
-    evidence: [
-      "packages/runtime/test/scheduling/recovery.test.ts",
-      "tests/fault/m4-scheduler-crash-matrix.test.ts",
-    ],
-  },
-  {
-    command: "pnpm test && pnpm test:e2e",
-    requiredSuites: ["main", "e2e"],
-    evidence: [
-      "packages/runtime/test/scheduling/budget.test.ts",
-      "tests/e2e/m4-local-multi-agent.test.ts",
-    ],
-  },
-  {
-    command: "pnpm test && pnpm test:fault",
-    requiredSuites: ["main", "fault"],
-    evidence: [
-      "packages/runtime/test/scheduling/policy-decision-port.test.ts",
-      "packages/runtime/test/scheduling/scheduler.test.ts",
-    ],
-  },
-  {
-    command: "pnpm test && pnpm test:e2e",
-    requiredSuites: ["main", "e2e"],
-    evidence: [
-      "packages/runtime/test/scheduling/integration.test.ts",
-      "tests/e2e/m4-local-multi-agent.test.ts",
-    ],
-  },
-  {
-    command: "pnpm test && pnpm test:fault",
-    requiredSuites: ["main", "fault"],
-    evidence: [
-      "packages/runtime/test/scheduling/scheduler.test.ts",
-      "tests/fault/m4-scheduler-crash-matrix.test.ts",
-    ],
-  },
-  {
-    command: "pnpm test && pnpm test:security",
-    requiredSuites: ["main", "security"],
-    evidence: [
-      "packages/runtime/test/scheduling/scheduler.test.ts",
-      "tests/security/m4-scheduler-boundaries.test.ts",
-    ],
-  },
-  {
-    command: "pnpm test:fault",
-    requiredSuites: ["fault"],
-    evidence: [
-      "packages/runtime/test/scheduling/recovery.test.ts",
-      "tests/fault/m4-scheduler-crash-matrix.test.ts",
-    ],
-  },
-  {
-    command: "pnpm test && pnpm test:e2e",
-    requiredSuites: ["main", "e2e"],
-    evidence: [
-      "packages/runtime/test/scheduling/integration.test.ts",
-      "tests/e2e/m4-local-multi-agent.test.ts",
-    ],
-  },
-  {
-    command: "pnpm test && pnpm test:e2e:dashboard",
-    requiredSuites: ["main", "playwright-dashboard"],
-    evidence: [
-      "packages/dashboard/test/scheduler-api.test.ts",
-      "tests/e2e/dashboard-m4-scheduler.test.ts",
-    ],
-    playwright: true,
-    blockedReason:
-      "Dashboard 尚缺生产 Policy Proposal 入口、完整 grounded approval context 与 operation 级待取消任务投影",
-  },
-  {
-    command: "pnpm test && pnpm test:fault",
-    requiredSuites: ["main", "fault"],
-    evidence: [
-      "packages/cli/test/m4-scheduling.test.ts",
-      "tests/fault/m4-scheduler-crash-matrix.test.ts",
-    ],
-    blockedReason:
-      "driver 存活时批准不会自动唤醒，operation 级 durable cancellation 与 cancel digest/PolicyDecision 闭环尚不完整",
-  },
-  {
-    command: "pnpm test:performance",
-    requiredSuites: ["performance"],
-    evidence: ["tests/performance/m4-sqlite-rebuild.test.ts"],
-  },
-  {
-    command: "pnpm test && pnpm test:e2e",
-    requiredSuites: ["main", "e2e"],
-    evidence: [
-      "packages/core/test/protocol/protocol-1.3.test.ts",
-      "tests/e2e/m4-sequential-compatibility.test.ts",
-    ],
-  },
-  {
-    command: "pnpm test:release && pnpm dogfood:m4",
-    requiredSuites: ["main", "security", "fault", "performance", "e2e", "playwright-dashboard"],
-    evidence: [
-      "scripts/dogfood-m4-local-scheduler.mjs",
-      "scripts/dogfood-m4-redaction.mjs",
-      ".reports/acceptance/m4-dogfood.json",
-    ],
-    blockedReason:
-      "真实 dsh 未满足四 Task、至少两个并发 Task、至少两个 wave 的完整 Scheduler/Gate/Evaluate/Snapshot dogfood",
-  },
-];
-
-function m4EvidenceDigest(paths) {
-  const tracked = paths.filter((path) => !path.startsWith(".reports/"));
-  const hash = createHash("sha256");
-  hash.update(digestTrackedEvidence(repositoryRoot, m4ImplementationCommit, tracked));
-  for (const path of paths.filter((entry) => entry.startsWith(".reports/")).sort()) {
-    const absolute = join(repositoryRoot, path);
-    hash.update(path);
-    hash.update("\0");
-    if (existsSync(absolute)) hash.update(readFileSync(absolute));
-    hash.update("\0");
-  }
-  return hash.digest("hex");
-}
-
-function m4FileState(path, requiredSuites) {
-  const states = requiredSuites.flatMap((suite) =>
-    (m4RequiredReports.get(suite)?.files ?? [])
-      .filter((file) => file.path === path)
-      .map((file) => file.state),
-  );
-  if (states.includes("fail")) return "fail";
-  if (states.includes("pass")) return "pass";
-  return "missing";
-}
-
 const m4DesignStatements = m4Statements();
-const m4Results = m4Matrix.map((entry, index) => {
-  const statement = m4DesignStatements[index];
-  const missing = entry.evidence.filter((path) => {
-    if (path.startsWith(".reports/")) {
-      return (
-        !existsSync(join(repositoryRoot, path)) ||
-        (path === ".reports/acceptance/m4-dogfood.json" &&
-          m4Dogfood?.implementation_commit !== m4ImplementationCommit)
-      );
-    }
-    if (path.startsWith("scripts/")) return false;
-    return m4FileState(path, entry.requiredSuites) === "missing";
-  });
-  const failed = entry.evidence.some(
-    (path) =>
-      !path.startsWith(".reports/") &&
-      !path.startsWith("scripts/") &&
-      m4FileState(path, entry.requiredSuites) === "fail",
-  );
-  const ineligibleProofValid =
-    entry.dogfoodIneligibleProof !== true ||
-    (m4Dogfood?.implementation_commit === m4ImplementationCommit &&
-      m4Dogfood?.blocker === "real_adapter_unattended_ineligible" &&
-      m4Dogfood?.unattended_eligible === false &&
-      m4Dogfood?.effective_max_concurrency === 1);
-  const status =
-    entry.blockedReason !== undefined
-      ? "blocked"
-      : failed
-        ? "failed"
-        : missing.length > 0 || !ineligibleProofValid
-          ? "not_run"
-          : "passed";
-  return {
-    acceptance_id: statement.id,
-    statement: statement.statement,
-    status,
-    required_suites: entry.requiredSuites,
-    suite_invocation_ids: Object.fromEntries(
-      entry.requiredSuites.map((suite) => [suite, m4SuiteInvocationIds[suite]]),
-    ),
-    commands: [
-      ...entry.requiredSuites.map((suite) => CANONICAL_RELEASE_COMMANDS[suite]),
-      ...(entry.evidence.includes(".reports/acceptance/m4-dogfood.json")
-        ? ["pnpm dogfood:m4"]
-        : []),
-    ],
-    evidence: entry.evidence,
-    evidence_digest: m4EvidenceDigest(entry.evidence),
-    design_section: "§24",
-    detail:
-      entry.blockedReason ??
-      (failed
-        ? "至少一个绑定测试失败"
-        : missing.length > 0
-          ? `未在本次机器结果中执行：${missing.join(", ")}`
-          : !ineligibleProofValid
-            ? "真实 Adapter 不合格阻止证据无效或提交漂移"
-            : "绑定测试与结构化 Evidence 已通过"),
-  };
+for (const [index, registryEntry] of M4_ACCEPTANCE_REGISTRY.entries()) {
+  const designStatement = m4DesignStatements[index];
+  if (
+    designStatement?.id !== registryEntry.acceptance_id ||
+    designStatement.statement !== registryEntry.statement
+  ) {
+    fail(registryEntry.acceptance_id + " frozen registry drifted from M4 design section 24");
+  }
+}
+const m4Sidecar = buildM4AcceptanceSidecar({
+  repositoryRoot,
+  implementationCommit: m4ImplementationCommit,
+  suiteReports: m4RequiredReports,
+  dogfood: m4Dogfood,
+  generatedAt: new Date().toISOString(),
 });
-const m4Passed = m4Results.filter((entry) => entry.status === "passed").length;
-const m4Sidecar = {
-  schema_version: M4_RESULTS_SCHEMA_VERSION,
-  milestone: "M4",
-  implementation_commit: m4ImplementationCommit,
-  generated_at: new Date().toISOString(),
-  suite_invocation_ids: m4SuiteInvocationIds,
-  dogfood_summary:
-    m4Dogfood === undefined
-      ? { present: false }
-      : {
-          present: true,
-          provider: m4Dogfood.provider,
-          provider_version: m4Dogfood.provider_version,
-          exit_code: m4Dogfood.exit_code,
-          requested_max_concurrency: m4Dogfood.requested_max_concurrency,
-          effective_max_concurrency: m4Dogfood.effective_max_concurrency,
-          blocker: m4Dogfood.blocker,
-        },
-  results: m4Results,
-};
-assertM4AcceptanceSidecar(m4Sidecar, { requireComplete: true });
-const m4SidecarJson = `${JSON.stringify(m4Sidecar, null, 2)}\n`;
+const m4Passed = m4Sidecar.results.filter((entry) => entry.status === "passed").length;
+const m4SidecarJson = JSON.stringify(m4Sidecar, null, 2) + "\n";
 writeFileSync(m4MachineResultPath, m4SidecarJson, "utf8");
 writeFileSync(m4TrackedResultPath, m4SidecarJson, "utf8");
 writeFileSync(m4ReportPath, renderM4Markdown(m4Sidecar), "utf8");
@@ -1179,12 +921,12 @@ if (
   counts.passed !== CRITERION_COUNT ||
   m2Passed !== m2Results.length ||
   m3Passed !== m3Results.length ||
-  m4Passed !== m4Results.length
+  m4Passed !== m4Sidecar.results.length
 ) {
   fail(
-    `reports written but release criteria are incomplete (M1 ${String(counts.passed)}/${String(CRITERION_COUNT)}, M2 ${String(m2Passed)}/${String(m2Results.length)}, M3 ${String(m3Passed)}/${String(m3Results.length)}, M4 ${String(m4Passed)}/${String(m4Results.length)})`,
+    `reports written but release criteria are incomplete (M1 ${String(counts.passed)}/${String(CRITERION_COUNT)}, M2 ${String(m2Passed)}/${String(m2Results.length)}, M3 ${String(m3Passed)}/${String(m3Results.length)}, M4 ${String(m4Passed)}/${String(m4Sidecar.results.length)})`,
   );
 }
 console.log(
-  `Acceptance reports written: M1 28/28, M2 ${String(m2Passed)}/${String(m2Results.length)}, M3 ${String(m3Passed)}/${String(m3Results.length)}, M4 ${String(m4Passed)}/${String(m4Results.length)}.`,
+  `Acceptance reports written: M1 28/28, M2 ${String(m2Passed)}/${String(m2Results.length)}, M3 ${String(m3Passed)}/${String(m3Results.length)}, M4 ${String(m4Passed)}/${String(m4Sidecar.results.length)}.`,
 );
