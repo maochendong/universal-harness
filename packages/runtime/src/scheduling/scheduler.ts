@@ -1773,14 +1773,46 @@ export function createLocalTaskScheduler(
       if (orphaned.length > 0) {
         const transitions: SchedulerTransition[] = [];
         for (const lease of orphaned) {
-          // Best-effort cooperative stop; a dead process is already gone.
+          // Best-effort cooperative stop. recover() holds the driver lock, so
+          // this scheduler's pool is the only place the run could still
+          // execute: unknown_run attests the process is gone, while any
+          // resolved outcome leaves the executor's fate — and its usage —
+          // uncertain.
+          let runAttestedGone = false;
           try {
             await pool.cancel(lease.run_id);
           } catch (error) {
             if (!(error instanceof AgentPoolError && error.kind === "unknown_run")) throw error;
+            runAttestedGone = true;
           }
           const observedBudget = authoritativeTerminalBudget(facts, lease);
           const budgetUnknown = observedBudget === undefined;
+          // A known process interruption needs two independent proofs:
+          // provenance — the authoritative run_started binds the exact Run and
+          // attempt identities the dispatch protocol derives for this Lease —
+          // and the pool's attestation above that the process is gone. Only
+          // then does the interrupt settle like an executor crash with no
+          // measurable consumption (meteredConsumption, classifyCrash): it
+          // charges nothing beyond the authoritatively consumed amount and
+          // earns exactly one executor retry on the Task remainder, bounded by
+          // the same wasRetry → retry_exhausted guard as any crash — so no
+          // budget leaks. Anything less (no terminal metering plus an
+          // unverifiable or possibly live run) fails closed as de6d03c
+          // established: the full reservation stays charged and a blocking
+          // budget_usage_unknown Finding routes the Task to human review.
+          const startedRecord = facts.runs.find(
+            (record) => record.run_id === lease.run_id && record.record_kind === "run_started",
+          );
+          const provenanceVerified =
+            startedRecord !== undefined &&
+            startedRecord.attempt_id === digestId("attempt", { run_id: lease.run_id }) &&
+            lease.run_id ===
+              digestId("run", {
+                operation_id: dag.operation_id,
+                task_id: lease.task_id,
+                attempt_number: lease.attempt_number,
+              });
+          const usageUnknowable = budgetUnknown && !(runAttestedGone && provenanceVerified);
           if (budgetUnknown) {
             // No terminal usage exists: the interruption is authoritative,
             // but its exact consumption is unknowable after process loss.
@@ -1797,7 +1829,8 @@ export function createLocalTaskScheduler(
             kind: "terminate_lease",
             record: terminateTaskLease(lease, {
               state: "revoked",
-              consumed_budget: observedBudget ?? lease.reserved_budget,
+              consumed_budget:
+                observedBudget ?? (usageUnknowable ? lease.reserved_budget : lease.consumed_budget),
               command_id: digestId("command", {
                 purpose: "recovery-revoke",
                 recovery_command_id: input.recovery_command_id,
@@ -1806,7 +1839,7 @@ export function createLocalTaskScheduler(
               }),
             }),
           });
-          if (budgetUnknown) {
+          if (usageUnknowable) {
             transitions.push({
               kind: "create_finding",
               finding: blockingFinding({
