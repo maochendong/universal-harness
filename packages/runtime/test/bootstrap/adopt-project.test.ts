@@ -94,32 +94,40 @@ describe("prepareAdoption", () => {
     expect(first.value.previewDigest).toBe(second.value.previewDigest);
   });
 
-  it("produces the same preview digest for identical repositories", async () => {
-    // The preview binds the baseline commit hash, so identical repositories
-    // means identical commits: pin git timestamps for this comparison.
-    const savedAuthorDate = process.env.GIT_AUTHOR_DATE;
-    const savedCommitterDate = process.env.GIT_COMMITTER_DATE;
-    process.env.GIT_AUTHOR_DATE = "2026-08-12T00:00:00Z";
-    process.env.GIT_COMMITTER_DATE = "2026-08-12T00:00:00Z";
-    try {
-      const first = await prepareAdoption(
-        { projectRoot: makeFixtureRepo(), intent: "x" },
-        makeDeps(),
-      );
-      const second = await prepareAdoption(
-        { projectRoot: makeFixtureRepo(), intent: "x" },
-        makeDeps(),
-      );
-      expect(first.ok && second.ok).toBe(true);
-      if (!first.ok || !second.ok) return;
-      expect(first.value.previewDigest).toBe(second.value.previewDigest);
-    } finally {
-      if (savedAuthorDate === undefined) delete process.env.GIT_AUTHOR_DATE;
-      else process.env.GIT_AUTHOR_DATE = savedAuthorDate;
-      if (savedCommitterDate === undefined) delete process.env.GIT_COMMITTER_DATE;
-      else process.env.GIT_COMMITTER_DATE = savedCommitterDate;
-    }
-  });
+  // Two git-pinned adoptions exceed the default 5s timeout when the full
+  // suite runs in parallel, hence the explicit per-test timeout. Windows
+  // runners have a 2-3x slower filesystem, so scale it there just like the
+  // global default in vitest.workspace.ts.
+  it(
+    "produces the same preview digest for identical repositories",
+    async () => {
+      // The preview binds the baseline commit hash, so identical repositories
+      // means identical commits: pin git timestamps for this comparison.
+      const savedAuthorDate = process.env.GIT_AUTHOR_DATE;
+      const savedCommitterDate = process.env.GIT_COMMITTER_DATE;
+      process.env.GIT_AUTHOR_DATE = "2026-08-12T00:00:00Z";
+      process.env.GIT_COMMITTER_DATE = "2026-08-12T00:00:00Z";
+      try {
+        const first = await prepareAdoption(
+          { projectRoot: makeFixtureRepo(), intent: "x" },
+          makeDeps(),
+        );
+        const second = await prepareAdoption(
+          { projectRoot: makeFixtureRepo(), intent: "x" },
+          makeDeps(),
+        );
+        expect(first.ok && second.ok).toBe(true);
+        if (!first.ok || !second.ok) return;
+        expect(first.value.previewDigest).toBe(second.value.previewDigest);
+      } finally {
+        if (savedAuthorDate === undefined) delete process.env.GIT_AUTHOR_DATE;
+        else process.env.GIT_AUTHOR_DATE = savedAuthorDate;
+        if (savedCommitterDate === undefined) delete process.env.GIT_COMMITTER_DATE;
+        else process.env.GIT_COMMITTER_DATE = savedCommitterDate;
+      }
+    },
+    30_000 * (process.platform === "win32" ? 4 : 1),
+  );
 
   it("refuses dirty worktrees, non-repositories and unborn branches", async () => {
     const dirty = makeFixtureRepo();
