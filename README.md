@@ -176,7 +176,7 @@ Plan DAG → deterministic waves → Lease + AgentPool + isolated worktree
 
 完成真相仍来自 Git-native Ledger。Agent 返回只是一份 provisional 候选；SQLite 只保存可删除的 live projection，丢失后从 Ledger 重建。单机 Driver Lock 防止 CLI 与 Dashboard 同时驱动同一 Operation；启用 M3 时它嵌套在 Operation Lease 内，不扩展为后台 Scheduler 服务。
 
-当前本地调度内核、CLI、Dashboard、真实 Git 四 Task/三 wave 确定性 E2E、故障/安全/性能门禁已经落地。M4 尚未声明完成：真实 dsh Adapter 的公开能力为 `delegated + external-only`，因此 Harness 正确降级到受监督单槽位，AC-06 与 AC-20 缺少真实 provider 双槽重叠和完整四 Task dogfood；Dashboard 的生产 Policy Proposal、完整 grounded approval context，以及 driver 存活时批准自动唤醒/operation 级取消闭环也仍在 AC-16/17 中阻塞。状态以 [M4 完成证据](docs/evidence/m4-local-multi-agent-scheduling-completion.md) 为准。
+当前本地调度内核、CLI、Dashboard、真实 Git 四 Task/三 wave 确定性 E2E、故障/安全/性能门禁已经落地。M4 尚未声明完成：真实 dsh Adapter 的公开能力为 `delegated + external-only`，因此 Harness 正确降级到受监督单槽位，AC-06 与 AC-20 缺少真实 provider 双槽重叠和完整四 Task dogfood；生产 Host/CLI 尚未接入权威 Policy layer source，AC-10 还不能从配置到调度动作证明四态 Policy 的真实生效；Dashboard 的生产 Policy Proposal、完整 grounded approval context，以及 driver 存活时批准自动唤醒/operation 级取消闭环也仍在 AC-16/17 中阻塞。状态以 [M4 完成证据](docs/evidence/m4-local-multi-agent-scheduling-completion.md) 为准。
 
 ## 已支持的能力
 

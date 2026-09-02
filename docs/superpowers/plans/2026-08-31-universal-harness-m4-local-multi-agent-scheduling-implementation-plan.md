@@ -10,7 +10,7 @@
 
 **Spec:** docs/superpowers/specs/2026-08-31-universal-harness-m4-local-multi-agent-scheduling-design.md
 
-**Status:** 设计已复核并批准实施；本计划待批准。
+**Status:** 设计已复核并批准实施；实施中。Task 1～10 已完成，Task 11～13 已交付可验证子集，Task 14 正在完成发布证据与独立复审；AC-06/10/16/17/20 的生产或真实 Provider 证据仍未满足。
 
 ## Global Constraints
 
@@ -152,7 +152,7 @@ export interface LocalTaskScheduler {
 - Consumes: recordEnvelopeSchemaFor(), sealRecordEnvelope(), contentDigest(), existing Protocol 1.0–1.2 reader semantics.
 - Produces: PROTOCOL_1_3_VERSION, PROTOCOL_1_3_SCHEMA_REGISTRY, TaskLeaseRecord, WaveIntegrationRecord, SchedulingRecord, buildTaskLeaseRecord(), buildWaveIntegrationRecord(), assertSchedulingRecordSemantics().
 
-- [ ] **Step 1: Write failing Protocol registry, downgrade and version-pin tests**
+- [x] **Step 1: Write failing Protocol registry, downgrade and version-pin tests**
 
 Add assertions that 1.3 is development, a 1.3 reader accepts 1.0–1.3, a 1.2 reader rejects authoritative 1.3 content, and the existing transaction field is mandatory:
 
@@ -183,7 +183,7 @@ pnpm exec vitest run --config vitest.workspace.ts packages/core/test/protocol/pr
 
 Expected: FAIL because Protocol 1.3 and its authoritative-content detection do not exist.
 
-- [ ] **Step 2: Register Protocol 1.3 and generalize transaction version detection**
+- [x] **Step 2: Register Protocol 1.3 and generalize transaction version detection**
 
 Add:
 
@@ -200,7 +200,7 @@ export const KNOWN_PROTOCOLS = [
 
 Replace Protocol-1.2-specific transaction detection with a single newest-authoritative-version reducer. A transaction containing 1.2 and 1.3 content must require 1.3.0; transactions containing only legacy records must preserve their existing manifest bytes.
 
-- [ ] **Step 3: Write failing strict record and digest tests**
+- [x] **Step 3: Write failing strict record and digest tests**
 
 Use complete fixtures to assert both record kinds, stable record_digest, rejection of caller-filled drift, Lease-chain identity separation and exact field arrays:
 
@@ -224,7 +224,7 @@ Also test: fencing token must be positive; released/expired/revoked records requ
 
 Run the two new test files. Expected: FAIL because the schemas and builders do not exist.
 
-- [ ] **Step 4: Implement the two Protocol 1.3 record schemas**
+- [x] **Step 4: Implement the two Protocol 1.3 record schemas**
 
 Construct both with recordEnvelopeSchemaFor(PROTOCOL_1_3_VERSION, ...). Export strict TypeBox schemas and static types. TaskLeaseRecord must use the exact design fields and these strict literals:
 
@@ -244,7 +244,7 @@ export const TaskRetryKindSchema = enumerated([
 
 WaveIntegrationRecord must include accepted_source_tree_digest plus the four evidence/lease digest arrays. Do not add TaskState or SchedulerState schemas.
 
-- [ ] **Step 5: Implement sealed builders and semantic invariants**
+- [x] **Step 5: Implement sealed builders and semantic invariants**
 
 Builders accept drafts without protocol_version, record_kind or record_digest:
 
@@ -267,7 +267,7 @@ export function buildTaskLeaseRecord(draft: TaskLeaseRecordDraft): TaskLeaseReco
 
 Use the same pattern for WaveIntegrationRecord. Semantic checks run both on construction and read, so syntactically valid but impossible chains fail closed.
 
-- [ ] **Step 6: Register schemas, records and the minimal event vocabulary**
+- [x] **Step 6: Register schemas, records and the minimal event vocabulary**
 
 Register only:
 
@@ -284,7 +284,7 @@ Register only:
 
 Events are timeline facts, not substitutes for TaskLeaseRecord or WaveIntegrationRecord. Add both record kinds to Domain Registry and PROTOCOL_1_3_SCHEMA_REGISTRY; teach EventStore/transaction inspection to classify them as authoritative 1.3 content.
 
-- [ ] **Step 7: Generate schemas and verify all legacy goldens**
+- [x] **Step 7: Generate schemas and verify all legacy goldens**
 
 Run:
 
@@ -297,7 +297,7 @@ pnpm exec prettier --check packages/core/src packages/core/test packages/core/sc
 
 Expected: all core tests pass; new schemas use the 1.3 namespace; 1.0–1.2 golden files do not drift except intentional shared Event/LedgerOperation unions.
 
-- [ ] **Step 8: Commit the protocol slice**
+- [x] **Step 8: Commit the protocol slice**
 
 ~~~bash
 git add packages/core/src packages/core/test packages/core/schemas
@@ -336,7 +336,7 @@ git commit -m "feat(core): define protocol 1.3 scheduling records"
 - Consumes: PROTOCOL_1_3_VERSION and versioned schema registry from Task 1.
 - Produces: CAPABILITY_IDS_1_1, CAPABILITY_IDS_1_3, profileDefinitionForProtocol(), profileDefinitionByDigest(), capabilityModuleDefinitionsForProtocol(), parallel_task_execution Module contract, wave_integration BindingKind, three new PolicyActionKind values.
 
-- [ ] **Step 1: Write failing versioned Profile compatibility tests**
+- [x] **Step 1: Write failing versioned Profile compatibility tests**
 
 Pin legacy and current behavior independently:
 
@@ -360,7 +360,7 @@ pnpm exec vitest run --config vitest.workspace.ts packages/core/test/profile/pro
 
 Expected: FAIL because the current registry has only five capabilities and one ProfileDefinition version.
 
-- [ ] **Step 2: Add versioned Capability/Profile schemas without rotating old digests**
+- [x] **Step 2: Add versioned Capability/Profile schemas without rotating old digests**
 
 Keep the legacy identifiers explicit:
 
@@ -392,7 +392,7 @@ export function profileDefinitionByDigest(digest: string): ProfileDefinition;
 
 Protocol 1.2 operations continue resolving the 1.1 definitions. Existing ProjectProfileRecord assertions must resolve by referenced profile_definition_digest, not by blindly comparing against the newest definition.
 
-- [ ] **Step 3: Write failing Module/DAG tests**
+- [x] **Step 3: Write failing Module/DAG tests**
 
 Assert the exact contract and the corrected single-producer topology:
 
@@ -415,13 +415,13 @@ expect(dag.filter((node) => node.produces.includes("gate_evidence"))).toHaveLeng
 
 Also assert that parallel inactive plus strict_tdd keeps subgraph strict_tdd, Lite produces no scheduling invocation, and legacy Protocol 1.1 DAG bytes remain stable.
 
-- [ ] **Step 4: Implement the Protocol 1.3 Module and versioned DAG**
+- [x] **Step 4: Implement the Protocol 1.3 Module and versioned DAG**
 
 Add wave_integration to the 1.3 binding schema only. Register Module version 1.3.0. Extend the 1.3 OperationDagNode subgraph union to strict_tdd | parallel_task_execution; keep the 1.1 record schema literal unchanged. Capability Compiler must select definitions from the operation protocol and emit a Protocol 1.3 CapabilityPlan revision when the new Module participates.
 
 Do not create a nested generic subgraph. When both capabilities are active, Scheduler invokes StrictTddExecutionPort per Task inside the sole parallel_task_execution outer subgraph.
 
-- [ ] **Step 5: Extend Policy action vocabulary and deterministic evaluation**
+- [x] **Step 5: Extend Policy action vocabulary and deterministic evaluation**
 
 Add:
 
@@ -437,7 +437,7 @@ Append them to POLICY_ACTION_KINDS. Tests must prove normalization keeps exact p
 
 The scheduler Policy resolver recognizes the exact numeric hard-ceiling paths scheduler.max_concurrency, budgets.iteration.max_steps, budgets.iteration.max_tokens and budgets.iteration.max_duration_ms. Missing new fields preserve compatibility: concurrency defaults to the Profile default of 2, while iteration ceilings fall back to the already effective loop.max_steps, loop.max_tokens and loop.max_duration_ms. A present non-positive or non-numeric field blocks instead of silently falling back.
 
-- [ ] **Step 6: Run focused and compatibility suites**
+- [x] **Step 6: Run focused and compatibility suites**
 
 ~~~bash
 pnpm --filter @universal-harness-internal/core schema:generate
@@ -448,7 +448,7 @@ pnpm --filter @universal-harness-internal/runtime typecheck
 
 Expected: new Protocol 1.3 cases and all legacy Profile/Capability/Policy cases pass.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ~~~bash
 git add packages/core/src packages/core/test packages/core/schemas packages/runtime/src/policy packages/runtime/test/policy
@@ -478,7 +478,7 @@ git commit -m "feat(capability): activate protocol 1.3 parallel execution"
 - Consumes: contentDigest(), TaskSpecification.dependencies and the existing atomic Plan/Task/Edge projection.
 - Produces: IterationBudget, ParallelWave, normalizeTaskWritePath(), taskSemanticDigest(), compileParallelWaves(), assertParallelWaves(), Protocol 1.3 ExecutionPlanContent fields.
 
-- [ ] **Step 1: Write failing Task 1.3 validation tests**
+- [x] **Step 1: Write failing Task 1.3 validation tests**
 
 Add a legal task and boundary cases:
 
@@ -497,7 +497,7 @@ expect(task.budget.duration_ms).toBe(300_000);
 
 Reject absolute paths, dot segments, .git, .harness authoritative directories, empty/root-wide declarations, symlink escapes, duplicate/non-canonical paths, invalid resource keys and non-positive duration. Legacy proposal mode must continue accepting the old two-field budget and mark it sequential-only.
 
-- [ ] **Step 2: Extend TaskSpecification and semantic digest**
+- [x] **Step 2: Extend TaskSpecification and semantic digest**
 
 Use:
 
@@ -528,7 +528,7 @@ export interface Protocol13TaskSpecification extends TaskSpecification {
 
 Add an explicit PlanProtocolMode parameter to proposal validation so new plans require all 1.3 fields while legacy readers do not synthesize authority. Export assertProtocol13TaskSpecification() to narrow the compatible reader shape before scheduling. taskSemanticDigest() must include objective, outputs, impact paths, dependencies, resource claims, budget, capabilities, tools, risk, assertions and required gates in canonical order.
 
-- [ ] **Step 3: Write failing deterministic wave examples and properties**
+- [x] **Step 3: Write failing deterministic wave examples and properties**
 
 Pin stable Kahn order and earliest-wave displacement:
 
@@ -549,7 +549,7 @@ expect(waves).toEqual([
 
 Use the repository's existing deterministic seeded-generator pattern to prove over at least 1,000 generated DAGs: identical canonical input gives byte-identical waves; every dependency is in an earlier actual wave; no write/write or exclusive-resource conflict shares a wave; every Task appears exactly once; permutations are rejected or preserve declared Plan order rather than becoming an implicit second ordering.
 
-- [ ] **Step 4: Implement path conflicts and stable Kahn wave compilation**
+- [x] **Step 4: Implement path conflicts and stable Kahn wave compilation**
 
 Export:
 
@@ -566,7 +566,7 @@ export function assertParallelWaves(
 
 For each Task in stable topological frontier order, compute earliest_wave from dependencies' actual wave, then scan forward to the first conflict-free wave. Treat path equality or ancestor/descendant overlap as conflict. Resource keys conflict only by exact normalized equality. Throw typed PlanningError for unknown dependency, cycle, duplicate Task, invalid path and persisted wave drift.
 
-- [ ] **Step 5: Bind iteration budget, baseline and waves into Plan digest**
+- [x] **Step 5: Bind iteration budget, baseline and waves into Plan digest**
 
 Extend PlanSharedContext with baseline_commit and capability_plan_digest for 1.3. Extend ExecutionPlanContent with iteration_budget and parallel_waves. generateExecutionPlan() must:
 
@@ -579,7 +579,7 @@ Extend PlanSharedContext with baseline_commit and capability_plan_digest for 1.3
 
 readExecutionPlanContent() must recompile and byte-compare waves and Graph projection before returning an approved 1.3 snapshot. It must not infer resource claims for old plans.
 
-- [ ] **Step 6: Add the 1,000-Task performance gate**
+- [x] **Step 6: Add the 1,000-Task performance gate**
 
 Build a deterministic fixture with mixed dependencies and conflicts. Measure 20 warm runs:
 
@@ -598,7 +598,7 @@ pnpm exec vitest run --config vitest.performance.ts tests/performance/m4-wave-co
 
 Expected: all planning tests pass and 1,000-Task compilation p95 is below 500ms on the CI reference configuration.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ~~~bash
 git add packages/runtime/src/planning packages/runtime/test/planning tests/performance/m4-wave-compiler.test.ts
@@ -626,7 +626,7 @@ git commit -m "feat(planning): compile deterministic parallel waves"
 - Consumes: readExecutionPlanContent(), assertParallelWaves(), PolicyAction, PolicyLayerInput, PolicyDecision and decideAction().
 - Produces: TaskDagPort, TaskDagSnapshot, SchedulerPolicyAction, SchedulerPolicyInput, PolicyDecisionPort, createWorkflowTaskDagAdapter(), createInMemoryTaskDagPort(), createPolicyDecisionAdapter(), createInMemoryPolicyDecisionPort().
 
-- [ ] **Step 1: Write failing TaskDagPort conformance cases**
+- [x] **Step 1: Write failing TaskDagPort conformance cases**
 
 Define a shared factory contract:
 
@@ -657,7 +657,7 @@ pnpm exec vitest run --config vitest.workspace.ts packages/conformance/test/sche
 
 Expected: FAIL because TaskDagPort and its Adapters do not exist.
 
-- [ ] **Step 2: Implement TaskDagPort and both Adapters**
+- [x] **Step 2: Implement TaskDagPort and both Adapters**
 
 Use the frozen signature:
 
@@ -673,7 +673,7 @@ export interface TaskDagPort {
 
 createWorkflowTaskDagAdapter() receives narrow read functions for Plan, Task Nodes, Edge Records and current approved baseline; it does not receive a Ledger write capability. createInMemoryTaskDagPort() accepts an immutable fixture and runs the same assertTaskDagSnapshot() guard before returning. The guard recomputes Task digests, edge equality and waves on every read.
 
-- [ ] **Step 3: Write failing PolicyDecisionPort conformance cases**
+- [x] **Step 3: Write failing PolicyDecisionPort conformance cases**
 
 Use the complete input:
 
@@ -703,7 +703,7 @@ export interface SchedulerPolicyInput {
 
 Cases must cover all three actions crossed with allow, deny, requires_approval and block. Assert that approval only satisfies a matching requires_approval object; it cannot override deny/block or a stale Plan/baseline/Policy/Adapter digest.
 
-- [ ] **Step 4: Implement production and InMemory Policy Adapters**
+- [x] **Step 4: Implement production and InMemory Policy Adapters**
 
 createPolicyDecisionAdapter() translates SchedulerPolicyInput to a normalized control-plane PolicyAction and delegates to decideAction(). It must include every binding above in canonical parameters. createInMemoryPolicyDecisionPort() accepts a deterministic resolver for conformance/fault injection but still validates returned action_digest and effective_policy_digest.
 
@@ -716,7 +716,7 @@ export function createPolicyDecisionAdapter(options: {
 
 Neither Adapter writes Approval, Lease, Finding or Ledger state.
 
-- [ ] **Step 5: Run focused conformance, type and legacy policy tests**
+- [x] **Step 5: Run focused conformance, type and legacy policy tests**
 
 ~~~bash
 pnpm exec vitest run --config vitest.workspace.ts packages/conformance/test/scheduling.conformance.test.ts packages/runtime/test/scheduling/task-dag-port.test.ts packages/runtime/test/scheduling/policy-decision-port.test.ts packages/runtime/test/policy
@@ -726,7 +726,7 @@ pnpm --filter @universal-harness-internal/conformance typecheck
 
 Expected: production and InMemory Adapters pass the same cases; legacy Policy behavior remains green.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ~~~bash
 git add packages/runtime/src/scheduling packages/runtime/test/scheduling packages/conformance/src packages/conformance/test
@@ -753,7 +753,7 @@ git commit -m "feat(runtime): define scheduling decision ports"
 - Consumes: TaskLeaseRecord builders from Task 1, TaskDagSnapshot and PolicyDecisionPort from Task 4.
 - Produces: TaskLeaseChain, nextFencingToken(), grantTaskLease(), terminateTaskLease(), assertCurrentFencingToken(), IterationBudgetAccount, reserveTaskBudget(), settleTaskBudget(), restoreBudgetAccount().
 
-- [ ] **Step 1: Write failing Lease transition and property tests**
+- [x] **Step 1: Write failing Lease transition and property tests**
 
 Pin the only state transitions:
 
@@ -775,7 +775,7 @@ Use deterministic seeded chains to prove fencing_token strictly increases across
 
 Run the Lease tests. Expected: FAIL because the reducer does not exist.
 
-- [ ] **Step 2: Implement the pure Lease reducer**
+- [x] **Step 2: Implement the pure Lease reducer**
 
 Export:
 
@@ -795,7 +795,7 @@ export function assertCurrentFencingToken(
 
 grantTaskLease() requires an allow PolicyDecision or an exact satisfied requires_approval decision, binds Plan/Task/baseline/Adapter/Policy/approval digests and creates a new lease_id for every attempt. Termination preserves lease_id, links the previous record digest and cannot increase consumed budget.
 
-- [ ] **Step 3: Write failing concurrent budget reservation tests**
+- [x] **Step 3: Write failing concurrent budget reservation tests**
 
 Use immutable accounting state:
 
@@ -822,7 +822,7 @@ expect(settled.remaining).toEqual({ steps: 6, tokens: 5_500 });
 
 Properties must prove accumulated_consumption + active_reservations never exceeds the approved iteration limit, unused reservation returns exactly once, Retry cannot exceed the Task original remainder, and duration uses a deadline rather than additive reservation.
 
-- [ ] **Step 4: Implement budget accounting and restore from Ledger**
+- [x] **Step 4: Implement budget accounting and restore from Ledger**
 
 Use:
 
@@ -845,7 +845,7 @@ export interface IterationBudgetAccount {
 
 reserveTaskBudget() returns a new account and the exact steps/tokens stored in the granted Lease. settleTaskBudget() accepts only the current Lease token. restoreBudgetAccount() replays authoritative Lease records and rejects duplicate settlement, consumed > reserved, reservation without current granted Lease or accumulated overrun.
 
-- [ ] **Step 5: Add atomic commit boundary fault cases**
+- [x] **Step 5: Add atomic commit boundary fault cases**
 
 Drive an in-memory Ledger transaction harness through:
 
@@ -855,7 +855,7 @@ policy allow → reserve → granted Lease → process start
 
 Kill after each boundary. Assert no state can expose a reservation without its granted Lease, no process is started before the commit succeeds, replay of the same command_id is idempotent, and a failed transaction returns no budget.
 
-- [ ] **Step 6: Run the focused suites**
+- [x] **Step 6: Run the focused suites**
 
 ~~~bash
 pnpm exec vitest run --config vitest.workspace.ts packages/runtime/test/scheduling/lease.test.ts packages/runtime/test/scheduling/lease.property.test.ts packages/runtime/test/scheduling/budget.test.ts packages/runtime/test/scheduling/budget.property.test.ts tests/fault/m4-lease-budget-boundaries.test.ts
@@ -864,7 +864,7 @@ pnpm --filter @universal-harness-internal/runtime typecheck
 
 Expected: all Lease, budget and crash-boundary tests pass.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ~~~bash
 git add packages/runtime/src/scheduling/lease.ts packages/runtime/src/scheduling/budget.ts packages/runtime/test/scheduling/lease.test.ts packages/runtime/test/scheduling/lease.property.test.ts packages/runtime/test/scheduling/budget.test.ts packages/runtime/test/scheduling/budget.property.test.ts tests/fault/m4-lease-budget-boundaries.test.ts
@@ -890,7 +890,7 @@ git commit -m "feat(runtime): account task leases and budgets"
 - Consumes: normalized Task write_paths/exclusive_resources from Task 3 and active Lease facts from Task 5.
 - Produces: ResourceLockTable, acquireTaskResources(), releaseTaskResources(), rebuildResourceLocks(), DriverLockHandle, createFileSystemDriverLock().
 
-- [ ] **Step 1: Write failing all-or-nothing resource lock tests**
+- [x] **Step 1: Write failing all-or-nothing resource lock tests**
 
 ~~~ts
 const first = acquireTaskResources(emptyTable, {
@@ -912,7 +912,7 @@ expect(first.entries).toHaveLength(2);
 
 Assert keys are sorted before acquisition, a failed acquisition holds nothing, release requires exact task_id + fencing_token, and rebuild from current granted Leases is byte-equivalent.
 
-- [ ] **Step 2: Implement resource lock projection**
+- [x] **Step 2: Implement resource lock projection**
 
 Lock keys are exactly:
 
@@ -927,7 +927,7 @@ function resourceKeys(task: Protocol13TaskSpecification): readonly string[] {
 
 Path conflict uses the same ancestor/descendant function as compileParallelWaves(), not a divergent implementation. The table is in-memory and reconstructable; no ResourceLockRecord is written.
 
-- [ ] **Step 3: Write failing CLI/Dashboard Driver Lock race tests**
+- [x] **Step 3: Write failing CLI/Dashboard Driver Lock race tests**
 
 Create two contenders for one operation and one for another:
 
@@ -946,7 +946,7 @@ await expect(
 
 Also test alive PID refuses reclamation, dead PID is reclaimed, malformed owner metadata blocks rather than being deleted, release by another owner fails, and Ledger transaction commits still work while Driver Lock is held.
 
-- [ ] **Step 4: Implement the atomic-directory Driver Lock**
+- [x] **Step 4: Implement the atomic-directory Driver Lock**
 
 Use an internal interface:
 
@@ -975,11 +975,11 @@ export function createFileSystemDriverLock(options: {
 
 Acquire with mkdir of .harness/locks/operation- plus the first 24 hexadecimal characters of contentDigest(operation_id), followed by .lock. Then atomically write owner.json containing operation_id, pid, host, driver_kind, acquired_at and random owner_token. Resolve/revalidate the exact lock root before mutation. Reclaim only same-host dead PID locks; never treat age alone as death.
 
-- [ ] **Step 5: Add path, symlink and owner-file security tests**
+- [x] **Step 5: Add path, symlink and owner-file security tests**
 
 Prove operation_id cannot escape the lock root, a symlinked lock path is rejected, reserved .git/.harness writes are rejected before lock creation, owner JSON never contains environment values, and concurrent mkdir has exactly one winner.
 
-- [ ] **Step 6: Run focused tests**
+- [x] **Step 6: Run focused tests**
 
 ~~~bash
 pnpm exec vitest run --config vitest.workspace.ts packages/runtime/test/scheduling/resource-locks.test.ts packages/runtime/test/scheduling/driver-lock.test.ts tests/fault/m4-driver-lock-recovery.test.ts tests/security/m4-path-and-lock-boundary.test.ts
@@ -988,7 +988,7 @@ pnpm --filter @universal-harness-internal/runtime typecheck
 
 Expected: resource mutual exclusion, dead-owner recovery and boundary rejection all pass.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ~~~bash
 git add packages/runtime/src/scheduling/resource-locks.ts packages/runtime/src/scheduling/driver-lock.ts packages/runtime/test/scheduling/resource-locks.test.ts packages/runtime/test/scheduling/driver-lock.test.ts tests/fault/m4-driver-lock-recovery.test.ts tests/security/m4-path-and-lock-boundary.test.ts
@@ -1018,7 +1018,7 @@ git commit -m "feat(runtime): guard scheduler resources and drivers"
 - Consumes: IsolatedWorkspacePort, StrictTddExecutionPort, TaskSpecification, CapabilityGrant, PhaseGrant and normalized Task resource scopes.
 - Produces: task_execution workspace purpose, TaskWorkspaceManager, TaskExecutionWorkspace, TaskCandidatePatch, prepareTaskWorkspace(), collectTaskCandidate(), collectStrictTddCandidate(), discardTaskWorkspace().
 
-- [ ] **Step 1: Write failing non-TDD isolated worktree tests**
+- [x] **Step 1: Write failing non-TDD isolated worktree tests**
 
 Use a real temporary Git repository. Create two Task workspaces from the same base commit, write disjoint changes and prove:
 
@@ -1033,7 +1033,7 @@ expect(rightCandidate.changed_paths).toEqual(["src/b.ts"]);
 
 Deletion, binary content and mode changes must produce a canonical patch artifact; untracked files are included; .git, .harness, absolute, traversal and symlink escape changes are rejected.
 
-- [ ] **Step 2: Extend workspace purpose and add the internal manager**
+- [x] **Step 2: Extend workspace purpose and add the internal manager**
 
 Extend only the existing union:
 
@@ -1096,7 +1096,7 @@ export interface TaskWorkspaceManager {
 
 The production implementation uses exact git argument arrays, git diff --binary for the managed patch artifact and git ls-tree for source_tree_digest. It never trusts Agent commit metadata.
 
-- [ ] **Step 3: Write failing Strict TDD composition tests**
+- [x] **Step 3: Write failing Strict TDD composition tests**
 
 Assert there is no outer task_execution worktree and the accepted implementation_revision is the only patch source:
 
@@ -1115,7 +1115,7 @@ expect(candidate.source_revision).toBe(completedTddOutcome.implementation_revisi
 
 Reject revision missing from Git, revision differing from TddCycle, absent accepted Red/Green Evidence and any path outside all four write-scope sets.
 
-- [ ] **Step 4: Implement four-way write-scope intersection**
+- [x] **Step 4: Implement four-way write-scope intersection**
 
 Add:
 
@@ -1130,11 +1130,11 @@ export function effectiveTddWriteScopes(input: {
 
 Compute true path-scope intersection, not string-array equality. Empty intersection blocks before execution. After resolving implementation_revision, attest every observed final path against the same intersection and verify the revision matches the accepted TDD Cycle/Evidence.
 
-- [ ] **Step 5: Make workspace cleanup idempotent**
+- [x] **Step 5: Make workspace cleanup idempotent**
 
 destroy/discard may be replayed after a crash. Remove only a workspace registered by the manager and located under its exact managed root. Keep diagnostic workspace when policy marks the result blocked; normal release removes it after patch/evidence persistence.
 
-- [ ] **Step 6: Run TDD, workspace and Git tests**
+- [x] **Step 6: Run TDD, workspace and Git tests**
 
 ~~~bash
 pnpm exec vitest run --config vitest.workspace.ts packages/runtime/test/tdd packages/runtime/test/scheduling/workspace-manager.test.ts packages/runtime/test/scheduling/workspace-manager.git.test.ts
@@ -1143,7 +1143,7 @@ pnpm --filter @universal-harness-internal/runtime typecheck
 
 Expected: existing Strict TDD tests stay green; non-TDD workspaces and accepted TDD revisions produce equivalent canonical TaskCandidatePatch objects.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ~~~bash
 git add packages/runtime/src/scheduling/workspace-manager.ts packages/runtime/test/scheduling/workspace-manager.test.ts packages/runtime/test/scheduling/workspace-manager.git.test.ts packages/runtime/src/tdd packages/runtime/test/tdd
@@ -1180,7 +1180,7 @@ git commit -m "feat(runtime): isolate task execution workspaces"
 - Consumes: AgentAdapter, TaskWorkspaceManager, Task Lease/budget/resource guards and Protocol 1.3 event names.
 - Produces: optional AgentRunOptions.signal, AgentSlotFactory, LocalAgentPool, AgentPoolSlot, TaskSchedulingStatus, projectSchedulerState(), SchedulerProjectionStore, createSqliteSchedulerProjectionStore(), createInMemorySchedulerProjectionStore().
 
-- [ ] **Step 1: Write failing Agent Pool isolation and Barrier tests**
+- [x] **Step 1: Write failing Agent Pool isolation and Barrier tests**
 
 Define the only per-slot factory seam:
 
@@ -1211,7 +1211,7 @@ expect(adapterInstances[0]).not.toBe(adapterInstances[1]);
 
 Assert unique TaskEnvelope, Run identity, evidence directory and explicit ResumeContext; no Adapter instance or hidden conversation is reused. manual/ineligible delegated Adapters force supervised single-slot behavior before a process starts.
 
-- [ ] **Step 2: Add compatible subprocess cancellation and implement fixed-slot LocalAgentPool**
+- [x] **Step 2: Add compatible subprocess cancellation and implement fixed-slot LocalAgentPool**
 
 Extend the existing run option, preserving every existing caller:
 
@@ -1263,7 +1263,7 @@ export interface AgentPoolSlot {
 
 The Pool owns only idle/running slot state and process observation. It does not read Plan, decide Policy, issue Lease, accept completion, write Ledger or integrate Git. Clamp capacity once from the effective concurrency supplied by Scheduler. cancel(runId) aborts that run's controller and waits for the Adapter result/termination accounting; it does not kill by PID outside the supervised child. on_output writes redacted tail observations through SchedulerProjectionStore; unavailable tokens/steps remain null.
 
-- [ ] **Step 3: Write failing authoritative Task status projection tests**
+- [x] **Step 3: Write failing authoritative Task status projection tests**
 
 Cover the complete status union:
 
@@ -1312,7 +1312,7 @@ export interface SchedulerAuthorityFacts {
 
 Given Plan, Lease, Run, Gate, Evidence, Approval, Finding and WaveIntegration fixtures, assert deterministic state precedence. In particular: Agent completion never yields integrated; released Lease plus valid candidate Evidence yields candidate_validated; only WaveIntegrationRecord yields integrated; an open blocker wins over stale live PID.
 
-- [ ] **Step 4: Implement projectSchedulerState() as a pure projection**
+- [x] **Step 4: Implement projectSchedulerState() as a pure projection**
 
 ~~~ts
 export function projectSchedulerState(
@@ -1323,7 +1323,7 @@ export function projectSchedulerState(
 
 Authoritative facts determine status. Live only decorates PID, heartbeat, output tail, worktree locator and current step. If live data is absent, return live_state: rebuilding rather than failed/success. Every provisional result is labeled provisional and cannot satisfy dependencies.
 
-- [ ] **Step 5: Write failing SQLite delete/rebuild and redaction tests**
+- [x] **Step 5: Write failing SQLite delete/rebuild and redaction tests**
 
 Create, close, delete and rebuild the database:
 
@@ -1338,13 +1338,13 @@ expect(projectSchedulerState(authorityFacts, null))
 
 Compare authoritative fields only. Inspect sqlite_master and raw database bytes to prove no API key, full environment, raw transcript, approval reason, user home path or authoritative digest chain is stored.
 
-- [ ] **Step 6: Implement node:sqlite projection and minimal event builders**
+- [x] **Step 6: Implement node:sqlite projection and minimal event builders**
 
 Use tables operation_live, slot_live and task_live keyed by operation_id plus slot/task. Store observed_at on every row. Replace an operation snapshot in one SQLite transaction. Validate rows on read and discard malformed live data without changing authoritative state.
 
 events.ts exports typed builders for exactly the eight M4 events; builders redact absolute paths and output tail before appending Live Spool/Event payloads.
 
-- [ ] **Step 7: Run focused tests and shared barrels**
+- [x] **Step 7: Run focused tests and shared barrels**
 
 ~~~bash
 pnpm exec vitest run --config vitest.workspace.ts packages/plugin-sdk/test/agent.test.ts packages/plugin-sdk/test/subprocess.test.ts adapters/agent-command/test/adapter.test.ts adapters/agent-dsh/test/adapter.test.ts packages/runtime/test/scheduling/agent-pool.test.ts packages/runtime/test/scheduling/projection.test.ts packages/runtime/test/scheduling/sqlite-projection.test.ts
@@ -1353,7 +1353,7 @@ pnpm --filter @universal-harness-internal/runtime typecheck
 
 Expected: Barrier proves two concurrent slots; all authoritative projections survive SQLite deletion.
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ~~~bash
 git add packages/plugin-sdk/src packages/plugin-sdk/test adapters/agent-command/src/adapter.ts adapters/agent-command/test/adapter.test.ts adapters/agent-dsh/src/adapter.ts adapters/agent-dsh/test/adapter.test.ts packages/runtime/src/scheduling packages/runtime/test/scheduling
@@ -1380,7 +1380,7 @@ git commit -m "feat(runtime): run isolated local agent slots"
 - Consumes: TaskDagPort, PolicyDecisionPort, Lease/budget/resource reducers, LocalAgentPool, TaskWorkspaceManager, ProjectionStore and existing ApprovalService/Context assembly callbacks.
 - Produces: LocalTaskScheduler, SchedulerDriveInput, SchedulerDriveResult, SchedulerTransition, selectReadyTasks(), effectiveMaxConcurrency(), createLocalTaskScheduler().
 
-- [ ] **Step 1: Write failing readiness and selection tests**
+- [x] **Step 1: Write failing readiness and selection tests**
 
 Pin scan order and wave barrier:
 
@@ -1398,7 +1398,7 @@ expect(selected.every((entry) => entry.wave_index === 0)).toBe(true);
 
 If one wave-0 Task is awaiting approval, independent wave-0 Tasks may dispatch, but no wave-1 Task may cross the barrier. Exclude stale Context, unavailable budget/resource, ineligible Adapter and Tasks with active/current Lease. Keep Plan declaration order; never sort by duration, risk or model score.
 
-- [ ] **Step 2: Implement pure readiness and concurrency clamping**
+- [x] **Step 2: Implement pure readiness and concurrency clamping**
 
 ~~~ts
 export function effectiveMaxConcurrency(input: {
@@ -1413,7 +1413,7 @@ export function effectiveMaxConcurrency(input: {
 
 Return the minimum positive bound; force 1 when unattended_eligible is false. selectReadyTasks() finds the earliest incomplete wave, scans its task_ids in Plan order and returns at most the lower of free slots and effective concurrency.
 
-- [ ] **Step 3: Write the failing dispatch transaction test**
+- [x] **Step 3: Write the failing dispatch transaction test**
 
 Use an authority fixture that records transitions:
 
@@ -1434,7 +1434,7 @@ Cross Policy outcomes:
 - deny produces a blocking Finding without Lease;
 - block produces a policy-conflict Finding without Lease and cannot consume an Approval.
 
-- [ ] **Step 4: Implement the drive loop with one authoritative transition seam**
+- [x] **Step 4: Implement the drive loop with one authoritative transition seam**
 
 Use these command/result contracts:
 
@@ -1485,7 +1485,7 @@ createLocalTaskScheduler() receives an internal SchedulerAuthority whose commit(
 
 The loop order must exactly follow design §9: reconstruct → earliest wave → Plan-order scan → eligibility → Policy → Approval → atomic Lease/budget/resource → workspace/context/grant/envelope → Pool → result classification. A returned Agent result enters verifying or retry/block logic; completion_claimed alone changes nothing.
 
-- [ ] **Step 5: Add executor retry, cancellation and token fencing tests**
+- [x] **Step 5: Add executor retry, cancellation and token fencing tests**
 
 Prove:
 
@@ -1500,7 +1500,7 @@ expect(() => scheduler.acceptRun(staleTokenResult)).toThrow(/stale fencing token
 
 Cancellation stops new Lease, requests active Pool cancellation, records uncertain external effects through the existing semantics, revokes active Lease and preserves diagnostic Evidence/worktrees. It never deletes accepted artifacts.
 
-- [ ] **Step 6: Add deterministic replay and 1,000-Task selection performance**
+- [x] **Step 6: Add deterministic replay and 1,000-Task selection performance**
 
 Property tests replay identical facts through different process restart points and require the same next transition digest. Performance test performs 100 warm selections over 1,000 Tasks:
 
@@ -1510,7 +1510,7 @@ expect(percentile95(samples)).toBeLessThan(100);
 
 No wall-clock comparison between one and two Agent processes is accepted as the concurrency assertion.
 
-- [ ] **Step 7: Run scheduler tests**
+- [x] **Step 7: Run scheduler tests**
 
 ~~~bash
 pnpm exec vitest run --config vitest.workspace.ts packages/runtime/test/scheduling/readiness.test.ts packages/runtime/test/scheduling/scheduler.test.ts packages/runtime/test/scheduling/scheduler.property.test.ts
@@ -1520,7 +1520,7 @@ pnpm --filter @universal-harness-internal/runtime typecheck
 
 Expected: deterministic selection, four-state Policy, one retry, cancellation and p95 below 100ms all pass.
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ~~~bash
 git add packages/runtime/src/scheduling packages/runtime/test/scheduling tests/performance/m4-scheduler-selection.test.ts
@@ -1551,7 +1551,7 @@ git commit -m "feat(runtime): schedule approved task waves"
 - Consumes: TaskCandidatePatch, TaskLeaseRecord, WaveIntegrationRecord builder, Gate/Evidence services and existing staged Git/Ledger CAS.
 - Produces: CandidateIntegrationController, queueTaskCandidate(), rebuildWaveCandidate(), validateTaskCandidate(), acceptWave(), recoverSchedulingOperation().
 
-- [ ] **Step 1: Write failing Plan-order candidate application tests**
+- [x] **Step 1: Write failing Plan-order candidate application tests**
 
 Complete Task B before Task A but require Plan-order application:
 
@@ -1565,7 +1565,7 @@ expect(prepared.base_commit).toBe(planBaseline);
 
 Every Task candidate starts from the wave frozen base. A patch apply failure on the first candidate attempt produces integration_retry once; a second failure blocks. A clean textual apply that fails a candidate Gate is semantic conflict and must not consume integration_retry.
 
-- [ ] **Step 2: Implement deterministic candidate tree rebuild**
+- [x] **Step 2: Implement deterministic candidate tree rebuild**
 
 Use an internal controller:
 
@@ -1619,7 +1619,7 @@ export interface AcceptWaveInput {
 
 Create a disposable candidate worktree at wave base, apply managed binary patches with git apply --index in Plan order and create Harness-owned Task commits with fixed identity/message inputs. Never use Agent commit metadata and never use git apply --3way, merge, rebase or force.
 
-- [ ] **Step 3: Write failing three-layer Gate and Evidence freshness tests**
+- [x] **Step 3: Write failing three-layer Gate and Evidence freshness tests**
 
 Assert:
 
@@ -1634,13 +1634,13 @@ Task workspace assertions/gates
 
 For every Evidence fixture, mutate one of actual commit, Plan/Task digest, Run, Lease token or Gate definition digest and require rejection. A released current Lease is valid for wave acceptance only when its terminal state was candidate_validated; expired/revoked/stale tokens are invalid.
 
-- [ ] **Step 4: Implement candidate and wave validation**
+- [x] **Step 4: Implement candidate and wave validation**
 
 queueTaskCandidate() writes TaskIntegrationQueued. validateTaskCandidate() rechecks undeclared writes, Task assertions/gates and current fencing before writing TaskCandidateValidated and releasing runtime resources/unused budget. After all Tasks validate, run project Mandatory Gates once against the complete candidate.
 
 Wave Gate failure leaves operation-local ref unchanged, creates wave_gate_failed Finding and blocks feedback/Impact/Plan revision. It must not move Tasks to retry_pending.
 
-- [ ] **Step 5: Write failing final CAS and source-tree digest tests**
+- [x] **Step 5: Write failing final CAS and source-tree digest tests**
 
 Use a real repository and injected failure after each boundary. Assert:
 
@@ -1655,13 +1655,13 @@ expect(accepted.accepted_source_tree_digest).toBe(
 
 Move the target ref before acceptance and require baseline_drift without integration retry. Inject CAS success + lost response and require command_id replay to discover the already accepted WaveIntegrationRecord rather than advance twice.
 
-- [ ] **Step 6: Implement staged CAS plus WaveIntegrationRecord**
+- [x] **Step 6: Implement staged CAS plus WaveIntegrationRecord**
 
 Immediately before acceptance revalidate Plan/Task, Policy/Approval, Gate definition, Evidence freshness, latest Lease token and expected base OID. Stage the Ledger manifest and operation-local ref update through the existing transaction/CAS mechanism. accepted_source_tree_digest excludes Harness Ledger content to avoid self-reference.
 
 Unconnected mode updates refs/heads/operation/ followed by the exact operation_id. Connected M3 mode requires current Operation Lease and publishes the same local operation branch only through existing publish_operation_candidate; M4 never writes the remote target branch.
 
-- [ ] **Step 7: Implement crash recovery and provisional downgrade**
+- [x] **Step 7: Implement crash recovery and provisional downgrade**
 
 recoverSchedulingOperation():
 
@@ -1677,7 +1677,7 @@ recoverSchedulingOperation():
 
 If wave_gate_failed or Plan drift Finding remains open, recovery must not rebuild/accept the candidate. Otherwise it replays valid Task patches in Plan order and reruns candidate plus wave Gates; it never restores candidate_validated from old candidate Evidence.
 
-- [ ] **Step 8: Run Git, fault and integration suites**
+- [x] **Step 8: Run Git, fault and integration suites**
 
 ~~~bash
 pnpm exec vitest run --config vitest.workspace.ts packages/runtime/test/scheduling/integration.test.ts packages/runtime/test/scheduling/integration.git.test.ts packages/runtime/test/scheduling/recovery.test.ts adapters/vcs-git/test/worktree.test.ts tests/fault/m4-wave-integration-boundaries.test.ts tests/integration/m4-wave-cas.test.ts
@@ -1687,7 +1687,7 @@ pnpm --filter @universal-harness-internal/adapter-vcs-git typecheck
 
 Expected: no injected boundary produces duplicate integration, stale Evidence acceptance, ref-without-Ledger or false Task success.
 
-- [ ] **Step 9: Commit**
+- [x] **Step 9: Commit**
 
 ~~~bash
 git add packages/runtime/src/scheduling packages/runtime/test/scheduling adapters/vcs-git/src/worktree.ts adapters/vcs-git/test/worktree.test.ts tests/fault/m4-wave-integration-boundaries.test.ts tests/integration/m4-wave-cas.test.ts
@@ -1696,6 +1696,8 @@ git commit -m "feat(runtime): integrate task waves atomically"
 ~~~
 
 ### Task 11: Connect the Scheduler to the Capability DAG and Vertical Loop
+
+**Implementation state:** 除 Step 4 的完整批准后自动唤醒/反馈闭环外，其余步骤已有提交与测试证据；该缺口继续计入 AC-17，不以显式 `resume` 的可用性替代。
 
 **Depends on:** Task 10.
 
@@ -1722,7 +1724,7 @@ git commit -m "feat(runtime): integrate task waves atomically"
 - Consumes: Protocol 1.3 CapabilityPlan execute subgraph, LocalTaskScheduler, CandidateIntegrationController, Driver Lock proof, M3 Operation Lease proof and existing verify/evaluate/snapshot runtimes.
 - Produces: ParallelTaskExecutionPort, driveParallelTaskExecution(), SchedulerReadModel, readSchedulerModel(), parallel execute binding and sequential compatibility routing.
 
-- [ ] **Step 1: Write failing Capability DAG routing tests**
+- [x] **Step 1: Write failing Capability DAG routing tests**
 
 Pin all three combinations:
 
@@ -1737,7 +1739,7 @@ expect(resolveExecuteSubgraph(active()))
 
 When parallel is inactive, assert TaskDagPort, PolicyDecisionPort, Agent Pool and Task Lease builders are never invoked and the old sequential execution output is byte-equivalent. When active, execute produces wave_integration binding once, then Kernel verify remains the only gate_evidence producer.
 
-- [ ] **Step 2: Implement the parallel execute runner**
+- [x] **Step 2: Implement the parallel execute runner**
 
 Use:
 
@@ -1763,7 +1765,7 @@ export interface ParallelTaskExecutionOutcome {
 
 driveParallelTaskExecution() verifies the active Capability resolution, Driver Lock and connected-mode M3 Operation Lease before calling Scheduler. It loops until all waves integrate, a recoverable Approval pause occurs, cancellation occurs or a blocker exists. It persists checkpoints through existing Workflow Engine callbacks; it does not invent a new global phase.
 
-- [ ] **Step 3: Write failing full lifecycle and invalidation tests**
+- [x] **Step 3: Write failing full lifecycle and invalidation tests**
 
 Drive:
 
@@ -1794,7 +1796,7 @@ export const SCHEDULER_RECOVERY_ACTIONS = {
 
 Approval arrival wakes only a live driver. If no driver exists, project the exact command harness resume operation_123 using the real operation id. Feedback from wave gate failure returns through existing feedback → impact/design/plan cascade and requires an explicit fix Task in a newly approved Plan.
 
-- [ ] **Step 5: Write failing Scheduler Read Model tests**
+- [x] **Step 5: Write failing Scheduler Read Model tests**
 
 Freeze the API-facing runtime shape:
 
@@ -1855,11 +1857,11 @@ expect(view.tasks[0]).toMatchObject({
 
 The model includes Operation, Plan/waves, Task projection, Slot live projection, Budget/reservations, pending Approvals, blocking Findings and presentation map in one snapshot. Lite/inactive returns capability_status: inactive_by_profile and no fabricated tasks. Live loss returns rebuilding.
 
-- [ ] **Step 6: Implement readSchedulerModel() and 1,000-Task timing fixture**
+- [x] **Step 6: Implement readSchedulerModel() and 1,000-Task timing fixture**
 
 Read Ledger/Graph first, read SQLite/live spool second, then join through projectSchedulerState(). Never let Dashboard callers read SQLite/worktrees/raw trace directly. Add an internal benchmark fixture that Task 14 will expose as the <250ms release gate.
 
-- [ ] **Step 7: Run orchestration and status regressions**
+- [x] **Step 7: Run orchestration and status regressions**
 
 ~~~bash
 pnpm exec vitest run --config vitest.workspace.ts packages/runtime/test/orchestration packages/runtime/test/scheduling/read-model.test.ts packages/runtime/test/status
@@ -1868,7 +1870,7 @@ pnpm --filter @universal-harness-internal/runtime typecheck
 
 Expected: parallel, strict-TDD-only and legacy sequential routes all pass; no second gate_evidence producer appears.
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ~~~bash
 git add packages/runtime/src/orchestration packages/runtime/src/scheduling/read-model.ts packages/runtime/src/status packages/runtime/src/index.ts packages/runtime/test/orchestration packages/runtime/test/scheduling/read-model.test.ts packages/runtime/test/status
@@ -1877,6 +1879,8 @@ git commit -m "feat(orchestration): drive parallel execution subgraph"
 ~~~
 
 ### Task 12: Expose the Scheduler through Existing CLI Commands
+
+**Implementation state:** Step 2～7 已落地。Step 1 仍未完成“超过 Policy 上限时生成 Policy Proposal”的生产路径，且 Host/CLI 尚未接入权威 Policy layer source，因此 AC-10 继续阻塞。
 
 **Depends on:** Task 11.
 
@@ -1915,7 +1919,7 @@ expect(() => parseRunArgs(["--max-concurrency", "0"])).toThrow(/positive integer
 
 The local value is a request, never authority. Assert requested 8 with Policy 2 results in 2, decreasing needs no Approval, and raising beyond Policy yields a Policy Proposal path rather than silent expansion.
 
-- [ ] **Step 2: Build an isolated AgentSlotFactory in project-agent.ts**
+- [x] **Step 2: Build an isolated AgentSlotFactory in project-agent.ts**
 
 For every slot/worktree invocation, create a fresh existing Adapter with that worktree and a run-specific evidence directory. Do not cache the Adapter instance. Preserve the current dsh/command/manual provider selection and existing manifest validation.
 
@@ -1927,7 +1931,7 @@ export function createProjectAgentSlotFactory(
 
 If the manifest is manual or fails unattended eligibility, surface supervised single-slot mode before run starts.
 
-- [ ] **Step 3: Write failing command behavior and stdout tests**
+- [x] **Step 3: Write failing command behavior and stdout tests**
 
 Cover:
 
@@ -1949,15 +1953,15 @@ expect(stderr).toContain("wave 1");
 
 Live progress belongs on stderr/live spool; stdout remains one final CommandResult.
 
-- [ ] **Step 4: Enforce the shared Driver Lock on every driving path**
+- [x] **Step 4: Enforce the shared Driver Lock on every driving path**
 
 run and resume acquire driver_kind cli; Dashboard resume inside serve acquires driver_kind dashboard. status/watch/serve reads do not acquire it. Losing acquisition returns driver_lock_unavailable without a new domain record. Release in finally after Scheduler stops/pauses. Connected mode independently verifies M3 Operation Lease.
 
-- [ ] **Step 5: Implement status, watch and recovery copy**
+- [x] **Step 5: Implement status, watch and recovery copy**
 
 Use the presentation map from SchedulerReadModel and Chinese business descriptions by default. Print digests only in technical details/JSON. Every blocker displays exactly one recommended recovery action from SCHEDULER_RECOVERY_ACTIONS; do not add ignore/force switches.
 
-- [ ] **Step 6: Run CLI unit and golden tests**
+- [x] **Step 6: Run CLI unit and golden tests**
 
 ~~~bash
 pnpm exec vitest run --config vitest.workspace.ts packages/cli/test
@@ -1967,7 +1971,7 @@ pnpm --filter @universal-harness-internal/cli build
 
 Expected: legacy commands and new parallel views pass; CLI/Dashboard drive collision has one winner.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ~~~bash
 git add packages/cli/src packages/cli/test
@@ -1976,6 +1980,8 @@ git commit -m "feat(cli): drive and inspect local task waves"
 ~~~
 
 ### Task 13: Add the Observatory Scheduler View and Approval Experience
+
+**Implementation state:** Read API、只读 Scheduler 视图、受保护的既有写动作、响应式 UI 与当前 Playwright 门禁已落地；生产 Policy Proposal、完整 grounded approval context 和 driver-alive 批准自动唤醒仍未完成，Step 3/5/6 保持未勾选并计入 AC-16/17。
 
 **Depends on:** Task 11.
 
@@ -2002,7 +2008,7 @@ git commit -m "feat(cli): drive and inspect local task waves"
 - Consumes: readSchedulerModel(), existing SSE, ApprovalService, loopback session/CSRF/actor/expected-digest guards.
 - Produces: GET /api/v1/scheduler?operation_id=operation_123, Scheduler navigation/view, approval/recovery/budget-concurrency proposal actions.
 
-- [ ] **Step 1: Write failing Read API authority tests**
+- [x] **Step 1: Write failing Read API authority tests**
 
 ~~~ts
 const response = await api.read({ operation_id: "operation_1" });
@@ -2018,7 +2024,7 @@ expect(response.slots[0]).toMatchObject({
 
 Reject missing/invalid operation_id. Assert endpoint returns one coherent snapshot with Plan/waves, Tasks, Slots, Budget, Approvals, Findings and presentation map. It never returns raw environment, absolute user path, raw trace or direct SQLite locator.
 
-- [ ] **Step 2: Implement the thin Scheduler API route**
+- [x] **Step 2: Implement the thin Scheduler API route**
 
 Route only GET /api/v1/scheduler. It delegates to readSchedulerModel(), applies existing problem+json errors and preserves loopback/session policy. Use SSE for incremental refresh; do not add WebSocket or a Scheduler HTTP service.
 
@@ -2046,7 +2052,7 @@ ignore_baseline_drift
 
 Every allowed write requires loopback session, CSRF, actor, expected object digest, Policy Decision and Ledger Evidence.
 
-- [ ] **Step 4: Build the Scheduler view with improved information hierarchy**
+- [x] **Step 4: Build the Scheduler view with improved information hierarchy**
 
 Add one Observatory navigation item and four responsive regions:
 
@@ -2077,7 +2083,7 @@ At desktop and 360px:
 - prove CLI-held Driver Lock prevents Dashboard resume;
 - prove no force controls exist.
 
-- [ ] **Step 7: Run Dashboard unit, security and Playwright tests**
+- [x] **Step 7: Run Dashboard unit, security and Playwright tests**
 
 ~~~bash
 pnpm exec vitest run --config vitest.workspace.ts packages/dashboard/test
@@ -2088,7 +2094,7 @@ pnpm --filter @universal-harness-internal/dashboard build
 
 Expected: Scheduler view is usable at both widths, Approval/restore behavior is correct and existing Observatory routes remain green.
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ~~~bash
 git add packages/dashboard/src packages/dashboard/assets packages/dashboard/test tests/e2e/dashboard-m4-scheduler.test.ts
@@ -2097,6 +2103,8 @@ git commit -m "feat(dashboard): visualize local task scheduling"
 ~~~
 
 ### Task 14: Prove Conformance, Recovery, Performance and Real Dogfood
+
+**Implementation state:** Conformance、真实 Git managed-fixture E2E、故障矩阵、安全与性能门禁已落地；真实 dsh 只能形成受监督单槽探针，完整四 Task/双槽/wave Dogfood 尚不可证明。发布报告链正在绑定最终提交重新生成。
 
 **Depends on:** Task 12 and Task 13.
 
@@ -2125,7 +2133,7 @@ git commit -m "feat(dashboard): visualize local task scheduling"
 - Consumes: all M4 production Adapters, Scheduler APIs, CLI/Dashboard surfaces and AC-01～20.
 - Produces: complete scheduling conformance suites, crash matrix, performance gates, real dogfood Evidence and current-commit completion report.
 
-- [ ] **Step 1: Complete all Port/Adapter conformance suites**
+- [x] **Step 1: Complete all Port/Adapter conformance suites**
 
 Extend scheduling conformance with:
 
@@ -2139,7 +2147,7 @@ export function agentControlProfileCases(factory: AgentFixtureFactory): readonly
 
 Run Git and InMemory IsolatedWorkspace, SQLite and InMemory Projection, plus managed/delegated/manual Agent fixtures through identical cases. Keep TaskDag and Policy cases from Task 4. Every production Adapter must pass before E2E runs.
 
-- [ ] **Step 2: Add the complete real-Git E2E**
+- [x] **Step 2: Add the complete real-Git E2E**
 
 Use a temporary real repository, real Git worktrees, deterministic managed Agent fixture and real Gate/Evidence adapters:
 
@@ -2157,7 +2165,7 @@ approved 4-Task Plan
 
 Assert exact dependency Graph, Task isolation, unique Run/Lease identities, Evidence binding, budget totals, wave records and final source tree. Then run the same fixture under Lite and a Protocol 1.2 Plan to prove sequential fallback with no M4 records/events.
 
-- [ ] **Step 3: Add the full fault-injection matrix**
+- [x] **Step 3: Add the full fault-injection matrix**
 
 Kill after:
 
@@ -2178,7 +2186,7 @@ Coordinator restart / SQLite deletion
 
 For every boundary assert no duplicate process acceptance, no duplicate integration, no stale fencing token acceptance, no incorrect budget return, no ref/Ledger split and no false success.
 
-- [ ] **Step 4: Add security and performance release gates**
+- [x] **Step 4: Add security and performance release gates**
 
 Security covers path traversal, symlink escape, reserved .git/.harness writes, command argument injection, stale Approval, Adapter privilege expansion, output/SQLite/Event secret scanning and Dashboard force-action rejection.
 
