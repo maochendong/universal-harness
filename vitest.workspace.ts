@@ -18,6 +18,7 @@ export default defineConfig({
       "tests/e2e/dashboard-live-approval.test.ts",
       "tests/e2e/dashboard-m3-collaboration.test.ts",
       "tests/e2e/dashboard-m4-scheduler.test.ts",
+      "tests/e2e/dashboard-m4-governed-controls.test.ts",
     ],
     // Git-heavy repository fixtures compete for disk and process capacity at
     // Vitest's eight-worker default. Cap concurrency so the release gate stays
