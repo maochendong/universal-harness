@@ -69,6 +69,11 @@ const currentCommit = execFileSync("git", ["rev-parse", "HEAD"], {
   cwd: repositoryRoot,
   encoding: "utf8",
 }).trim();
+const currentTrackedStatus = execFileSync(
+  "git",
+  ["status", "--porcelain", "--untracked-files=no"],
+  { cwd: repositoryRoot, encoding: "utf8" },
+).trim();
 
 function fail(message) {
   console.error(`acceptance report: ${message}`);
@@ -81,6 +86,10 @@ if (process.argv.slice(2).includes("--verify-report-commit")) {
     `M4 report commit ${verified.report_commit} directly follows implementation ${verified.implementation_commit}.`,
   );
   process.exit(0);
+}
+
+if (currentTrackedStatus !== "") {
+  fail("tracked worktree is dirty; release Evidence must bind exact committed bytes");
 }
 
 // --- Load the criterion statements from the approved design -------------------
