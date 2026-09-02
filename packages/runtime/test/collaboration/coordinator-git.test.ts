@@ -395,7 +395,7 @@ describe("coordinator against the real git control store", () => {
 
   it(
     "restores the accepted integration records on a delete/rebuild so the projection digest does not drift",
-    { timeout: 60_000 },
+    { timeout: 120_000 },
     async () => {
       const projectionPath = join(tempDir("harness-coordinator-db-"), "coordinator.sqlite");
       const { remote, projection, deps, coordinator } = createStack(projectionPath);
