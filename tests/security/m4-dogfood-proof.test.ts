@@ -127,7 +127,7 @@ describe("M4 real-provider dogfood proof", () => {
       { type: "request/context", data: { provider: "p", model: "m" } },
       {
         type: "assistant/chunk",
-        seq: 10,
+        seq: 20,
         data: { turn: 1, step: 1, chunk: { type: "usage", usage } },
       },
       {
@@ -142,7 +142,7 @@ describe("M4 real-provider dogfood proof", () => {
       },
       {
         type: "assistant/message",
-        seq: 12,
+        seq: 10,
         data: {
           turn: 1,
           step: 2,
@@ -163,6 +163,36 @@ describe("M4 real-provider dogfood proof", () => {
       reasoning_tokens: 2,
       total_tokens: 23,
     });
+  });
+
+  it("fails closed when one turn/step contains conflicting chunk usage observations", () => {
+    const session = [
+      { type: "request/context", data: { provider: "p", model: "m" } },
+      {
+        type: "assistant/chunk",
+        seq: 10,
+        data: {
+          turn: 1,
+          step: 1,
+          chunk: { type: "usage", usage: { inputTokens: 7, outputTokens: 3 } },
+        },
+      },
+      {
+        type: "assistant/chunk",
+        seq: 11,
+        data: {
+          turn: 1,
+          step: 1,
+          chunk: { type: "usage", usage: { inputTokens: 8, outputTokens: 3 } },
+        },
+      },
+    ]
+      .map((entry) => JSON.stringify(entry))
+      .join("\n");
+
+    expect(() => parseDshSessionEvidence(session)).toThrow(
+      /turn\/step contains conflicting chunk usage/u,
+    );
   });
 
   it("observes only the dsh session created after the invocation boundary", () => {

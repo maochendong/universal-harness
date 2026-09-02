@@ -49,6 +49,15 @@ function usageCount(value, label) {
   return value;
 }
 
+function canonicalUsage(reported) {
+  return JSON.stringify({
+    inputTokens: usageCount(reported.inputTokens, "inputTokens"),
+    cacheReadTokens: usageCount(reported.cacheReadTokens, "cacheReadTokens"),
+    outputTokens: usageCount(reported.outputTokens, "outputTokens"),
+    reasoningTokens: usageCount(reported.reasoningTokens, "reasoningTokens"),
+  });
+}
+
 /**
  * Project release-safe identity and usage from dsh's own persisted session.
  * This is observation evidence only: it does not upgrade the Adapter's
@@ -102,31 +111,28 @@ export function parseDshSessionEvidence(jsonl, options = {}) {
       throw new Error("dsh session usage record is missing a valid turn/step identity");
     }
     const stepKey = `${String(record.data.turn)}:${String(record.data.step)}`;
-    const grouped = usageByStep.get(stepKey) ?? { chunks: new Map(), messages: new Map() };
+    const grouped = usageByStep.get(stepKey) ?? { chunks: new Set(), messages: new Set() };
     usageByStep.set(stepKey, grouped);
     const target = isChunkUsage ? grouped.chunks : grouped.messages;
-    const canonical = JSON.stringify(reported);
-    if (target.has(record.seq) && target.get(record.seq) !== canonical) {
-      throw new Error("dsh session repeats a usage sequence with different values");
-    }
-    target.set(record.seq, canonical);
+    target.add(canonicalUsage(reported));
   }
 
   for (const grouped of usageByStep.values()) {
     const selectedUsages = grouped.chunks.size > 0 ? grouped.chunks : grouped.messages;
-    for (const canonical of selectedUsages.values()) {
-      const reported = JSON.parse(canonical);
-      const inputTokens = usageCount(reported.inputTokens, "inputTokens");
-      const cacheReadTokens = usageCount(reported.cacheReadTokens, "cacheReadTokens");
-      const outputTokens = usageCount(reported.outputTokens, "outputTokens");
-      const reasoningTokens = usageCount(reported.reasoningTokens, "reasoningTokens");
-      usage.model_call_count += 1;
-      usage.input_tokens += inputTokens;
-      usage.cache_read_input_tokens += cacheReadTokens;
-      usage.output_tokens += outputTokens;
-      usage.reasoning_tokens += reasoningTokens;
-      usage.total_tokens += inputTokens + cacheReadTokens + outputTokens;
+    if (selectedUsages.size !== 1) {
+      const recordType = grouped.chunks.size > 0 ? "chunk" : "message";
+      throw new Error(
+        `dsh session turn/step contains conflicting ${recordType} usage observations`,
+      );
     }
+    const [canonical] = selectedUsages;
+    const reported = JSON.parse(canonical);
+    usage.model_call_count += 1;
+    usage.input_tokens += reported.inputTokens;
+    usage.cache_read_input_tokens += reported.cacheReadTokens;
+    usage.output_tokens += reported.outputTokens;
+    usage.reasoning_tokens += reported.reasoningTokens;
+    usage.total_tokens += reported.inputTokens + reported.cacheReadTokens + reported.outputTokens;
   }
 
   if (requestIdentities.size !== 1 || assistantIdentities.size > 1) {
