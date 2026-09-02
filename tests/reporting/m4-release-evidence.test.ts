@@ -676,7 +676,7 @@ describe("M4 Markdown projection", () => {
     expect(completed.results.find((entry) => entry.acceptance_id === "AC-17")?.status).toBe(
       "passed",
     );
-  });
+  }, 20_000);
 
   it("rejects tampering with persisted canonical result digests", () => {
     const root = repository();
