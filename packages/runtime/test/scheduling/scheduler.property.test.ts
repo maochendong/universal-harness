@@ -32,12 +32,7 @@ import type {
   TaskWorkspaceManager,
 } from "../../src/scheduling/workspace-manager.js";
 import { mulberry32, randomInt } from "../context/seeds.js";
-import {
-  BASELINE_COMMIT,
-  ITERATION_ID,
-  OPERATION_ID,
-  PLAN_DIGEST,
-} from "./scheduler-facts.js";
+import { BASELINE_COMMIT, ITERATION_ID, OPERATION_ID, PLAN_DIGEST } from "./scheduler-facts.js";
 
 /**
  * Plan Task 9 step 6: deterministic replay across process restart points. A
@@ -192,7 +187,8 @@ class ReplayAuthority implements SchedulerAuthority {
   }
 }
 
-type PoolScript = { readonly kind: "complete" } | { readonly kind: "crash" } | { readonly kind: "hang" };
+type PoolScript =
+  { readonly kind: "complete" } | { readonly kind: "crash" } | { readonly kind: "hang" };
 
 class ReplayPool {
   private readonly slots: AgentPoolSlot[];
@@ -233,9 +229,7 @@ class ReplayPool {
       return new Promise<never>(() => {});
     }
     if (script.kind === "crash") {
-      return finish(
-        stubResult({ outcome: "failed", termination_reason: "adapter_failure" }),
-      );
+      return finish(stubResult({ outcome: "failed", termination_reason: "adapter_failure" }));
     }
     return finish(stubResult());
   }
@@ -294,9 +288,7 @@ function scenario(seed: number) {
   const random = mulberry32(seed ^ 0x9e3779b9);
   // Seeded crash plan: roughly a quarter of the tasks crash their first
   // executor attempt, exercising retry scheduling under replay.
-  const crashOnce = new Set(
-    tasks.filter(() => randomInt(random, 4) === 0).map((task) => task.id),
-  );
+  const crashOnce = new Set(tasks.filter(() => randomInt(random, 4) === 0).map((task) => task.id));
   return { dag, crashOnce };
 }
 
@@ -329,7 +321,12 @@ function freshScheduler(options: {
     adapter_control_profile: MANAGED_CONTROL,
     adapter_capabilities: ["code-edit"],
     unattended_eligible: true,
-    ceilings: { profile_limit: 2, installation_limit: 8, project_limit: 8, local_resource_limit: 8 },
+    ceilings: {
+      profile_limit: 2,
+      installation_limit: 8,
+      project_limit: 8,
+      local_resource_limit: 8,
+    },
     effective_policy_digest: EFFECTIVE.digest,
     callbacks: {
       assembleContext: async ({ task, run_id }) => ({
@@ -462,7 +459,8 @@ describe("deterministic replay", () => {
       // recovery — their seeded crash allowance was spent pre-kill; only
       // never-started tasks still crash their first attempt.
       const startedPreKill = new Set(snapshot.leases.map((record) => record.task_id));
-      const continuation = (crashSet: Set<string>) =>
+      const continuation =
+        (crashSet: Set<string>) =>
         (taskId: string, callIndex: number): PoolScript => {
           if (startedPreKill.has(taskId)) return { kind: "complete" };
           if (crashSet.has(taskId) && callIndex === 0) return { kind: "crash" };

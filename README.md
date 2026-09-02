@@ -43,6 +43,10 @@ _Graph 视图展开评估用例 `case_docs`，展示它与 Evidence、Run、Task
 
 _Impact 视图展示 `case_docs` 到 `evidence_evaluation_docs` 的受治理最短解释路径。_
 
+![Harness Observatory Dashboard：本地 Multi-Agent Scheduler](docs/assets/harness-observatory-scheduler.png)
+
+_Scheduler 视图把批准 Plan 的 wave、隔离 Agent slot、Task 权威状态、预算预留、阻塞 Finding 与按 Policy 产生的 Approval 放在同一读模型中；图中为可重复的 Playwright fixture，不代表真实 provider 并发验收已经通过。_
+
 ## Graph-native 驱动模型
 
 <!-- graph-model:readme-overview:start -->
@@ -159,6 +163,20 @@ flowchart TB
 - **受限执行**：声明式 ExecutionPlan（拒绝嵌入命令与能力扩张）、按任务编译的 ContextBundle（预算、Freshness、敏感内容本地化）、Policy 字段级 merge operator 合并（冲突即 Block）、只收窄不扩张的 Capability Grant。
 - **可审计、可恢复**：Approval 绑定精确 digest，漂移即失效；外部副作用以 Intent Journal 记录，结果不确定时对账而非盲目重试；Checkpoint + Resume 保证中断后不产生重复记录或副作用。
 - **Provider-neutral 插件面**：VCS、Agent、Pack、Tool、Gate、Projection 均为版本化端口，第三方插件经 Capability Manifest 声明能力，并由 Conformance Kit 验证契约。
+
+## M4 本地 Multi-Agent 调度
+
+Standard/Governed 在 final CapabilityPlan 启用 `parallel_task_execution` 时，Plan 的 Task 依赖、声明写路径和独占资源会被确定性编译为 waves。Scheduler 对每个 Task 分配独立 Lease、Run、Context、预算预留、worktree 和新建 Agent 会话；候选先过 Task/candidate Gate，再按 Plan 顺序验证，整 wave 通过 Gate 后才以 CAS 集成并提交 `WaveIntegration`。Lite 与 Protocol 1.2 仍走顺序执行，不生成 M4 记录。
+
+```text
+Plan DAG → deterministic waves → Lease + AgentPool + isolated worktree
+→ Task Gate → candidate Gate → wave Gate → CAS → WaveIntegration
+→ Verify → [Evaluate] → Snapshot
+```
+
+完成真相仍来自 Git-native Ledger。Agent 返回只是一份 provisional 候选；SQLite 只保存可删除的 live projection，丢失后从 Ledger 重建。单机 Driver Lock 防止 CLI 与 Dashboard 同时驱动同一 Operation；启用 M3 时它嵌套在 Operation Lease 内，不扩展为后台 Scheduler 服务。
+
+当前本地调度内核、CLI、Dashboard、真实 Git 四 Task/三 wave 确定性 E2E、故障/安全/性能门禁已经落地。M4 尚未声明完成：真实 dsh Adapter 的公开能力为 `delegated + external-only`，因此 Harness 正确降级到受监督单槽位，AC-06 与 AC-20 缺少真实 provider 双槽重叠和完整四 Task dogfood；Dashboard 的生产 Policy Proposal、完整 grounded approval context，以及 driver 存活时批准自动唤醒/operation 级取消闭环也仍在 AC-16/17 中阻塞。状态以 [M4 完成证据](docs/evidence/m4-local-multi-agent-scheduling-completion.md) 为准。
 
 ## 已支持的能力
 

@@ -13,10 +13,14 @@ import {
   type CapabilityGrant,
   type ExecutionPlanContent,
   type ImpactCoverageAssessment,
+  type AdapterControlProfile,
+  type PolicyDecision,
   type PolicyFieldInput,
   type PolicyLayer,
   type PolicyLayerInput,
   type PolicyMergeOperator,
+  type TaskRisk,
+  type TaskSpecification,
 } from "@universal-harness-internal/runtime";
 import {
   assessUnattendedEligibility,
@@ -24,16 +28,112 @@ import {
   type AgentProviderManifest,
 } from "@universal-harness-internal/plugin-sdk";
 
-import type { Protocol13TaskSpecification } from "../../runtime/src/planning/task.js";
-import type { ParallelWave } from "../../runtime/src/planning/waves.js";
-import type {
-  PolicyDecisionPort,
-  SchedulerLiveSnapshot,
-  SchedulerProjectionStore,
-  SchedulerPolicyInput,
-  TaskDagPort,
-} from "../../runtime/src/scheduling/ports.js";
 import type { ConformanceCase } from "./runner.js";
+
+/*
+ * Scheduling ports are deliberately runtime-internal. The conformance kit
+ * names only their public structural surface here instead of importing
+ * another workspace package through private source paths.
+ */
+interface Protocol13TaskSpecification extends TaskSpecification {
+  readonly budget: {
+    readonly steps: number;
+    readonly tokens: number;
+    readonly duration_ms: number;
+  };
+  readonly write_paths: readonly string[];
+  readonly exclusive_resources: readonly string[];
+}
+
+interface ParallelWave {
+  readonly wave_index: number;
+  readonly task_ids: readonly string[];
+}
+
+interface TaskDagSnapshot {
+  readonly operation_id: string;
+  readonly iteration_id: string;
+  readonly plan_id: string;
+  readonly plan_digest: string;
+  readonly baseline_commit: string;
+  readonly tasks: readonly Protocol13TaskSpecification[];
+  readonly parallel_waves: readonly ParallelWave[];
+  readonly iteration_budget: {
+    readonly steps: number;
+    readonly tokens: number;
+    readonly duration_ms: number;
+  };
+}
+
+interface TaskDagPort {
+  readonly name: string;
+  readApproved(input: {
+    readonly operation_id: string;
+    readonly expected_plan_digest?: string;
+  }): Promise<TaskDagSnapshot>;
+}
+
+interface SchedulerPolicyInput {
+  readonly action: "dispatch_task" | "retry_task" | "integrate_wave";
+  readonly operation_id: string;
+  readonly iteration_id: string;
+  readonly plan_digest: string;
+  readonly task_digest?: string;
+  readonly wave_index?: number;
+  readonly baseline_commit: string;
+  readonly risk: TaskRisk;
+  readonly capabilities: readonly string[];
+  readonly tools: readonly string[];
+  readonly write_paths: readonly string[];
+  readonly exclusive_resources: readonly string[];
+  readonly task_remaining_budget?: {
+    readonly steps: number;
+    readonly tokens: number;
+    readonly duration_ms: number;
+  };
+  readonly iteration_remaining_budget: {
+    readonly steps: number;
+    readonly tokens: number;
+    readonly duration_ms: number;
+  };
+  readonly adapter_manifest_digest: string;
+  readonly adapter_control_profile: AdapterControlProfile;
+  readonly retry_kind?: "executor_retry" | "integration_retry";
+  readonly approval_digest?: string;
+  readonly effective_policy_digest: string;
+}
+
+interface PolicyDecisionPort {
+  readonly name: string;
+  decide(input: SchedulerPolicyInput): Promise<PolicyDecision>;
+}
+
+interface SchedulerLiveSnapshot {
+  readonly operation_id: string;
+  readonly observed_at: string;
+  readonly slots: readonly {
+    readonly slot_id: string;
+    readonly state: "idle" | "running" | "cancelling";
+    readonly task_id?: string;
+    readonly run_id?: string;
+  }[];
+  readonly tasks: readonly {
+    readonly task_id: string;
+    readonly pid: number | null;
+    readonly heartbeat_at: string | null;
+    readonly output_tail: string | null;
+    readonly steps: number | null;
+    readonly tokens: number | null;
+    readonly duration_ms: number;
+    readonly worktree_id: string | null;
+  }[];
+}
+
+interface SchedulerProjectionStore {
+  replace(snapshot: SchedulerLiveSnapshot): Promise<void>;
+  read(operationId: string): Promise<SchedulerLiveSnapshot | null>;
+  clear(operationId: string): Promise<void>;
+}
 
 /**
  * Shared M4 scheduling port conformance cases (plan Task 4 steps 1/3, spec
@@ -48,7 +148,7 @@ import type { ConformanceCase } from "./runner.js";
  *
  * The fixture builder cannot call the runtime-internal semantic-digest and
  * wave-compiler functions without leaking runtime sources into this package's
- * compiled output, so the test injects them as hooks — the fixture then binds
+ * compiled output, so the test injects them as hooks. The fixture then binds
  * exactly the values the production guards will recompute.
  */
 

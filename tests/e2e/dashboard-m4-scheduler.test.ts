@@ -271,6 +271,12 @@ test.describe("M4 Observatory Scheduler", () => {
     await expect(page.getByText("2 / 2", { exact: true })).toBeVisible();
     await expect(page.getByText("验证数据契约的 Task 预算已耗尽")).toBeVisible();
     await expect(page.getByText("提交预算 Policy Proposal，或缩小 Plan")).toBeVisible();
+    if (process.env["HARNESS_UPDATE_M4_DOC_SCREENSHOT"] === "1") {
+      await page.screenshot({
+        path: join(import.meta.dirname, "../../docs/assets/harness-observatory-scheduler.png"),
+        fullPage: true,
+      });
+    }
 
     await page.getByRole("button", { name: "查看 Task：交付 Scheduler 视图" }).click();
     const detail = page.locator("#scheduler-task-detail");

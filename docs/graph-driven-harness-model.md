@@ -148,6 +148,41 @@ Standard 默认把 `Impact`、`Design` 和 `Evaluate` 纳入活动图。需求�
 
 Governed 在 Standard 图上强制所有适用 Task 形成可证明的 `Baseline → Red → Green → Refactor` 链，并增加 Advanced Audit、严格 Provider/Reviewer 身份、预算、网络、留存和批准策略。Ledger 必须保存 Phase Grant、canonical test patch、成对 Red/Green Evidence、Evaluation、TaskVerdict 与审计结果；人工批准不可免除，Policy 还可以要求 Proposal/Review 使用不同身份、职责分离或双人规则。
 
+### 0.3 M4：Profile-aware 本地 Multi-Agent 执行子图
+
+M4 不改变 Capture～Snapshot 主链，只替换 Execute 内部的活动子图。Lite 或 Protocol 1.2 保持单任务顺序执行；Standard/Governed 只有在 final CapabilityPlan 启用 `parallel_task_execution` 后，才物化调度记录、AgentPool、隔离 worktree 与 wave 集成：
+
+```mermaid
+flowchart LR
+  PLAN["批准的 Plan DAG<br/>Task dependencies + write paths + resources"]
+  WAVES["确定性 Waves<br/>依赖层级 + 冲突串行化"]
+  LEASE["Task Lease + fencing<br/>原子预算预留"]
+  POOL["Local AgentPool<br/>独立 Context / Run / 会话"]
+  WORKTREE["隔离 Git worktree<br/>Task-local write set"]
+  TASK_GATE["Task Gate"]
+  CANDIDATE["Candidate Gate<br/>按 Plan 顺序验证"]
+  WAVE_GATE["Wave Gate"]
+  CAS["Target CAS"]
+  INTEGRATION["WaveIntegration<br/>Ledger 权威事实"]
+  VERIFY["Verify → [Evaluate] → Snapshot"]
+
+  PLAN --> WAVES --> LEASE --> POOL --> WORKTREE --> TASK_GATE --> CANDIDATE --> WAVE_GATE --> CAS --> INTEGRATION --> VERIFY
+```
+
+三类状态不能混淆：
+
+- **权威状态**：Plan/DAG、Lease/fencing、Run 终态、Gate Evidence、Approval、Finding、WaveIntegration 与 Snapshot 写入 Git-native Ledger，决定完成与恢复。
+- **临时候选**：Agent 结果、worktree diff 与尚未集成的 candidate 即使自述完成也只是 provisional；失败或丢弃后不得复用旧 Evidence。
+- **实时投影**：Slot、PID、heartbeat、output tail 和等待原因进入本地 SQLite/live spool，只用于 Dashboard/status；数据库删除后权威 Task 状态与 digest 必须可从 Ledger 重建。
+
+本机 `Driver Lock` 保证同一 Operation 同时只有一个 CLI 或 Dashboard 驱动者；启用 M3 时本地 Lock 位于远程 Operation Lease 内层。Policy 只对 `dispatch_task`、`retry_task`、`integrate_wave` 三个 Action 返回 `allow / deny / requires_approval / block`，并且 Approval 只能满足它绑定的精确 digest，不能变成通用授权。
+
+![Scheduler Dashboard](assets/harness-observatory-scheduler.png)
+
+该视图同时呈现 wave、Agent slot、Task 依赖/状态、预算、Finding 与真实 Approval。截图来自受控 Playwright fixture；真实 provider 并发是否成立必须另由两个 Run 时间区间重叠及完整 dogfood Evidence 证明。
+
+截至当前实现，确定性 managed fixture 已证明四 Task、三 wave 和双 slot 重叠，真实 dsh 监督探针也已成功；但 dsh 的 `delegated/external-only` manifest 不满足无人值守并发要求，因此 M4 完成声明仍被 AC-06/20 阻止。Dashboard 生产 Policy Proposal/完整 approval grounded context、driver-alive approval auto-wake 与 operation 级 durable cancellation 仍作为 AC-16/17 的显式缺口，不由 UI fixture 伪装为已完成。
+
 无论采用哪一档，Profile 都不能改变四条底线：**模型只提议，Graph 只物化 accepted 工程事实，Ledger 只追加不覆盖，Evidence 才能证明完成**。
 
 三档图不是目标态自述。打包 CLI 的可复现 dogfood 已证明 Lite、Standard、Governed 都由各自 final CapabilityPlan 物化对应 DAG 并到达 completed Snapshot；Governed 完成 2 个 strict TDD cycle，Evidence 类型包含 `baseline_test_result`、`red_test_result`、`green_test_result`。Standard 的测试策略使用已批准 `non_executable_projection` exemption，因此明确投影为 `controlled_not_applicable`，不会用空的 TDD 工件伪造“已证明”。完整 Operation、Snapshot 和 digest 见 [三档 dogfood 证据](evidence/full-remediation-three-profile-dogfood.md)。
@@ -281,7 +316,7 @@ DesignSet 同时扩展既有关系端点：`DesignSet DERIVES_FROM ImpactSet` �
 
 Harness 使用两条不同生命周期的事件流。43+ 类 Lifecycle Event 是写入 Git-native Ledger 的权威治理事实；11 类 Observation Event 是写入 Live Spool 的实时观察。两者可以在读取侧关联展示，但不能互相替代。
 
-### 3.1 29 类权威 Lifecycle Event（16 类通用工作流事件 + 9 类 TDD 事件 + 4 类 M3 远程协作事件）
+### 3.1 37 类权威 Lifecycle Event（16 类通用工作流事件 + 9 类 TDD 事件 + 4 类 M3 远程协作事件 + 8 类 M4 本地调度事件）
 
 Lifecycle Event 记录一次受治理操作已经发生的关键里程碑。每条事件绑定 `project_id`、`iteration_id`、`workflow_operation_id`、`ledger_operation_id`、单调 `sequence`、`timestamp` 和结构化 `payload`。它们随 append-only Ledger 提交，可重放、可验证，并参与恢复、审计、投影和完成状态判断。
 
@@ -318,6 +353,14 @@ Lifecycle Event 记录一次受治理操作已经发生的关键里程碑。每�
 | `RemoteDisconnected` | 远程协作已断开 | 远程协作（M3） | 记录 `disconnected` revision 已接受，Control Ref 历史保留但权威远程写入停止。 |
 | `RemoteApprovalMaterialized` | 远程批准已物化 | 远程协作（M3） | 证明一条合法 RemoteApprovalDecision 经本地重验证后物化为既有 ApprovalDecision。 |
 | `IntegrationAccepted` | 集成已接受 | 远程协作（M3） | 证明候选 merge commit 已通过 Target Ref CAS 成为已接受事实。 |
+| `TaskLeaseGranted` | 任务租约已授予 | 本地调度（M4） | 证明调度器以递增 fencing token 将任务的排他执行权授予一个本地槽位。 |
+| `TaskDispatched` | 任务已派发 | 本地调度（M4） | 记录 Task、Run、Slot、attempt 与脱敏 worktree 定位器的执行绑定。 |
+| `TaskIntegrationQueued` | 任务已进入集成队列 | 本地调度（M4） | 证明受管 Agent 已提交候选补丁并以 patch digest 等待确定性集成。 |
+| `TaskCandidateValidated` | 任务候选已验证 | 本地调度（M4） | 记录候选补丁已通过任务级机械验证，并绑定对应 Evidence digests。 |
+| `TaskRetryScheduled` | 任务重试已排定 | 本地调度（M4） | 记录 executor 或 integration 重试的 attempt 与脱敏原因，不把重试本身当作成功。 |
+| `WaveGateCompleted` | Wave 门禁已完成 | 本地调度（M4） | 证明当前 Wave 的候选集合已共同通过或未通过集成前门禁。 |
+| `WaveIntegrated` | Wave 已集成 | 本地调度（M4） | 证明一个 Wave 的任务集合已按 CAS 成为新的候选基线，并绑定集成记录与提交。 |
+| `SchedulerRecovered` | 调度器已恢复 | 本地调度（M4） | 记录 Coordinator 重启后恢复的任务及释放的过期租约；它是恢复里程碑而非新的权威状态源。 |
 
 <!-- graph-model:lifecycle-events:end -->
 
@@ -466,5 +509,6 @@ M3 为同一仓库的多个 Replica 提供可选的远程协作模式；未启�
 - [模型建议 Adapter 与 Grounded Synthesis](superpowers/specs/2026-08-19-model-advisory-adapters-design.md)
 - [Protocol 1.1 统一 19-task 计划](superpowers/plans/2026-08-18-protocol-1.1-unified-implementation-plan.md)
 - [M3 远程协作设计](superpowers/specs/2026-08-29-universal-harness-m3-remote-collaboration-design.md)
+- [M4 本地 Multi-Agent 调度设计](superpowers/specs/2026-08-31-universal-harness-m4-local-multi-agent-scheduling-design.md)
 
 `RELATION_COMPATIBILITY` 决定某种 Edge 允许连接哪些 source / target Node 类型；`PROPAGATION_RULES` 决定 Impact Engine 是否以及怎样穿越其中 18 种关系。Capability registry 决定本次 Operation 是否物化 Impact、Design、Evaluation、Strict TDD、Audit 与对应模型 slot。合法端点不等于允许传播，模型建议也不等于 accepted Graph fact；关系注册表、CapabilityPlan、领域 Validator 与批准记录必须一起阅读。

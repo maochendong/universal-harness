@@ -15,8 +15,8 @@ import { parsePackLock, serializePackLock, type PackLock } from "./lockfile.js";
  * inside `.harness`, and every path goes through `resolveHarnessPath`, so no
  * managed write can escape the project control plane; the root `.gitignore`
  * of an adopted project is never touched. Managed files are authoritative
- * Git-committed data; local-only state (`cache/`, `staging/`, `raw-traces/`,
- * generated provider mirrors) is excluded by the managed `.gitignore`, and
+ * Git-committed data; local-only state (`cache/`, `staging/`, `locks/`,
+ * `raw-traces/`, generated provider mirrors) is excluded by the managed `.gitignore`, and
  * immutable ledger shards and operation manifests carry `-merge` in the
  * managed `.gitattributes` so Git never text-merges (let alone union-merges)
  * Edge, Event or Ledger Operation Manifest content.
@@ -38,6 +38,7 @@ export const MANAGED_GITIGNORE_CONTENT = [
   "# Managed by Universal Harness: local-only state never enters Git.",
   "cache/",
   "staging/",
+  "locks/",
   "raw-traces/",
   "generated/providers/",
   "",

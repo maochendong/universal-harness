@@ -149,9 +149,9 @@ describe("createGitWaveIntegrationGit", () => {
       base_commit: repo.base,
       wave_index: 0,
     });
-    await expect(
-      repo.port.applyManagedPatch({ worktree_root: root, patch }),
-    ).rejects.toMatchObject({ kind: "patch_digest_mismatch" });
+    await expect(repo.port.applyManagedPatch({ worktree_root: root, patch })).rejects.toMatchObject(
+      { kind: "patch_digest_mismatch" },
+    );
     await repo.port.discardWorktree(root);
   });
 
@@ -205,7 +205,9 @@ describe("createGitWaveIntegrationGit", () => {
     const first = headOf(repo.root);
     expect(await repo.port.compareAndSwapRef({ ref, expected: undefined, next: first })).toBe(true);
     expect(await repo.port.readRef(ref)).toBe(first);
-    expect(await repo.port.compareAndSwapRef({ ref, expected: undefined, next: first })).toBe(false);
+    expect(await repo.port.compareAndSwapRef({ ref, expected: undefined, next: first })).toBe(
+      false,
+    );
 
     writeTree(repo.root, { "src/c.ts": "export const c = 1;\n" });
     git(repo.root, "add", "-A");
@@ -213,9 +215,9 @@ describe("createGitWaveIntegrationGit", () => {
     const second = headOf(repo.root);
 
     // A drifted expectation never moves the ref.
-    expect(
-      await repo.port.compareAndSwapRef({ ref, expected: "f".repeat(40), next: second }),
-    ).toBe(false);
+    expect(await repo.port.compareAndSwapRef({ ref, expected: "f".repeat(40), next: second })).toBe(
+      false,
+    );
     expect(await repo.port.readRef(ref)).toBe(first);
     // The matching expectation swaps exactly once.
     expect(await repo.port.compareAndSwapRef({ ref, expected: first, next: second })).toBe(true);

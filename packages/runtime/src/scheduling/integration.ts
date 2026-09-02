@@ -12,17 +12,11 @@ import {
   type WaveIntegrationRecord,
 } from "@universal-harness-internal/core";
 
-import {
-  readGateEvidenceExtension,
-  type GateEvidenceRecord,
-} from "../gates/evidence.js";
+import { readGateEvidenceExtension, type GateEvidenceRecord } from "../gates/evidence.js";
 import { evidenceStalenessReasons } from "../gates/freshness.js";
 import type { GateDefinition } from "../gates/provider.js";
 import type { ParallelWave } from "../planning/waves.js";
-import {
-  taskSemanticDigest,
-  type Protocol13TaskSpecification,
-} from "../planning/task.js";
+import { taskSemanticDigest, type Protocol13TaskSpecification } from "../planning/task.js";
 import { actionDigest, type AdapterControlProfile } from "../policy/action.js";
 import type { PolicyDecision } from "../policy/decision.js";
 import { isPathWithinScopes } from "../policy/path-boundary.js";
@@ -37,10 +31,7 @@ import {
 import { buildTaskLeaseChain } from "./lease.js";
 import { schedulerPolicyAction } from "./policy-adapters.js";
 import type { SchedulerPolicyInput, TaskDagSnapshot } from "./ports.js";
-import {
-  deriveIterationDeadline,
-  type SchedulerAuthority,
-} from "./scheduler.js";
+import { deriveIterationDeadline, type SchedulerAuthority } from "./scheduler.js";
 import type { TaskCandidatePatch } from "./workspace-manager.js";
 
 /**
@@ -313,11 +304,9 @@ export function createGitWaveIntegrationGit(
 
     async readRef(ref) {
       try {
-        const { stdout } = await execFileAsync(
-          "git",
-          ["rev-parse", "--verify", "--quiet", ref],
-          { cwd: options.repositoryRoot },
-        );
+        const { stdout } = await execFileAsync("git", ["rev-parse", "--verify", "--quiet", ref], {
+          cwd: options.repositoryRoot,
+        });
         const oid = stdout.trim();
         return oid === "" ? undefined : oid;
       } catch {
@@ -470,7 +459,9 @@ export interface CandidateIntegrationControllerOptions {
     readonly candidate_commit: string;
     readonly fencing_token: number;
     readonly command_id: string;
-  }) => Promise<{ readonly status: "published" } | { readonly status: "failed"; readonly reason: string }>;
+  }) => Promise<
+    { readonly status: "published" } | { readonly status: "failed"; readonly reason: string }
+  >;
 }
 
 /**
@@ -559,8 +550,7 @@ function findingBlocks(finding: FeedbackRecord): readonly string[] {
 
 function isOpenFinding(finding: FeedbackRecord): boolean {
   return (
-    finding.type === "Finding" &&
-    (finding.status === "proposed" || finding.status === "accepted")
+    finding.type === "Finding" && (finding.status === "proposed" || finding.status === "accepted")
   );
 }
 
@@ -941,10 +931,7 @@ export function createCandidateIntegrationController(
             "terminal state validated the candidate may integrate",
         );
       }
-      if (
-        lease.task_id !== taskSpec.id ||
-        lease.task_digest !== taskSemanticDigest(taskSpec)
-      ) {
+      if (lease.task_id !== taskSpec.id || lease.task_digest !== taskSemanticDigest(taskSpec)) {
         throw new CandidateIntegrationError(
           "evidence_binding_mismatch",
           `lease ${lease.lease_id} does not bind the approved specification of task ${taskSpec.id}`,
@@ -987,7 +974,9 @@ export function createCandidateIntegrationController(
       // Layer 1: task workspace evidence, resolved from authoritative facts and
       // re-validated field by field.
       const taskEvidence = input.evidence.map((ref) => {
-        const record = facts.gate_evidence.find((candidateRecord) => candidateRecord.digest === ref.digest);
+        const record = facts.gate_evidence.find(
+          (candidateRecord) => candidateRecord.digest === ref.digest,
+        );
         if (record === undefined) {
           throw new CandidateIntegrationError(
             "evidence_binding_mismatch",
@@ -1074,9 +1063,7 @@ export function createCandidateIntegrationController(
 
       // command_id replay: discover the accepted record instead of advancing
       // twice; complete a lost ref move when the CAS response was lost.
-      const existing = facts.wave_integrations.find(
-        (record) => record.command_id === command_id,
-      );
+      const existing = facts.wave_integrations.find((record) => record.command_id === command_id);
       if (existing !== undefined) {
         if (
           existing.wave_index !== candidate.wave_index ||
@@ -1151,10 +1138,7 @@ export function createCandidateIntegrationController(
         }
         const latest = chain.latest_by_task.get(taskId);
         if (latest === undefined) {
-          throw new CandidateIntegrationError(
-            "lease_not_current",
-            `task ${taskId} has no lease`,
-          );
+          throw new CandidateIntegrationError("lease_not_current", `task ${taskId} has no lease`);
         }
         if (latest.state !== "released") {
           // A newer attempt (granted or terminal) supersedes the validated
@@ -1165,11 +1149,8 @@ export function createCandidateIntegrationController(
             ?.evidence_digests.map((digest) =>
               facts.gate_evidence.find((record) => record.digest === digest),
             )
-            .map(
-              (record) =>
-                record === undefined
-                  ? undefined
-                  : schedulingEvidenceBindingOf(record)?.fencing_token,
+            .map((record) =>
+              record === undefined ? undefined : schedulingEvidenceBindingOf(record)?.fencing_token,
             )
             .find((token) => token !== undefined);
           if (validatedToken !== undefined && validatedToken !== latest.fencing_token) {
@@ -1285,7 +1266,9 @@ export function createCandidateIntegrationController(
       // the ref unchanged and never moves Tasks back to retry_pending.
       const tasks = wave.task_ids.map(
         (taskId) =>
-          dag.tasks.find((candidateTask) => candidateTask.id === taskId) as Protocol13TaskSpecification,
+          dag.tasks.find(
+            (candidateTask) => candidateTask.id === taskId,
+          ) as Protocol13TaskSpecification,
       );
       const waveEvidence = await gates.runWaveGates({
         dag,
@@ -1495,5 +1478,4 @@ export function createCandidateIntegrationController(
       return record;
     },
   };
-
 }

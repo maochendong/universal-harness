@@ -18,6 +18,7 @@
     "test:e2e": "vitest run --config vitest.workspace.ts tests/e2e",
     "test:e2e:dashboard": "playwright test --config playwright.dashboard.config.ts",
     "test:fault": "vitest run --config vitest.workspace.ts tests/fault",
+    "test:m4": "vitest run --config vitest.workspace.ts packages/conformance/test/scheduling.conformance.test.ts tests/e2e/m4-local-multi-agent.test.ts tests/e2e/m4-sequential-compatibility.test.ts tests/fault/m4-scheduler-crash-matrix.test.ts tests/security/m4-scheduler-boundaries.test.ts && vitest run --config vitest.performance.ts tests/performance/m4-wave-compiler.test.ts tests/performance/m4-scheduler-selection.test.ts tests/performance/m4-scheduler-read-api.test.ts tests/performance/m4-sqlite-rebuild.test.ts",
     "test:performance": "vitest run --config vitest.performance.ts",
     "test:release": "pnpm test:security && pnpm test:fault && pnpm test:performance && pnpm test:e2e && pnpm test:e2e:dashboard && pnpm pack:smoke && node scripts/generate-acceptance-report.mjs",
     "test:security": "vitest run --config vitest.workspace.ts tests/security",

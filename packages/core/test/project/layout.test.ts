@@ -78,7 +78,13 @@ describe("managed project layout", () => {
   });
 
   it("excludes local-only state and forbids text merges of ledger shards", () => {
-    for (const excluded of ["cache/", "staging/", "raw-traces/", "generated/providers/"]) {
+    for (const excluded of [
+      "cache/",
+      "staging/",
+      "raw-traces/",
+      "generated/providers/",
+      "locks/",
+    ]) {
       expect(MANAGED_GITIGNORE_CONTENT).toContain(excluded);
     }
     expect(MANAGED_GITATTRIBUTES_CONTENT).toContain("ledger/** -merge");

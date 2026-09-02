@@ -1,9 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import {
-  buildTaskLeaseRecord,
-  type TaskLeaseRecord,
-} from "@universal-harness-internal/core";
+import { buildTaskLeaseRecord, type TaskLeaseRecord } from "@universal-harness-internal/core";
 
 import type { Protocol13TaskSpecification } from "../../src/planning/task.js";
 import {
@@ -304,14 +301,14 @@ describe("selectReadyTasks", () => {
   it("clamps the selection to the lower of free slots and effective concurrency", () => {
     const dag = fixtureDag([schedTask("task_a"), schedTask("task_b"), schedTask("task_c")]);
     expect(
-      selectReadyTasks(
-        selection({ dag, available_slots: 1, effective_max_concurrency: 3 }),
-      ).map((entry) => entry.task.id),
+      selectReadyTasks(selection({ dag, available_slots: 1, effective_max_concurrency: 3 })).map(
+        (entry) => entry.task.id,
+      ),
     ).toEqual(["task_a"]);
     expect(
-      selectReadyTasks(
-        selection({ dag, available_slots: 3, effective_max_concurrency: 2 }),
-      ).map((entry) => entry.task.id),
+      selectReadyTasks(selection({ dag, available_slots: 3, effective_max_concurrency: 2 })).map(
+        (entry) => entry.task.id,
+      ),
     ).toEqual(["task_a", "task_b"]);
     expect(
       selectReadyTasks(selection({ dag, available_slots: 0, effective_max_concurrency: 2 })),
