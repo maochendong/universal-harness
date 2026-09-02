@@ -1,69 +1,54 @@
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { rmSync } from "node:fs";
 
 import { contentDigest } from "../../packages/core/src/index.js";
 import { afterEach, describe, expect, it } from "vitest";
 
-import { projectSchedulerState } from "../../packages/runtime/src/scheduling/projection.js";
-import { buildSchedulerReadModelBenchmarkFixture } from "../../packages/runtime/src/scheduling/read-model.js";
-import { createSqliteSchedulerProjectionStore } from "../../packages/runtime/src/scheduling/sqlite-projection.js";
+import { cleanupDirectories } from "../../packages/runtime/test/bootstrap/helpers.js";
+import { createM4E2eFixture } from "../e2e/m4-scheduler-fixture.js";
 
-const roots: string[] = [];
+afterEach(cleanupDirectories);
 
-afterEach(() => {
-  for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
-});
+type SchedulerModel = Awaited<
+  ReturnType<Awaited<ReturnType<typeof createM4E2eFixture>>["host"]["readSchedulerModel"]>
+>;
 
-function authorityDigest(projection: ReturnType<typeof projectSchedulerState>): string {
+function authorityDigest(model: SchedulerModel): string {
   return contentDigest({
-    operation_id: projection.operation_id,
-    plan_digest: projection.plan_digest,
-    baseline_commit: projection.baseline_commit,
-    tasks: projection.tasks.map((task) => ({
-      task_id: task.task_id,
-      wave_index: task.wave_index,
-      status: task.status,
-      provisional: task.provisional,
-    })),
+    operation_id: model.operation.operation_id,
+    capability_status: model.capability_status,
+    plan: model.plan,
+    tasks: model.tasks,
+    budget: model.budget,
+    approvals: model.approvals,
+    findings: model.findings,
   });
 }
 
 describe("m4 SQLite rebuild release gate", () => {
-  it("preserves the authoritative scheduler digest after deleting the live projection", async () => {
-    const root = mkdtempSync(join(tmpdir(), "harness-m4-rebuild-"));
-    roots.push(root);
-    const databasePath = join(root, "scheduler.sqlite");
-    const fixture = buildSchedulerReadModelBenchmarkFixture({
-      task_count: 1_000,
-      wave_size: 8,
-      integrated_waves: 20,
+  it("restarts the production Host from real Ledger facts after deleting SQLite", async () => {
+    const fixture = await createM4E2eFixture({
+      profileId: "governed",
+      sqliteProjection: true,
     });
-    const facts = { dag: fixture.dag, ...fixture.facts };
-    const original = projectSchedulerState(facts, null);
-
-    const first = createSqliteSchedulerProjectionStore({ path: databasePath });
-    await first.replace({
-      operation_id: fixture.dag.operation_id,
-      observed_at: "2026-08-31T00:10:00.000Z",
-      slots: [{ slot_id: "slot_1", state: "idle" }],
-      tasks: [],
+    const outcome = await fixture.host.parallelExecution.port.run({
+      operation_id: fixture.operationId,
+      iteration_id: "iteration_m4_release_e2e",
+      capability_plan_digest: fixture.capabilityPlan.record_digest,
+      expected_plan_digest: fixture.planDigest,
+      driver_lock: fixture.host.parallelExecution.driverLock(),
     });
-    first.close();
-    rmSync(databasePath, { force: true });
+    expect(outcome.status).toBe("completed");
 
-    const rebuilt = createSqliteSchedulerProjectionStore({ path: databasePath });
-    await rebuilt.replace({
-      operation_id: fixture.dag.operation_id,
-      observed_at: "2026-08-31T00:11:00.000Z",
-      slots: [{ slot_id: "slot_2", state: "idle" }],
-      tasks: [],
-    });
-    const live = await rebuilt.read(fixture.dag.operation_id);
-    rebuilt.close();
+    const observed = await fixture.host.readSchedulerModel(fixture.operationId);
+    expect(observed.operation.live_state).toBe("observed");
+    expect(fixture.projectionStorePath).toMatch(/scheduler-projection-real\.sqlite$/u);
+    rmSync(fixture.projectionStorePath, { force: true });
 
-    const afterRebuild = projectSchedulerState(facts, live);
-    expect(authorityDigest(afterRebuild)).toBe(authorityDigest(original));
-    expect(afterRebuild.live_state).toBe("observed");
-  });
+    const restarted = fixture.createHost();
+    const rebuilt = await restarted.readSchedulerModel(fixture.operationId);
+    expect(rebuilt.operation.live_state).toBe("rebuilding");
+    expect(rebuilt.slots).toEqual([]);
+    expect(authorityDigest(rebuilt)).toBe(authorityDigest(observed));
+    expect(rebuilt.tasks.every((task) => task.status === "integrated")).toBe(true);
+  }, 120_000);
 });

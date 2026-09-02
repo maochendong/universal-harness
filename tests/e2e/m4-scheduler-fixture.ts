@@ -178,6 +178,10 @@ export interface M4E2eFixture {
   readonly intervals: TaskInterval[];
   readonly operationRef: string;
   readonly gateWorkspaceRoots: readonly string[];
+  /** Disposable live-store location; ":memory:" when persistence is not under test. */
+  readonly projectionStorePath: string;
+  /** Start a fresh production Host over the same persisted Ledger/Git facts. */
+  createHost(): ProjectSchedulerHost;
   runGenericTail(): Promise<OrchestrationOutcome>;
 }
 
@@ -188,6 +192,7 @@ export interface M4E2eFixture {
  */
 export async function createM4E2eFixture(options?: {
   readonly profileId?: "standard" | "governed";
+  readonly sqliteProjection?: boolean;
 }): Promise<M4E2eFixture> {
   const profileId = options?.profileId ?? "governed";
   const setupIds = ids("setup");
@@ -424,65 +429,70 @@ export async function createM4E2eFixture(options?: {
   const intervals: TaskInterval[] = [];
   const gateWorkspaceRoots: string[] = [];
   const hostIds = ids("host");
-  const host = createProjectSchedulerHost({
-    projectRoot,
-    readBaseline: () => headOf(projectRoot),
-    agentSlotFactory: {
-      adapter_manifest_digest: contentDigest({ manifest: MANIFEST }),
-      manifest: MANIFEST,
-      create: ({ slot_id, worktree_root }): AgentAdapter => ({
-        name: "deterministic-managed-release-fixture",
+  const projectionStorePath = options?.sqliteProjection
+    ? join(projectRoot, ".harness", "scheduler-projection-real.sqlite")
+    : ":memory:";
+  const createHost = (): ProjectSchedulerHost =>
+    createProjectSchedulerHost({
+      projectRoot,
+      readBaseline: () => headOf(projectRoot),
+      agentSlotFactory: {
+        adapter_manifest_digest: contentDigest({ manifest: MANIFEST }),
         manifest: MANIFEST,
-        async run(envelope) {
-          const start = Date.now();
-          const scope = envelope.proposed_write_paths[0];
-          if (scope === undefined) throw new Error("task has no declared write scope");
-          const directory = join(worktree_root, scope);
-          mkdirSync(directory, { recursive: true });
-          if (envelope.task_id === "task_api" || envelope.task_id === "task_ui") {
-            await barrier.wait();
-          }
-          if (envelope.task_id === "task_contract") {
-            readFileSync(join(worktree_root, "src/task_api/outcome.ts"), "utf8");
-            readFileSync(join(worktree_root, "src/task_ui/outcome.ts"), "utf8");
-          }
-          if (envelope.task_id === "task_release") {
-            readFileSync(join(worktree_root, "src/task_contract/outcome.ts"), "utf8");
-          }
-          writeFileSync(
-            join(directory, "outcome.ts"),
-            `export const task = ${JSON.stringify(envelope.task_id)};\n`,
-            "utf8",
-          );
-          const end = Date.now();
-          intervals.push({
-            task_id: envelope.task_id,
-            run_id: envelope.digest,
-            slot_id,
-            start_ms: start,
-            end_ms: end,
-          });
-          return successResult(envelope.task_id, Math.max(1, end - start));
-        },
-      }),
-    },
-    adapterCapabilities: ["fs.read", "fs.write"],
-    maxConcurrency: 2,
-    policyResolver: (action) =>
-      buildDecision({
-        outcome: "allow",
-        reasons: [],
-        action_digest: actionDigest(action),
-        effective: mergePolicyLayers([]).effective,
-      }),
-    projectionStorePath: ":memory:",
-    gateSuiteForWorkspace: (workspaceRoot) => {
-      gateWorkspaceRoots.push(workspaceRoot);
-      return createDefaultGateSuite(workspaceRoot);
-    },
-    now: () => FIXED_NOW,
-    newId: hostIds,
-  });
+        create: ({ slot_id, worktree_root }): AgentAdapter => ({
+          name: "deterministic-managed-release-fixture",
+          manifest: MANIFEST,
+          async run(envelope) {
+            const start = Date.now();
+            const scope = envelope.proposed_write_paths[0];
+            if (scope === undefined) throw new Error("task has no declared write scope");
+            const directory = join(worktree_root, scope);
+            mkdirSync(directory, { recursive: true });
+            if (envelope.task_id === "task_api" || envelope.task_id === "task_ui") {
+              await barrier.wait();
+            }
+            if (envelope.task_id === "task_contract") {
+              readFileSync(join(worktree_root, "src/task_api/outcome.ts"), "utf8");
+              readFileSync(join(worktree_root, "src/task_ui/outcome.ts"), "utf8");
+            }
+            if (envelope.task_id === "task_release") {
+              readFileSync(join(worktree_root, "src/task_contract/outcome.ts"), "utf8");
+            }
+            writeFileSync(
+              join(directory, "outcome.ts"),
+              `export const task = ${JSON.stringify(envelope.task_id)};\n`,
+              "utf8",
+            );
+            const end = Date.now();
+            intervals.push({
+              task_id: envelope.task_id,
+              run_id: envelope.digest,
+              slot_id,
+              start_ms: start,
+              end_ms: end,
+            });
+            return successResult(envelope.task_id, Math.max(1, end - start));
+          },
+        }),
+      },
+      adapterCapabilities: ["fs.read", "fs.write"],
+      maxConcurrency: 2,
+      policyResolver: (action) =>
+        buildDecision({
+          outcome: "allow",
+          reasons: [],
+          action_digest: actionDigest(action),
+          effective: mergePolicyLayers([]).effective,
+        }),
+      projectionStorePath,
+      gateSuiteForWorkspace: (workspaceRoot) => {
+        gateWorkspaceRoots.push(workspaceRoot);
+        return createDefaultGateSuite(workspaceRoot);
+      },
+      now: () => FIXED_NOW,
+      newId: hostIds,
+    });
+  const host = createHost();
   return {
     projectRoot,
     operationId,
@@ -493,6 +503,8 @@ export async function createM4E2eFixture(options?: {
     intervals,
     operationRef: operationRefFor(operationId),
     gateWorkspaceRoots,
+    projectionStorePath,
+    createHost,
     async runGenericTail() {
       const tailDeps: OrchestratorDependencies = {
         ...deps,
