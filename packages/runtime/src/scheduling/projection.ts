@@ -268,6 +268,12 @@ export function projectSchedulerState(
       status = "cancelled";
     } else if (hasOpenBlocker(facts.findings, task.id)) {
       status = "blocked";
+    } else if (facts.approvals.some((request) => request.object_id === task.id)) {
+      // A retry approval is requested only after the previous Lease reached a
+      // terminal state. Pending approval must therefore outrank the normal
+      // retry_pending projection; otherwise the next drive keeps selecting
+      // and re-requesting the same controlled retry forever.
+      status = "awaiting_approval";
     } else if (lease?.state === "granted") {
       status =
         terminalRun === undefined ? "running" : evidence.valid ? "integration_queued" : "verifying";
@@ -288,8 +294,6 @@ export function projectSchedulerState(
       } else {
         status = "retry_pending";
       }
-    } else if (facts.approvals.some((request) => request.object_id === task.id)) {
-      status = "awaiting_approval";
     } else {
       const dependenciesIntegrated = task.dependencies.every((dependency) =>
         integratedTaskIds.has(dependency),

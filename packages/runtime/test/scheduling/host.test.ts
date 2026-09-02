@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
@@ -20,9 +21,11 @@ import type {
 } from "@universal-harness-internal/plugin-sdk";
 
 import {
+  ApprovalService,
   createLedgerSchedulerAuthority,
   createNewProject,
   createProjectSchedulerHost,
+  operationRefFor,
   type ProjectSchedulerHost,
 } from "../../src/index.js";
 import { commitArtifacts } from "../../src/orchestration/kernel-coordinator.js";
@@ -91,6 +94,38 @@ function stubResult(): AgentRunResult {
   };
 }
 
+function crashResult(): AgentRunResult {
+  return {
+    ...stubResult(),
+    outcome: "failed",
+    termination_reason: "adapter_failure",
+    completion_claimed: false,
+    usage: {
+      input_tokens: 60,
+      output_tokens: 40,
+      total_tokens: 100,
+      duration_ms: 5,
+      metering: "provider_reported",
+    },
+    budget_observations: [
+      {
+        dimension: "steps",
+        availability: "measured",
+        used: 2,
+        limit: 10,
+        enforcement: "harness",
+      },
+      {
+        dimension: "tokens",
+        availability: "measured",
+        used: 100,
+        limit: 1_000,
+        enforcement: "harness",
+      },
+    ],
+  };
+}
+
 /** Sequential mint; workflow and ledger ids stay deterministic per test. */
 function sequentialIds(): (kind: string) => string {
   const counters = new Map<string, number>();
@@ -99,6 +134,19 @@ function sequentialIds(): (kind: string) => string {
     counters.set(kind, next);
     return `${kind}_h${String(next).padStart(3, "0")}`;
   };
+}
+
+function readGitRef(root: string, ref: string): string | undefined {
+  try {
+    const value = execFileSync("git", ["rev-parse", "--verify", "--quiet", ref], {
+      cwd: root,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"],
+    }).trim();
+    return value === "" ? undefined : value;
+  } catch {
+    return undefined;
+  }
 }
 
 interface DrivenProject {
@@ -111,7 +159,9 @@ interface DrivenProject {
   readonly planContentDigest: string;
   readonly lockDirectory: string;
   readonly projectionStorePath?: string;
-  readonly createHost: () => ProjectSchedulerHost;
+  readonly createHost: (overrides?: {
+    readonly adapterManifestDigest?: string;
+  }) => ProjectSchedulerHost;
   readonly runStarted: Promise<void>;
 }
 
@@ -126,6 +176,8 @@ async function makeDrivenProject(
     readonly sqliteProjection?: boolean;
     readonly abortableRun?: boolean;
     readonly ignoreAbort?: boolean;
+    readonly crashFirstRun?: boolean;
+    readonly approvalActions?: readonly ("dispatch_task" | "retry_task" | "integrate_wave")[];
   } = {},
 ): Promise<DrivenProject> {
   // One shared mint across bootstrap and setup: the Ledger rejects two events
@@ -328,6 +380,9 @@ async function makeDrivenProject(
             `export const task = ${JSON.stringify(envelope.task_id)};\n`,
           );
           markRunStarted?.();
+          if (options.crashFirstRun && adapterRunCount === 1) {
+            return Promise.resolve(crashResult());
+          }
           if (options.abortableRun || (options.ignoreAbort && adapterRunCount === 1)) {
             return new Promise<AgentRunResult>((resolve) => {
               runOptions.signal?.addEventListener(
@@ -354,18 +409,36 @@ async function makeDrivenProject(
     },
     adapterCapabilities: ["fs.read", "fs.write"],
     maxConcurrency: 2,
-    policyResolver: (action) =>
-      buildDecision({
-        outcome: "allow",
-        reasons: [],
+    policyResolver: (action) => {
+      const requiresApproval = options.approvalActions?.includes(
+        action.kind as "dispatch_task" | "retry_task" | "integrate_wave",
+      );
+      return buildDecision({
+        outcome:
+          requiresApproval && action.approval_digest === undefined ? "requires_approval" : "allow",
+        reasons: requiresApproval ? ["release policy requires approval"] : [],
         action_digest: actionDigest(action),
         effective: mergePolicyLayers([]).effective,
-      }),
+        ...(action.approval_digest === undefined
+          ? {}
+          : { approval_digest: action.approval_digest }),
+      });
+    },
     projectionStorePath: projectionStorePath ?? ":memory:",
     now: () => FIXED_NOW,
     newId: hostNewId,
   } as const;
-  const createHost = (): ProjectSchedulerHost => createProjectSchedulerHost(hostOptions);
+  const createHost = (
+    overrides: { readonly adapterManifestDigest?: string } = {},
+  ): ProjectSchedulerHost =>
+    createProjectSchedulerHost({
+      ...hostOptions,
+      agentSlotFactory: {
+        ...hostOptions.agentSlotFactory,
+        adapter_manifest_digest:
+          overrides.adapterManifestDigest ?? hostOptions.agentSlotFactory.adapter_manifest_digest,
+      },
+    });
   const host = createHost();
   return {
     projectRoot,
@@ -383,6 +456,113 @@ async function makeDrivenProject(
 }
 
 describe("createProjectSchedulerHost", () => {
+  it.each([
+    { action: "dispatch_task" as const, crashFirstRun: false },
+    { action: "retry_task" as const, crashFirstRun: true },
+    { action: "integrate_wave" as const, crashFirstRun: false },
+  ])(
+    "resumes a digest-bound $action after its committed workflow approval",
+    async (scenario) => {
+      const fixture = await makeDrivenProject({
+        approvalActions: [scenario.action],
+        crashFirstRun: scenario.crashFirstRun,
+      });
+      const input = {
+        operation_id: fixture.operationId,
+        iteration_id: ITERATION_ID,
+        capability_plan_digest: fixture.capabilityPlan.record_digest,
+        expected_plan_digest: fixture.planContentDigest,
+      } as const;
+      const first = await fixture.host.parallelExecution.port.run({
+        ...input,
+        driver_lock: fixture.host.parallelExecution.driverLock(),
+      });
+      expect(first.status).toBe("paused");
+      const before = await createLedgerSchedulerAuthority({ deps: fixture.deps }).readFacts(
+        fixture.operationId,
+      );
+      if (scenario.action === "dispatch_task") {
+        expect(before.leases).toEqual([]);
+        expect(before.runs).toEqual([]);
+      }
+
+      const approvals = new ApprovalService(fixture.deps);
+      let resumed = first;
+      for (let approved = 0; approved < 4 && resumed.status === "paused"; approved += 1) {
+        const request = approvals.nextPendingRequest(fixture.operationId);
+        expect(request?.object_type).toBe("scheduler_action");
+        if (request === undefined) throw new Error("scheduler approval request missing");
+        await approvals.resolveDecision({
+          requestId: request.request_id,
+          decision: "approve",
+          objectDigest: request.object_digest,
+          actor: "human:reviewer",
+        });
+        resumed = await fixture.host.parallelExecution.port.run({
+          ...input,
+          driver_lock: fixture.host.parallelExecution.driverLock(),
+        });
+      }
+      expect(resumed.status).toBe("completed");
+      const after = await createLedgerSchedulerAuthority({ deps: fixture.deps }).readFacts(
+        fixture.operationId,
+      );
+      expect(
+        after.leases.filter((lease) => lease.state === "granted").length,
+      ).toBeGreaterThanOrEqual(2);
+      expect(
+        after.runs.filter((run) => run.record_kind === "run_terminated").length,
+      ).toBeGreaterThanOrEqual(2);
+      if (scenario.action === "retry_task") {
+        expect(after.leases.some((lease) => lease.retry_kind === "executor_retry")).toBe(true);
+      }
+    },
+    90_000,
+  );
+
+  it("keeps a stale adapter-bound approval from advancing Lease, Run or operation ref", async () => {
+    const fixture = await makeDrivenProject({ approvalActions: ["dispatch_task"] });
+    const input = {
+      operation_id: fixture.operationId,
+      iteration_id: ITERATION_ID,
+      capability_plan_digest: fixture.capabilityPlan.record_digest,
+      expected_plan_digest: fixture.planContentDigest,
+    } as const;
+    const first = await fixture.host.parallelExecution.port.run({
+      ...input,
+      driver_lock: fixture.host.parallelExecution.driverLock(),
+    });
+    expect(first.status).toBe("paused");
+    const approvals = new ApprovalService(fixture.deps);
+    const request = approvals.nextPendingRequest(fixture.operationId);
+    if (request === undefined) throw new Error("scheduler approval request missing");
+    await approvals.resolveDecision({
+      requestId: request.request_id,
+      decision: "approve",
+      objectDigest: request.object_digest,
+      actor: "human:reviewer",
+    });
+    const authority = createLedgerSchedulerAuthority({ deps: fixture.deps });
+    const before = await authority.readFacts(fixture.operationId);
+    const beforeRef = readGitRef(fixture.projectRoot, operationRefFor(fixture.operationId));
+
+    const driftedHost = fixture.createHost({
+      adapterManifestDigest: contentDigest({ drift: true }),
+    });
+    const drifted = await driftedHost.parallelExecution.port.run({
+      ...input,
+      driver_lock: driftedHost.parallelExecution.driverLock(),
+    });
+
+    expect(drifted.status).toBe("paused");
+    const after = await authority.readFacts(fixture.operationId);
+    expect(after.leases).toEqual(before.leases);
+    expect(after.runs).toEqual(before.runs);
+    expect(readGitRef(fixture.projectRoot, operationRefFor(fixture.operationId))).toBe(beforeRef);
+    const replacement = approvals.nextPendingRequest(fixture.operationId);
+    expect(replacement?.object_digest).not.toBe(request.object_digest);
+  }, 60_000);
+
   it("drives a real two-task/two-wave operation to completion", async () => {
     const fixture = await makeDrivenProject();
     const outcome = await fixture.host.parallelExecution.port.run({

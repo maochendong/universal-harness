@@ -870,6 +870,48 @@ export function createCandidateIntegrationController(
         }
       }
 
+      // An approval pause happens after candidate validation releases every
+      // Lease and commits candidate-layer Evidence. On resume (including a
+      // fresh process), that Evidence is the authoritative identity of the
+      // already validated candidate. Rebuilding the same tree into a new Git
+      // commit would produce a different OID because commit metadata changes,
+      // invalidating the exact approval and Evidence bindings.
+      const latestLeases = buildTaskLeaseChain(facts.leases).latest_by_task;
+      const validatedCommits = new Set<string>();
+      let allValidated = true;
+      for (const taskId of approved.task_ids) {
+        if (latestLeases.get(taskId)?.state !== "released") {
+          allValidated = false;
+          break;
+        }
+        const commits = facts.gate_evidence
+          .map((record) => schedulingEvidenceBindingOf(record))
+          .filter(
+            (binding): binding is SchedulingEvidenceBinding =>
+              binding?.layer === "candidate" && binding.task_id === taskId,
+          )
+          .map((binding) => binding.commit);
+        if (commits.length === 0) {
+          allValidated = false;
+          break;
+        }
+        for (const commit of commits) validatedCommits.add(commit);
+      }
+      if (allValidated && validatedCommits.size === 1) {
+        const candidateCommit = [...validatedCommits][0] as string;
+        const root = await git.createCandidateWorktree({
+          base_commit: candidateCommit,
+          wave_index: approved.wave_index,
+        });
+        candidateRoots.set(candidateCommit, root);
+        return {
+          wave_index: approved.wave_index,
+          base_commit: base,
+          candidate_commit: candidateCommit,
+          applied_task_ids: [...approved.task_ids],
+        };
+      }
+
       const root = await git.createCandidateWorktree({
         base_commit: base,
         wave_index: approved.wave_index,
@@ -1479,18 +1521,13 @@ export function createCandidateIntegrationController(
       // death after CAS is recovered by the same command on restart — never
       // by accepting a different candidate or force-moving a ref.
       if (!refAlreadyAtCandidate) {
-        let moved = false;
-        try {
-          moved = await git.compareAndSwapRef({
-            ref,
-            expected: currentRef,
-            next: candidate.candidate_commit,
-          });
-        } catch (error) {
-          // An external Git implementation may report an uncertain result.
-          // Persist nothing here: replay proves the ref before sealing Ledger.
-          throw error;
-        }
+        // An external Git implementation may throw for an uncertain result;
+        // propagate it without persisting, so replay proves the ref first.
+        let moved = await git.compareAndSwapRef({
+          ref,
+          expected: currentRef,
+          next: candidate.candidate_commit,
+        });
         if (!moved) {
           const observed = await git.readRef(ref);
           if (observed === candidate.candidate_commit) {

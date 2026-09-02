@@ -11,12 +11,15 @@ import {
   harnessRootFor,
   readManagedManifest,
   resolveHarnessPath,
+  sha256Hex,
   verifyRecordEnvelope,
   type CapabilityPlanRecord,
   type EdgeRecord,
   type NodeRecord,
 } from "@universal-harness-internal/core";
 import { assessUnattendedEligibility } from "@universal-harness-internal/plugin-sdk";
+
+import { readApprovalDecisions, readApprovalRequests } from "../approval/request.js";
 
 import { compileContextBundle, type ContextCandidate } from "../context/compiler.js";
 import { buildGateEvidence, type GateEvidenceRecord } from "../gates/evidence.js";
@@ -38,12 +41,14 @@ import {
 } from "../orchestration/scheduler-runtime.js";
 import { readExecutionPlanContent, type ExecutionPlanContent } from "../planning/execution-plan.js";
 import { taskSemanticDigest, type Protocol13TaskSpecification } from "../planning/task.js";
-import type { AdapterControlProfile } from "../policy/action.js";
+import { actionDigest, type AdapterControlProfile } from "../policy/action.js";
+import { buildDecision } from "../policy/decision.js";
 import { issueGrant, type CapabilityGrant } from "../policy/capability-grant.js";
 import { mergePolicyLayers } from "../policy/evaluator.js";
 import { createGitWorktreeWorkspacePort } from "../tdd/git-workspace.js";
 import {
   WorkflowEngine,
+  ledgerRepositoryFor,
   readCurrentOperation,
   type WorkflowDependencies,
 } from "../workflow/operation.js";
@@ -64,9 +69,10 @@ import {
 import {
   createInMemoryPolicyDecisionPort,
   createPolicyDecisionAdapter,
+  schedulerPolicyAction,
   type SchedulerPolicyResolver,
 } from "./policy-adapters.js";
-import type { SchedulerProjectionStore } from "./ports.js";
+import type { PolicyDecisionPort, SchedulerProjectionStore } from "./ports.js";
 import { readSchedulerModel, type SchedulerReadModel } from "./read-model.js";
 import {
   createLocalTaskScheduler,
@@ -521,13 +527,105 @@ export function createProjectSchedulerHost(
 
   /** Grants this host issued, keyed by Task semantic digest (adapter readGrant). */
   const issuedGrants = new Map<string, CapabilityGrant>();
-  const policy = options.policyResolver
-    ? createInMemoryPolicyDecisionPort({ resolve: options.policyResolver })
-    : createPolicyDecisionAdapter({
-        readLayers: () => [],
-        readGrant: (taskDigest) =>
-          taskDigest === undefined ? undefined : issuedGrants.get(taskDigest),
+  const customPolicy =
+    options.policyResolver === undefined
+      ? undefined
+      : createInMemoryPolicyDecisionPort({ resolve: options.policyResolver });
+
+  const decideBasePolicy = async (
+    input: Parameters<PolicyDecisionPort["decide"]>[0],
+  ): Promise<Awaited<ReturnType<PolicyDecisionPort["decide"]>>> => {
+    if (customPolicy !== undefined) return customPolicy.decide(input);
+    return createPolicyDecisionAdapter({
+      readLayers: () => [],
+      readGrant: (taskDigest) => {
+        if (taskDigest === undefined) return undefined;
+        const grant = issuedGrants.get(taskDigest);
+        if (
+          grant === undefined ||
+          input.approval_digest === undefined ||
+          grant.approval_digests.includes(input.approval_digest)
+        ) {
+          return grant;
+        }
+        // A retry may reuse an earlier, narrower Grant. The newly committed
+        // approval must be represented in the ephemeral policy-evaluation
+        // view; issueTaskGrant below then persists the exact approved digest
+        // in the replacement Grant used by the new Run.
+        return issueGrant(
+          {
+            grant_id: grant.grant_id,
+            task_id: grant.task_id,
+            capabilities: grant.capabilities,
+            read_paths: grant.read_paths,
+            write_paths: grant.write_paths,
+            state_fields: grant.state_fields,
+            tools: grant.tools,
+            phase: grant.phase,
+            budget: grant.budget,
+            approval_digests: [...grant.approval_digests, input.approval_digest],
+          },
+          effectivePolicy,
+        );
+      },
+    }).decide(input);
+  };
+
+  const approvalDigestFor = (
+    input: Parameters<PolicyDecisionPort["decide"]>[0],
+    objectDigest: string,
+  ): string | undefined => {
+    const workingState = new WorkflowEngine(deps).getWorkingState(input.operation_id);
+    if (workingState === undefined || workingState.approval_digests.length === 0) return undefined;
+    const operations = ledgerRepositoryFor(deps).operations();
+    const requests = readApprovalRequests(harnessRoot, operations, input.operation_id);
+    const request = requests.find(
+      (candidate) =>
+        candidate.object_type === "scheduler_action" &&
+        candidate.object_digest === objectDigest &&
+        candidate.baseline_digest === contentDigest({ baseline_commit: input.baseline_commit }) &&
+        candidate.policy_digest === input.effective_policy_digest,
+    );
+    if (request === undefined) return undefined;
+    const decision = readApprovalDecisions(harnessRoot, operations, input.operation_id).find(
+      (candidate) =>
+        candidate.request_id === request.request_id &&
+        candidate.object_digest === objectDigest &&
+        candidate.decision === "approve",
+    );
+    if (decision === undefined) return undefined;
+    const digest = sha256Hex(`${canonicalizeJson(decision)}\n`);
+    return workingState.approval_digests.includes(digest) ? digest : undefined;
+  };
+
+  const policy: PolicyDecisionPort = {
+    name: `${customPolicy?.name ?? "workflow-policy-decision"}+workflow-approval`,
+    async decide(input) {
+      const unapproved = { ...input };
+      delete unapproved.approval_digest;
+      const objectDigest = actionDigest(schedulerPolicyAction(unapproved));
+      const approvalDigest = approvalDigestFor(unapproved, objectDigest);
+      const decision = await decideBasePolicy(
+        approvalDigest === undefined
+          ? unapproved
+          : { ...unapproved, approval_digest: approvalDigest },
+      );
+      if (approvalDigest === undefined) return decision;
+      return buildDecision({
+        outcome: decision.outcome,
+        reasons: decision.reasons,
+        action_digest: objectDigest,
+        effective: {
+          fields: decision.field_traces,
+          layers: decision.layers,
+          digest: decision.effective_policy_digest,
+        },
+        ...(decision.approval_digest === undefined
+          ? {}
+          : { approval_digest: decision.approval_digest }),
       });
+    },
+  };
 
   // --- CapabilityPlan loading (kernel-equivalent scan) ------------------------
 

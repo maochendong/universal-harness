@@ -141,6 +141,37 @@ describe("schedulerPolicyAction", () => {
     expect(actionDigest(first)).toMatch(/^[a-f0-9]{64}$/u);
   });
 
+  it.each(["dispatch_task", "retry_task", "integrate_wave"] as const)(
+    "invalidates an approved %s action after plan, baseline, adapter or budget drift",
+    (kind) => {
+      const input = schedulerInput([], {
+        action: kind,
+        ...(kind === "retry_task" ? { retry_kind: "executor_retry" as const } : {}),
+        ...(kind === "integrate_wave"
+          ? { task_digest: undefined, task_remaining_budget: undefined }
+          : {}),
+      });
+      const approvedDigest = actionDigest(schedulerPolicyAction(input));
+      const drifts: readonly Partial<SchedulerPolicyInput>[] = [
+        { plan_digest: digest("c") },
+        { baseline_commit: "fedcba9876543210fedcba9876543210fedcba98" },
+        { adapter_manifest_digest: digest("n") },
+        {
+          iteration_remaining_budget: {
+            steps: input.iteration_remaining_budget.steps - 1,
+            tokens: input.iteration_remaining_budget.tokens,
+            duration_ms: input.iteration_remaining_budget.duration_ms,
+          },
+        },
+      ];
+      for (const drift of drifts) {
+        expect(actionDigest(schedulerPolicyAction({ ...input, ...drift }))).not.toBe(
+          approvedDigest,
+        );
+      }
+    },
+  );
+
   it("requires the binding each action kind needs", () => {
     for (const kind of ["dispatch_task", "retry_task"] as const) {
       expect(() =>
@@ -199,25 +230,31 @@ describe("createPolicyDecisionAdapter", () => {
     expect(decision.effective_policy_digest).toBe(mergePolicyLayers(layers).effective.digest);
   });
 
-  it("blocks a request whose effective policy digest drifted", async () => {
-    const layers = [
-      layer("pack", [field("approvals.required", "approval_union", ["dispatch_task"])]),
-    ];
-    const port = createPolicyDecisionAdapter({
-      readLayers: () => layers,
-      readGrant: () => undefined,
-    });
-    const input = schedulerInput(layers, {
-      approval_digest: APPROVAL,
-      effective_policy_digest: digest("0"),
-    });
-    const decision = await port.decide(input);
-    expect(decision.outcome).toBe("block");
-    expect(decision.approval_digest).toBeUndefined();
-    expect(decision.reasons.join("\n")).toContain(digest("0"));
-    expect(decision.reasons.join("\n")).toContain(mergePolicyLayers(layers).effective.digest);
-    expect(decision.effective_policy_digest).toBe(mergePolicyLayers(layers).effective.digest);
-  });
+  it.each(["dispatch_task", "retry_task", "integrate_wave"] as const)(
+    "blocks an approved %s request whose effective policy digest drifted",
+    async (kind) => {
+      const layers = [layer("pack", [field("approvals.required", "approval_union", [kind])])];
+      const port = createPolicyDecisionAdapter({
+        readLayers: () => layers,
+        readGrant: () => undefined,
+      });
+      const input = schedulerInput(layers, {
+        action: kind,
+        ...(kind === "retry_task" ? { retry_kind: "executor_retry" as const } : {}),
+        ...(kind === "integrate_wave"
+          ? { task_digest: undefined, task_remaining_budget: undefined }
+          : {}),
+        approval_digest: APPROVAL,
+        effective_policy_digest: digest("0"),
+      });
+      const decision = await port.decide(input);
+      expect(decision.outcome).toBe("block");
+      expect(decision.approval_digest).toBeUndefined();
+      expect(decision.reasons.join("\n")).toContain(digest("0"));
+      expect(decision.reasons.join("\n")).toContain(mergePolicyLayers(layers).effective.digest);
+      expect(decision.effective_policy_digest).toBe(mergePolicyLayers(layers).effective.digest);
+    },
+  );
 
   it("denies when the grant binds a stale effective policy digest", async () => {
     const currentLayers = [

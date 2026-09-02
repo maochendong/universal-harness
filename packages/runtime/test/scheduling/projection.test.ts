@@ -218,6 +218,25 @@ describe("projectSchedulerState status precedence", () => {
     );
   });
 
+  it("lets a pending retry approval win over retry_pending", () => {
+    const granted = grantedLease("task_a", "run_a");
+    const released = closedLease(granted, "released");
+    const projection = projectSchedulerState(
+      facts({
+        leases: [granted, released],
+        runs: [
+          runStarted("task_a", "run_a"),
+          runTerminated("task_a", "run_a", "partial", "timeout"),
+        ],
+        approvals: [pendingApproval("task_a")],
+      }),
+      null,
+    );
+    expect(projection.tasks.find((task) => task.task_id === "task_a")?.status).toBe(
+      "awaiting_approval",
+    );
+  });
+
   it("marks a second failure after the consumed retry as blocked", () => {
     const first = grantedLease("task_a", "run_a");
     const firstReleased = closedLease(first, "released");
