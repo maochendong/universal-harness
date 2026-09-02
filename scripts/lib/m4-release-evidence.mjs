@@ -1,6 +1,6 @@
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { relative, resolve } from "node:path";
+import { isAbsolute, relative, resolve } from "node:path";
 
 export const SUITE_REPORT_SCHEMA_VERSION = "harness.acceptance-suite-report/1";
 export const M4_RESULTS_SCHEMA_VERSION = "harness.m4-acceptance-results/1";
@@ -14,13 +14,14 @@ export const CANONICAL_RELEASE_COMMANDS = Object.freeze({
   "playwright-dashboard": "pnpm test:e2e:dashboard",
 });
 
-function ac(id, statement, required_suites, evidence, dogfood_rule) {
+function ac(id, statement, required_suites, evidence, dogfood_rule, readiness_rule) {
   return Object.freeze({
     acceptance_id: id,
     statement,
     required_suites: Object.freeze(required_suites),
     evidence: Object.freeze(evidence),
     ...(dogfood_rule === undefined ? {} : { dogfood_rule }),
+    ...(readiness_rule === undefined ? {} : { readiness_rule }),
   });
 }
 
@@ -107,7 +108,10 @@ export const M4_ACCEPTANCE_REGISTRY = Object.freeze([
     [
       "packages/runtime/test/scheduling/policy-decision-port.test.ts",
       "packages/runtime/test/scheduling/scheduler.test.ts",
+      ".reports/acceptance/m4-dogfood.json",
     ],
+    undefined,
+    "production_policy_source",
   ),
   ac(
     "AC-11",
@@ -158,13 +162,25 @@ export const M4_ACCEPTANCE_REGISTRY = Object.freeze([
     "AC-16",
     "Dashboard 展示完整调度与恢复状态。",
     ["main", "playwright-dashboard"],
-    ["packages/dashboard/test/scheduler-api.test.ts", "tests/e2e/dashboard-m4-scheduler.test.ts"],
+    [
+      "packages/dashboard/test/scheduler-api.test.ts",
+      "tests/e2e/dashboard-m4-scheduler.test.ts",
+      ".reports/acceptance/m4-dogfood.json",
+    ],
+    undefined,
+    "dashboard_controls",
   ),
   ac(
     "AC-17",
     "CLI run/resume/status/watch/abort 形成闭环，CLI 与 Dashboard 对同一 Operation 保持 单驱动。",
     ["main", "fault"],
-    ["packages/cli/test/m4-scheduling.test.ts", "tests/fault/m4-scheduler-crash-matrix.test.ts"],
+    [
+      "packages/cli/test/m4-scheduling.test.ts",
+      "tests/fault/m4-scheduler-crash-matrix.test.ts",
+      ".reports/acceptance/m4-dogfood.json",
+    ],
+    undefined,
+    "approval_live_driver",
   ),
   ac(
     "AC-18",
@@ -197,7 +213,9 @@ export const M4_ACCEPTANCE_REGISTRY = Object.freeze([
 export function m4Commands(registryEntry) {
   return [
     ...registryEntry.required_suites.map((suite) => CANONICAL_RELEASE_COMMANDS[suite]),
-    ...(registryEntry.dogfood_rule === undefined ? [] : ["pnpm dogfood:m4"]),
+    ...(registryEntry.dogfood_rule === undefined && registryEntry.readiness_rule === undefined
+      ? []
+      : ["pnpm dogfood:m4"]),
   ];
 }
 
@@ -358,12 +376,131 @@ export function buildCanonicalSuiteProof(report, repositoryRoot) {
   };
 }
 
+const SHA256_PATTERN = /^[a-f0-9]{64}$/u;
+
+function publicArray(value) {
+  return Array.isArray(value) ? value : [];
+}
+
+function buildProvenanceSummary(value) {
+  if (!isObject(value)) return null;
+  return {
+    implementation_commit: value.implementation_commit ?? null,
+    source_head: value.source_head ?? null,
+    source_head_matches_implementation_commit:
+      value.source_head_matches_implementation_commit ?? false,
+    tracked_source_clean: value.tracked_source_clean ?? false,
+    build_command: value.build_command ?? null,
+    clean_rebuild_from_committed_archive: value.clean_rebuild_from_committed_archive ?? false,
+    root_package_json_sha256: value.root_package_json_sha256 ?? null,
+    lockfile_sha256: value.lockfile_sha256 ?? null,
+    runtime_dependency_closure: publicArray(value.runtime_dependency_closure),
+    package_count: publicArray(value.packages).length,
+    external_runtime_dependency_count: publicArray(value.external_runtime_dependencies).length,
+    provenance_sha256: value.provenance_sha256 ?? null,
+  };
+}
+
+function providerProbeSummary(value) {
+  if (!isObject(value)) return null;
+  const verification = isObject(value.verification) ? value.verification : {};
+  return {
+    verification_status: value.verification_status ?? null,
+    task_id: value.task_id ?? null,
+    agent_outcome_claim: value.agent_outcome_claim ?? null,
+    termination_reason: value.termination_reason ?? null,
+    workspace_verification_status: verification.status ?? null,
+    output_exists: verification.output_exists ?? false,
+    output_regular_file: verification.output_regular_file ?? false,
+    output_realpath_contained: verification.output_realpath_contained ?? false,
+    exact_bytes_match: verification.exact_bytes_match ?? false,
+    only_allowed_path_changed: verification.only_allowed_path_changed ?? false,
+    unauthorized_path_count: publicArray(verification.unauthorized_paths).length,
+  };
+}
+
+function schedulerEligibilitySummary(value) {
+  if (!isObject(value)) return null;
+  return {
+    status: value.status ?? null,
+    unattended_eligible: value.unattended_eligible ?? null,
+    reasons: publicArray(value.reasons),
+    ac_06: value.ac_06 ?? null,
+    ac_20: value.ac_20 ?? null,
+    prerequisite_status: value.prerequisite_status ?? null,
+  };
+}
+
+function usageSummary(value) {
+  if (!isObject(value)) return null;
+  return {
+    metering: value.metering ?? null,
+    input_tokens: value.input_tokens ?? null,
+    output_tokens: value.output_tokens ?? null,
+    total_tokens: value.total_tokens ?? null,
+  };
+}
+
+function supervisedProbeSummary(value) {
+  if (!isObject(value)) return null;
+  return {
+    task_id: value.task_id ?? null,
+    outcome: value.outcome ?? null,
+    termination_reason: value.termination_reason ?? null,
+    output_exists: value.output_exists ?? false,
+    exact_bytes_match: value.exact_bytes_match ?? false,
+    only_allowed_path_changed: value.only_allowed_path_changed ?? false,
+    changed_path_count: publicArray(value.changed_paths).length,
+    evidence: publicArray(value.evidence).map((entry) => ({
+      kind: isObject(entry) ? (entry.kind ?? null) : null,
+      digest: isObject(entry) ? (entry.digest ?? null) : null,
+    })),
+    duration_ms: value.duration_ms ?? null,
+  };
+}
+
+function featureReadinessSummary(value) {
+  const source = isObject(value) ? value : {};
+  return {
+    production_policy_source: source.production_policy_source ?? "not_proven",
+    dashboard_provider_context: source.dashboard_provider_context ?? "not_proven",
+    dashboard_policy_proposal: source.dashboard_policy_proposal ?? "not_proven",
+    approval_live_driver_auto_wake: source.approval_live_driver_auto_wake ?? "not_proven",
+  };
+}
+
+function overlapIntervalSummary(value) {
+  return publicArray(value).map((entry) => ({
+    task_id: isObject(entry) ? (entry.task_id ?? null) : null,
+    started_at: isObject(entry) ? (entry.started_at ?? null) : null,
+    finished_at: isObject(entry) ? (entry.finished_at ?? null) : null,
+    start_ms: isObject(entry) ? (entry.start_ms ?? null) : null,
+    end_ms: isObject(entry) ? (entry.end_ms ?? null) : null,
+  }));
+}
+
+function containsMachineAbsolutePath(value) {
+  if (typeof value === "string") {
+    return isAbsolute(value) || /(?:^|\s)[A-Za-z]:[\\/]/u.test(value);
+  }
+  if (Array.isArray(value)) return value.some(containsMachineAbsolutePath);
+  if (isObject(value)) return Object.values(value).some(containsMachineAbsolutePath);
+  return false;
+}
+
+/** Persist only the frozen, redacted subset of the real-provider dogfood result. */
 export function buildCanonicalDogfoodProof(dogfood, implementationCommit) {
   if (!isObject(dogfood)) return { present: false, implementation_commit: implementationCommit };
   if (dogfood.implementation_commit !== implementationCommit) {
     throw new ReleaseEvidenceError("M4 dogfood implementation commit is stale");
   }
-  return {
+  if (
+    dogfood.credential_material_recorded !== false ||
+    dogfood.credential_material_hashed !== false
+  ) {
+    throw new ReleaseEvidenceError("M4 dogfood must not retain or hash credential material");
+  }
+  const proof = {
     present: true,
     schema_version: dogfood.schema_version,
     implementation_commit: dogfood.implementation_commit,
@@ -372,22 +509,250 @@ export function buildCanonicalDogfoodProof(dogfood, implementationCommit) {
     command: dogfood.command ?? null,
     exit_code: dogfood.exit_code ?? null,
     provider: dogfood.provider ?? null,
-    provider_version: dogfood.provider_version ?? null,
+    provider_profile: dogfood.provider_profile ?? null,
+    provider_model: dogfood.provider_model ?? null,
+    provider_model_source: dogfood.provider_model_source ?? null,
+    expected_provider_version: dogfood.expected_provider_version ?? null,
+    expected_provider_version_source: dogfood.expected_provider_version_source ?? null,
+    observed_provider_version: dogfood.observed_provider_version ?? null,
+    credential_source: dogfood.credential_source ?? null,
+    credential_material_recorded: false,
+    credential_material_hashed: false,
+    build_provenance: buildProvenanceSummary(dogfood.build_provenance),
     adapter_manifest_digest: dogfood.adapter_manifest_digest ?? null,
     requested_task_count: dogfood.requested_task_count ?? null,
     requested_max_concurrency: dogfood.requested_max_concurrency ?? null,
     requested_wave_count: dogfood.requested_wave_count ?? null,
     effective_max_concurrency: dogfood.effective_max_concurrency ?? null,
     unattended_eligible: dogfood.unattended_eligible ?? null,
-    provider_probe: dogfood.provider_probe ?? null,
-    scheduler_eligibility: dogfood.scheduler_eligibility ?? null,
+    eligibility_reasons: publicArray(dogfood.eligibility_reasons),
+    provider_probe: providerProbeSummary(dogfood.provider_probe),
+    scheduler_eligibility: schedulerEligibilitySummary(dogfood.scheduler_eligibility),
+    adapter_reported_usage: usageSummary(dogfood.adapter_reported_usage),
+    supervised_probe: supervisedProbeSummary(dogfood.supervised_probe),
+    feature_readiness: featureReadinessSummary(dogfood.feature_readiness),
     overlap_proven: dogfood.overlap_proven ?? false,
-    overlap_intervals: dogfood.overlap_intervals ?? [],
+    overlap_intervals: overlapIntervalSummary(dogfood.overlap_intervals),
     gate_status: dogfood.gate_status ?? null,
     evaluation_status: dogfood.evaluation_status ?? null,
     snapshot_status: dogfood.snapshot_status ?? null,
     wave_integration_count: dogfood.wave_integration_count ?? null,
+    raw_transcript_persisted_in_release_bundle:
+      dogfood.raw_transcript_persisted_in_release_bundle ?? null,
+    command_executable_basename: dogfood.command_executable_basename ?? null,
   };
+  if (containsMachineAbsolutePath(proof)) {
+    throw new ReleaseEvidenceError("M4 dogfood release proof contains a machine absolute path");
+  }
+  assertCanonicalDogfoodProof(proof, implementationCommit);
+  return proof;
+}
+
+function assertExactKeys(value, expected, label) {
+  if (!isObject(value)) throw new ReleaseEvidenceError(`${label} must be an object`);
+  const actual = Object.keys(value).sort();
+  const canonical = [...expected].sort();
+  if (JSON.stringify(actual) !== JSON.stringify(canonical)) {
+    throw new ReleaseEvidenceError(`${label} fields drifted from the frozen projection`);
+  }
+}
+
+function assertCanonicalDogfoodProof(proof, implementationCommit) {
+  if (!isObject(proof)) throw new ReleaseEvidenceError("M4 dogfood proof is malformed");
+  if (proof.present === false) {
+    assertExactKeys(proof, ["present", "implementation_commit"], "M4 absent dogfood proof");
+    if (proof.implementation_commit !== implementationCommit) {
+      throw new ReleaseEvidenceError("M4 absent dogfood proof commit drifted");
+    }
+    return;
+  }
+  assertExactKeys(
+    proof,
+    [
+      "present",
+      "schema_version",
+      "implementation_commit",
+      "status",
+      "blocker",
+      "command",
+      "exit_code",
+      "provider",
+      "provider_profile",
+      "provider_model",
+      "provider_model_source",
+      "expected_provider_version",
+      "expected_provider_version_source",
+      "observed_provider_version",
+      "credential_source",
+      "credential_material_recorded",
+      "credential_material_hashed",
+      "build_provenance",
+      "adapter_manifest_digest",
+      "requested_task_count",
+      "requested_max_concurrency",
+      "requested_wave_count",
+      "effective_max_concurrency",
+      "unattended_eligible",
+      "eligibility_reasons",
+      "provider_probe",
+      "scheduler_eligibility",
+      "adapter_reported_usage",
+      "supervised_probe",
+      "feature_readiness",
+      "overlap_proven",
+      "overlap_intervals",
+      "gate_status",
+      "evaluation_status",
+      "snapshot_status",
+      "wave_integration_count",
+      "raw_transcript_persisted_in_release_bundle",
+      "command_executable_basename",
+    ],
+    "M4 dogfood proof",
+  );
+  if (
+    proof.present !== true ||
+    proof.schema_version !== 1 ||
+    proof.implementation_commit !== implementationCommit ||
+    !["passed", "blocked", "failed"].includes(proof.status) ||
+    proof.credential_material_recorded !== false ||
+    proof.credential_material_hashed !== false ||
+    proof.raw_transcript_persisted_in_release_bundle !== false ||
+    containsMachineAbsolutePath(proof)
+  ) {
+    throw new ReleaseEvidenceError("M4 dogfood proof violates release safety invariants");
+  }
+  for (const [field, value] of Object.entries({
+    provider: proof.provider,
+    provider_profile: proof.provider_profile,
+    provider_model: proof.provider_model,
+    provider_model_source: proof.provider_model_source,
+    expected_provider_version: proof.expected_provider_version,
+    expected_provider_version_source: proof.expected_provider_version_source,
+    observed_provider_version: proof.observed_provider_version,
+    credential_source: proof.credential_source,
+    command_executable_basename: proof.command_executable_basename,
+  })) {
+    assertString(value, field, "M4 dogfood proof");
+  }
+  if (proof.expected_provider_version !== proof.observed_provider_version) {
+    throw new ReleaseEvidenceError("M4 dogfood provider version does not match its contract");
+  }
+  if (!SHA256_PATTERN.test(proof.adapter_manifest_digest ?? "")) {
+    throw new ReleaseEvidenceError("M4 dogfood Adapter manifest digest is invalid");
+  }
+  assertExactKeys(
+    proof.build_provenance,
+    [
+      "implementation_commit",
+      "source_head",
+      "source_head_matches_implementation_commit",
+      "tracked_source_clean",
+      "build_command",
+      "clean_rebuild_from_committed_archive",
+      "root_package_json_sha256",
+      "lockfile_sha256",
+      "runtime_dependency_closure",
+      "package_count",
+      "external_runtime_dependency_count",
+      "provenance_sha256",
+    ],
+    "M4 dogfood build provenance",
+  );
+  if (
+    proof.build_provenance.implementation_commit !== implementationCommit ||
+    proof.build_provenance.source_head !== implementationCommit ||
+    proof.build_provenance.source_head_matches_implementation_commit !== true ||
+    proof.build_provenance.tracked_source_clean !== true ||
+    proof.build_provenance.build_command !== "pnpm build" ||
+    proof.build_provenance.clean_rebuild_from_committed_archive !== true ||
+    !SHA256_PATTERN.test(proof.build_provenance.root_package_json_sha256 ?? "") ||
+    !SHA256_PATTERN.test(proof.build_provenance.lockfile_sha256 ?? "") ||
+    !SHA256_PATTERN.test(proof.build_provenance.provenance_sha256 ?? "") ||
+    !Array.isArray(proof.build_provenance.runtime_dependency_closure) ||
+    proof.build_provenance.runtime_dependency_closure.length === 0
+  ) {
+    throw new ReleaseEvidenceError("M4 dogfood build provenance is incomplete or stale");
+  }
+  assertExactKeys(
+    proof.adapter_reported_usage,
+    ["metering", "input_tokens", "output_tokens", "total_tokens"],
+    "M4 dogfood usage",
+  );
+  for (const tokenCount of [
+    proof.adapter_reported_usage.input_tokens,
+    proof.adapter_reported_usage.output_tokens,
+    proof.adapter_reported_usage.total_tokens,
+  ]) {
+    if (tokenCount !== null && (!Number.isSafeInteger(tokenCount) || tokenCount < 0)) {
+      throw new ReleaseEvidenceError("M4 dogfood usage contains an invalid token count");
+    }
+  }
+  assertExactKeys(
+    proof.provider_probe,
+    [
+      "verification_status",
+      "task_id",
+      "agent_outcome_claim",
+      "termination_reason",
+      "workspace_verification_status",
+      "output_exists",
+      "output_regular_file",
+      "output_realpath_contained",
+      "exact_bytes_match",
+      "only_allowed_path_changed",
+      "unauthorized_path_count",
+    ],
+    "M4 dogfood provider probe",
+  );
+  assertExactKeys(
+    proof.scheduler_eligibility,
+    ["status", "unattended_eligible", "reasons", "ac_06", "ac_20", "prerequisite_status"],
+    "M4 dogfood scheduler eligibility",
+  );
+  assertExactKeys(
+    proof.supervised_probe,
+    [
+      "task_id",
+      "outcome",
+      "termination_reason",
+      "output_exists",
+      "exact_bytes_match",
+      "only_allowed_path_changed",
+      "changed_path_count",
+      "evidence",
+      "duration_ms",
+    ],
+    "M4 dogfood supervised probe",
+  );
+  for (const evidence of proof.supervised_probe.evidence) {
+    assertExactKeys(evidence, ["kind", "digest"], "M4 dogfood supervised Evidence");
+    if (!SHA256_PATTERN.test(evidence.digest ?? "")) {
+      throw new ReleaseEvidenceError("M4 dogfood supervised Evidence digest is invalid");
+    }
+  }
+  for (const interval of proof.overlap_intervals) {
+    assertExactKeys(
+      interval,
+      ["task_id", "started_at", "finished_at", "start_ms", "end_ms"],
+      "M4 dogfood overlap interval",
+    );
+  }
+  assertExactKeys(
+    proof.feature_readiness,
+    [
+      "production_policy_source",
+      "dashboard_provider_context",
+      "dashboard_policy_proposal",
+      "approval_live_driver_auto_wake",
+    ],
+    "M4 dogfood feature readiness",
+  );
+  for (const status of Object.values(proof.feature_readiness)) {
+    if (!["verified", "not_proven"].includes(status)) {
+      throw new ReleaseEvidenceError("M4 dogfood feature readiness status is invalid");
+    }
+  }
 }
 
 function suiteFileState(suiteProofs, requiredSuites, path) {
@@ -407,7 +772,10 @@ function dogfoodRuleStatus(rule, proof) {
   if (proof.status === "failed") return { status: "failed", detail: "dogfood execution failed" };
   if (rule === "adapter_eligibility") {
     const ineligibleBlocked =
-      proof.provider_probe?.status === "passed" &&
+      proof.provider_probe?.verification_status === "verified" &&
+      proof.provider_probe?.workspace_verification_status === "passed" &&
+      proof.provider_probe?.exact_bytes_match === true &&
+      proof.provider_probe?.only_allowed_path_changed === true &&
       proof.unattended_eligible === false &&
       proof.effective_max_concurrency === 1 &&
       proof.scheduler_eligibility?.status === "blocked" &&
@@ -418,6 +786,8 @@ function dogfoodRuleStatus(rule, proof) {
   }
   const parallelComplete =
     proof.status === "passed" &&
+    proof.unattended_eligible === true &&
+    proof.scheduler_eligibility?.status === "eligible" &&
     proof.requested_task_count >= 4 &&
     proof.requested_wave_count >= 2 &&
     proof.effective_max_concurrency >= 2 &&
@@ -441,6 +811,29 @@ function dogfoodRuleStatus(rule, proof) {
         status: "blocked",
         detail: "full real Scheduler/Gate/Evaluate/Snapshot dogfood is incomplete",
       };
+}
+
+function readinessRuleStatus(rule, proof) {
+  if (rule === undefined) return { status: "passed", detail: "no extra readiness proof required" };
+  const readiness = proof.feature_readiness;
+  const verified =
+    rule === "production_policy_source"
+      ? readiness?.production_policy_source === "verified"
+      : rule === "dashboard_controls"
+        ? readiness?.dashboard_provider_context === "verified" &&
+          readiness?.dashboard_policy_proposal === "verified"
+        : readiness?.approval_live_driver_auto_wake === "verified";
+  return verified
+    ? { status: "passed", detail: `${rule} readiness is machine-verified` }
+    : { status: "blocked", detail: `${rule} readiness is not machine-verified` };
+}
+
+function combineProofStatuses(...proofs) {
+  for (const status of ["failed", "not_run", "blocked"]) {
+    const match = proofs.find((proof) => proof.status === status);
+    if (match !== undefined) return match;
+  }
+  return proofs[proofs.length - 1];
 }
 
 function acceptanceDigestPayload(result) {
@@ -498,7 +891,9 @@ export function buildM4AcceptanceSidecar({
         ? "not_run"
         : "passed";
     const dogfoodStatus = dogfoodRuleStatus(registryEntry.dogfood_rule, dogfoodResult);
-    const status = suiteStatus === "passed" ? dogfoodStatus.status : suiteStatus;
+    const readinessStatus = readinessRuleStatus(registryEntry.readiness_rule, dogfoodResult);
+    const supplementalStatus = combineProofStatuses(dogfoodStatus, readinessStatus);
+    const status = suiteStatus === "passed" ? supplementalStatus.status : suiteStatus;
     const result = {
       acceptance_id: registryEntry.acceptance_id,
       statement: registryEntry.statement,
@@ -511,7 +906,7 @@ export function buildM4AcceptanceSidecar({
       evidence: registryEntry.evidence,
       tracked_evidence_digest: trackedEvidenceDigest,
       suite_result_digests: requiredSuiteDigests,
-      ...(registryEntry.dogfood_rule === undefined
+      ...(registryEntry.dogfood_rule === undefined && registryEntry.readiness_rule === undefined
         ? {}
         : { dogfood_result_digest: dogfoodResultDigest }),
       design_section: "§24",
@@ -520,7 +915,7 @@ export function buildM4AcceptanceSidecar({
           ? "at least one canonical suite Evidence file failed"
           : suiteStatus === "not_run"
             ? "at least one required Evidence file is absent from canonical suite results"
-            : dogfoodStatus.detail,
+            : supplementalStatus.detail,
     };
     return { ...result, evidence_digest: digestCanonicalResult(acceptanceDigestPayload(result)) };
   });
@@ -626,6 +1021,7 @@ export function assertM4AcceptanceSidecar(sidecar, options = {}) {
     ) {
       throw new ReleaseEvidenceError("M4 dogfood result digest mismatch");
     }
+    assertCanonicalDogfoodProof(sidecar.dogfood_result, sidecar.implementation_commit);
   }
   const seen = new Set();
   for (const [index, entry] of sidecar.results.entries()) {
@@ -689,7 +1085,7 @@ export function assertM4AcceptanceSidecar(sidecar, options = {}) {
         throw new ReleaseEvidenceError(`${expectedId}: suite result digests drifted`);
       }
       if (
-        registryEntry.dogfood_rule === undefined
+        registryEntry.dogfood_rule === undefined && registryEntry.readiness_rule === undefined
           ? entry.dogfood_result_digest !== undefined
           : entry.dogfood_result_digest !== sidecar.dogfood_result_digest
       ) {
@@ -710,11 +1106,15 @@ export function assertM4AcceptanceSidecar(sidecar, options = {}) {
         : fileStates.includes("missing")
           ? "not_run"
           : "passed";
-      const dogfoodStatus = dogfoodRuleStatus(
-        registryEntry.dogfood_rule,
+      const dogfoodStatus = dogfoodRuleStatus(registryEntry.dogfood_rule, sidecar.dogfood_result);
+      const readinessStatus = readinessRuleStatus(
+        registryEntry.readiness_rule,
         sidecar.dogfood_result,
-      ).status;
-      const expectedStatus = suiteStatus === "passed" ? dogfoodStatus : suiteStatus;
+      );
+      const expectedStatus =
+        suiteStatus === "passed"
+          ? combineProofStatuses(dogfoodStatus, readinessStatus).status
+          : suiteStatus;
       if (entry.status !== expectedStatus) {
         throw new ReleaseEvidenceError(`${expectedId}: status is not derived from persisted proof`);
       }
@@ -752,8 +1152,16 @@ export function renderM4Markdown(sidecar) {
   lines.push(
     !isObject(dogfood) || dogfood.present !== true
       ? "- 未找到 `.reports/acceptance/m4-dogfood.json`。"
-      : `- provider=${String(dogfood.provider)} ${String(dogfood.provider_version)}；exit=${String(dogfood.exit_code)}；requested concurrency=${String(dogfood.requested_max_concurrency)}，effective concurrency=${String(dogfood.effective_max_concurrency)}；blocker=${String(dogfood.blocker)}。`,
+      : `- provider=${String(dogfood.provider)}；profile=${String(dogfood.provider_profile)}；model=${String(dogfood.provider_model)}（${String(dogfood.provider_model_source)}）；version expected=${String(dogfood.expected_provider_version)} / observed=${String(dogfood.observed_provider_version)}；exit=${String(dogfood.exit_code)}。`,
   );
+  if (isObject(dogfood) && dogfood.present === true) {
+    lines.push(
+      `- credential source=${String(dogfood.credential_source)}；material recorded=${String(dogfood.credential_material_recorded)}；material hashed=${String(dogfood.credential_material_hashed)}。`,
+      `- usage metering=${String(dogfood.adapter_reported_usage?.metering)}；input/output/total=${String(dogfood.adapter_reported_usage?.input_tokens)}/${String(dogfood.adapter_reported_usage?.output_tokens)}/${String(dogfood.adapter_reported_usage?.total_tokens)}。`,
+      `- build commit=${String(dogfood.build_provenance?.implementation_commit)}；clean archive rebuild=${String(dogfood.build_provenance?.clean_rebuild_from_committed_archive)}；runtime packages=${String(dogfood.build_provenance?.package_count)}；provenance=${String(dogfood.build_provenance?.provenance_sha256).slice(0, 16)}。`,
+      `- requested concurrency=${String(dogfood.requested_max_concurrency)}，effective concurrency=${String(dogfood.effective_max_concurrency)}；blocker=${String(dogfood.blocker)}。`,
+    );
+  }
   lines.push(
     "- 发布报告不包含原始 transcript、凭据或机器绝对路径；只保存脱敏后的结构化结果与 digest。",
     "",

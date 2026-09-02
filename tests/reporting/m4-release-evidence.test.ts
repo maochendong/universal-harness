@@ -11,6 +11,7 @@ import {
   M4_ACCEPTANCE_REGISTRY,
   assertM4AcceptanceSidecar,
   assertCanonicalSuiteReports,
+  buildCanonicalDogfoodProof,
   buildM4AcceptanceSidecar,
   buildCanonicalSuiteProof,
   CANONICAL_RELEASE_COMMANDS,
@@ -136,17 +137,74 @@ function blockedDogfood(implementationCommit: string): Record<string, unknown> {
     status: "blocked",
     blocker: "real_adapter_unattended_ineligible",
     provider: "dsh",
-    provider_version: "test",
+    provider_profile: "headless",
+    provider_model: "deepseek-v4-flash",
+    provider_model_source: "project_dotenv_injected_process_env",
+    expected_provider_version: "0.1.0-rc.6",
+    expected_provider_version_source: "cli_argument",
+    observed_provider_version: "0.1.0-rc.6",
+    credential_source: "project_dotenv_injected_process_env",
+    credential_material_recorded: false,
+    credential_material_hashed: false,
     exit_code: 0,
+    adapter_manifest_digest: "7".repeat(64),
+    build_provenance: {
+      implementation_commit: implementationCommit,
+      source_head: implementationCommit,
+      source_head_matches_implementation_commit: true,
+      tracked_source_clean: true,
+      build_command: "pnpm build",
+      clean_rebuild_from_committed_archive: true,
+      root_package_json_sha256: "3".repeat(64),
+      lockfile_sha256: "4".repeat(64),
+      runtime_dependency_closure: ["universal-harness"],
+      packages: [{ name: "universal-harness", path: "packages/cli" }],
+      external_runtime_dependencies: [{ name: "ajv", version: "8.20.0" }],
+      provenance_sha256: "5".repeat(64),
+    },
     requested_task_count: 4,
     requested_wave_count: 3,
     requested_max_concurrency: 2,
     effective_max_concurrency: 1,
     unattended_eligible: false,
-    provider_probe: { status: "passed" },
+    eligibility_reasons: ["external provider is not eligible for unattended execution"],
+    provider_probe: {
+      verification_status: "verified",
+      task_id: "task_real_dsh_probe",
+      agent_outcome_claim: "handoff",
+      termination_reason: "completion",
+      verification: {
+        status: "passed",
+        output_exists: true,
+        output_regular_file: true,
+        output_realpath_contained: true,
+        exact_bytes_match: true,
+        only_allowed_path_changed: true,
+        unauthorized_paths: [],
+      },
+    },
     scheduler_eligibility: { status: "blocked" },
+    adapter_reported_usage: {
+      metering: "unmetered",
+      input_tokens: null,
+      output_tokens: null,
+      total_tokens: null,
+    },
+    supervised_probe: {
+      task_id: "task_real_dsh_probe",
+      outcome: "handoff",
+      termination_reason: "completion",
+      output_exists: true,
+      exact_bytes_match: true,
+      only_allowed_path_changed: true,
+      changed_paths: ["src/dogfood/probe.ts"],
+      evidence: [{ kind: "diff", digest: "6".repeat(64) }],
+      duration_ms: 1234,
+    },
     overlap_proven: false,
     overlap_intervals: [],
+    raw_transcript_persisted_in_release_bundle: false,
+    command_executable_basename: "dsh",
   };
 }
 
@@ -259,7 +317,7 @@ describe("tracked Evidence and report commit", () => {
     expect(digestTrackedEvidence(root, implementation, ["proof.txt"])).toBe(expected);
   });
 
-  it("accepts only a direct pure-document successor of the implementation", () => {
+  it("accepts only a direct pure-document successor with real tracked Evidence", () => {
     const root = repository();
     const implementation = evidenceBaseline(root);
     const sidecar = buildM4AcceptanceSidecar({
@@ -284,12 +342,103 @@ describe("tracked Evidence and report commit", () => {
     git(root, ["commit", "--amend", "--no-edit"]);
     expect(verifyM4ReportCommit(root)).toMatchObject({ implementation_commit: implementation });
 
+    const tampered = JSON.parse(JSON.stringify(sidecar)) as typeof sidecar;
+    const first = tampered.results[0];
+    first.tracked_evidence_digest = "2".repeat(64);
+    first.evidence_digest = digestCanonicalResult({
+      acceptance_id: first.acceptance_id,
+      tracked_evidence_digest: first.tracked_evidence_digest,
+      suite_result_digests: first.suite_result_digests,
+      dogfood_result_digest: first.dogfood_result_digest ?? null,
+    });
+    writeFileSync(
+      join(root, "docs/evidence/m4-local-multi-agent-scheduling-results.json"),
+      `${JSON.stringify(tampered)}\n`,
+      "utf8",
+    );
+    writeFileSync(
+      join(root, "docs/evidence/m4-local-multi-agent-scheduling-completion.md"),
+      renderM4Markdown(tampered),
+      "utf8",
+    );
+    git(root, ["add", "docs/evidence"]);
+    git(root, ["commit", "--amend", "--no-edit"]);
+    expect(() => verifyM4ReportCommit(root)).toThrow(/tracked Evidence does not match/u);
+
+    writeFileSync(
+      join(root, "docs/evidence/m4-local-multi-agent-scheduling-results.json"),
+      `${JSON.stringify(sidecar)}\n`,
+      "utf8",
+    );
+    writeFileSync(
+      join(root, "docs/evidence/m4-local-multi-agent-scheduling-completion.md"),
+      renderM4Markdown(sidecar),
+      "utf8",
+    );
+    git(root, ["add", "docs/evidence"]);
+    git(root, ["commit", "--amend", "--no-edit"]);
     commitFile(root, "src/drift.ts", "export {};\n", "not pure docs");
     expect(() => verifyM4ReportCommit(root)).toThrow(ReleaseEvidenceError);
-  });
+  }, 20_000);
 });
 
 describe("M4 Markdown projection", () => {
+  it("projects the frozen dogfood proof without credentials or machine paths", () => {
+    const source = {
+      ...blockedDogfood(COMMIT_A),
+      api_key: "sk-must-not-survive",
+      credential_material_hash: "secret-hash-must-not-survive",
+      repository_root: "/Users/private/repository",
+    };
+    const proof = buildCanonicalDogfoodProof(source, COMMIT_A);
+
+    expect(proof).toMatchObject({
+      expected_provider_version: "0.1.0-rc.6",
+      observed_provider_version: "0.1.0-rc.6",
+      provider_profile: "headless",
+      provider_model: "deepseek-v4-flash",
+      credential_source: "project_dotenv_injected_process_env",
+      credential_material_recorded: false,
+      credential_material_hashed: false,
+      adapter_reported_usage: {
+        metering: "unmetered",
+        input_tokens: null,
+        output_tokens: null,
+        total_tokens: null,
+      },
+      provider_probe: { verification_status: "verified" },
+      build_provenance: {
+        implementation_commit: COMMIT_A,
+        source_head_matches_implementation_commit: true,
+        tracked_source_clean: true,
+        clean_rebuild_from_committed_archive: true,
+        runtime_dependency_closure: ["universal-harness"],
+        package_count: 1,
+        external_runtime_dependency_count: 1,
+      },
+    });
+    const serialized = JSON.stringify(proof);
+    expect(serialized).not.toContain("sk-must-not-survive");
+    expect(serialized).not.toContain("secret-hash-must-not-survive");
+    expect(serialized).not.toContain("/Users/private/repository");
+    expect(proof).not.toHaveProperty("provider_version");
+  });
+
+  it("rejects dogfood that recorded or hashed credential material", () => {
+    expect(() =>
+      buildCanonicalDogfoodProof(
+        { ...blockedDogfood(COMMIT_A), credential_material_hashed: true },
+        COMMIT_A,
+      ),
+    ).toThrow(ReleaseEvidenceError);
+    expect(() =>
+      buildCanonicalDogfoodProof(
+        { ...blockedDogfood(COMMIT_A), provider_model: "/Users/private/model" },
+        COMMIT_A,
+      ),
+    ).toThrow(/absolute path/u);
+  });
+
   it("rejects a forged 20/20 sidecar with empty requirements and evidence", () => {
     expect(() =>
       assertM4AcceptanceSidecar(
@@ -321,8 +470,15 @@ describe("M4 Markdown projection", () => {
       dogfood: blockedDogfood(implementation),
       generatedAt: "2026-09-02T00:00:00.000Z",
     });
-    expect(blocked.results.find((entry) => entry.acceptance_id === "AC-16")?.status).toBe("passed");
-    expect(blocked.results.find((entry) => entry.acceptance_id === "AC-17")?.status).toBe("passed");
+    expect(blocked.results.find((entry) => entry.acceptance_id === "AC-10")?.status).toBe(
+      "blocked",
+    );
+    expect(blocked.results.find((entry) => entry.acceptance_id === "AC-16")?.status).toBe(
+      "blocked",
+    );
+    expect(blocked.results.find((entry) => entry.acceptance_id === "AC-17")?.status).toBe(
+      "blocked",
+    );
     expect(blocked.results.find((entry) => entry.acceptance_id === "AC-06")?.status).toBe(
       "blocked",
     );
@@ -340,6 +496,13 @@ describe("M4 Markdown projection", () => {
         blocker: null,
         effective_max_concurrency: 2,
         unattended_eligible: true,
+        scheduler_eligibility: { status: "eligible", unattended_eligible: true, reasons: [] },
+        feature_readiness: {
+          production_policy_source: "verified",
+          dashboard_provider_context: "verified",
+          dashboard_policy_proposal: "verified",
+          approval_live_driver_auto_wake: "verified",
+        },
         overlap_proven: true,
         overlap_intervals: [{ task_id: "a" }, { task_id: "b" }],
         gate_status: "passed",
@@ -353,6 +516,15 @@ describe("M4 Markdown projection", () => {
       "passed",
     );
     expect(completed.results.find((entry) => entry.acceptance_id === "AC-20")?.status).toBe(
+      "passed",
+    );
+    expect(completed.results.find((entry) => entry.acceptance_id === "AC-10")?.status).toBe(
+      "passed",
+    );
+    expect(completed.results.find((entry) => entry.acceptance_id === "AC-16")?.status).toBe(
+      "passed",
+    );
+    expect(completed.results.find((entry) => entry.acceptance_id === "AC-17")?.status).toBe(
       "passed",
     );
   });
