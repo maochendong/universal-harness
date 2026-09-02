@@ -5530,15 +5530,19 @@ export async function drivePipeline(
   fromPhase: OrchestrationPhase,
   untilPhase: OrchestrationPhase | undefined,
 ): Promise<OrchestrationOutcome> {
-  if (
-    ctx.sourceView === undefined &&
-    phaseRank(fromPhase) >= phaseRank("verify") &&
-    ctx.capabilityPlan?.protocol_version === PROTOCOL_1_3_VERSION &&
+  const parallelPlan =
+    ctx.capabilityPlan !== undefined &&
+    (ctx.capabilityPlan as { readonly protocol_version?: string }).protocol_version ===
+      PROTOCOL_1_3_VERSION &&
     ctx.capabilityPlan.operation_dag.nodes.some(
       (node) =>
         node.node_id === "execute" &&
         (node.subgraph as string | undefined) === "parallel_task_execution",
-    ) &&
+    );
+  if (
+    ctx.sourceView === undefined &&
+    phaseRank(fromPhase) >= phaseRank("verify") &&
+    parallelPlan &&
     ctx.deps.parallelExecution?.openSourceView !== undefined
   ) {
     ctx.sourceView = await ctx.deps.parallelExecution.openSourceView(ctx.workflowOperationId);
