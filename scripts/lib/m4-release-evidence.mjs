@@ -13,6 +13,193 @@ export const CANONICAL_RELEASE_COMMANDS = Object.freeze({
   "playwright-dashboard": "pnpm test:e2e:dashboard",
 });
 
+function ac(id, statement, required_suites, evidence, dogfood_rule) {
+  return Object.freeze({
+    acceptance_id: id,
+    statement,
+    required_suites: Object.freeze(required_suites),
+    evidence: Object.freeze(evidence),
+    ...(dogfood_rule === undefined ? {} : { dogfood_rule }),
+  });
+}
+
+/** Frozen M4 acceptance contract. Generator and immutable-report verifier share it. */
+export const M4_ACCEPTANCE_REGISTRY = Object.freeze([
+  ac(
+    "AC-01",
+    "Plan 是 Task 规划语义唯一权威源，并原子生成全部 `DEPENDS_ON` 和 digest-bound waves。",
+    ["main"],
+    [
+      "packages/runtime/test/planning/waves.test.ts",
+      "packages/runtime/test/scheduling/task-dag-port.test.ts",
+      "tests/e2e/m4-local-multi-agent.test.ts",
+    ],
+  ),
+  ac(
+    "AC-02",
+    "循环、缺失依赖、不一致 wave 及不确定拆分被拒绝。",
+    ["main"],
+    ["packages/runtime/test/planning/waves.test.ts"],
+  ),
+  ac(
+    "AC-03",
+    "写路径与独占资源冲突被机械串行化。",
+    ["main", "performance"],
+    ["packages/runtime/test/planning/waves.test.ts", "tests/performance/m4-wave-compiler.test.ts"],
+  ),
+  ac(
+    "AC-04",
+    "`parallel_task_execution` 满足完整 Module Contract；Lite disabled，Standard/Governed required 并按有效上限并行。",
+    ["main"],
+    [
+      "packages/runtime/test/orchestration/capability-plan-routing.test.ts",
+      "tests/e2e/m4-sequential-compatibility.test.ts",
+    ],
+  ),
+  ac(
+    "AC-05",
+    "不合格 Adapter 不能无人值守并行。",
+    ["main"],
+    [
+      "packages/conformance/test/scheduling.conformance.test.ts",
+      "packages/runtime/test/scheduling/agent-pool.test.ts",
+      ".reports/acceptance/m4-dogfood.json",
+    ],
+    "adapter_eligibility",
+  ),
+  ac(
+    "AC-06",
+    "至少两个真实 Task 在隔离槽位并行。",
+    [],
+    [".reports/acceptance/m4-dogfood.json"],
+    "parallel_overlap",
+  ),
+  ac(
+    "AC-07",
+    "Context、Budget、Run、worktree 和隐藏历史互不共享；Strict TDD 无嵌套 worktree 且 四层写集取交集。",
+    ["main", "e2e"],
+    [
+      "packages/runtime/test/scheduling/workspace-manager.test.ts",
+      "packages/runtime/test/scheduling/agent-pool.test.ts",
+      "tests/e2e/m4-local-multi-agent.test.ts",
+    ],
+  ),
+  ac(
+    "AC-08",
+    "Task Lease、fencing、Protocol Envelope 和重启恢复无重复接受。",
+    ["main", "fault"],
+    [
+      "packages/runtime/test/scheduling/recovery.test.ts",
+      "tests/fault/m4-scheduler-crash-matrix.test.ts",
+    ],
+  ),
+  ac(
+    "AC-09",
+    "并发预算预留不突破 Iteration 总上限。",
+    ["main", "e2e"],
+    ["packages/runtime/test/scheduling/budget.test.ts", "tests/e2e/m4-local-multi-agent.test.ts"],
+  ),
+  ac(
+    "AC-10",
+    "三个调度 Action 及 Policy `allow/deny/requires_approval/block` 四态、Approval 漂移正确生效。",
+    ["main", "fault"],
+    [
+      "packages/runtime/test/scheduling/policy-decision-port.test.ts",
+      "packages/runtime/test/scheduling/scheduler.test.ts",
+    ],
+  ),
+  ac(
+    "AC-11",
+    "三层 Gate 与 wave 原子集成成立。",
+    ["main", "e2e"],
+    [
+      "packages/runtime/test/scheduling/integration.test.ts",
+      "tests/e2e/m4-local-multi-agent.test.ts",
+    ],
+  ),
+  ac(
+    "AC-12",
+    "executor retry 和 patch-apply integration retry 均最多一次；语义冲突与 baseline drift 不进入 retry。",
+    ["main", "fault"],
+    [
+      "packages/runtime/test/scheduling/scheduler.test.ts",
+      "tests/fault/m4-scheduler-crash-matrix.test.ts",
+    ],
+  ),
+  ac(
+    "AC-13",
+    "第二次失败、越权写入和预算耗尽正确阻塞。",
+    ["main", "security"],
+    [
+      "packages/runtime/test/scheduling/scheduler.test.ts",
+      "tests/security/m4-scheduler-boundaries.test.ts",
+    ],
+  ),
+  ac(
+    "AC-14",
+    "baseline drift 不会自动 force/rebase。",
+    ["fault"],
+    [
+      "packages/runtime/test/scheduling/recovery.test.ts",
+      "tests/fault/m4-scheduler-crash-matrix.test.ts",
+    ],
+  ),
+  ac(
+    "AC-15",
+    "Evidence 绑定 Task、Run、Lease token 和实际基线；丢弃 candidate 后旧 Evidence provisional 且完整重验。",
+    ["main", "e2e"],
+    [
+      "packages/runtime/test/scheduling/integration.test.ts",
+      "tests/e2e/m4-local-multi-agent.test.ts",
+    ],
+  ),
+  ac(
+    "AC-16",
+    "Dashboard 展示完整调度与恢复状态。",
+    ["main", "playwright-dashboard"],
+    ["packages/dashboard/test/scheduler-api.test.ts", "tests/e2e/dashboard-m4-scheduler.test.ts"],
+  ),
+  ac(
+    "AC-17",
+    "CLI run/resume/status/watch/abort 形成闭环，CLI 与 Dashboard 对同一 Operation 保持 单驱动。",
+    ["main", "fault"],
+    ["packages/cli/test/m4-scheduling.test.ts", "tests/fault/m4-scheduler-crash-matrix.test.ts"],
+  ),
+  ac(
+    "AC-18",
+    "SQLite 删除后可从 Ledger 恢复权威状态。",
+    ["performance"],
+    ["tests/performance/m4-sqlite-rebuild.test.ts"],
+  ),
+  ac(
+    "AC-19",
+    "Protocol 1.3 Envelope/Reader/`required_reader_version`、M1/M2/M3 与顺序执行回归全部通过。",
+    ["main", "e2e"],
+    [
+      "packages/core/test/protocol/protocol-1.3.test.ts",
+      "tests/e2e/m4-sequential-compatibility.test.ts",
+    ],
+  ),
+  ac(
+    "AC-20",
+    "真实 Dogfood 完成并生成绑定当前提交的验收报告。",
+    ["main", "security", "fault", "performance", "e2e", "playwright-dashboard"],
+    [
+      "scripts/dogfood-m4-local-scheduler.mjs",
+      "scripts/dogfood-m4-redaction.mjs",
+      ".reports/acceptance/m4-dogfood.json",
+    ],
+    "full_vertical_dogfood",
+  ),
+]);
+
+export function m4Commands(registryEntry) {
+  return [
+    ...registryEntry.required_suites.map((suite) => CANONICAL_RELEASE_COMMANDS[suite]),
+    ...(registryEntry.dogfood_rule === undefined ? [] : ["pnpm dogfood:m4"]),
+  ];
+}
+
 const REPORT_PATHS = new Set([
   "docs/m1-acceptance-report.md",
   "docs/m2-acceptance-report.md",
@@ -153,12 +340,22 @@ export function assertM4AcceptanceSidecar(sidecar, options = {}) {
   for (const [index, entry] of sidecar.results.entries()) {
     if (!isObject(entry)) throw new ReleaseEvidenceError("M4 sidecar result must be an object");
     const expectedId = `AC-${String(index + 1).padStart(2, "0")}`;
+    const registryEntry = M4_ACCEPTANCE_REGISTRY[index];
+    if (registryEntry === undefined) {
+      throw new ReleaseEvidenceError(`${expectedId}: no frozen registry entry exists`);
+    }
     if (entry.acceptance_id !== expectedId || seen.has(entry.acceptance_id)) {
       throw new ReleaseEvidenceError(`M4 sidecar result identity must be ${expectedId}`);
     }
     seen.add(entry.acceptance_id);
+    if (entry.statement !== registryEntry.statement) {
+      throw new ReleaseEvidenceError(`${expectedId}: statement drifted from the frozen registry`);
+    }
     if (!Array.isArray(entry.required_suites) || !isObject(entry.suite_invocation_ids)) {
       throw new ReleaseEvidenceError(`${expectedId}: required suites/invocations are malformed`);
+    }
+    if (JSON.stringify(entry.required_suites) !== JSON.stringify(registryEntry.required_suites)) {
+      throw new ReleaseEvidenceError(`${expectedId}: required suites drifted from the registry`);
     }
     for (const suite of entry.required_suites) {
       if (!(suite in CANONICAL_RELEASE_COMMANDS)) {
@@ -174,6 +371,15 @@ export function assertM4AcceptanceSidecar(sidecar, options = {}) {
     }
     if (!Array.isArray(entry.commands) || !Array.isArray(entry.evidence)) {
       throw new ReleaseEvidenceError(`${expectedId}: commands/evidence must be arrays`);
+    }
+    if (JSON.stringify(entry.commands) !== JSON.stringify(m4Commands(registryEntry))) {
+      throw new ReleaseEvidenceError(`${expectedId}: canonical commands drifted from the registry`);
+    }
+    if (
+      entry.evidence.length === 0 ||
+      JSON.stringify(entry.evidence) !== JSON.stringify(registryEntry.evidence)
+    ) {
+      throw new ReleaseEvidenceError(`${expectedId}: Evidence drifted from the registry`);
     }
     if (!/^[a-f0-9]{64}$/u.test(entry.evidence_digest ?? "")) {
       throw new ReleaseEvidenceError(`${expectedId}: evidence digest must be sha256`);

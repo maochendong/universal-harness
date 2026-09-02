@@ -8,8 +8,11 @@ import { describe, expect, it } from "vitest";
 
 import {
   ReleaseEvidenceError,
+  M4_ACCEPTANCE_REGISTRY,
+  assertM4AcceptanceSidecar,
   assertCanonicalSuiteReports,
   digestTrackedEvidence,
+  m4Commands,
   renderM4Markdown,
   verifyM4ReportCommit,
 } from "../../scripts/lib/m4-release-evidence.mjs";
@@ -18,14 +21,17 @@ const COMMIT_A = "a".repeat(40);
 const COMMIT_B = "b".repeat(40);
 
 function completeResults(): readonly Record<string, unknown>[] {
-  return Array.from({ length: 20 }, (_, index) => ({
-    acceptance_id: `AC-${String(index + 1).padStart(2, "0")}`,
-    statement: "proof",
+  const invocationIds = completeInvocationIds();
+  return M4_ACCEPTANCE_REGISTRY.map((entry) => ({
+    acceptance_id: entry.acceptance_id,
+    statement: entry.statement,
     status: "passed",
-    required_suites: [],
-    suite_invocation_ids: {},
-    commands: [],
-    evidence: [],
+    required_suites: entry.required_suites,
+    suite_invocation_ids: Object.fromEntries(
+      entry.required_suites.map((suite) => [suite, invocationIds[suite]]),
+    ),
+    commands: m4Commands(entry),
+    evidence: entry.evidence,
     evidence_digest: "1".repeat(64),
     design_section: "§24",
     detail: "verified",
@@ -177,7 +183,28 @@ describe("tracked Evidence and report commit", () => {
 });
 
 describe("M4 Markdown projection", () => {
+  it("rejects a forged 20/20 sidecar with empty requirements and evidence", () => {
+    expect(() =>
+      assertM4AcceptanceSidecar(
+        {
+          schema_version: "harness.m4-acceptance-results/1",
+          implementation_commit: COMMIT_A,
+          suite_invocation_ids: completeInvocationIds(),
+          results: completeResults().map((entry) => ({
+            ...entry,
+            required_suites: [],
+            suite_invocation_ids: {},
+            commands: [],
+            evidence: [],
+          })),
+        },
+        { requireComplete: true },
+      ),
+    ).toThrow(ReleaseEvidenceError);
+  });
+
   it("renders rows only from the typed sidecar", () => {
+    const entry = M4_ACCEPTANCE_REGISTRY[0];
     const sidecar = {
       schema_version: "harness.m4-acceptance-results/1",
       implementation_commit: COMMIT_A,
@@ -185,12 +212,12 @@ describe("M4 Markdown projection", () => {
       results: [
         {
           acceptance_id: "AC-01",
-          statement: "typed proof",
+          statement: entry.statement,
           status: "passed",
           required_suites: ["main"],
           suite_invocation_ids: { main: "inv-main" },
-          commands: ["pnpm test"],
-          evidence: ["proof.txt"],
+          commands: m4Commands(entry),
+          evidence: entry.evidence,
           evidence_digest: "1".repeat(64),
           design_section: "§24",
           detail: "verified",
@@ -198,7 +225,7 @@ describe("M4 Markdown projection", () => {
       ],
     };
     const markdown = renderM4Markdown(sidecar);
-    expect(markdown).toContain("| AC-01 | typed proof |");
+    expect(markdown).toContain(`| AC-01 | ${entry.statement} |`);
     expect(markdown).toContain("`inv-main`");
     expect(markdown).not.toContain("hand-entered");
   });
