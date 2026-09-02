@@ -227,219 +227,211 @@ async function waitFor(condition: () => boolean, description: string): Promise<v
 }
 
 describe("M4 AC-17 live-driver approval and durable cancellation", () => {
-  it(
-    "wakes requires_approval dispatches on the live driver once the digest-bound approval lands",
-    async () => {
-      const fixture = await createM4E2eFixture({ profileId: "governed" });
-      try {
-        // One host instance is the live driver for the whole scenario.
-        const host = createTestHost(fixture, {
-          namespace: "ac17_approval",
-          requireDispatchApproval: true,
-          run: writingAdapter,
-        });
-        const drive = () =>
-          host.parallelExecution.port.run({
-            ...runInput(fixture),
-            driver_lock: host.parallelExecution.driverLock(),
-          });
-
-        const first = await drive();
-        expect(first.status).toBe("paused");
-
-        // Both wave-0 dispatches paused on exactly one digest-bound request
-        // each; nothing was leased or run before its approval landed.
-        const approvals = new ApprovalService(fixture.deps);
-        const initialPending = approvals.pendingRequests(fixture.operationId);
-        expect(initialPending).toHaveLength(2);
-        expect(
-          initialPending.every((request) => request.object_type === "scheduler_action"),
-        ).toBe(true);
-        const authority = createLedgerSchedulerAuthority({ deps: fixture.deps });
-        const beforeApproval = await authority.readFacts(fixture.operationId);
-        expect(beforeApproval.leases).toEqual([]);
-        expect(beforeApproval.runs).toEqual([]);
-
-        // Approve whatever is pending and re-drive with the same live driver:
-        // each committed approval wakes exactly its bound dispatch until all
-        // four tasks and three waves complete — no restart, no explicit resume.
-        let outcome = first;
-        const decided: Awaited<ReturnType<ApprovalService["resolveDecision"]>>[] = [];
-        for (let round = 0; round < 8 && outcome.status === "paused"; round += 1) {
-          const pending = approvals.pendingRequests(fixture.operationId);
-          expect(pending.length).toBeGreaterThan(0);
-          for (const request of pending) {
-            decided.push(
-              await approvals.resolveDecision({
-                requestId: request.request_id,
-                decision: "approve",
-                objectDigest: request.object_digest,
-                actor: "human:ac17-e2e",
-              }),
-            );
-          }
-          outcome = await drive();
-        }
-        expect(outcome.status).toBe("completed");
-        // wave_integration_digests accumulate per drive; the authoritative
-        // three-wave count is asserted on the Ledger facts below.
-        expect(outcome.wave_integration_digests.length).toBeGreaterThanOrEqual(1);
-        // Five decisions for four tasks: the first task_ui approval bound the
-        // action with the full iteration budget; once the approved task_api
-        // dispatch consumed budget, that exact action digest drifted and the
-        // scheduler correctly re-issued the request instead of honoring the
-        // stale approval (design §11 digest binding).
-        expect(decided).toHaveLength(5);
-        const uiRequests = readApprovalRequests(
-          harnessRootFor(fixture.projectRoot),
-          readCommittedOperations(harnessRootFor(fixture.projectRoot)),
-          fixture.operationId,
-        ).filter((request) => request.object_id === "task_ui");
-        expect(uiRequests).toHaveLength(2);
-        expect(new Set(uiRequests.map((request) => request.object_digest)).size).toBe(2);
-
-        // Digest closure: every granted Lease carries exactly the digest of
-        // the committed ApprovalDecisionRecord that satisfied its dispatch.
-        const committedDecisions = readApprovalDecisions(
-          harnessRootFor(fixture.projectRoot),
-          readCommittedOperations(harnessRootFor(fixture.projectRoot)),
-          fixture.operationId,
-        );
-        // Scheduler-minted requests carry content-derived ids; the fixture's
-        // own plan-acceptance decision (setup_approval_request_001) stays out.
-        const schedulerDecisions = committedDecisions.filter((decision) =>
-          decision.request_id.startsWith("approval-request_"),
-        );
-        expect(schedulerDecisions).toHaveLength(5);
-        const decisionDigests = new Set(
-          schedulerDecisions.map((decision) => sha256Hex(`${canonicalizeJson(decision)}\n`)),
-        );
-        const afterCompletion = await authority.readFacts(fixture.operationId);
-        const granted = afterCompletion.leases.filter((lease) => lease.state === "granted");
-        expect(granted).toHaveLength(4);
-        for (const lease of granted) {
-          expect(lease.approval_digests).toHaveLength(1);
-          expect(decisionDigests.has(lease.approval_digests[0] ?? "")).toBe(true);
-          expect(verifyRecordEnvelope(lease)).toBe(true);
-        }
-        expect(afterCompletion.wave_integrations).toHaveLength(3);
-      } finally {
-        cleanupDirectories();
-      }
-    },
-    120_000,
-  );
-
-  it(
-    "persists operation cancellation as digest-chained records a fresh driver cannot undo",
-    async () => {
-      const fixture = await createM4E2eFixture({ profileId: "governed" });
-      try {
-        const started: string[] = [];
-        const host = createTestHost(fixture, {
-          namespace: "ac17_cancel",
-          run: (envelope, worktreeRoot, signal) => {
-            started.push(envelope.task_id);
-            if (signal?.aborted === true) return cancelledResult();
-            // Cooperative fixture: hold the slot until the abort lands, then
-            // confirm termination with the user_cancellation accounting.
-            return new Promise<AgentRunResult>((resolve) => {
-              signal?.addEventListener("abort", () => resolve(cancelledResult()), {
-                once: true,
-              });
-            });
-          },
-        });
-        const running = host.parallelExecution.port.run({
+  it("wakes requires_approval dispatches on the live driver once the digest-bound approval lands", async () => {
+    const fixture = await createM4E2eFixture({ profileId: "governed" });
+    try {
+      // One host instance is the live driver for the whole scenario.
+      const host = createTestHost(fixture, {
+        namespace: "ac17_approval",
+        requireDispatchApproval: true,
+        run: writingAdapter,
+      });
+      const drive = () =>
+        host.parallelExecution.port.run({
           ...runInput(fixture),
           driver_lock: host.parallelExecution.driverLock(),
         });
-        await waitFor(() => started.length === 2, "both wave-0 tasks to start");
 
-        const reason = "e2e operator abort";
-        const cancellation = await host.cancelOperation(fixture.operationId, reason);
-        expect(cancellation.status).toBe("cancelled");
-        await expect(running).resolves.toMatchObject({ status: "cancelled" });
-        expect(
-          cancellation.read_model.projection.tasks
-            .filter((task) => task.status === "cancelled")
-            .map((task) => task.task_id)
-            .sort(),
-        ).toEqual(["task_api", "task_ui"]);
+      const first = await drive();
+      expect(first.status).toBe("paused");
 
-        // Durable closure: terminal user_cancellation Runs plus revoked
-        // Leases whose cancel command ids recompute exactly and whose digest
-        // chain and policy binding still point at the authorizing decision.
-        const authority = createLedgerSchedulerAuthority({ deps: fixture.deps });
-        const facts = await authority.readFacts(fixture.operationId);
-        const terminalRuns = facts.runs.filter((run) => run.record_kind === "run_terminated");
-        expect(terminalRuns.map((run) => run.task_id).sort()).toEqual(["task_api", "task_ui"]);
-        expect(
-          terminalRuns.every((run) => run.termination_reason === "user_cancellation"),
-        ).toBe(true);
-        const cancelCommandId = `command_${contentDigest({
-          purpose: "cancel-operation",
-          operation_id: fixture.operationId,
-          reason,
-        }).slice(0, 24)}`;
-        for (const taskId of ["task_api", "task_ui"]) {
-          const chain = facts.leases.filter((lease) => lease.task_id === taskId);
-          const grantedLease = chain.find((lease) => lease.state === "granted");
-          const revokedLease = chain.find((lease) => lease.state === "revoked");
-          expect(grantedLease).toBeDefined();
-          expect(revokedLease).toBeDefined();
-          expect(revokedLease?.previous_lease_record_digest).toBe(grantedLease?.record_digest);
-          expect(revokedLease?.command_id).toBe(
-            `command_${contentDigest({
-              purpose: "cancel-revoke",
-              command_id: cancelCommandId,
-              task_id: taskId,
-              attempt_number: grantedLease?.attempt_number,
-            }).slice(0, 24)}`,
+      // Both wave-0 dispatches paused on exactly one digest-bound request
+      // each; nothing was leased or run before its approval landed.
+      const approvals = new ApprovalService(fixture.deps);
+      const initialPending = approvals.pendingRequests(fixture.operationId);
+      expect(initialPending).toHaveLength(2);
+      expect(initialPending.every((request) => request.object_type === "scheduler_action")).toBe(
+        true,
+      );
+      const authority = createLedgerSchedulerAuthority({ deps: fixture.deps });
+      const beforeApproval = await authority.readFacts(fixture.operationId);
+      expect(beforeApproval.leases).toEqual([]);
+      expect(beforeApproval.runs).toEqual([]);
+
+      // Approve whatever is pending and re-drive with the same live driver:
+      // each committed approval wakes exactly its bound dispatch until all
+      // four tasks and three waves complete — no restart, no explicit resume.
+      let outcome = first;
+      const decided: Awaited<ReturnType<ApprovalService["resolveDecision"]>>[] = [];
+      for (let round = 0; round < 8 && outcome.status === "paused"; round += 1) {
+        const pending = approvals.pendingRequests(fixture.operationId);
+        expect(pending.length).toBeGreaterThan(0);
+        for (const request of pending) {
+          decided.push(
+            await approvals.resolveDecision({
+              requestId: request.request_id,
+              decision: "approve",
+              objectDigest: request.object_digest,
+              actor: "human:ac17-e2e",
+            }),
           );
-          // The revocation keeps the exact policy binding of the PolicyDecision
-          // that authorized the grant; the cancel never rewrites history.
-          expect(revokedLease?.policy_digest).toBe(grantedLease?.policy_digest);
-          expect(revokedLease?.approval_digests).toEqual(grantedLease?.approval_digests);
-          expect(verifyRecordEnvelope(revokedLease)).toBe(true);
         }
-        expect(facts.wave_integrations).toEqual([]);
-
-        // Crash/recovery equivalent: a brand-new host over the same persisted
-        // Ledger/Git facts observes the durable cancellation and refuses to
-        // dispatch anything for this operation again.
-        const adapterInvocations: string[] = [];
-        const recovered = createTestHost(fixture, {
-          namespace: "ac17_recovered",
-          run: (envelope, worktreeRoot) => {
-            adapterInvocations.push(envelope.task_id);
-            return writingAdapter(envelope, worktreeRoot);
-          },
-        });
-        const rerun = await recovered.parallelExecution.port.run({
-          ...runInput(fixture),
-          driver_lock: recovered.parallelExecution.driverLock(),
-        });
-        expect(rerun.status).toBe("cancelled");
-        expect(adapterInvocations).toEqual([]);
-
-        const recoveredFacts = await authority.readFacts(fixture.operationId);
-        expect(
-          recoveredFacts.runs.filter((run) => run.record_kind === "run_terminated"),
-        ).toHaveLength(2);
-        expect(recoveredFacts.leases).toHaveLength(facts.leases.length);
-        expect(recoveredFacts.wave_integrations).toEqual([]);
-        const model = await recovered.readSchedulerModel(fixture.operationId);
-        expect(
-          model.tasks
-            .filter((task) => task.status === "cancelled")
-            .map((task) => task.task_id)
-            .sort(),
-        ).toEqual(["task_api", "task_ui"]);
-      } finally {
-        cleanupDirectories();
+        outcome = await drive();
       }
-    },
-    120_000,
-  );
+      expect(outcome.status).toBe("completed");
+      // wave_integration_digests accumulate per drive; the authoritative
+      // three-wave count is asserted on the Ledger facts below.
+      expect(outcome.wave_integration_digests.length).toBeGreaterThanOrEqual(1);
+      // Five decisions for four tasks: the first task_ui approval bound the
+      // action with the full iteration budget; once the approved task_api
+      // dispatch consumed budget, that exact action digest drifted and the
+      // scheduler correctly re-issued the request instead of honoring the
+      // stale approval (design §11 digest binding).
+      expect(decided).toHaveLength(5);
+      const uiRequests = readApprovalRequests(
+        harnessRootFor(fixture.projectRoot),
+        readCommittedOperations(harnessRootFor(fixture.projectRoot)),
+        fixture.operationId,
+      ).filter((request) => request.object_id === "task_ui");
+      expect(uiRequests).toHaveLength(2);
+      expect(new Set(uiRequests.map((request) => request.object_digest)).size).toBe(2);
+
+      // Digest closure: every granted Lease carries exactly the digest of
+      // the committed ApprovalDecisionRecord that satisfied its dispatch.
+      const committedDecisions = readApprovalDecisions(
+        harnessRootFor(fixture.projectRoot),
+        readCommittedOperations(harnessRootFor(fixture.projectRoot)),
+        fixture.operationId,
+      );
+      // Scheduler-minted requests carry content-derived ids; the fixture's
+      // own plan-acceptance decision (setup_approval_request_001) stays out.
+      const schedulerDecisions = committedDecisions.filter((decision) =>
+        decision.request_id.startsWith("approval-request_"),
+      );
+      expect(schedulerDecisions).toHaveLength(5);
+      const decisionDigests = new Set(
+        schedulerDecisions.map((decision) => sha256Hex(`${canonicalizeJson(decision)}\n`)),
+      );
+      const afterCompletion = await authority.readFacts(fixture.operationId);
+      const granted = afterCompletion.leases.filter((lease) => lease.state === "granted");
+      expect(granted).toHaveLength(4);
+      for (const lease of granted) {
+        expect(lease.approval_digests).toHaveLength(1);
+        expect(decisionDigests.has(lease.approval_digests[0] ?? "")).toBe(true);
+        expect(verifyRecordEnvelope(lease)).toBe(true);
+      }
+      expect(afterCompletion.wave_integrations).toHaveLength(3);
+    } finally {
+      cleanupDirectories();
+    }
+  }, 120_000);
+
+  it("persists operation cancellation as digest-chained records a fresh driver cannot undo", async () => {
+    const fixture = await createM4E2eFixture({ profileId: "governed" });
+    try {
+      const started: string[] = [];
+      const host = createTestHost(fixture, {
+        namespace: "ac17_cancel",
+        run: (envelope, worktreeRoot, signal) => {
+          started.push(envelope.task_id);
+          if (signal?.aborted === true) return cancelledResult();
+          // Cooperative fixture: hold the slot until the abort lands, then
+          // confirm termination with the user_cancellation accounting.
+          return new Promise<AgentRunResult>((resolve) => {
+            signal?.addEventListener("abort", () => resolve(cancelledResult()), {
+              once: true,
+            });
+          });
+        },
+      });
+      const running = host.parallelExecution.port.run({
+        ...runInput(fixture),
+        driver_lock: host.parallelExecution.driverLock(),
+      });
+      await waitFor(() => started.length === 2, "both wave-0 tasks to start");
+
+      const reason = "e2e operator abort";
+      const cancellation = await host.cancelOperation(fixture.operationId, reason);
+      expect(cancellation.status).toBe("cancelled");
+      await expect(running).resolves.toMatchObject({ status: "cancelled" });
+      expect(
+        cancellation.read_model.projection.tasks
+          .filter((task) => task.status === "cancelled")
+          .map((task) => task.task_id)
+          .sort(),
+      ).toEqual(["task_api", "task_ui"]);
+
+      // Durable closure: terminal user_cancellation Runs plus revoked
+      // Leases whose cancel command ids recompute exactly and whose digest
+      // chain and policy binding still point at the authorizing decision.
+      const authority = createLedgerSchedulerAuthority({ deps: fixture.deps });
+      const facts = await authority.readFacts(fixture.operationId);
+      const terminalRuns = facts.runs.filter((run) => run.record_kind === "run_terminated");
+      expect(terminalRuns.map((run) => run.task_id).sort()).toEqual(["task_api", "task_ui"]);
+      expect(terminalRuns.every((run) => run.termination_reason === "user_cancellation")).toBe(
+        true,
+      );
+      const cancelCommandId = `command_${contentDigest({
+        purpose: "cancel-operation",
+        operation_id: fixture.operationId,
+        reason,
+      }).slice(0, 24)}`;
+      for (const taskId of ["task_api", "task_ui"]) {
+        const chain = facts.leases.filter((lease) => lease.task_id === taskId);
+        const grantedLease = chain.find((lease) => lease.state === "granted");
+        const revokedLease = chain.find((lease) => lease.state === "revoked");
+        expect(grantedLease).toBeDefined();
+        expect(revokedLease).toBeDefined();
+        expect(revokedLease?.previous_lease_record_digest).toBe(grantedLease?.record_digest);
+        expect(revokedLease?.command_id).toBe(
+          `command_${contentDigest({
+            purpose: "cancel-revoke",
+            command_id: cancelCommandId,
+            task_id: taskId,
+            attempt_number: grantedLease?.attempt_number,
+          }).slice(0, 24)}`,
+        );
+        // The revocation keeps the exact policy binding of the PolicyDecision
+        // that authorized the grant; the cancel never rewrites history.
+        expect(revokedLease?.policy_digest).toBe(grantedLease?.policy_digest);
+        expect(revokedLease?.approval_digests).toEqual(grantedLease?.approval_digests);
+        expect(verifyRecordEnvelope(revokedLease)).toBe(true);
+      }
+      expect(facts.wave_integrations).toEqual([]);
+
+      // Crash/recovery equivalent: a brand-new host over the same persisted
+      // Ledger/Git facts observes the durable cancellation and refuses to
+      // dispatch anything for this operation again.
+      const adapterInvocations: string[] = [];
+      const recovered = createTestHost(fixture, {
+        namespace: "ac17_recovered",
+        run: (envelope, worktreeRoot) => {
+          adapterInvocations.push(envelope.task_id);
+          return writingAdapter(envelope, worktreeRoot);
+        },
+      });
+      const rerun = await recovered.parallelExecution.port.run({
+        ...runInput(fixture),
+        driver_lock: recovered.parallelExecution.driverLock(),
+      });
+      expect(rerun.status).toBe("cancelled");
+      expect(adapterInvocations).toEqual([]);
+
+      const recoveredFacts = await authority.readFacts(fixture.operationId);
+      expect(
+        recoveredFacts.runs.filter((run) => run.record_kind === "run_terminated"),
+      ).toHaveLength(2);
+      expect(recoveredFacts.leases).toHaveLength(facts.leases.length);
+      expect(recoveredFacts.wave_integrations).toEqual([]);
+      const model = await recovered.readSchedulerModel(fixture.operationId);
+      expect(
+        model.tasks
+          .filter((task) => task.status === "cancelled")
+          .map((task) => task.task_id)
+          .sort(),
+      ).toEqual(["task_api", "task_ui"]);
+    } finally {
+      cleanupDirectories();
+    }
+  }, 120_000);
 });

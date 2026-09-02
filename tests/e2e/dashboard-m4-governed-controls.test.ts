@@ -185,7 +185,11 @@ const test = base.extend<{ governed: GovernedFixture }>({
   governed: async ({ page }, use) => {
     const parent = mkdtempSync(join(tmpdir(), "harness-dashboard-governed-e2e-"));
     const created = await createNewProject(
-      { parentDirectory: parent, name: "dashboard-governed", intent: "governed scheduler controls" },
+      {
+        parentDirectory: parent,
+        name: "dashboard-governed",
+        intent: "governed scheduler controls",
+      },
       { vcs: createGitVcsAdapter() },
     );
     if (!created.ok) throw new Error(created.error.message);
@@ -224,8 +228,7 @@ const test = base.extend<{ governed: GovernedFixture }>({
         });
       },
       resumeWorkflow: () => Promise.resolve({ status: "running" }),
-      resolveFindingGroup: () =>
-        Promise.reject(new Error("not used by this fixture")),
+      resolveFindingGroup: () => Promise.reject(new Error("not used by this fixture")),
       cancelSchedulerOperation: (input) => {
         control.cancelCalls.push({
           operationId: input.operationId,
@@ -277,7 +280,9 @@ test.describe("M4 Governed Controls", () => {
     await dispatch.getByText("审批绑定与恢复命令").click();
     await expect(dispatch.getByText(dispatchDigest, { exact: true })).toBeVisible();
     await expect(dispatch.getByText("b".repeat(64), { exact: true })).toBeVisible();
-    await expect(dispatch.getByText(`harness resume ${operationId}`, { exact: true })).toBeVisible();
+    await expect(
+      dispatch.getByText(`harness resume ${operationId}`, { exact: true }),
+    ).toBeVisible();
 
     const integrate = page
       .locator("#scheduler-approvals .scheduler-approval-card")
@@ -346,9 +351,7 @@ test.describe("M4 Governed Controls", () => {
         expectedDigest: digestBeforeCancel,
       },
     ]);
-    await expect(
-      page.locator("#scheduler-agent-pool .agent-slot.slot-cancelling"),
-    ).toHaveCount(0);
+    await expect(page.locator("#scheduler-agent-pool .agent-slot.slot-cancelling")).toHaveCount(0);
     await expect(page.getByText("取消待确认", { exact: true })).toHaveCount(0);
     await expect(
       page.locator("#scheduler-waves .scheduler-task-card[data-status='cancelled']"),
