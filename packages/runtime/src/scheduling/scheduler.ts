@@ -1289,6 +1289,12 @@ export function createLocalTaskScheduler(
       // of the pass started — never at first-completion time.
       for (const entry of running) {
         const settled = await entry.settled;
+        // cancel() owns the authoritative Run/Lease terminal transition. A
+        // concurrently settling drive must not classify the same result a
+        // second time after cooperative cancellation released the Adapter.
+        if (cancelledOperations.has(input.operation_id)) {
+          return cancelledResult(dag, input.operation_id);
+        }
         await classifyRun(dag, entry, settled);
       }
     }

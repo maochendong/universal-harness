@@ -20,6 +20,7 @@ import type {
 } from "@universal-harness-internal/plugin-sdk";
 
 import {
+  createLedgerSchedulerAuthority,
   createNewProject,
   createProjectSchedulerHost,
   type ProjectSchedulerHost,
@@ -111,6 +112,7 @@ interface DrivenProject {
   readonly lockDirectory: string;
   readonly projectionStorePath?: string;
   readonly createHost: () => ProjectSchedulerHost;
+  readonly runStarted: Promise<void>;
 }
 
 /**
@@ -120,7 +122,7 @@ interface DrivenProject {
  * every record committed through the production write path.
  */
 async function makeDrivenProject(
-  options: { readonly sqliteProjection?: boolean } = {},
+  options: { readonly sqliteProjection?: boolean; readonly abortableRun?: boolean } = {},
 ): Promise<DrivenProject> {
   // One shared mint across bootstrap and setup: the Ledger rejects two events
   // with the same id and different content, so separate counters collide.
@@ -140,6 +142,10 @@ async function makeDrivenProject(
   // setup sequence would collide identical id strings with different content.
   const hostIds = sequentialIds();
   const hostNewId = (kind: string): string => `host_${hostIds(kind)}`;
+  let markRunStarted: (() => void) | undefined;
+  const runStarted = new Promise<void>((resolve) => {
+    markRunStarted = resolve;
+  });
   const deps: WorkflowDependencies = {
     projectRoot,
     readBaseline: () => headOf(projectRoot),
@@ -304,7 +310,7 @@ async function makeDrivenProject(
       create: ({ worktree_root }): AgentAdapter => ({
         name: "fake-slot-adapter",
         manifest: FAKE_MANIFEST,
-        run: (envelope) => {
+        run: (envelope, runOptions) => {
           // The Driver Lock must be held while any task executes.
           expect(existsSync(lockDirectory)).toBe(true);
           const writeScope = envelope.proposed_write_paths[0];
@@ -315,6 +321,23 @@ async function makeDrivenProject(
             join(directory, "outcome.ts"),
             `export const task = ${JSON.stringify(envelope.task_id)};\n`,
           );
+          markRunStarted?.();
+          if (options.abortableRun) {
+            return new Promise<AgentRunResult>((resolve) => {
+              runOptions.signal?.addEventListener(
+                "abort",
+                () =>
+                  resolve({
+                    ...stubResult(),
+                    outcome: "partial",
+                    termination_reason: "user_cancellation",
+                    completion_claimed: false,
+                    summary: "cancelled cooperatively",
+                  }),
+                { once: true },
+              );
+            });
+          }
           return Promise.resolve(stubResult());
         },
       }),
@@ -345,6 +368,7 @@ async function makeDrivenProject(
     lockDirectory,
     ...(projectionStorePath === undefined ? {} : { projectionStorePath }),
     createHost,
+    runStarted,
   };
 }
 
@@ -389,6 +413,39 @@ describe("createProjectSchedulerHost", () => {
     const reacquired = await fixture.host.acquireDriverLock(fixture.operationId);
     expect(existsSync(fixture.lockDirectory)).toBe(true);
     await reacquired.release();
+    expect(existsSync(fixture.lockDirectory)).toBe(false);
+  }, 60_000);
+
+  it("cooperatively cancels a live run and reconciles its Lease and Run before returning", async () => {
+    const fixture = await makeDrivenProject({ abortableRun: true });
+    const drive = fixture.host.parallelExecution.port.run({
+      operation_id: fixture.operationId,
+      iteration_id: ITERATION_ID,
+      capability_plan_digest: fixture.capabilityPlan.record_digest,
+      expected_plan_digest: fixture.planContentDigest,
+      driver_lock: fixture.host.parallelExecution.driverLock(),
+    });
+    await fixture.runStarted;
+
+    const active = await fixture.host.readSchedulerModel(fixture.operationId);
+    expect(active.slots.some((slot) => slot.state === "running")).toBe(true);
+
+    const cancelled = await fixture.host.cancelOperation(
+      fixture.operationId,
+      "human requested cancellation",
+    );
+    expect(cancelled.status).toBe("cancelled");
+    await expect(drive).resolves.toMatchObject({ status: "cancelled" });
+
+    const facts = await createLedgerSchedulerAuthority({ deps: fixture.deps }).readFacts(
+      fixture.operationId,
+    );
+    expect(facts.leases.at(-1)?.state).toBe("revoked");
+    expect(facts.runs.at(-1)).toMatchObject({
+      record_kind: "run_terminated",
+      termination_reason: "user_cancellation",
+    });
+    expect(cancelled.read_model.projection.tasks[0]?.status).toBe("cancelled");
     expect(existsSync(fixture.lockDirectory)).toBe(false);
   }, 60_000);
 

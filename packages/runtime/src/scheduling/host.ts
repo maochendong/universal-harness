@@ -69,8 +69,10 @@ import type { SchedulerProjectionStore } from "./ports.js";
 import { readSchedulerModel, type SchedulerReadModel } from "./read-model.js";
 import {
   createLocalTaskScheduler,
+  type LocalTaskScheduler,
   type SchedulerCeilingBounds,
   type SchedulerDispatchCallbacks,
+  type SchedulerDriveResult,
 } from "./scheduler.js";
 import {
   createInMemorySchedulerProjectionStore,
@@ -85,7 +87,7 @@ import { createTaskWorkspaceManager } from "./workspace-manager.js";
  * — Workflow Task DAG adapter, PolicyDecision adapter, workspace manager,
  * live-projection store, agent pool, local scheduler, candidate integration
  * controller, wave gates and the file-system Driver Lock — and exposes only
- * the three public surfaces the CLI/dashboard drivers consume:
+ * the four public surfaces the CLI/dashboard drivers consume:
  *
  * - `parallelExecution`: the ParallelExecutionBinding the kernel's parallel
  *   execute node consumes. `driverLock()` returns a deferred handle (the
@@ -97,6 +99,9 @@ import { createTaskWorkspaceManager } from "./workspace-manager.js";
  *   CapabilityPlan instead of fabricating tasks.
  * - `acquireDriverLock(operationId)`: explicit lock acquisition for drivers
  *   that orchestrate steps around a drive.
+ * - `cancelOperation(operationId, reason)`: cooperative cancellation through
+ *   the same LocalTaskScheduler/Pool stack, under this Operation's Driver
+ *   Lock; it never substitutes Workflow abort for Scheduler reconciliation.
  *
  * Approval has no separate host channel: a wave/dispatch approval flows
  * through the PolicyDecision (`approval_digest`) the configured
@@ -143,6 +148,7 @@ export interface ProjectSchedulerHost {
   readonly parallelExecution: ParallelExecutionBinding;
   readSchedulerModel(operationId: string): Promise<SchedulerReadModel>;
   acquireDriverLock(operationId: string): Promise<DriverLockHandle>;
+  cancelOperation(operationId: string, reason: string): Promise<SchedulerDriveResult>;
 }
 
 const DEFAULT_CEILINGS: SchedulerCeilingBounds = {
@@ -558,6 +564,7 @@ export function createProjectSchedulerHost(
 
   interface OperationStack {
     readonly port: ParallelTaskExecutionPort;
+    readonly scheduler: LocalTaskScheduler;
   }
   const stacks = new Map<string, OperationStack>();
 
@@ -673,7 +680,7 @@ export function createProjectSchedulerHost(
       effective_policy_digest: effectivePolicyDigest,
       now,
     });
-    const stack: OperationStack = { port };
+    const stack: OperationStack = { port, scheduler };
     stacks.set(operationId, stack);
     return stack;
   };
@@ -690,6 +697,7 @@ export function createProjectSchedulerHost(
     handle: DriverLockHandle | undefined;
   }
   const facadeBindings = new WeakMap<DriverLockHandle, FacadeBinding>();
+  const activeDriverLocks = new Map<string, DriverLockHandle>();
   const deferredDriverLock = (): DriverLockHandle => {
     const binding: FacadeBinding = { handle: undefined };
     const facade: DriverLockHandle = {
@@ -713,16 +721,27 @@ export function createProjectSchedulerHost(
       const facade = facadeBindings.get(resolved.driver_lock);
       if (facade === undefined) {
         // Caller-supplied real handle: the caller owns its lifecycle.
-        return stackFor(resolved.operation_id).port.run(resolved);
+        activeDriverLocks.set(resolved.operation_id, resolved.driver_lock);
+        try {
+          return await stackFor(resolved.operation_id).port.run(resolved);
+        } finally {
+          if (activeDriverLocks.get(resolved.operation_id) === resolved.driver_lock) {
+            activeDriverLocks.delete(resolved.operation_id);
+          }
+        }
       }
       const handle = await driverLock.acquire({
         operation_id: resolved.operation_id,
         driver_kind: driverKind,
       });
       facade.handle = handle;
+      activeDriverLocks.set(resolved.operation_id, handle);
       try {
         return await stackFor(resolved.operation_id).port.run({ ...resolved, driver_lock: handle });
       } finally {
+        if (activeDriverLocks.get(resolved.operation_id) === handle) {
+          activeDriverLocks.delete(resolved.operation_id);
+        }
         facade.handle = undefined;
         await handle.release();
       }
@@ -751,5 +770,25 @@ export function createProjectSchedulerHost(
     },
     acquireDriverLock: (operationId) =>
       driverLock.acquire({ operation_id: operationId, driver_kind: driverKind }),
+    cancelOperation: async (operationId, reason) => {
+      const activeHandle = activeDriverLocks.get(operationId);
+      const handle =
+        activeHandle ??
+        (await driverLock.acquire({ operation_id: operationId, driver_kind: driverKind }));
+      try {
+        return await stackFor(operationId).scheduler.cancel({
+          operation_id: operationId,
+          command_id: digestId("command", {
+            purpose: "cancel-operation",
+            operation_id: operationId,
+            reason,
+          }),
+          reason,
+          driver_lock: handle,
+        });
+      } finally {
+        if (activeHandle === undefined) await handle.release();
+      }
+    },
   };
 }

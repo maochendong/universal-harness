@@ -1691,11 +1691,25 @@ export function createOrchestratedRuntimeService(
       // the same project Scheduler Host used by status/run/resume. The host
       // is absent for projects without an activated/configured Scheduler, in
       // which case Dashboard keeps its explicit unavailable projection.
-      const dashboardSchedulerHost = schedulerHostFor({
+      const dashboardSchedulerReadHost = schedulerHostFor({
         projectRoot: request.projectRoot,
         driverKind: "dashboard",
         live: "read",
       });
+      let dashboardSchedulerControlHost: ProjectSchedulerHost | undefined;
+      let dashboardSchedulerControlHostResolved = false;
+      const controlHost = (): ProjectSchedulerHost | undefined => {
+        if (dashboardSchedulerControlHostResolved) return dashboardSchedulerControlHost;
+        dashboardSchedulerControlHostResolved = true;
+        const decision = concurrencyDecisionFor(request.projectRoot, undefined);
+        dashboardSchedulerControlHost = schedulerHostFor({
+          projectRoot: request.projectRoot,
+          driverKind: "dashboard",
+          maxConcurrency: decision.effective,
+          live: "write",
+        });
+        return dashboardSchedulerControlHost;
+      };
       const writeFailure = (error: unknown): never => {
         if (
           (error instanceof OrchestrationError && error.kind === "binding_drift") ||
@@ -1725,12 +1739,14 @@ export function createOrchestratedRuntimeService(
       const server = await startDashboardServer({
         projectRoot: request.projectRoot,
         port: request.port,
-        ...(dashboardSchedulerHost === undefined
+        ...(dashboardSchedulerReadHost === undefined
           ? {}
           : {
               schedulerApi: createDashboardSchedulerApi({
                 readSchedulerModel: (operationId) =>
-                  dashboardSchedulerHost.readSchedulerModel(operationId),
+                  (dashboardSchedulerControlHost ?? dashboardSchedulerReadHost).readSchedulerModel(
+                    operationId,
+                  ),
                 controlCapabilities: { cancel: true, policyProposal: false },
               }),
             }),
@@ -1782,13 +1798,7 @@ export function createOrchestratedRuntimeService(
               // M4 design 19.5: the dashboard resume is the "dashboard" driver
               // — it takes the same Driver Lock a CLI run/resume would, so a
               // local drive and a browser drive can never overlap.
-              const decision = concurrencyDecisionFor(request.projectRoot, undefined);
-              const host = schedulerHostFor({
-                projectRoot: request.projectRoot,
-                driverKind: "dashboard",
-                maxConcurrency: decision.effective,
-                live: "write",
-              });
+              const host = controlHost();
               let driveDeps = deps;
               let handle: AcquiredDriverLock | undefined;
               if (host !== undefined) {
@@ -1854,7 +1864,8 @@ export function createOrchestratedRuntimeService(
           },
           cancelSchedulerOperation: async (input) => {
             try {
-              if (dashboardSchedulerHost === undefined) {
+              const host = controlHost();
+              if (host === undefined) {
                 throw new DashboardWriteError(
                   "unavailable",
                   "this project has no active Scheduler control Provider",
@@ -1870,13 +1881,17 @@ export function createOrchestratedRuntimeService(
                   "the active operation changed; refresh before cancelling",
                 );
               }
-              const model = await dashboardSchedulerHost.readSchedulerModel(input.operationId);
+              const model = await host.readSchedulerModel(input.operationId);
               if (model.digest !== input.expectedDigest) {
                 throw new DashboardWriteError(
                   "conflict",
                   "the Scheduler read branch changed; refresh before cancelling",
                 );
               }
+              await host.cancelOperation(
+                input.operationId,
+                `dashboard cancellation requested by ${input.actor}`,
+              );
               const aborted = await resumeRuntime.abort({
                 projectRoot: request.projectRoot,
                 workflowOperationId: input.operationId,
@@ -1895,6 +1910,12 @@ export function createOrchestratedRuntimeService(
               };
             } catch (error) {
               if (error instanceof DashboardWriteError) throw error;
+              if (isDriverLockError(error)) {
+                throw new DashboardWriteError(
+                  "conflict",
+                  "the driver lock is held by another driver; retry once it is released",
+                );
+              }
               return writeFailure(error);
             }
           },
