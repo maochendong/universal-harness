@@ -2,7 +2,7 @@
 
 本文件由 `scripts/generate-acceptance-report.mjs` 从测试、Playwright、性能与打包门禁的结构化输出生成；验收语句引用自 M2 设计第 15 节。
 
-- 生成基线 commit：`4aa872d`
+- 生成基线 commit：`07676db`
 - 汇总：13/13 通过
 
 | AC | 范围 | 必须证明的结果 | 命令 | Evidence | 结果 |

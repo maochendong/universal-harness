@@ -2,7 +2,7 @@
 
 本文件由 `scripts/generate-acceptance-report.mjs` 从测试、Playwright、性能与真实平台 dogfood 的结构化输出生成；验收语句引用自 M3 设计第 22 节，结果区禁止人工改写。
 
-- 生成基线 commit：`4aa872dd1212ba6d80459b7f44c1e1021ccbb0cd`
+- 生成基线 commit：`07676db7803f2aa15030f6cfb0ee265e08b50586`
 - 汇总：12/14 通过
 
 | AC | 必须证明的结果（设计第 22 节） | 命令 | Exit | Evidence（sha256 前 12 位） | 结果 | Commit |

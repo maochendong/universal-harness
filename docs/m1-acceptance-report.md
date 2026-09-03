@@ -2,7 +2,7 @@
 
 本文件由 `scripts/generate-acceptance-report.mjs` 从各测试套件的结构化输出生成；结果区禁止人工改写（实施计划 Task 28）。验收标准原文引用自已批准的设计文档第 17 节。
 
-- 生成基线 commit：`4aa872d`
+- 生成基线 commit：`07676db`
 - 输入套件：main, security, fault, performance, e2e, playwright-dashboard（`.reports/acceptance/*.json`）
 - 汇总：27/28 通过；failed 0，blocked 0，not_verified 1，not_run 0
 
@@ -43,16 +43,16 @@
 
 | Metric | p50 (ms) | p95 (ms) | max (ms) | 规模 | 环境 |
 |---|---|---|---|---|---|
-| ledger_transaction_commit | 28.51 | 33.57 | 35.7 | {"operations":40,"artifacts_per_operation":1,"edges_per_operation":1,"events_per_operation":1} | darwin ci=false |
-| m2_dashboard./api/v1/graph/nodes?limit=100 | 5.37 | 7.97 | 7.97 | {"nodes":10000,"edges":30000,"events":20000,"findings":1000} | darwin ci=false |
-| m2_dashboard./api/v1/graph/edges?limit=100 | 3.25 | 4.23 | 4.23 | {"nodes":10000,"edges":30000,"events":20000,"findings":1000} | darwin ci=false |
-| m2_dashboard./api/v1/graph/neighborhood/requirement_r00000?depth=2&direction=both | 2.96 | 3.77 | 3.77 | {"nodes":10000,"edges":30000,"events":20000,"findings":1000} | darwin ci=false |
-| m2_finding_groups | 1.61 | 2.84 | 3.33 | {"findings":1000,"groups":20} | darwin ci=false |
-| m2_semantic_top_k | 74.96 | 82.8 | 82.8 | {"indexed_nodes":10000,"top_k":10} | darwin ci=false |
-| scheduler_read_api | 26.44 | 27.5 | 29.13 | {"tasks":1000,"samples":50} | darwin ci=false |
-| projection_generation.architecture_full | 8156.85 | 12631.57 | 12631.57 | {"full":{"nodes":20000,"edges":100000,"renders":3},"affected_slice":{"nodes":2050,"edges":3722,"renders":15}} | darwin ci=false |
-| projection_generation.architecture_affected_slice | 9.95 | 11.06 | 11.06 | {"full":{"nodes":20000,"edges":100000,"renders":3},"affected_slice":{"nodes":2050,"edges":3722,"renders":15}} | darwin ci=false |
-| projection_generation.prd_full | 12.6 | 12.6 | 12.6 | {"full":{"nodes":20000,"edges":100000,"renders":3},"affected_slice":{"nodes":2050,"edges":3722,"renders":15}} | darwin ci=false |
+| ledger_transaction_commit | 30.51 | 35.33 | 36.47 | {"operations":40,"artifacts_per_operation":1,"edges_per_operation":1,"events_per_operation":1} | darwin ci=false |
+| m2_dashboard./api/v1/graph/nodes?limit=100 | 4.66 | 8.26 | 8.26 | {"nodes":10000,"edges":30000,"events":20000,"findings":1000} | darwin ci=false |
+| m2_dashboard./api/v1/graph/edges?limit=100 | 3.13 | 4.18 | 4.18 | {"nodes":10000,"edges":30000,"events":20000,"findings":1000} | darwin ci=false |
+| m2_dashboard./api/v1/graph/neighborhood/requirement_r00000?depth=2&direction=both | 3.01 | 3.84 | 3.84 | {"nodes":10000,"edges":30000,"events":20000,"findings":1000} | darwin ci=false |
+| m2_finding_groups | 1.39 | 2.55 | 2.88 | {"findings":1000,"groups":20} | darwin ci=false |
+| m2_semantic_top_k | 66.2 | 72.37 | 72.37 | {"indexed_nodes":10000,"top_k":10} | darwin ci=false |
+| scheduler_read_api | 24.03 | 24.26 | 24.44 | {"tasks":1000,"samples":50} | darwin ci=false |
+| projection_generation.architecture_full | 8090.6 | 13026.86 | 13026.86 | {"full":{"nodes":20000,"edges":100000,"renders":3},"affected_slice":{"nodes":2050,"edges":3722,"renders":15}} | darwin ci=false |
+| projection_generation.architecture_affected_slice | 7.48 | 9.25 | 9.25 | {"full":{"nodes":20000,"edges":100000,"renders":3},"affected_slice":{"nodes":2050,"edges":3722,"renders":15}} | darwin ci=false |
+| projection_generation.prd_full | 10.42 | 10.42 | 10.42 | {"full":{"nodes":20000,"edges":100000,"renders":3},"affected_slice":{"nodes":2050,"edges":3722,"renders":15}} | darwin ci=false |
 
 ## 发布声明
 

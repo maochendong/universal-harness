@@ -1,24 +1,24 @@
 {
   "schema_version": "harness.m4-acceptance-results/1",
   "milestone": "M4",
-  "implementation_commit": "4aa872dd1212ba6d80459b7f44c1e1021ccbb0cd",
-  "generated_at": "2026-09-02T20:31:34.427Z",
+  "implementation_commit": "07676db7803f2aa15030f6cfb0ee265e08b50586",
+  "generated_at": "2026-09-03T07:45:27.399Z",
   "suite_invocation_ids": {
-    "main": "c7c32bdd-141a-4599-8a23-7014b85ce4a2",
-    "security": "54af3d7d-5003-434e-85de-550ccd173a38",
-    "fault": "b508fede-3709-4aa3-9d68-165f61056bf3",
-    "performance": "d5789934-86fd-4b66-88ca-fbe5c8ec3f7d",
-    "e2e": "60a7e3c7-f642-4afa-b847-41bab554a7f4",
-    "playwright-dashboard": "6dfcddcc-36d8-4fa7-9a3f-8bab07ff24a8"
+    "main": "dfb9ae66-20cc-4af5-a074-d8177c3b26c8",
+    "security": "092189b1-5544-427a-bc08-d8372ab267dd",
+    "fault": "b2acb287-bc0f-47e7-a824-3fbbf4065faa",
+    "performance": "c1f2961f-db14-44ec-a6f2-cf62c8079ed4",
+    "e2e": "6c406767-813d-41ce-b712-5f7d64cb4066",
+    "playwright-dashboard": "0d2cd491-0abb-43d2-96b5-00bf61b45ce9"
   },
   "suite_results": {
     "main": {
       "schema_version": "harness.acceptance-suite-report/1",
       "suite": "main",
-      "implementation_commit": "4aa872dd1212ba6d80459b7f44c1e1021ccbb0cd",
-      "started_commit": "4aa872dd1212ba6d80459b7f44c1e1021ccbb0cd",
-      "finished_commit": "4aa872dd1212ba6d80459b7f44c1e1021ccbb0cd",
-      "invocation_id": "c7c32bdd-141a-4599-8a23-7014b85ce4a2",
+      "implementation_commit": "07676db7803f2aa15030f6cfb0ee265e08b50586",
+      "started_commit": "07676db7803f2aa15030f6cfb0ee265e08b50586",
+      "finished_commit": "07676db7803f2aa15030f6cfb0ee265e08b50586",
+      "invocation_id": "dfb9ae66-20cc-4af5-a074-d8177c3b26c8",
       "command": "pnpm test",
       "coverage": "full",
       "config_path": "vitest.workspace.ts",
@@ -1718,10 +1718,10 @@
     "security": {
       "schema_version": "harness.acceptance-suite-report/1",
       "suite": "security",
-      "implementation_commit": "4aa872dd1212ba6d80459b7f44c1e1021ccbb0cd",
-      "started_commit": "4aa872dd1212ba6d80459b7f44c1e1021ccbb0cd",
-      "finished_commit": "4aa872dd1212ba6d80459b7f44c1e1021ccbb0cd",
-      "invocation_id": "54af3d7d-5003-434e-85de-550ccd173a38",
+      "implementation_commit": "07676db7803f2aa15030f6cfb0ee265e08b50586",
+      "started_commit": "07676db7803f2aa15030f6cfb0ee265e08b50586",
+      "finished_commit": "07676db7803f2aa15030f6cfb0ee265e08b50586",
+      "invocation_id": "092189b1-5544-427a-bc08-d8372ab267dd",
       "command": "pnpm test:security",
       "coverage": "full",
       "config_path": "vitest.workspace.ts",
@@ -1805,10 +1805,10 @@
     "fault": {
       "schema_version": "harness.acceptance-suite-report/1",
       "suite": "fault",
-      "implementation_commit": "4aa872dd1212ba6d80459b7f44c1e1021ccbb0cd",
-      "started_commit": "4aa872dd1212ba6d80459b7f44c1e1021ccbb0cd",
-      "finished_commit": "4aa872dd1212ba6d80459b7f44c1e1021ccbb0cd",
-      "invocation_id": "b508fede-3709-4aa3-9d68-165f61056bf3",
+      "implementation_commit": "07676db7803f2aa15030f6cfb0ee265e08b50586",
+      "started_commit": "07676db7803f2aa15030f6cfb0ee265e08b50586",
+      "finished_commit": "07676db7803f2aa15030f6cfb0ee265e08b50586",
+      "invocation_id": "b2acb287-bc0f-47e7-a824-3fbbf4065faa",
       "command": "pnpm test:fault",
       "coverage": "full",
       "config_path": "vitest.workspace.ts",
@@ -1908,10 +1908,10 @@
     "performance": {
       "schema_version": "harness.acceptance-suite-report/1",
       "suite": "performance",
-      "implementation_commit": "4aa872dd1212ba6d80459b7f44c1e1021ccbb0cd",
-      "started_commit": "4aa872dd1212ba6d80459b7f44c1e1021ccbb0cd",
-      "finished_commit": "4aa872dd1212ba6d80459b7f44c1e1021ccbb0cd",
-      "invocation_id": "d5789934-86fd-4b66-88ca-fbe5c8ec3f7d",
+      "implementation_commit": "07676db7803f2aa15030f6cfb0ee265e08b50586",
+      "started_commit": "07676db7803f2aa15030f6cfb0ee265e08b50586",
+      "finished_commit": "07676db7803f2aa15030f6cfb0ee265e08b50586",
+      "invocation_id": "c1f2961f-db14-44ec-a6f2-cf62c8079ed4",
       "command": "pnpm test:performance",
       "coverage": "full",
       "config_path": "vitest.performance.ts",
@@ -1983,10 +1983,10 @@
     "e2e": {
       "schema_version": "harness.acceptance-suite-report/1",
       "suite": "e2e",
-      "implementation_commit": "4aa872dd1212ba6d80459b7f44c1e1021ccbb0cd",
-      "started_commit": "4aa872dd1212ba6d80459b7f44c1e1021ccbb0cd",
-      "finished_commit": "4aa872dd1212ba6d80459b7f44c1e1021ccbb0cd",
-      "invocation_id": "60a7e3c7-f642-4afa-b847-41bab554a7f4",
+      "implementation_commit": "07676db7803f2aa15030f6cfb0ee265e08b50586",
+      "started_commit": "07676db7803f2aa15030f6cfb0ee265e08b50586",
+      "finished_commit": "07676db7803f2aa15030f6cfb0ee265e08b50586",
+      "invocation_id": "6c406767-813d-41ce-b712-5f7d64cb4066",
       "command": "pnpm test:e2e",
       "coverage": "full",
       "config_path": "vitest.workspace.ts",
@@ -2098,10 +2098,10 @@
     "playwright-dashboard": {
       "schema_version": "harness.acceptance-suite-report/1",
       "suite": "playwright-dashboard",
-      "implementation_commit": "4aa872dd1212ba6d80459b7f44c1e1021ccbb0cd",
-      "started_commit": "4aa872dd1212ba6d80459b7f44c1e1021ccbb0cd",
-      "finished_commit": "4aa872dd1212ba6d80459b7f44c1e1021ccbb0cd",
-      "invocation_id": "6dfcddcc-36d8-4fa7-9a3f-8bab07ff24a8",
+      "implementation_commit": "07676db7803f2aa15030f6cfb0ee265e08b50586",
+      "started_commit": "07676db7803f2aa15030f6cfb0ee265e08b50586",
+      "finished_commit": "07676db7803f2aa15030f6cfb0ee265e08b50586",
+      "invocation_id": "0d2cd491-0abb-43d2-96b5-00bf61b45ce9",
       "command": "pnpm test:e2e:dashboard",
       "coverage": "full",
       "config_path": "playwright.dashboard.config.ts",
@@ -2140,17 +2140,17 @@
     }
   },
   "suite_result_digests": {
-    "main": "b7ae462071ceaab7538ba81bdc2c43ae8c175317b2d1025e8a2eae6cef6ee410",
-    "security": "52fe251e8b7466fa3bf1cd6e10517516e3d56af1a568fd61c9f18344f6707f7e",
-    "fault": "4354ea81d55ca009b8b2ffe878bf801a70d6339a53393edc65bc71ffcad1e08b",
-    "performance": "ca123cd21caf75afbbf15e14e59e8261f7c93b675c23f37ce1a06efe08d49b1c",
-    "e2e": "edad8bfb9258727866014eac6c9290893097d712db35d5a0720b30ff5793a6c3",
-    "playwright-dashboard": "4faa2bd5caaf26042c23310bdabf016605f848878af5357425b8e308b1134a7a"
+    "main": "867705be7a9d5b685ba01cde037da155cba8a397978c667ad60f4cc0d98d9bff",
+    "security": "c811403f7a81cc5c047b20de4073393dd944657e0db0b58fd64b6a92245d4f30",
+    "fault": "3624a7511d8cbf4a7dc124b5acd7f24da5ac79dff1787492cb92f8e20a4d8e0d",
+    "performance": "49e302dcd26b015aee4e1011ff0da3daf218791696f06eb3ba81b2e682aca7f5",
+    "e2e": "4869590e644b3f61ee6a9278f8bb5dfadd3233d3ac25d4e69004238120756159",
+    "playwright-dashboard": "7b3ece3735bcebb30d6357f25b4776b4b2c80881a8c4e7aa0a43c2c93684b533"
   },
   "dogfood_result": {
     "present": true,
     "schema_version": 1,
-    "implementation_commit": "4aa872dd1212ba6d80459b7f44c1e1021ccbb0cd",
+    "implementation_commit": "07676db7803f2aa15030f6cfb0ee265e08b50586",
     "status": "blocked",
     "blocker": "real_adapter_unattended_ineligible",
     "command": "<redacted-path> --profile headless <TaskEnvelope>",
@@ -2170,8 +2170,8 @@
     "credential_material_recorded": false,
     "credential_material_hashed": false,
     "build_provenance": {
-      "implementation_commit": "4aa872dd1212ba6d80459b7f44c1e1021ccbb0cd",
-      "source_head": "4aa872dd1212ba6d80459b7f44c1e1021ccbb0cd",
+      "implementation_commit": "07676db7803f2aa15030f6cfb0ee265e08b50586",
+      "source_head": "07676db7803f2aa15030f6cfb0ee265e08b50586",
       "source_head_matches_implementation_commit": true,
       "tracked_source_clean": true,
       "build_command": "pnpm build",
@@ -2195,7 +2195,7 @@
       ],
       "package_count": 13,
       "external_runtime_dependency_count": 7,
-      "provenance_sha256": "8b17ae9e04ddbdc5943c4d9b826a0869bb496e4e828e028fffd1b8b647ab6163"
+      "provenance_sha256": "3879159b15b99b4f8c2ecbb8a11eb4ff3b2290162d1a53c79765c4b22fad6032"
     },
     "adapter_manifest_digest": "63285cb9f1573c0c522011bd80e3df5ef0207796cf646643366fec34a0f8a1bf",
     "requested_task_count": 4,
@@ -2243,16 +2243,16 @@
     },
     "dsh_session_observation": {
       "source": "dsh_local_zstd_session",
-      "session_sha256": "81383e57c6b53d3107737a84720e0e6c0110f579e0288f343be4cd4735578308",
+      "session_sha256": "20845dc1a75b89f157afd0f179caaf54f61b548c275e8c1c1f9552a04511dc71",
       "raw_session_persisted_in_release_bundle": false,
       "usage": {
         "metering": "dsh_session_observed",
-        "model_call_count": 4,
-        "input_tokens": 10891,
-        "cache_read_input_tokens": 32128,
-        "output_tokens": 1096,
-        "reasoning_tokens": 585,
-        "total_tokens": 44115
+        "model_call_count": 5,
+        "input_tokens": 10776,
+        "cache_read_input_tokens": 42752,
+        "output_tokens": 1082,
+        "reasoning_tokens": 501,
+        "total_tokens": 54610
       }
     },
     "supervised_probe": {
@@ -2266,14 +2266,14 @@
       "evidence": [
         {
           "kind": "transcript",
-          "digest": "dfce1ed8ae9b8842ccbbe7c3e6cb853054a32e0b0565858464786ccec9e0b43a"
+          "digest": "519ea6178033bf8032d54c198489bb56294348ce53b31adabb4e038707d5c852"
         },
         {
           "kind": "diff",
-          "digest": "3e847fe5920573d3150e53882c7640caebe396ed6f266130fc67b8ab5a2d1b61"
+          "digest": "b3b6fe9c707a5d6579dc0f313256f4de25a7fe1f0ad5f4ace82e87c208167405"
         }
       ],
-      "duration_ms": 11920
+      "duration_ms": 11619
     },
     "overlap_proven": false,
     "overlap_intervals": [],
@@ -2284,7 +2284,7 @@
     "raw_transcript_persisted_in_release_bundle": false,
     "command_executable_basename": "bin.js"
   },
-  "dogfood_result_digest": "4326379407bee2d2feed1a1fc24fa0f9f58eb07c27a1c8437c12aca3df3c92f1",
+  "dogfood_result_digest": "8ecfd231960b66ca4a1901c765c8937bb7be9b0a06faa5b49f257ef76e28eeb4",
   "results": [
     {
       "acceptance_id": "AC-01",
@@ -2294,7 +2294,7 @@
         "main"
       ],
       "suite_invocation_ids": {
-        "main": "c7c32bdd-141a-4599-8a23-7014b85ce4a2"
+        "main": "dfb9ae66-20cc-4af5-a074-d8177c3b26c8"
       },
       "commands": [
         "pnpm test"
@@ -2306,11 +2306,11 @@
       ],
       "tracked_evidence_digest": "54351b77ffc536e2858310a51558c86099a590976732271a07960dd6132d18b6",
       "suite_result_digests": {
-        "main": "b7ae462071ceaab7538ba81bdc2c43ae8c175317b2d1025e8a2eae6cef6ee410"
+        "main": "867705be7a9d5b685ba01cde037da155cba8a397978c667ad60f4cc0d98d9bff"
       },
       "design_section": "§24",
       "detail": "no extra readiness proof required",
-      "evidence_digest": "231ab6c6cf90c666ebc516750aff5d5ef44a678e68d64b0e5f78f820326cd7cc"
+      "evidence_digest": "8987ab8fb0c448bccbd1ecea04773359ec763ef27e014ebb8e18b1c1ed0af4d9"
     },
     {
       "acceptance_id": "AC-02",
@@ -2320,7 +2320,7 @@
         "main"
       ],
       "suite_invocation_ids": {
-        "main": "c7c32bdd-141a-4599-8a23-7014b85ce4a2"
+        "main": "dfb9ae66-20cc-4af5-a074-d8177c3b26c8"
       },
       "commands": [
         "pnpm test"
@@ -2330,11 +2330,11 @@
       ],
       "tracked_evidence_digest": "7f928aac37a2307783764ed5e2e7593dbffeff1cc7515ec0828baddf98c761c7",
       "suite_result_digests": {
-        "main": "b7ae462071ceaab7538ba81bdc2c43ae8c175317b2d1025e8a2eae6cef6ee410"
+        "main": "867705be7a9d5b685ba01cde037da155cba8a397978c667ad60f4cc0d98d9bff"
       },
       "design_section": "§24",
       "detail": "no extra readiness proof required",
-      "evidence_digest": "43e2d7d64fe4a7f3f3e22cf2b23879a266ea0af1577587cd08e8fb22cb87c9f8"
+      "evidence_digest": "79d3653b2a6c63a005a0319d8c98774c921702e174746eb604508a839f76e011"
     },
     {
       "acceptance_id": "AC-03",
@@ -2345,8 +2345,8 @@
         "performance"
       ],
       "suite_invocation_ids": {
-        "main": "c7c32bdd-141a-4599-8a23-7014b85ce4a2",
-        "performance": "d5789934-86fd-4b66-88ca-fbe5c8ec3f7d"
+        "main": "dfb9ae66-20cc-4af5-a074-d8177c3b26c8",
+        "performance": "c1f2961f-db14-44ec-a6f2-cf62c8079ed4"
       },
       "commands": [
         "pnpm test",
@@ -2358,12 +2358,12 @@
       ],
       "tracked_evidence_digest": "03684282929f06b1c293a3d1bd05f427ff5709c96cd16e6d94a5939e60d58b43",
       "suite_result_digests": {
-        "main": "b7ae462071ceaab7538ba81bdc2c43ae8c175317b2d1025e8a2eae6cef6ee410",
-        "performance": "ca123cd21caf75afbbf15e14e59e8261f7c93b675c23f37ce1a06efe08d49b1c"
+        "main": "867705be7a9d5b685ba01cde037da155cba8a397978c667ad60f4cc0d98d9bff",
+        "performance": "49e302dcd26b015aee4e1011ff0da3daf218791696f06eb3ba81b2e682aca7f5"
       },
       "design_section": "§24",
       "detail": "no extra readiness proof required",
-      "evidence_digest": "200aef8bd0fc11e52742c682c8d5df823882a0e2a85870858d0fa7dbd6ac6669"
+      "evidence_digest": "e9210729dd6e183ad293f53520b42631e564c939d187a92b4b29ad2172732041"
     },
     {
       "acceptance_id": "AC-04",
@@ -2373,7 +2373,7 @@
         "main"
       ],
       "suite_invocation_ids": {
-        "main": "c7c32bdd-141a-4599-8a23-7014b85ce4a2"
+        "main": "dfb9ae66-20cc-4af5-a074-d8177c3b26c8"
       },
       "commands": [
         "pnpm test"
@@ -2384,11 +2384,11 @@
       ],
       "tracked_evidence_digest": "1ca2527ea85b2e939e1cb9ec04e625002d9b7ac01cef315f1e2b7730d61e93bd",
       "suite_result_digests": {
-        "main": "b7ae462071ceaab7538ba81bdc2c43ae8c175317b2d1025e8a2eae6cef6ee410"
+        "main": "867705be7a9d5b685ba01cde037da155cba8a397978c667ad60f4cc0d98d9bff"
       },
       "design_section": "§24",
       "detail": "no extra readiness proof required",
-      "evidence_digest": "0b8cf160d8a31be905d3d96037215816a95ad2162c0714b9a81b343e7d52751e"
+      "evidence_digest": "bc3dedd9026fd2978e8703954c4bfe7dc89883883fa678ea7cd0051144c09ca3"
     },
     {
       "acceptance_id": "AC-05",
@@ -2398,7 +2398,7 @@
         "main"
       ],
       "suite_invocation_ids": {
-        "main": "c7c32bdd-141a-4599-8a23-7014b85ce4a2"
+        "main": "dfb9ae66-20cc-4af5-a074-d8177c3b26c8"
       },
       "commands": [
         "pnpm test",
@@ -2411,12 +2411,12 @@
       ],
       "tracked_evidence_digest": "e9fe09705af04b11b0264956ed93e98a8fc91ec3f9ee00fe5a682760351f0450",
       "suite_result_digests": {
-        "main": "b7ae462071ceaab7538ba81bdc2c43ae8c175317b2d1025e8a2eae6cef6ee410"
+        "main": "867705be7a9d5b685ba01cde037da155cba8a397978c667ad60f4cc0d98d9bff"
       },
-      "dogfood_result_digest": "4326379407bee2d2feed1a1fc24fa0f9f58eb07c27a1c8437c12aca3df3c92f1",
+      "dogfood_result_digest": "8ecfd231960b66ca4a1901c765c8937bb7be9b0a06faa5b49f257ef76e28eeb4",
       "design_section": "§24",
       "detail": "no extra readiness proof required",
-      "evidence_digest": "eeec97fee773c3d0457a1f4d9a2571463ebb78eddadba3bf996eb0691aed5caf"
+      "evidence_digest": "ec7e1fc12ba0abdd9ba9ee828447e12e7113091ce7d6440590279a9051ccbdcc"
     },
     {
       "acceptance_id": "AC-06",
@@ -2432,10 +2432,10 @@
       ],
       "tracked_evidence_digest": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
       "suite_result_digests": {},
-      "dogfood_result_digest": "4326379407bee2d2feed1a1fc24fa0f9f58eb07c27a1c8437c12aca3df3c92f1",
+      "dogfood_result_digest": "8ecfd231960b66ca4a1901c765c8937bb7be9b0a06faa5b49f257ef76e28eeb4",
       "design_section": "§24",
       "detail": "real parallel overlap proof is incomplete",
-      "evidence_digest": "656b73ed696deaf26d660e1d85778e7c53905cf8a57be62456881646b68ccd73"
+      "evidence_digest": "dcdc9a7c5b32922acd088e1d5f655ebb4ea46ed809915ffe5b9946a5154a9f13"
     },
     {
       "acceptance_id": "AC-07",
@@ -2446,8 +2446,8 @@
         "e2e"
       ],
       "suite_invocation_ids": {
-        "main": "c7c32bdd-141a-4599-8a23-7014b85ce4a2",
-        "e2e": "60a7e3c7-f642-4afa-b847-41bab554a7f4"
+        "main": "dfb9ae66-20cc-4af5-a074-d8177c3b26c8",
+        "e2e": "6c406767-813d-41ce-b712-5f7d64cb4066"
       },
       "commands": [
         "pnpm test",
@@ -2460,12 +2460,12 @@
       ],
       "tracked_evidence_digest": "05cbe6eb104d292e39df78ea8bd778026b0189268645873cb92b97c766c39cf2",
       "suite_result_digests": {
-        "main": "b7ae462071ceaab7538ba81bdc2c43ae8c175317b2d1025e8a2eae6cef6ee410",
-        "e2e": "edad8bfb9258727866014eac6c9290893097d712db35d5a0720b30ff5793a6c3"
+        "main": "867705be7a9d5b685ba01cde037da155cba8a397978c667ad60f4cc0d98d9bff",
+        "e2e": "4869590e644b3f61ee6a9278f8bb5dfadd3233d3ac25d4e69004238120756159"
       },
       "design_section": "§24",
       "detail": "no extra readiness proof required",
-      "evidence_digest": "8225def378ba1eab98d0bfeba6696756a4b59ce2a58339437dda8b753cdad46c"
+      "evidence_digest": "4c8527c0f772ce3d81f8763ab5101a894bfd6496231964eac3a11985977aeb4f"
     },
     {
       "acceptance_id": "AC-08",
@@ -2476,8 +2476,8 @@
         "fault"
       ],
       "suite_invocation_ids": {
-        "main": "c7c32bdd-141a-4599-8a23-7014b85ce4a2",
-        "fault": "b508fede-3709-4aa3-9d68-165f61056bf3"
+        "main": "dfb9ae66-20cc-4af5-a074-d8177c3b26c8",
+        "fault": "b2acb287-bc0f-47e7-a824-3fbbf4065faa"
       },
       "commands": [
         "pnpm test",
@@ -2489,12 +2489,12 @@
       ],
       "tracked_evidence_digest": "a36c5c4407bfff01eb070423cc26facf825b92ad0c4432a2d9adb816d64e3661",
       "suite_result_digests": {
-        "main": "b7ae462071ceaab7538ba81bdc2c43ae8c175317b2d1025e8a2eae6cef6ee410",
-        "fault": "4354ea81d55ca009b8b2ffe878bf801a70d6339a53393edc65bc71ffcad1e08b"
+        "main": "867705be7a9d5b685ba01cde037da155cba8a397978c667ad60f4cc0d98d9bff",
+        "fault": "3624a7511d8cbf4a7dc124b5acd7f24da5ac79dff1787492cb92f8e20a4d8e0d"
       },
       "design_section": "§24",
       "detail": "no extra readiness proof required",
-      "evidence_digest": "640fbac893dae8b4f87081f94e50b314330a728178e71c6f3ab68a3410ad1640"
+      "evidence_digest": "fa2fe994ad0db3762e712fb15ce770e842eba670ac8b27d355e6d2350aa3b8e0"
     },
     {
       "acceptance_id": "AC-09",
@@ -2505,8 +2505,8 @@
         "e2e"
       ],
       "suite_invocation_ids": {
-        "main": "c7c32bdd-141a-4599-8a23-7014b85ce4a2",
-        "e2e": "60a7e3c7-f642-4afa-b847-41bab554a7f4"
+        "main": "dfb9ae66-20cc-4af5-a074-d8177c3b26c8",
+        "e2e": "6c406767-813d-41ce-b712-5f7d64cb4066"
       },
       "commands": [
         "pnpm test",
@@ -2518,12 +2518,12 @@
       ],
       "tracked_evidence_digest": "0cc354737aab14edd54acc1d33a16fc88983876833abbfc6488bf470cba54de8",
       "suite_result_digests": {
-        "main": "b7ae462071ceaab7538ba81bdc2c43ae8c175317b2d1025e8a2eae6cef6ee410",
-        "e2e": "edad8bfb9258727866014eac6c9290893097d712db35d5a0720b30ff5793a6c3"
+        "main": "867705be7a9d5b685ba01cde037da155cba8a397978c667ad60f4cc0d98d9bff",
+        "e2e": "4869590e644b3f61ee6a9278f8bb5dfadd3233d3ac25d4e69004238120756159"
       },
       "design_section": "§24",
       "detail": "no extra readiness proof required",
-      "evidence_digest": "4b755d283306a3e9a0dfbefee6d69bfb2b1c0f9a2b700d7e6176be81d5fa9be3"
+      "evidence_digest": "6835f7ae44916d24df055aebd026fcb060417d7fd7aece54859dde5f96fa02ab"
     },
     {
       "acceptance_id": "AC-10",
@@ -2535,9 +2535,9 @@
         "e2e"
       ],
       "suite_invocation_ids": {
-        "main": "c7c32bdd-141a-4599-8a23-7014b85ce4a2",
-        "fault": "b508fede-3709-4aa3-9d68-165f61056bf3",
-        "e2e": "60a7e3c7-f642-4afa-b847-41bab554a7f4"
+        "main": "dfb9ae66-20cc-4af5-a074-d8177c3b26c8",
+        "fault": "b2acb287-bc0f-47e7-a824-3fbbf4065faa",
+        "e2e": "6c406767-813d-41ce-b712-5f7d64cb4066"
       },
       "commands": [
         "pnpm test",
@@ -2550,13 +2550,13 @@
       ],
       "tracked_evidence_digest": "6e24c8964e5795c1fcf789bb1a2e4af38429ddc0ed97568a5801250aac029b2d",
       "suite_result_digests": {
-        "main": "b7ae462071ceaab7538ba81bdc2c43ae8c175317b2d1025e8a2eae6cef6ee410",
-        "fault": "4354ea81d55ca009b8b2ffe878bf801a70d6339a53393edc65bc71ffcad1e08b",
-        "e2e": "edad8bfb9258727866014eac6c9290893097d712db35d5a0720b30ff5793a6c3"
+        "main": "867705be7a9d5b685ba01cde037da155cba8a397978c667ad60f4cc0d98d9bff",
+        "fault": "3624a7511d8cbf4a7dc124b5acd7f24da5ac79dff1787492cb92f8e20a4d8e0d",
+        "e2e": "4869590e644b3f61ee6a9278f8bb5dfadd3233d3ac25d4e69004238120756159"
       },
       "design_section": "§24",
       "detail": "tests/e2e/m4-production-policy-source.test.ts passed in canonical e2e",
-      "evidence_digest": "14d2d3ea040a14914e416936915b0c4956559b611b1a109201d52c903f943ce8"
+      "evidence_digest": "d1dfc2062a2f3ede242ad3fe011192a2ad19b7cf6bce606c3f64d92990006003"
     },
     {
       "acceptance_id": "AC-11",
@@ -2567,8 +2567,8 @@
         "e2e"
       ],
       "suite_invocation_ids": {
-        "main": "c7c32bdd-141a-4599-8a23-7014b85ce4a2",
-        "e2e": "60a7e3c7-f642-4afa-b847-41bab554a7f4"
+        "main": "dfb9ae66-20cc-4af5-a074-d8177c3b26c8",
+        "e2e": "6c406767-813d-41ce-b712-5f7d64cb4066"
       },
       "commands": [
         "pnpm test",
@@ -2580,12 +2580,12 @@
       ],
       "tracked_evidence_digest": "ec7b805c36122ff5028c845b9347008b662f986955fa1072bd0869b7c95d142c",
       "suite_result_digests": {
-        "main": "b7ae462071ceaab7538ba81bdc2c43ae8c175317b2d1025e8a2eae6cef6ee410",
-        "e2e": "edad8bfb9258727866014eac6c9290893097d712db35d5a0720b30ff5793a6c3"
+        "main": "867705be7a9d5b685ba01cde037da155cba8a397978c667ad60f4cc0d98d9bff",
+        "e2e": "4869590e644b3f61ee6a9278f8bb5dfadd3233d3ac25d4e69004238120756159"
       },
       "design_section": "§24",
       "detail": "no extra readiness proof required",
-      "evidence_digest": "d556f49b4ed590866a33778311cf187ad2adb973dd61854de5a0747c17d6139e"
+      "evidence_digest": "baa386de9fc42a2162e547a46f2592573262f773953e6a067224ee3aa7e86fe6"
     },
     {
       "acceptance_id": "AC-12",
@@ -2596,8 +2596,8 @@
         "fault"
       ],
       "suite_invocation_ids": {
-        "main": "c7c32bdd-141a-4599-8a23-7014b85ce4a2",
-        "fault": "b508fede-3709-4aa3-9d68-165f61056bf3"
+        "main": "dfb9ae66-20cc-4af5-a074-d8177c3b26c8",
+        "fault": "b2acb287-bc0f-47e7-a824-3fbbf4065faa"
       },
       "commands": [
         "pnpm test",
@@ -2609,12 +2609,12 @@
       ],
       "tracked_evidence_digest": "dfc2c7d4384d50a601e12336ea2ca252c2a7e18d49eb0db29599f9627f8015e3",
       "suite_result_digests": {
-        "main": "b7ae462071ceaab7538ba81bdc2c43ae8c175317b2d1025e8a2eae6cef6ee410",
-        "fault": "4354ea81d55ca009b8b2ffe878bf801a70d6339a53393edc65bc71ffcad1e08b"
+        "main": "867705be7a9d5b685ba01cde037da155cba8a397978c667ad60f4cc0d98d9bff",
+        "fault": "3624a7511d8cbf4a7dc124b5acd7f24da5ac79dff1787492cb92f8e20a4d8e0d"
       },
       "design_section": "§24",
       "detail": "no extra readiness proof required",
-      "evidence_digest": "3fa06384102401980d18cf39fc6db8d052ab46404fb2ad7c1bda8dfee4a03162"
+      "evidence_digest": "4522075f30538584efa03b1233e6a39e47c59500e76947f23e3ab1ca2e36610c"
     },
     {
       "acceptance_id": "AC-13",
@@ -2625,8 +2625,8 @@
         "security"
       ],
       "suite_invocation_ids": {
-        "main": "c7c32bdd-141a-4599-8a23-7014b85ce4a2",
-        "security": "54af3d7d-5003-434e-85de-550ccd173a38"
+        "main": "dfb9ae66-20cc-4af5-a074-d8177c3b26c8",
+        "security": "092189b1-5544-427a-bc08-d8372ab267dd"
       },
       "commands": [
         "pnpm test",
@@ -2638,12 +2638,12 @@
       ],
       "tracked_evidence_digest": "f39520ad6340b3f5ddc09524c649272392418963541ccab99aed35e4dd0a287b",
       "suite_result_digests": {
-        "main": "b7ae462071ceaab7538ba81bdc2c43ae8c175317b2d1025e8a2eae6cef6ee410",
-        "security": "52fe251e8b7466fa3bf1cd6e10517516e3d56af1a568fd61c9f18344f6707f7e"
+        "main": "867705be7a9d5b685ba01cde037da155cba8a397978c667ad60f4cc0d98d9bff",
+        "security": "c811403f7a81cc5c047b20de4073393dd944657e0db0b58fd64b6a92245d4f30"
       },
       "design_section": "§24",
       "detail": "no extra readiness proof required",
-      "evidence_digest": "0733fb6a8f0cb0476dee6a8675aa09ff080c5cbe0c481233cdd389b7c872bcea"
+      "evidence_digest": "c878ff33bac7b4503f4b57fc323b74a9d8ca054a4e7b16c3dfae52d712a07f04"
     },
     {
       "acceptance_id": "AC-14",
@@ -2654,8 +2654,8 @@
         "fault"
       ],
       "suite_invocation_ids": {
-        "main": "c7c32bdd-141a-4599-8a23-7014b85ce4a2",
-        "fault": "b508fede-3709-4aa3-9d68-165f61056bf3"
+        "main": "dfb9ae66-20cc-4af5-a074-d8177c3b26c8",
+        "fault": "b2acb287-bc0f-47e7-a824-3fbbf4065faa"
       },
       "commands": [
         "pnpm test",
@@ -2667,12 +2667,12 @@
       ],
       "tracked_evidence_digest": "a36c5c4407bfff01eb070423cc26facf825b92ad0c4432a2d9adb816d64e3661",
       "suite_result_digests": {
-        "main": "b7ae462071ceaab7538ba81bdc2c43ae8c175317b2d1025e8a2eae6cef6ee410",
-        "fault": "4354ea81d55ca009b8b2ffe878bf801a70d6339a53393edc65bc71ffcad1e08b"
+        "main": "867705be7a9d5b685ba01cde037da155cba8a397978c667ad60f4cc0d98d9bff",
+        "fault": "3624a7511d8cbf4a7dc124b5acd7f24da5ac79dff1787492cb92f8e20a4d8e0d"
       },
       "design_section": "§24",
       "detail": "no extra readiness proof required",
-      "evidence_digest": "bd5c0ffcadb695534b16781b739828e7a010466b7d3fb87f2b263719d7451b2c"
+      "evidence_digest": "559e2f70c496ba8f65dcf3db337228f761971fbda35ed2c236ff8fb0096687b1"
     },
     {
       "acceptance_id": "AC-15",
@@ -2683,8 +2683,8 @@
         "e2e"
       ],
       "suite_invocation_ids": {
-        "main": "c7c32bdd-141a-4599-8a23-7014b85ce4a2",
-        "e2e": "60a7e3c7-f642-4afa-b847-41bab554a7f4"
+        "main": "dfb9ae66-20cc-4af5-a074-d8177c3b26c8",
+        "e2e": "6c406767-813d-41ce-b712-5f7d64cb4066"
       },
       "commands": [
         "pnpm test",
@@ -2696,12 +2696,12 @@
       ],
       "tracked_evidence_digest": "ec7b805c36122ff5028c845b9347008b662f986955fa1072bd0869b7c95d142c",
       "suite_result_digests": {
-        "main": "b7ae462071ceaab7538ba81bdc2c43ae8c175317b2d1025e8a2eae6cef6ee410",
-        "e2e": "edad8bfb9258727866014eac6c9290893097d712db35d5a0720b30ff5793a6c3"
+        "main": "867705be7a9d5b685ba01cde037da155cba8a397978c667ad60f4cc0d98d9bff",
+        "e2e": "4869590e644b3f61ee6a9278f8bb5dfadd3233d3ac25d4e69004238120756159"
       },
       "design_section": "§24",
       "detail": "no extra readiness proof required",
-      "evidence_digest": "d1f0dd1efd3f182cdefc4ae5c33e7073694bc50df6ff1aca7160dae6874de3d1"
+      "evidence_digest": "f51369945fce4897f7ec89994047140aedc83c2813fa4fefd9237148c7e2ee52"
     },
     {
       "acceptance_id": "AC-16",
@@ -2712,8 +2712,8 @@
         "playwright-dashboard"
       ],
       "suite_invocation_ids": {
-        "main": "c7c32bdd-141a-4599-8a23-7014b85ce4a2",
-        "playwright-dashboard": "6dfcddcc-36d8-4fa7-9a3f-8bab07ff24a8"
+        "main": "dfb9ae66-20cc-4af5-a074-d8177c3b26c8",
+        "playwright-dashboard": "0d2cd491-0abb-43d2-96b5-00bf61b45ce9"
       },
       "commands": [
         "pnpm test",
@@ -2725,12 +2725,12 @@
       ],
       "tracked_evidence_digest": "87287f563353f591bc943ad64a3530885ee8f303a50b706a2747a2728068fc15",
       "suite_result_digests": {
-        "main": "b7ae462071ceaab7538ba81bdc2c43ae8c175317b2d1025e8a2eae6cef6ee410",
-        "playwright-dashboard": "4faa2bd5caaf26042c23310bdabf016605f848878af5357425b8e308b1134a7a"
+        "main": "867705be7a9d5b685ba01cde037da155cba8a397978c667ad60f4cc0d98d9bff",
+        "playwright-dashboard": "7b3ece3735bcebb30d6357f25b4776b4b2c80881a8c4e7aa0a43c2c93684b533"
       },
       "design_section": "§24",
       "detail": "tests/e2e/dashboard-m4-governed-controls.test.ts passed in canonical playwright-dashboard",
-      "evidence_digest": "18435c4b0568c0368f5455e236387f780587ef6c122eb7814b75bf8f4c0a92e9"
+      "evidence_digest": "5b29bea08afd704945f6c00bf9411e3b7ee26addf39a092f4ceb309ebcc755ca"
     },
     {
       "acceptance_id": "AC-17",
@@ -2742,9 +2742,9 @@
         "e2e"
       ],
       "suite_invocation_ids": {
-        "main": "c7c32bdd-141a-4599-8a23-7014b85ce4a2",
-        "fault": "b508fede-3709-4aa3-9d68-165f61056bf3",
-        "e2e": "60a7e3c7-f642-4afa-b847-41bab554a7f4"
+        "main": "dfb9ae66-20cc-4af5-a074-d8177c3b26c8",
+        "fault": "b2acb287-bc0f-47e7-a824-3fbbf4065faa",
+        "e2e": "6c406767-813d-41ce-b712-5f7d64cb4066"
       },
       "commands": [
         "pnpm test",
@@ -2755,15 +2755,15 @@
         "packages/cli/test/m4-scheduling.test.ts",
         "tests/fault/m4-scheduler-crash-matrix.test.ts"
       ],
-      "tracked_evidence_digest": "586ae5d0e26e5f301db6da7f2d8a79fa6e5167a2d25257005ce99fedac2dbd42",
+      "tracked_evidence_digest": "27670ac55adf8e100fedd122d87db26ced793b30902ef11bb30d7431cfef527e",
       "suite_result_digests": {
-        "main": "b7ae462071ceaab7538ba81bdc2c43ae8c175317b2d1025e8a2eae6cef6ee410",
-        "fault": "4354ea81d55ca009b8b2ffe878bf801a70d6339a53393edc65bc71ffcad1e08b",
-        "e2e": "edad8bfb9258727866014eac6c9290893097d712db35d5a0720b30ff5793a6c3"
+        "main": "867705be7a9d5b685ba01cde037da155cba8a397978c667ad60f4cc0d98d9bff",
+        "fault": "3624a7511d8cbf4a7dc124b5acd7f24da5ac79dff1787492cb92f8e20a4d8e0d",
+        "e2e": "4869590e644b3f61ee6a9278f8bb5dfadd3233d3ac25d4e69004238120756159"
       },
       "design_section": "§24",
       "detail": "tests/e2e/m4-live-driver-approval.test.ts passed in canonical e2e",
-      "evidence_digest": "0143e8d4acdcfca40773d369b1e04dd44842e99f595c9c547a2a60c7df794078"
+      "evidence_digest": "e17bd2f3084981a154d8f1372774b4202fff4bb5abaa617aaca83b0bb0a94bd9"
     },
     {
       "acceptance_id": "AC-18",
@@ -2773,7 +2773,7 @@
         "performance"
       ],
       "suite_invocation_ids": {
-        "performance": "d5789934-86fd-4b66-88ca-fbe5c8ec3f7d"
+        "performance": "c1f2961f-db14-44ec-a6f2-cf62c8079ed4"
       },
       "commands": [
         "pnpm test:performance"
@@ -2783,11 +2783,11 @@
       ],
       "tracked_evidence_digest": "7696eb7b87920b3c11207ccd925d0c2394024157d52902cc3f6b941d90c1622c",
       "suite_result_digests": {
-        "performance": "ca123cd21caf75afbbf15e14e59e8261f7c93b675c23f37ce1a06efe08d49b1c"
+        "performance": "49e302dcd26b015aee4e1011ff0da3daf218791696f06eb3ba81b2e682aca7f5"
       },
       "design_section": "§24",
       "detail": "no extra readiness proof required",
-      "evidence_digest": "80fdf56315506920b572ad3dc1a857e08e1b68f32ecaec3953d6af21e2159024"
+      "evidence_digest": "ba25d87216b4204a66bd9827df95ac3222e649c3140bc75e6ae298d517b95b0e"
     },
     {
       "acceptance_id": "AC-19",
@@ -2798,8 +2798,8 @@
         "e2e"
       ],
       "suite_invocation_ids": {
-        "main": "c7c32bdd-141a-4599-8a23-7014b85ce4a2",
-        "e2e": "60a7e3c7-f642-4afa-b847-41bab554a7f4"
+        "main": "dfb9ae66-20cc-4af5-a074-d8177c3b26c8",
+        "e2e": "6c406767-813d-41ce-b712-5f7d64cb4066"
       },
       "commands": [
         "pnpm test",
@@ -2811,12 +2811,12 @@
       ],
       "tracked_evidence_digest": "6448f286fb83a70dc927fc48e080d3805f35c46b03c17063d774ae824c0b2711",
       "suite_result_digests": {
-        "main": "b7ae462071ceaab7538ba81bdc2c43ae8c175317b2d1025e8a2eae6cef6ee410",
-        "e2e": "edad8bfb9258727866014eac6c9290893097d712db35d5a0720b30ff5793a6c3"
+        "main": "867705be7a9d5b685ba01cde037da155cba8a397978c667ad60f4cc0d98d9bff",
+        "e2e": "4869590e644b3f61ee6a9278f8bb5dfadd3233d3ac25d4e69004238120756159"
       },
       "design_section": "§24",
       "detail": "no extra readiness proof required",
-      "evidence_digest": "20d80dc595696c40a0033019099f46df98bc05e02d7042603e2ec8500ef18205"
+      "evidence_digest": "e0922a74f4b7fb39f54d4ca6094b1ecbe9e3e1ca453a853d0cf99a752190d33e"
     },
     {
       "acceptance_id": "AC-20",
@@ -2831,12 +2831,12 @@
         "playwright-dashboard"
       ],
       "suite_invocation_ids": {
-        "main": "c7c32bdd-141a-4599-8a23-7014b85ce4a2",
-        "security": "54af3d7d-5003-434e-85de-550ccd173a38",
-        "fault": "b508fede-3709-4aa3-9d68-165f61056bf3",
-        "performance": "d5789934-86fd-4b66-88ca-fbe5c8ec3f7d",
-        "e2e": "60a7e3c7-f642-4afa-b847-41bab554a7f4",
-        "playwright-dashboard": "6dfcddcc-36d8-4fa7-9a3f-8bab07ff24a8"
+        "main": "dfb9ae66-20cc-4af5-a074-d8177c3b26c8",
+        "security": "092189b1-5544-427a-bc08-d8372ab267dd",
+        "fault": "b2acb287-bc0f-47e7-a824-3fbbf4065faa",
+        "performance": "c1f2961f-db14-44ec-a6f2-cf62c8079ed4",
+        "e2e": "6c406767-813d-41ce-b712-5f7d64cb4066",
+        "playwright-dashboard": "0d2cd491-0abb-43d2-96b5-00bf61b45ce9"
       },
       "commands": [
         "pnpm test",
@@ -2854,17 +2854,17 @@
       ],
       "tracked_evidence_digest": "85942526f9a0080282189c6384371c9821d5fbbf7daa601fb4a5f52e0f0d1522",
       "suite_result_digests": {
-        "main": "b7ae462071ceaab7538ba81bdc2c43ae8c175317b2d1025e8a2eae6cef6ee410",
-        "security": "52fe251e8b7466fa3bf1cd6e10517516e3d56af1a568fd61c9f18344f6707f7e",
-        "fault": "4354ea81d55ca009b8b2ffe878bf801a70d6339a53393edc65bc71ffcad1e08b",
-        "performance": "ca123cd21caf75afbbf15e14e59e8261f7c93b675c23f37ce1a06efe08d49b1c",
-        "e2e": "edad8bfb9258727866014eac6c9290893097d712db35d5a0720b30ff5793a6c3",
-        "playwright-dashboard": "4faa2bd5caaf26042c23310bdabf016605f848878af5357425b8e308b1134a7a"
+        "main": "867705be7a9d5b685ba01cde037da155cba8a397978c667ad60f4cc0d98d9bff",
+        "security": "c811403f7a81cc5c047b20de4073393dd944657e0db0b58fd64b6a92245d4f30",
+        "fault": "3624a7511d8cbf4a7dc124b5acd7f24da5ac79dff1787492cb92f8e20a4d8e0d",
+        "performance": "49e302dcd26b015aee4e1011ff0da3daf218791696f06eb3ba81b2e682aca7f5",
+        "e2e": "4869590e644b3f61ee6a9278f8bb5dfadd3233d3ac25d4e69004238120756159",
+        "playwright-dashboard": "7b3ece3735bcebb30d6357f25b4776b4b2c80881a8c4e7aa0a43c2c93684b533"
       },
-      "dogfood_result_digest": "4326379407bee2d2feed1a1fc24fa0f9f58eb07c27a1c8437c12aca3df3c92f1",
+      "dogfood_result_digest": "8ecfd231960b66ca4a1901c765c8937bb7be9b0a06faa5b49f257ef76e28eeb4",
       "design_section": "§24",
       "detail": "full real Scheduler/Gate/Evaluate/Snapshot dogfood is incomplete",
-      "evidence_digest": "52ba8234b2ae6687593a5408ddcdffd4cb69a0554722c63fe22b80f8f131cbd2"
+      "evidence_digest": "197d2f1dcc52a169b59f71a125f8467fa467c677b3a9edda1b3b1445659f3176"
     }
   ]
 }
