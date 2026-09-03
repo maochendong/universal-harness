@@ -1697,7 +1697,7 @@ git commit -m "feat(runtime): integrate task waves atomically"
 
 ### Task 11: Connect the Scheduler to the Capability DAG and Vertical Loop
 
-**Implementation state:** 除 Step 4 的完整批准后自动唤醒/反馈闭环外，其余步骤已有提交与测试证据；该缺口继续计入 AC-17，不以显式 `resume` 的可用性替代。
+**Implementation state:** 全部步骤已有提交与测试证据；driver 存活时的批准后自动唤醒/反馈闭环由 `tests/e2e/m4-live-driver-approval.test.ts` 在 canonical e2e 证明，AC-17 已通过。
 
 **Depends on:** Task 10.
 
@@ -1880,7 +1880,7 @@ git commit -m "feat(orchestration): drive parallel execution subgraph"
 
 ### Task 12: Expose the Scheduler through Existing CLI Commands
 
-**Implementation state:** Step 2～7 已落地。Step 1 仍未完成“超过 Policy 上限时生成 Policy Proposal”的生产路径，且 Host/CLI 尚未接入权威 Policy layer source，因此 AC-10 继续阻塞。
+**Implementation state:** Step 1～7 已全部落地。Step 1 的"超过 Policy 上限时生成 Policy Proposal"生产路径已实现：Dashboard 提案写请求经治理闭环固化为 digest 绑定的 `change_policy` ApprovalRequest（重放去重、proposer 不可自批），由 `packages/cli/test/m4-scheduling.test.ts` 的生产路径断言证明；Host/CLI 已接入权威 Policy layer source，AC-10 已由 `tests/e2e/m4-production-policy-source.test.ts` 在 canonical e2e 证明通过。
 
 **Depends on:** Task 11.
 
@@ -1981,7 +1981,7 @@ git commit -m "feat(cli): drive and inspect local task waves"
 
 ### Task 13: Add the Observatory Scheduler View and Approval Experience
 
-**Implementation state:** Read API、只读 Scheduler 视图、受保护的既有写动作、响应式 UI 与当前 Playwright 门禁已落地；生产 Policy Proposal、完整 grounded approval context 和 driver-alive 批准自动唤醒仍未完成，Step 3/5/6 保持未勾选并计入 AC-16/17。
+**Implementation state:** Read API、只读 Scheduler 视图、受保护的既有写动作、响应式 UI 与当前 Playwright 门禁已落地；driver-alive 批准自动唤醒已由 `tests/e2e/m4-live-driver-approval.test.ts` 在 canonical e2e 证明，AC-16 与 AC-17 已通过。生产 Policy Proposal 路径已实现（提案固化为 digest 绑定的 `change_policy` ApprovalRequest，见 `packages/cli/test/m4-scheduling.test.ts`）；仅完整 grounded approval context（`grounded_brief` 仍为 `null`）作为已知限制保留，不再阻塞 AC-16/17。
 
 **Depends on:** Task 11.
 
@@ -2104,7 +2104,7 @@ git commit -m "feat(dashboard): visualize local task scheduling"
 
 ### Task 14: Prove Conformance, Recovery, Performance and Real Dogfood
 
-**Implementation state:** Conformance、真实 Git managed-fixture E2E、故障矩阵、安全与性能门禁已落地；真实 dsh 只能形成受监督单槽探针，完整四 Task/双槽/wave Dogfood 尚不可证明。发布报告链正在绑定最终提交重新生成。
+**Implementation state:** Conformance、真实 Git managed-fixture E2E、故障矩阵、安全与性能门禁已落地；真实 dsh 只能形成受监督单槽探针，完整四 Task/双槽/wave Dogfood 尚不可证明，AC-06 与 AC-20 继续阻塞。发布报告链已绑定实现 commit `4aa872dd1212ba6d80459b7f44c1e1021ccbb0cd` 重新生成（含 M4 dogfood proof）。
 
 **Depends on:** Task 12 and Task 13.
 

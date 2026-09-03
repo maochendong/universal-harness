@@ -181,7 +181,7 @@ flowchart LR
 
 该视图同时呈现 wave、Agent slot、Task 依赖/状态、预算、Finding 与真实 Approval。截图来自受控 Playwright fixture；真实 provider 并发是否成立必须另由两个 Run 时间区间重叠及完整 dogfood Evidence 证明。
 
-截至当前实现，确定性 managed fixture 已证明四 Task、三 wave 和双 slot 重叠，真实 dsh 监督探针也已成功；但 dsh 的 `delegated/external-only` manifest 不满足无人值守并发要求，因此 M4 完成声明仍被 AC-06/20 阻止。生产 Host/CLI 尚未接入权威 Policy layer source，AC-10 只能证明规则内核，不能证明真实运行时配置到三种调度 Action 的四态 Policy 闭环。Dashboard 生产 Policy Proposal/完整 approval grounded context、driver-alive approval auto-wake 与 operation 级 durable cancellation 仍作为 AC-16/17 的显式缺口，不由 UI fixture 伪装为已完成。
+截至当前实现，确定性 managed fixture 已证明四 Task、三 wave 和双 slot 重叠，真实 dsh 监督探针也已成功；但 dsh 的 `delegated/external-only` manifest 不满足无人值守并发要求，因此 M4 完成声明仍被 AC-06/20 阻止。生产 Host/CLI 已接入权威 Policy layer source，AC-10 的四态 Policy 闭环由 `tests/e2e/m4-production-policy-source.test.ts` 在 canonical e2e 证明。Dashboard 生产 Policy Proposal 已落地为 digest 绑定的 `change_policy` ApprovalRequest，driver-alive approval auto-wake 与 operation 级 durable cancellation 均已在 canonical 门禁证明；完整 approval grounded context（`grounded_brief`）仍是已知限制，不由 UI fixture 伪装为已完成。
 
 无论采用哪一档，Profile 都不能改变四条底线：**模型只提议，Graph 只物化 accepted 工程事实，Ledger 只追加不覆盖，Evidence 才能证明完成**。
 
