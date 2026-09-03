@@ -33,6 +33,21 @@ export const TERMINATION_REASONS = [
   "process_interruption",
 ] as const;
 
+export type TerminationReason = (typeof TERMINATION_REASONS)[number];
+
+/**
+ * Termination reasons classified as executor crashes: the run ended without
+ * an adapter-reported verdict, so the scheduler may attempt its single
+ * executor retry (design §15.1).
+ */
+export const CRASH_TERMINATION_REASONS = [
+  "adapter_failure",
+  "timeout",
+  "process_interruption",
+] as const satisfies readonly TerminationReason[];
+
+export type CrashTerminationReason = (typeof CRASH_TERMINATION_REASONS)[number];
+
 const runRecordBase = {
   protocol_version: ProtocolVersionSchema,
   run_id: IdentifierSchema,

@@ -1,4 +1,4 @@
-import type { RUN_OUTCOMES, TERMINATION_REASONS } from "@universal-harness-internal/core";
+import type { RUN_OUTCOMES, TerminationReason } from "@universal-harness-internal/core";
 
 import { LoopError } from "./policy.js";
 
@@ -14,7 +14,7 @@ import { LoopError } from "./policy.js";
  */
 export type RunOutcome = (typeof RUN_OUTCOMES)[number];
 
-export type TerminationReason = (typeof TERMINATION_REASONS)[number];
+export type { TerminationReason };
 
 export const LOOP_RUN_PHASES = ["running", "verifying", "terminated"] as const;
 

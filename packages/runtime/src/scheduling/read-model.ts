@@ -1,5 +1,6 @@
 import {
   contentDigest,
+  readFindingExtension,
   type FeedbackRecord,
   type LeaseRecord,
 } from "@universal-harness-internal/core";
@@ -124,16 +125,11 @@ export interface SchedulerReadModelSources {
 function isOpenBlockingFinding(finding: FeedbackRecord): boolean {
   if (finding.type !== "Finding") return false;
   if (finding.status !== "proposed" && finding.status !== "accepted") return false;
-  const extension = finding.extensions?.["harness.finding"];
-  if (typeof extension !== "object" || extension === null) return false;
-  return (extension as { blocking?: unknown }).blocking === true;
+  return readFindingExtension(finding)?.blocking === true;
 }
 
 function findingRule(finding: FeedbackRecord): string | undefined {
-  const extension = finding.extensions?.["harness.finding"];
-  if (typeof extension !== "object" || extension === null) return undefined;
-  const rule = (extension as { rule?: unknown }).rule;
-  return typeof rule === "string" ? rule : undefined;
+  return readFindingExtension(finding)?.rule;
 }
 
 /** Overall operation status from the Task projection, precedence fixed. */

@@ -1,8 +1,9 @@
-import type {
-  FeedbackRecord,
-  RunRecord,
-  TaskLeaseRecord,
-  WaveIntegrationRecord,
+import {
+  readFindingExtension,
+  type FeedbackRecord,
+  type RunRecord,
+  type TaskLeaseRecord,
+  type WaveIntegrationRecord,
 } from "@universal-harness-internal/core";
 
 import type { ApprovalRequestRecord } from "../approval/request.js";
@@ -212,14 +213,8 @@ function hasOpenBlocker(findings: readonly FeedbackRecord[], taskId: string): bo
   for (const finding of findings) {
     if (finding.type !== "Finding") continue;
     if (finding.status !== "proposed" && finding.status !== "accepted") continue;
-    const subject = finding.extensions?.["harness.finding"];
-    if (typeof subject !== "object" || subject === null) continue;
-    const parsed = subject as { blocking?: unknown; blocks?: unknown };
-    if (
-      parsed.blocking === true &&
-      Array.isArray(parsed.blocks) &&
-      parsed.blocks.includes(taskId)
-    ) {
+    const extension = readFindingExtension(finding);
+    if (extension?.blocking === true && extension.blocks?.includes(taskId) === true) {
       return true;
     }
   }
@@ -234,13 +229,10 @@ function hasOpenIntegrationRetry(findings: readonly FeedbackRecord[], taskId: st
     ) {
       return false;
     }
-    const extension = finding.extensions?.["harness.finding"];
-    if (typeof extension !== "object" || extension === null) return false;
-    const retry = extension as { rule?: unknown; blocks?: unknown };
+    const extension = readFindingExtension(finding);
     return (
-      retry.rule === "integration_retry_scheduled" &&
-      Array.isArray(retry.blocks) &&
-      retry.blocks.includes(taskId)
+      extension?.rule === "integration_retry_scheduled" &&
+      extension.blocks?.includes(taskId) === true
     );
   });
 }

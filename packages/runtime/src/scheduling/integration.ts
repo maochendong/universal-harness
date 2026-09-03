@@ -7,6 +7,7 @@ import {
   PROTOCOL_1_3_VERSION,
   buildWaveIntegrationRecord,
   contentDigest,
+  readFindingExtension,
   type FeedbackRecord,
   type TaskLeaseRecord,
   type WaveIntegrationRecord,
@@ -556,17 +557,11 @@ function digestId(prefix: string, parts: unknown): string {
 }
 
 function findingRule(finding: FeedbackRecord): string | undefined {
-  const extension = finding.extensions?.["harness.finding"];
-  if (typeof extension !== "object" || extension === null) return undefined;
-  const rule = (extension as { rule?: unknown }).rule;
-  return typeof rule === "string" ? rule : undefined;
+  return readFindingExtension(finding)?.rule;
 }
 
 function findingBlocks(finding: FeedbackRecord): readonly string[] {
-  const extension = finding.extensions?.["harness.finding"];
-  if (typeof extension !== "object" || extension === null) return [];
-  const blocks = (extension as { blocks?: unknown }).blocks;
-  return Array.isArray(blocks) ? (blocks as string[]) : [];
+  return readFindingExtension(finding)?.blocks ?? [];
 }
 
 function isOpenFinding(finding: FeedbackRecord): boolean {

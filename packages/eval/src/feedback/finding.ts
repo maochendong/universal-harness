@@ -1,4 +1,5 @@
 import {
+  FINDING_EXTENSION_KEY,
   PROTOCOL_VERSION,
   contentDigest,
   validateSchema,
@@ -21,7 +22,7 @@ import {
  * every bound digest; stale evidence never closes anything (completion rule
  * 19). Records are immutable: every transition reseals a new digest.
  */
-export const FINDING_EXTENSION_KEY = "harness.finding";
+export { FINDING_EXTENSION_KEY };
 
 export const FEEDBACK_ERROR_KINDS = [
   "invalid_feedback_record",

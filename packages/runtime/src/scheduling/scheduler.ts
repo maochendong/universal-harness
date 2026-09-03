@@ -1,10 +1,15 @@
 import {
+  CRASH_TERMINATION_REASONS,
+  FINDING_EXTENSION_KEY,
   PROTOCOL_1_3_VERSION,
   contentDigest,
+  readFindingExtension,
+  type CrashTerminationReason,
   type FeedbackRecord,
   type LeaseRecord,
   type RunRecord,
   type TaskLeaseRecord,
+  type TerminationReason,
   type WaveIntegrationRecord,
 } from "@universal-harness-internal/core";
 import type { AgentRunResult, AgentTaskEnvelope } from "@universal-harness-internal/plugin-sdk";
@@ -348,7 +353,7 @@ export interface DeterministicLocalTaskScheduler extends LocalTaskScheduler {
   acceptRunResult(input: SchedulerRunAcceptanceInput): Promise<void>;
 }
 
-const CRASH_TERMINATIONS = new Set(["adapter_failure", "timeout", "process_interruption"]);
+const CRASH_TERMINATIONS: ReadonlySet<TerminationReason> = new Set(CRASH_TERMINATION_REASONS);
 
 function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
@@ -384,6 +389,9 @@ export function deriveIterationDeadline(
  * provider-reported tokens are the fallback; an unmetered axis settles as 0 —
  * never as the full reservation, which would make the single executor retry
  * unaffordable and report consumption nobody measured (design §15.1/§18).
+ * The complement holds at issuance: unattended eligibility (design §10.1)
+ * requires proven usage metering at Lease-issuance time, so 0-settling only
+ * ever applies to supervised/manual paths or harness-observed gaps.
  */
 export function meteredConsumption(result: AgentRunResult): BudgetAmount {
   const observed = (dimension: "steps" | "tokens"): number | null => {
@@ -403,18 +411,13 @@ export function meteredConsumption(result: AgentRunResult): BudgetAmount {
 function isOpenBlockingFinding(finding: FeedbackRecord): boolean {
   if (finding.type !== "Finding") return false;
   if (finding.status !== "proposed" && finding.status !== "accepted") return false;
-  const extension = finding.extensions?.["harness.finding"];
-  if (typeof extension !== "object" || extension === null) return false;
-  return (extension as { blocking?: unknown }).blocking === true;
+  return readFindingExtension(finding)?.blocking === true;
 }
 
 function openFindingRule(finding: FeedbackRecord): string | undefined {
   if (finding.type !== "Finding") return undefined;
   if (finding.status !== "proposed" && finding.status !== "accepted") return undefined;
-  const extension = finding.extensions?.["harness.finding"];
-  if (typeof extension !== "object" || extension === null) return undefined;
-  const rule = (extension as { rule?: unknown }).rule;
-  return typeof rule === "string" ? rule : undefined;
+  return readFindingExtension(finding)?.rule;
 }
 
 /** Open Findings (blocking or not) carrying `rule` that name the Task. */
@@ -425,9 +428,7 @@ function hasOpenFindingRule(
 ): boolean {
   return findings.some((finding) => {
     if (openFindingRule(finding) !== rule) return false;
-    const extension = finding.extensions?.["harness.finding"];
-    const blocks = (extension as { blocks?: unknown }).blocks;
-    return Array.isArray(blocks) && blocks.includes(taskId);
+    return readFindingExtension(finding)?.blocks?.includes(taskId) === true;
   });
 }
 
@@ -733,7 +734,7 @@ export function createLocalTaskScheduler(
       summary: input.summary,
       created_at: now(),
       extensions: {
-        "harness.finding": {
+        [FINDING_EXTENSION_KEY]: {
           origin: "scheduler",
           blocking: true,
           violates: [],
@@ -773,17 +774,7 @@ export function createLocalTaskScheduler(
     readonly run_id: string;
     readonly outcome:
       "success" | "correct_block" | "clarification_required" | "handoff" | "partial" | "failed";
-    readonly termination_reason:
-      | "completion"
-      | "gate_failure"
-      | "policy_denial"
-      | "budget_ceiling"
-      | "repeat_detection"
-      | "timeout"
-      | "adapter_failure"
-      | "user_cancellation"
-      | "manual_stop"
-      | "process_interruption";
+    readonly termination_reason: TerminationReason;
     readonly consumed_budget?: BudgetAmount;
     /**
      * Sanitized scheduler-to-kernel handoff. It intentionally excludes the
@@ -873,17 +864,7 @@ export function createLocalTaskScheduler(
     // claimed success degrades to a handoff claim.
     const terminated = (
       outcome: AgentRunResult["outcome"],
-      reason:
-        | "completion"
-        | "gate_failure"
-        | "policy_denial"
-        | "budget_ceiling"
-        | "repeat_detection"
-        | "timeout"
-        | "adapter_failure"
-        | "user_cancellation"
-        | "manual_stop"
-        | "process_interruption",
+      reason: TerminationReason,
       consumed_budget?: BudgetAmount,
       handoff?: {
         readonly result: AgentRunResult;
@@ -959,8 +940,7 @@ export function createLocalTaskScheduler(
     }
 
     if (CRASH_TERMINATIONS.has(result.termination_reason)) {
-      const reason = result.termination_reason as
-        "adapter_failure" | "timeout" | "process_interruption";
+      const reason = result.termination_reason as CrashTerminationReason;
       await classifyCrash(dag, entry, consumed, [terminated(result.outcome, reason)]);
       return;
     }
