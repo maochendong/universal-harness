@@ -27,6 +27,13 @@ interface GovernedControl {
   cancellation: CancellationPhase;
   decisions: { requestId: string; decision: string; actor: string }[];
   cancelCalls: { operationId: string; actor: string; expectedDigest: string }[];
+  policyProposals: {
+    operationId: string;
+    proposalKind: string;
+    actor: string;
+    expectedDigest: string;
+    budget?: { steps: number; tokens: number; durationMs: number };
+  }[];
   lastDigest: string;
 }
 
@@ -204,6 +211,7 @@ const test = base.extend<{ governed: GovernedFixture }>({
       cancellation: "pending",
       decisions: [],
       cancelCalls: [],
+      policyProposals: [],
       lastDigest: "",
     };
     const writeApi: DashboardWriteApi = {
@@ -237,6 +245,21 @@ const test = base.extend<{ governed: GovernedFixture }>({
         });
         control.cancellation = "confirmed";
         return Promise.resolve({ status: "cancelled" });
+      },
+      proposeSchedulerPolicy: (input) => {
+        control.policyProposals.push({
+          operationId: input.operationId,
+          proposalKind: input.proposalKind,
+          actor: input.actor,
+          expectedDigest: input.expectedDigest,
+          ...(input.budget === undefined ? {} : { budget: input.budget }),
+        });
+        return Promise.resolve({
+          status: "proposed",
+          proposal_digest: "9".repeat(64),
+          request_id: "approval_policy_budget",
+          resume_command: `harness resume ${operationId}`,
+        });
       },
     };
     const server = await startDashboardServer({
@@ -356,5 +379,21 @@ test.describe("M4 Governed Controls", () => {
     await expect(
       page.locator("#scheduler-waves .scheduler-task-card[data-status='cancelled']"),
     ).toHaveCount(1);
+
+    // 预算 Policy Proposal 按钮经真实 HTTP 路由到达写服务：携带 expected
+    // digest、actor 与当前预算上限，提案写回后视图刷新。
+    const digestBeforeProposal = control.lastDigest;
+    await page.getByLabel("Scheduler 控制操作人").fill("human:release-manager");
+    await page.getByRole("button", { name: "提交预算 Policy Proposal" }).click();
+    await expect(page.getByText("预算 Policy Proposal 已写入 Ledger，等待审批。")).toBeVisible();
+    expect(control.policyProposals).toEqual([
+      {
+        operationId,
+        proposalKind: "budget",
+        actor: "human:release-manager",
+        expectedDigest: digestBeforeProposal,
+        budget: { steps: 100, tokens: 10_000, durationMs: 120_000 },
+      },
+    ]);
   });
 });

@@ -1,3 +1,4 @@
+import { readFindingExtension } from "@universal-harness-internal/core";
 import {
   schedulerRecoveryActionFor,
   schedulerResumeCommand,
@@ -53,12 +54,6 @@ export interface DashboardSchedulerSlot {
   readonly authority: "live";
   readonly task_id?: string;
   readonly run_id?: string;
-  readonly observed_at: null;
-  readonly usage: {
-    readonly steps: null;
-    readonly tokens: null;
-    readonly duration_ms: null;
-  };
 }
 
 export interface DashboardSchedulerApproval {
@@ -80,11 +75,10 @@ export interface DashboardSchedulerApproval {
   readonly iteration_budget: SchedulerReadModel["budget"];
   readonly parallel_impact: readonly string[];
   readonly provider_context: {
-    readonly write_paths: null;
-    readonly exclusive_resources: null;
-    readonly adapter_control_profile: null;
+    // ApprovalRequest 1.3 has no first-class grounded-brief field yet; keep
+    // the explicit null (documented known limitation, plan Task 13) instead
+    // of deriving governance facts from untrusted free text.
     readonly grounded_brief: null;
-    readonly source_citations: readonly [];
   };
 }
 
@@ -148,10 +142,7 @@ export interface DashboardSchedulerApiOptions {
 }
 
 function findingRule(finding: SchedulerReadModel["findings"][number]): string | undefined {
-  const extension = finding.extensions?.["harness.finding"];
-  if (typeof extension !== "object" || extension === null) return undefined;
-  const rule = (extension as { readonly rule?: unknown }).rule;
-  return typeof rule === "string" ? rule : undefined;
+  return readFindingExtension(finding)?.rule;
 }
 
 function approvalObjective(
@@ -205,17 +196,14 @@ function project(
   const slots: DashboardSchedulerSlot[] =
     model.operation.live_state === "rebuilding"
       ? []
-      : model.slots.map((slot) => ({
+      : // The runtime read model intentionally omits raw heartbeat, process and
+        // usage fields; the UI renders its fixed Provider 未提供 fallbacks.
+        model.slots.map((slot) => ({
           slot_id: slot.slot_id,
           state: slot.state,
           authority: "live",
           ...(slot.task_id === undefined ? {} : { task_id: slot.task_id }),
           ...(slot.run_id === undefined ? {} : { run_id: slot.run_id }),
-          // The current runtime read model intentionally omits raw heartbeat,
-          // process and usage fields. Preserve that honesty instead of
-          // inventing zeroes; the UI renders Provider 未提供.
-          observed_at: null,
-          usage: { steps: null, tokens: null, duration_ms: null },
         }));
   const readBranchState =
     model.operation.operation_id !== requestedOperationId
@@ -279,15 +267,8 @@ function project(
         },
         iteration_budget: model.budget,
         parallel_impact: task?.non_parallel_reasons ?? [],
-        // ApprovalRequest 1.3 currently has no first-class fields for these
-        // presentation requirements. Keep explicit nulls instead of deriving
-        // governance facts from untrusted free text.
         provider_context: {
-          write_paths: null,
-          exclusive_resources: null,
-          adapter_control_profile: null,
           grounded_brief: null,
-          source_citations: [],
         },
       };
     }),

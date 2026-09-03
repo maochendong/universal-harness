@@ -21,6 +21,8 @@ import {
   createProfileDecisionRecord,
   createProjectContextBundleRecord,
   createProjectProfileRecord,
+  harnessRootFor,
+  readCommittedOperations,
   readManagedManifest,
   type CapabilityPlanRecord,
   type CaptureSessionRecord,
@@ -36,6 +38,7 @@ import {
   createDirectExecutor,
   createNewProject,
   createProjectSchedulerHost,
+  readApprovalRequests,
   readBridgedCaptureApprovalDecision,
   readCurrentOperation,
   resolveApproval,
@@ -1516,11 +1519,101 @@ describe("serve resumes workflows under the dashboard driver lock", { timeout: 3
     expect(fake.runInputs).toHaveLength(1);
     expect(fake.runInputs[0]?.driver_lock).toBe(fake.handles[0]);
 
+    const schedulerAfterResume = fakeSchedulerModel(harness.workflowOperationId);
+
+    // The production Policy Proposal path (M4 design 19.4/20): the write
+    // persists a durable, digest-bound change_policy ApprovalRequest through
+    // the approval machinery and returns its digest; it never mutates an
+    // effective limit directly.
+    const proposalHeaders = {
+      cookie,
+      origin,
+      "content-type": "application/json",
+      "x-harness-csrf": csrf,
+    };
+    const proposalBody = {
+      operation_id: harness.workflowOperationId,
+      proposal_kind: "concurrency",
+      max_concurrency: 3,
+      expected_digest: schedulerAfterResume.digest,
+      actor: "human:web-reviewer",
+    };
+    const proposed = await fetch(`${origin}/api/v1/scheduler/policy-proposals`, {
+      method: "POST",
+      headers: proposalHeaders,
+      body: JSON.stringify(proposalBody),
+    });
+    expect(proposed.status).toBe(200);
+    const proposedBodyJson = (await proposed.json()) as {
+      data: {
+        status: string;
+        proposal_digest: string;
+        request_id: string;
+        workflow_operation_id: string;
+        resume_command: string;
+      };
+    };
+    expect(proposedBodyJson.data.status).toBe("proposed");
+    expect(proposedBodyJson.data.proposal_digest).toMatch(/^[0-9a-f]{64}$/u);
+    expect(proposedBodyJson.data.workflow_operation_id).toBe(harness.workflowOperationId);
+    expect(proposedBodyJson.data.resume_command).toBe(
+      `harness resume ${harness.workflowOperationId}`,
+    );
+    const harnessRoot = harnessRootFor(harness.projectRoot);
+    const persistedProposal = readApprovalRequests(
+      harnessRoot,
+      readCommittedOperations(harnessRoot),
+      harness.workflowOperationId,
+    ).find((request) => request.object_digest === proposedBodyJson.data.proposal_digest);
+    expect(persistedProposal).toMatchObject({
+      request_id: proposedBodyJson.data.request_id,
+      object_type: "change_policy",
+      object_id: "scheduler_policy_concurrency",
+      risk: "high",
+    });
+
+    // A replayed write resolves to the same durable proposal, never a duplicate.
+    const replayed = await fetch(`${origin}/api/v1/scheduler/policy-proposals`, {
+      method: "POST",
+      headers: proposalHeaders,
+      body: JSON.stringify(proposalBody),
+    });
+    expect(replayed.status).toBe(200);
+    await expect(replayed.json()).resolves.toMatchObject({
+      data: { request_id: proposedBodyJson.data.request_id },
+    });
+    expect(
+      readApprovalRequests(
+        harnessRoot,
+        readCommittedOperations(harnessRoot),
+        harness.workflowOperationId,
+      ).filter((request) => request.object_digest === proposedBodyJson.data.proposal_digest),
+    ).toHaveLength(1);
+
+    // A stale read branch is a conflict; a structurally invalid ceiling is refused.
+    const staleProposal = await fetch(`${origin}/api/v1/scheduler/policy-proposals`, {
+      method: "POST",
+      headers: proposalHeaders,
+      body: JSON.stringify({ ...proposalBody, expected_digest: "0".repeat(64) }),
+    });
+    expect(staleProposal.status).toBe(409);
+    const invalidProposal = await fetch(`${origin}/api/v1/scheduler/policy-proposals`, {
+      method: "POST",
+      headers: proposalHeaders,
+      body: JSON.stringify({
+        operation_id: harness.workflowOperationId,
+        proposal_kind: "concurrency",
+        max_concurrency: 0,
+        expected_digest: schedulerAfterResume.digest,
+        actor: "human:web-reviewer",
+      }),
+    });
+    expect(invalidProposal.status).toBe(400);
+
     const afterResume = readCurrentOperation(
       { projectRoot: harness.projectRoot, readBaseline: () => headOf(harness.projectRoot) },
       harness.workflowOperationId,
     );
-    const schedulerAfterResume = fakeSchedulerModel(harness.workflowOperationId);
     const staleCancel = await fetch(
       `${origin}/api/v1/scheduler/operations/${harness.workflowOperationId}/cancel`,
       {
@@ -1571,28 +1664,6 @@ describe("serve resumes workflows under the dashboard driver lock", { timeout: 3
         harness.workflowOperationId,
       )?.state,
     ).toBe("aborted");
-
-    const policyProposal = await fetch(`${origin}/api/v1/scheduler/policy-proposals`, {
-      method: "POST",
-      headers: {
-        cookie,
-        origin,
-        "content-type": "application/json",
-        "x-harness-csrf": csrf,
-      },
-      body: JSON.stringify({
-        operation_id: harness.workflowOperationId,
-        proposal_kind: "concurrency",
-        max_concurrency: 3,
-        expected_digest: schedulerAfterResume.digest,
-        actor: "human:web-reviewer",
-      }),
-    });
-    expect(policyProposal.status).toBe(503);
-    await expect(policyProposal.json()).resolves.toMatchObject({
-      code: "write_operations_unavailable",
-      detail: expect.stringMatching(/Policy Proposal Provider/u),
-    });
   });
 
   it("keeps the Workflow active when the Scheduler cannot confirm Adapter cancellation", async () => {

@@ -40,10 +40,17 @@ import {
   resolveFinding,
   resolveFindingGroup,
   resumeIteration,
+  resumeWorkflowOperation,
   runIteration,
   auditGraph,
+  approvalService,
+  approvalRequiredOutcome,
+  effectiveMaxConcurrency,
+  normalizeAction,
+  actionDigest,
   readBridgedCaptureApprovalDecision,
   schedulerRecoveryActionFor,
+  WorkflowEngine,
   type ApprovalPrompter,
   type CaptureCoordinatorSeam,
   type EvaluationPort,
@@ -63,6 +70,7 @@ import { materializeLedger, pageEdges, pageNodes } from "@universal-harness-inte
 import {
   contentDigest,
   harnessRootFor,
+  readFindingExtension,
   readLatestProjectProfile,
   readProfileDecisionRecords,
   resolveIterationProfile,
@@ -336,15 +344,21 @@ export function resolveSchedulerConcurrency(input: {
     ["project_limit", input.ceilings.project_limit],
     ["local_resource_limit", input.ceilings.local_resource_limit],
   ];
-  let effective = requested;
-  let limitedBy: SchedulerConcurrencyDecision["limited_by"] = "request";
-  for (const [name, value] of bounds) {
-    if (value < effective) {
-      effective = value;
-      limitedBy = name;
-    }
-  }
-  effective = Math.max(1, effective);
+  // The clamp itself is the runtime's own pure function so the concurrency
+  // the CLI reports can never drift from the concurrency the drive enforces;
+  // the CLI layer only names the binding ceiling for its decision record.
+  const effective = effectiveMaxConcurrency({
+    runtime_requested: requested,
+    profile_limit: input.ceilings.profile_limit,
+    installation_limit: input.ceilings.installation_limit,
+    project_limit: input.ceilings.project_limit,
+    local_resource_limit: input.ceilings.local_resource_limit,
+    unattended_eligible: true,
+  });
+  const limitedBy: SchedulerConcurrencyDecision["limited_by"] =
+    effective < requested
+      ? (bounds.find(([, value]) => value === effective)?.[0] ?? "request")
+      : "request";
   return {
     requested,
     effective,
@@ -1007,15 +1021,11 @@ export function createOrchestratedRuntimeService(
     const model = await host.readSchedulerModel(operationId);
     const projection = projectSchedulerStatus(model);
     const blockers = model.findings.map((finding) => {
-      const extension = finding.extensions?.["harness.finding"];
-      const rule =
-        typeof extension === "object" && extension !== null
-          ? (extension as { rule?: unknown }).rule
-          : undefined;
-      const action = typeof rule === "string" ? schedulerRecoveryActionFor(rule) : undefined;
+      const rule = readFindingExtension(finding)?.rule;
+      const action = rule === undefined ? undefined : schedulerRecoveryActionFor(rule);
       return {
         finding_id: finding.id,
-        ...(typeof rule === "string" ? { rule } : {}),
+        ...(rule === undefined ? {} : { rule }),
         recovery_action: action ?? "inspect_blocking_finding",
       };
     });
@@ -1757,7 +1767,7 @@ export function createOrchestratedRuntimeService(
                   (dashboardSchedulerControlHost ?? dashboardSchedulerReadHost).readSchedulerModel(
                     operationId,
                   ),
-                controlCapabilities: { cancel: true, policyProposal: false },
+                controlCapabilities: { cancel: true, policyProposal: true },
               }),
             }),
         schedulerOperationId: () =>
@@ -1935,13 +1945,155 @@ export function createOrchestratedRuntimeService(
               return writeFailure(error);
             }
           },
-          proposeSchedulerPolicy: () =>
-            Promise.reject(
-              new DashboardWriteError(
-                "unavailable",
-                "the Scheduler Policy Proposal Provider is not configured; no proposal was written",
-              ),
-            ),
+          proposeSchedulerPolicy: async (input) => {
+            try {
+              const host = controlHost();
+              if (host === undefined) {
+                throw new DashboardWriteError(
+                  "unavailable",
+                  "this project has no active Scheduler control Provider",
+                );
+              }
+              // The router already shapes the body; the service re-validates so
+              // a structurally valid but meaningless ceiling never reaches the
+              // Ledger.
+              const ceilingValid =
+                input.proposalKind === "concurrency"
+                  ? input.maxConcurrency !== undefined &&
+                    Number.isInteger(input.maxConcurrency) &&
+                    input.maxConcurrency >= 1
+                  : input.budget !== undefined &&
+                    [input.budget.steps, input.budget.tokens, input.budget.durationMs].every(
+                      (value) => Number.isInteger(value) && value >= 1,
+                    );
+              if (!ceilingValid) {
+                throw new DashboardWriteError(
+                  "invalid",
+                  "a Scheduler Policy Proposal requires a positive integer ceiling",
+                );
+              }
+              const activeOperationId = findOpenWorkflowOperation(
+                request.projectRoot,
+                deps.readBaseline,
+              );
+              if (activeOperationId !== input.operationId) {
+                throw new DashboardWriteError(
+                  "conflict",
+                  "the active operation changed; refresh before proposing",
+                );
+              }
+              const model = await host.readSchedulerModel(input.operationId);
+              if (model.digest !== input.expectedDigest) {
+                throw new DashboardWriteError(
+                  "conflict",
+                  "the Scheduler read branch changed; refresh before proposing",
+                );
+              }
+              const workingState = new WorkflowEngine(deps).getWorkingState(input.operationId);
+              if (workingState === undefined) {
+                throw new DashboardWriteError(
+                  "not_found",
+                  "the workflow no longer has a working state",
+                );
+              }
+              // A blocked operation cannot accept the approval checkpoint;
+              // reopen it first (the resume protocol re-verifies every
+              // binding), exactly like resolveApproval does before committing
+              // a decision — requestApproval then re-blocks it awaiting the
+              // proposal decision.
+              const currentOperation = readCurrentOperation(
+                { projectRoot: request.projectRoot, readBaseline: deps.readBaseline },
+                input.operationId,
+              );
+              if (currentOperation === undefined) {
+                throw new DashboardWriteError("not_found", "the workflow no longer exists");
+              }
+              if (currentOperation.state === "blocked") {
+                await resumeWorkflowOperation(deps, input.operationId);
+              }
+              // M4 design 19.4/20: the proposal is a control-plane
+              // change_policy action whose normalized digest binds exactly the
+              // requested ceiling. It is persisted as a durable, digest-bound
+              // ApprovalRequest through the existing approval machinery — the
+              // same path every interactive defer uses to keep a proposal
+              // resumable — and never mutates an effective limit directly.
+              const action = normalizeAction({
+                kind: "change_policy",
+                actor: input.actor,
+                actor_kind: "human",
+                origin: "control_plane",
+                phase: "execute",
+                parameters: {
+                  operation_id: input.operationId,
+                  proposal_kind: input.proposalKind,
+                  max_concurrency:
+                    input.proposalKind === "concurrency" ? input.maxConcurrency : null,
+                  budget:
+                    input.proposalKind === "budget"
+                      ? {
+                          steps: input.budget?.steps,
+                          tokens: input.budget?.tokens,
+                          duration_ms: input.budget?.durationMs,
+                        }
+                      : null,
+                },
+                risk: "high",
+              });
+              const objectDigest = actionDigest(action);
+              const service = approvalService(deps);
+              const objectId = `scheduler_policy_${input.proposalKind}`;
+              const reason =
+                input.proposalKind === "concurrency"
+                  ? `dashboard policy proposal by ${input.actor}: raise the local concurrency ceiling to ${String(input.maxConcurrency)}`
+                  : `dashboard policy proposal by ${input.actor}: raise the iteration budget to ${String(input.budget?.steps)} steps / ${String(input.budget?.tokens)} tokens / ${String(input.budget?.durationMs)}ms`;
+              // One digest-bound request per exact proposal: a retried write
+              // facing the same unresolved proposal never duplicates it.
+              const existing = service
+                .pendingRequests(input.operationId)
+                .find(
+                  (candidate) =>
+                    candidate.object_type === "change_policy" &&
+                    candidate.object_id === objectId &&
+                    candidate.object_digest === objectDigest,
+                );
+              const required =
+                existing === undefined
+                  ? await service.requestApproval({
+                      workflowOperationId: input.operationId,
+                      objectId,
+                      objectType: "change_policy",
+                      objectDigest,
+                      baselineDigest: contentDigest({
+                        baseline_commit: deps.readBaseline(),
+                      }),
+                      policyDigest: workingState.policy_digest,
+                      impactPath: [],
+                      risk: "high",
+                      reason,
+                      resumePhase: "execute",
+                      proposedBy: input.actor,
+                    })
+                  : approvalRequiredOutcome(existing);
+              return {
+                status: "proposed",
+                proposal_digest: objectDigest,
+                request_id: required.request_id,
+                workflow_operation_id: input.operationId,
+                expected_digest: input.expectedDigest,
+                actor: input.actor,
+                resume_command: required.resume_command,
+              };
+            } catch (error) {
+              if (error instanceof DashboardWriteError) throw error;
+              if (isDriverLockError(error)) {
+                throw new DashboardWriteError(
+                  "conflict",
+                  "the driver lock is held by another driver; retry once it is released",
+                );
+              }
+              return writeFailure(error);
+            }
+          },
         },
       });
       options.onServerReady?.(server);

@@ -823,9 +823,9 @@ function renderSchedulerPool(view) {
       node(
         "p",
         "agent-slot-observation",
-        zombie
-          ? "疑似僵尸进程 · 等待 Ledger 对账"
-          : slot.observed_at || "heartbeat / observed_at：Provider 未提供",
+        // The runtime read model omits raw heartbeat/observed_at; design §18
+        // requires the Provider 未提供 fallback instead of an invented value.
+        zombie ? "疑似僵尸进程 · 等待 Ledger 对账" : "heartbeat / observed_at：Provider 未提供",
       ),
       node("p", "agent-slot-usage", "steps / tokens / duration：Provider 未提供"),
       node("p", "agent-slot-worktree", "worktree：仅展示脱敏标识（当前未提供）"),
@@ -929,6 +929,38 @@ function renderSchedulerFindings(view) {
       );
       proposal.type = "button";
       proposal.disabled = !view.control.policy_proposal_available;
+      proposal.addEventListener("click", async () => {
+        const actorInput = $("#scheduler-controls input");
+        const actorValue = (actorInput?.value ?? "").trim();
+        if (!actorValue) {
+          status("scheduler", "请输入可审计的控制操作人身份。", "error");
+          actorInput?.focus();
+          return;
+        }
+        proposal.disabled = true;
+        try {
+          await apiWrite("/api/v1/scheduler/policy-proposals", {
+            operation_id: view.operation.operation_id,
+            proposal_kind: "budget",
+            steps: view.budget.limit.steps,
+            tokens: view.budget.limit.tokens,
+            duration_ms: view.budget.limit.duration_ms,
+            expected_digest: view.control.expected_digest,
+            actor: actorValue,
+          });
+          await loadScheduler();
+          status("scheduler", "预算 Policy Proposal 已写入 Ledger，等待审批。", "ready");
+        } catch (error) {
+          status(
+            "scheduler",
+            error.status === 409 ? "Scheduler 读分支已变化；已刷新，请重新确认。" : error.message,
+            "error",
+          );
+          if (error.status === 409) await loadScheduler();
+        } finally {
+          proposal.disabled = !model.schedulerView?.control?.policy_proposal_available;
+        }
+      });
       card.append(proposal);
     }
     list.append(card);

@@ -1046,6 +1046,7 @@ export {
   type DesignContributionOptions,
 } from "./orchestration/contributors/design-contributor.js";
 export {
+  approvalService,
   createApprovalRuntime,
   type ApprovalRuntime,
   type ApprovalStep,
@@ -1449,6 +1450,9 @@ export {
 } from "./scheduling/host.js";
 export { type AgentSlotFactory } from "./scheduling/agent-pool.js";
 export { type SchedulerPolicyResolver } from "./scheduling/policy-adapters.js";
+// The concurrency clamp the CLI reports must be exactly the clamp the drive
+// enforces, so the pure function is shared instead of mirrored (design §10.2).
+export { effectiveMaxConcurrency, type EffectiveConcurrencyInput } from "./scheduling/readiness.js";
 
 export * from "./model/index.js";
 
