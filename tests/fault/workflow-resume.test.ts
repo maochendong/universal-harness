@@ -68,7 +68,10 @@ function eventIds(projectRoot: string): string[] {
     .events.map((event) => event.event_id);
 }
 
-describe("checkpoint commit interruption", () => {
+// Process-kill boundary cases each build a full project, interrupt a commit
+// and resume; under full-suite parallel load the 5s default is not enough
+// (integration-cas-recovery.test.ts carries 120s for the same reason).
+describe("checkpoint commit interruption", { timeout: 30_000 }, () => {
   for (const boundary of DURABLE_BOUNDARIES) {
     it(`recovers exactly once when killed at ${boundary}`, async () => {
       const projectRoot = makeProjectRoot();
@@ -121,7 +124,7 @@ describe("checkpoint commit interruption", () => {
   }
 });
 
-describe("resume commit interruption", () => {
+describe("resume commit interruption", { timeout: 30_000 }, () => {
   for (const boundary of DURABLE_BOUNDARIES) {
     it(`never duplicates runs, events or commits when killed at ${boundary}`, async () => {
       const projectRoot = makeProjectRoot();
