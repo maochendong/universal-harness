@@ -15,7 +15,14 @@ export const CANONICAL_RELEASE_COMMANDS = Object.freeze({
   "playwright-dashboard": "pnpm test:e2e:dashboard",
 });
 
-function ac({ acceptance_id, statement, required_suites, evidence, dogfood_rule, readiness_rule }) {
+function acceptanceEntry({
+  acceptance_id,
+  statement,
+  required_suites,
+  evidence,
+  dogfood_rule,
+  readiness_rule,
+}) {
   return Object.freeze({
     acceptance_id,
     statement,
@@ -28,7 +35,7 @@ function ac({ acceptance_id, statement, required_suites, evidence, dogfood_rule,
 
 /** Frozen M4 acceptance contract. Generator and immutable-report verifier share it. */
 export const M4_ACCEPTANCE_REGISTRY = Object.freeze([
-  ac({
+  acceptanceEntry({
     acceptance_id: "AC-01",
     statement:
       "Plan 是 Task 规划语义唯一权威源，并原子生成全部 `DEPENDS_ON` 和 digest-bound waves。",
@@ -39,13 +46,13 @@ export const M4_ACCEPTANCE_REGISTRY = Object.freeze([
       "tests/e2e/m4-local-multi-agent.test.ts",
     ],
   }),
-  ac({
+  acceptanceEntry({
     acceptance_id: "AC-02",
     statement: "循环、缺失依赖、不一致 wave 及不确定拆分被拒绝。",
     required_suites: ["main"],
     evidence: ["packages/runtime/test/planning/waves.test.ts"],
   }),
-  ac({
+  acceptanceEntry({
     acceptance_id: "AC-03",
     statement: "写路径与独占资源冲突被机械串行化。",
     required_suites: ["main", "performance"],
@@ -54,7 +61,7 @@ export const M4_ACCEPTANCE_REGISTRY = Object.freeze([
       "tests/performance/m4-wave-compiler.test.ts",
     ],
   }),
-  ac({
+  acceptanceEntry({
     acceptance_id: "AC-04",
     statement:
       "`parallel_task_execution` 满足完整 Module Contract；Lite disabled，Standard/Governed required 并按有效上限并行。",
@@ -64,7 +71,7 @@ export const M4_ACCEPTANCE_REGISTRY = Object.freeze([
       "tests/e2e/m4-sequential-compatibility.test.ts",
     ],
   }),
-  ac({
+  acceptanceEntry({
     acceptance_id: "AC-05",
     statement: "不合格 Adapter 不能无人值守并行。",
     required_suites: ["main"],
@@ -75,14 +82,14 @@ export const M4_ACCEPTANCE_REGISTRY = Object.freeze([
     ],
     dogfood_rule: "adapter_eligibility",
   }),
-  ac({
+  acceptanceEntry({
     acceptance_id: "AC-06",
     statement: "至少两个真实 Task 在隔离槽位并行。",
     required_suites: [],
     evidence: [".reports/acceptance/m4-dogfood.json"],
     dogfood_rule: "parallel_overlap",
   }),
-  ac({
+  acceptanceEntry({
     acceptance_id: "AC-07",
     statement:
       "Context、Budget、Run、worktree 和隐藏历史互不共享；Strict TDD 无嵌套 worktree 且 四层写集取交集。",
@@ -93,7 +100,7 @@ export const M4_ACCEPTANCE_REGISTRY = Object.freeze([
       "tests/e2e/m4-local-multi-agent.test.ts",
     ],
   }),
-  ac({
+  acceptanceEntry({
     acceptance_id: "AC-08",
     statement: "Task Lease、fencing、Protocol Envelope 和重启恢复无重复接受。",
     required_suites: ["main", "fault"],
@@ -102,7 +109,7 @@ export const M4_ACCEPTANCE_REGISTRY = Object.freeze([
       "tests/fault/m4-scheduler-crash-matrix.test.ts",
     ],
   }),
-  ac({
+  acceptanceEntry({
     acceptance_id: "AC-09",
     statement: "并发预算预留不突破 Iteration 总上限。",
     required_suites: ["main", "e2e"],
@@ -111,7 +118,7 @@ export const M4_ACCEPTANCE_REGISTRY = Object.freeze([
       "tests/e2e/m4-local-multi-agent.test.ts",
     ],
   }),
-  ac({
+  acceptanceEntry({
     acceptance_id: "AC-10",
     statement:
       "三个调度 Action 及 Policy `allow/deny/requires_approval/block` 四态、Approval 漂移正确生效。",
@@ -122,7 +129,7 @@ export const M4_ACCEPTANCE_REGISTRY = Object.freeze([
     ],
     readiness_rule: "production_policy_source",
   }),
-  ac({
+  acceptanceEntry({
     acceptance_id: "AC-11",
     statement: "三层 Gate 与 wave 原子集成成立。",
     required_suites: ["main", "e2e"],
@@ -131,7 +138,7 @@ export const M4_ACCEPTANCE_REGISTRY = Object.freeze([
       "tests/e2e/m4-local-multi-agent.test.ts",
     ],
   }),
-  ac({
+  acceptanceEntry({
     acceptance_id: "AC-12",
     statement:
       "executor retry 和 patch-apply integration retry 均最多一次；语义冲突与 baseline drift 不进入 retry。",
@@ -141,7 +148,7 @@ export const M4_ACCEPTANCE_REGISTRY = Object.freeze([
       "tests/fault/m4-scheduler-crash-matrix.test.ts",
     ],
   }),
-  ac({
+  acceptanceEntry({
     acceptance_id: "AC-13",
     statement: "第二次失败、越权写入和预算耗尽正确阻塞。",
     required_suites: ["main", "security"],
@@ -150,7 +157,7 @@ export const M4_ACCEPTANCE_REGISTRY = Object.freeze([
       "tests/security/m4-scheduler-boundaries.test.ts",
     ],
   }),
-  ac({
+  acceptanceEntry({
     acceptance_id: "AC-14",
     statement: "baseline drift 不会自动 force/rebase。",
     required_suites: ["main", "fault"],
@@ -159,7 +166,7 @@ export const M4_ACCEPTANCE_REGISTRY = Object.freeze([
       "tests/fault/m4-scheduler-crash-matrix.test.ts",
     ],
   }),
-  ac({
+  acceptanceEntry({
     acceptance_id: "AC-15",
     statement:
       "Evidence 绑定 Task、Run、Lease token 和实际基线；丢弃 candidate 后旧 Evidence provisional 且完整重验。",
@@ -169,7 +176,7 @@ export const M4_ACCEPTANCE_REGISTRY = Object.freeze([
       "tests/e2e/m4-local-multi-agent.test.ts",
     ],
   }),
-  ac({
+  acceptanceEntry({
     acceptance_id: "AC-16",
     statement: "Dashboard 展示完整调度与恢复状态。",
     required_suites: ["main", "playwright-dashboard"],
@@ -179,7 +186,7 @@ export const M4_ACCEPTANCE_REGISTRY = Object.freeze([
     ],
     readiness_rule: "dashboard_controls",
   }),
-  ac({
+  acceptanceEntry({
     acceptance_id: "AC-17",
     statement:
       "CLI run/resume/status/watch/abort 形成闭环，CLI 与 Dashboard 对同一 Operation 保持 单驱动。",
@@ -190,13 +197,13 @@ export const M4_ACCEPTANCE_REGISTRY = Object.freeze([
     ],
     readiness_rule: "approval_live_driver",
   }),
-  ac({
+  acceptanceEntry({
     acceptance_id: "AC-18",
     statement: "SQLite 删除后可从 Ledger 恢复权威状态。",
     required_suites: ["performance"],
     evidence: ["tests/performance/m4-sqlite-rebuild.test.ts"],
   }),
-  ac({
+  acceptanceEntry({
     acceptance_id: "AC-19",
     statement:
       "Protocol 1.3 Envelope/Reader/`required_reader_version`、M1/M2/M3 与顺序执行回归全部通过。",
@@ -206,7 +213,7 @@ export const M4_ACCEPTANCE_REGISTRY = Object.freeze([
       "tests/e2e/m4-sequential-compatibility.test.ts",
     ],
   }),
-  ac({
+  acceptanceEntry({
     acceptance_id: "AC-20",
     statement: "真实 Dogfood 完成并生成绑定当前提交的验收报告。",
     required_suites: ["main", "security", "fault", "performance", "e2e", "playwright-dashboard"],
