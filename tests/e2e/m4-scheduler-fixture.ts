@@ -31,11 +31,13 @@ import {
   type ProjectSchedulerHost,
 } from "../../packages/runtime/src/index.js";
 import {
-  buildPipelineContext,
   captureProposal,
   commitArtifacts,
-  drivePipeline,
 } from "../../packages/runtime/src/orchestration/kernel-coordinator.js";
+import {
+  buildPipelineContext,
+  drivePipeline,
+} from "../../packages/runtime/src/orchestration/kernel-pipeline-driver.js";
 import { createEvaluationContribution } from "../../packages/runtime/src/orchestration/contributors/evaluation-contributor.js";
 import {
   generateKernelExecutionPlan,

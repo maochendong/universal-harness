@@ -41,12 +41,10 @@ import {
   approvalDigestOf,
   approvalService,
   artifactExists,
-  buildPipelineContext,
   captureProposal,
   commitArtifacts,
   commitRunNode,
   currentAttemptId,
-  drivePipeline,
   effectivePolicy,
   harnessRoot,
   materializeProjectGraph,
@@ -59,6 +57,7 @@ import {
   submitCaptureAnswers,
   workflowDeps,
 } from "./kernel-coordinator.js";
+import { buildPipelineContext, drivePipeline } from "./kernel-pipeline-driver.js";
 import { OrchestrationError } from "./pipeline-types.js";
 import type {
   OrchestrationOutcome,
