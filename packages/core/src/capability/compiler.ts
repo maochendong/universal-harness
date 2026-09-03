@@ -151,6 +151,18 @@ const OPERATION_SCOPE_SLOTS: readonly {
   { slot_id: "grounded_synthesis", purpose: "iteration_narrative" },
 ];
 
+/**
+ * The definition set one operation protocol resolves (M4 design 10.2): the
+ * protocol version plus the profile definition that version selects, expanded
+ * once at the top of the compile and handed down as one unit instead of
+ * threading the bare version string — and re-deriving the definition —
+ * through every layer below.
+ */
+interface ProtocolDefinitionSet {
+  readonly protocol_version: "1.1.0" | "1.3.0";
+  readonly profile_definition: ProfileDefinition;
+}
+
 interface ResolvedCapability {
   readonly resolution: CapabilityResolutionEntry["resolution"];
   readonly resolution_source: CapabilityResolutionSource;
@@ -182,13 +194,11 @@ function profileCapabilityMode(
 
 function resolveCapabilities(
   input: CapabilityPlanCompileInput,
-  profileId: ProfileId,
-  protocolVersion: "1.1.0" | "1.3.0",
+  definitions: ProtocolDefinitionSet,
 ): Map<CapabilityIdV13, ResolvedCapability> {
-  const definition = profileDefinitionForProtocol(
-    profileId,
-    profileDefinitionVersionForProtocol(protocolVersion),
-  );
+  const definition = definitions.profile_definition;
+  const profileId = definition.profile_id;
+  const protocolVersion = definitions.protocol_version;
   const policy = input.policy;
   const activations = new Map<CapabilityIdV13, CapabilityActivation>();
   for (const activation of input.activations ?? []) {
@@ -509,7 +519,14 @@ export function compileCapabilityPlan(input: CapabilityPlanCompileInput): AnyCap
     }
   }
 
-  const resolved = resolveCapabilities(input, profileId, protocolVersion);
+  const definitions: ProtocolDefinitionSet = {
+    protocol_version: protocolVersion,
+    profile_definition: profileDefinitionForProtocol(
+      profileId,
+      profileDefinitionVersionForProtocol(protocolVersion),
+    ),
+  };
+  const resolved = resolveCapabilities(input, definitions);
 
   // Standard strict_tdd finalization is the declared deferred boundary: it is
   // the only resolution allowed to consume a future artifact, and only once
@@ -550,10 +567,7 @@ export function compileCapabilityPlan(input: CapabilityPlanCompileInput): AnyCap
     .map(([capabilityId]) => capabilityId);
   const closure = capabilityDependencyClosure(directlyActive, protocolVersion);
   const active = new Set(closure);
-  const definition = profileDefinitionForProtocol(
-    profileId,
-    profileDefinitionVersionForProtocol(protocolVersion),
-  );
+  const definition = definitions.profile_definition;
   for (const capabilityId of closure) {
     const entry = resolved.get(capabilityId);
     if (entry !== undefined && entry.resolution !== "active") {
