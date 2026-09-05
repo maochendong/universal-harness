@@ -2,7 +2,7 @@
 
 本文件由 `scripts/generate-acceptance-report.mjs` 从各测试套件的结构化输出生成；结果区禁止人工改写（实施计划 Task 28）。验收标准原文引用自已批准的设计文档第 17 节。
 
-- 生成基线 commit：`82c3763`
+- 生成基线 commit：`cee281c`
 - 输入套件：main, security, fault, performance, e2e, playwright-dashboard（`.reports/acceptance/*.json`）
 - 汇总：28/28 通过；failed 0，blocked 0，not_verified 0，not_run 0
 
@@ -34,7 +34,7 @@
 | AC-22 | SQLite 被删除或损坏后可从 Git Ledger 恢复。 | `pnpm test && pnpm test:fault` | packages/graph/test/materializer.test.ts<br>tests/fault/sqlite-corruption.test.ts | passed | b1b9dd6 |
 | AC-23 | Manual/Command AgentAdapter 通过 Contract、Control-profile、Behavioral Evaluation 和 E2E Test；控制或可见性不足时始终阻止无人值守选择。 | `pnpm test` | packages/conformance/test/agent-adapters.conformance.test.ts | passed | 9e4b7b2 |
 | AC-24 | Generic、Node、Python 和 Java Pack 通过各自 Fixture。 | `pnpm test` | packages/conformance/test/packs.conformance.test.ts<br>packs/generic/test/generic-pack.test.ts<br>packs/java/test/java-pack.test.ts<br>packs/node/test/node-pack.test.ts<br>packs/python/test/python-pack.test.ts | passed | c12831a |
-| AC-25 | Linux、macOS 和 Windows CI 通过。 | `pnpm verify` | .github/workflows/ci.yml<br>.reports/ci-platform/ubuntu-latest.json<br>.reports/ci-platform/macos-latest.json<br>.reports/ci-platform/windows-latest.json | passed | 0ceda94 |
+| AC-25 | Linux、macOS 和 Windows CI 通过。 | `pnpm verify` | .github/workflows/ci.yml<br>.reports/ci-platform/ubuntu-latest.json<br>.reports/ci-platform/macos-latest.json<br>.reports/ci-platform/windows-latest.json | passed | cee281c |
 | AC-26 | Pack/CLI Upgrade 保留 Project Override，失败 Migration 回滚。 | `pnpm test` | packages/runtime/test/packs/migration.test.ts<br>packages/runtime/test/packs/resolver.test.ts<br>packages/runtime/test/packs/upgrade.test.ts | passed | c12831a |
 | AC-27 | Graph 与 Context Performance 硬阈值通过，并生成 Ledger Commit 与 Projection Generation 的可复现基线。 | `pnpm test:performance` | tests/performance/context-compile.test.ts<br>tests/performance/dataset.test.ts<br>tests/performance/impact.test.ts<br>tests/performance/ledger-commit.test.ts<br>tests/performance/m2-dashboard.test.ts<br>tests/performance/m2-finding-semantic.test.ts<br>tests/performance/m3-control-ref-rebuild.test.ts<br>tests/performance/m4-scheduler-read-api.test.ts<br>tests/performance/m4-scheduler-selection.test.ts<br>tests/performance/m4-sqlite-rebuild.test.ts<br>tests/performance/m4-wave-compiler.test.ts<br>tests/performance/projection-generation.test.ts<br>tests/performance/sqlite-rebuild.test.ts | passed | ca21e48 |
 | AC-28 | Repository Content、Package Metadata、Example、Fixture、Generated Provider Projection 和 Git History 保持独立，不包含原产品品牌、路径或业务领域示例；Provider Mirror 可复现、限定在受管路径且未经批准不覆盖用户配置。 | `pnpm verify` | scripts/check-standalone.mjs | passed | 279de98 |
@@ -43,16 +43,16 @@
 
 | Metric | p50 (ms) | p95 (ms) | max (ms) | 规模 | 环境 |
 |---|---|---|---|---|---|
-| ledger_transaction_commit | 26.59 | 30.66 | 34.86 | {"operations":40,"artifacts_per_operation":1,"edges_per_operation":1,"events_per_operation":1} | darwin ci=false |
-| m2_dashboard./api/v1/graph/nodes?limit=100 | 5.87 | 8.9 | 8.9 | {"nodes":10000,"edges":30000,"events":20000,"findings":1000} | darwin ci=false |
-| m2_dashboard./api/v1/graph/edges?limit=100 | 3.7 | 5.6 | 5.6 | {"nodes":10000,"edges":30000,"events":20000,"findings":1000} | darwin ci=false |
-| m2_dashboard./api/v1/graph/neighborhood/requirement_r00000?depth=2&direction=both | 3.23 | 5.19 | 5.19 | {"nodes":10000,"edges":30000,"events":20000,"findings":1000} | darwin ci=false |
-| m2_finding_groups | 1.97 | 3.06 | 3.18 | {"findings":1000,"groups":20} | darwin ci=false |
-| m2_semantic_top_k | 71.38 | 80.32 | 80.32 | {"indexed_nodes":10000,"top_k":10} | darwin ci=false |
-| scheduler_read_api | 24.47 | 25.76 | 26.64 | {"tasks":1000,"samples":50} | darwin ci=false |
-| projection_generation.architecture_full | 11385.99 | 17398.77 | 17398.77 | {"full":{"nodes":20000,"edges":100000,"renders":3},"affected_slice":{"nodes":2050,"edges":3722,"renders":15}} | darwin ci=false |
-| projection_generation.architecture_affected_slice | 8.5 | 10.5 | 10.5 | {"full":{"nodes":20000,"edges":100000,"renders":3},"affected_slice":{"nodes":2050,"edges":3722,"renders":15}} | darwin ci=false |
-| projection_generation.prd_full | 14.11 | 14.11 | 14.11 | {"full":{"nodes":20000,"edges":100000,"renders":3},"affected_slice":{"nodes":2050,"edges":3722,"renders":15}} | darwin ci=false |
+| ledger_transaction_commit | 27.38 | 31.42 | 33.55 | {"operations":40,"artifacts_per_operation":1,"edges_per_operation":1,"events_per_operation":1} | darwin ci=false |
+| m2_dashboard./api/v1/graph/nodes?limit=100 | 5.56 | 6.65 | 6.65 | {"nodes":10000,"edges":30000,"events":20000,"findings":1000} | darwin ci=false |
+| m2_dashboard./api/v1/graph/edges?limit=100 | 3.98 | 4.88 | 4.88 | {"nodes":10000,"edges":30000,"events":20000,"findings":1000} | darwin ci=false |
+| m2_dashboard./api/v1/graph/neighborhood/requirement_r00000?depth=2&direction=both | 3.8 | 4.75 | 4.75 | {"nodes":10000,"edges":30000,"events":20000,"findings":1000} | darwin ci=false |
+| m2_finding_groups | 1.98 | 3.84 | 4 | {"findings":1000,"groups":20} | darwin ci=false |
+| m2_semantic_top_k | 76.29 | 125.71 | 125.71 | {"indexed_nodes":10000,"top_k":10} | darwin ci=false |
+| scheduler_read_api | 24.95 | 26.59 | 27.2 | {"tasks":1000,"samples":50} | darwin ci=false |
+| projection_generation.architecture_full | 11981.45 | 18356.43 | 18356.43 | {"full":{"nodes":20000,"edges":100000,"renders":3},"affected_slice":{"nodes":2050,"edges":3722,"renders":15}} | darwin ci=false |
+| projection_generation.architecture_affected_slice | 15.27 | 29.06 | 29.06 | {"full":{"nodes":20000,"edges":100000,"renders":3},"affected_slice":{"nodes":2050,"edges":3722,"renders":15}} | darwin ci=false |
+| projection_generation.prd_full | 22.34 | 22.34 | 22.34 | {"full":{"nodes":20000,"edges":100000,"renders":3},"affected_slice":{"nodes":2050,"edges":3722,"renders":15}} | darwin ci=false |
 
 ## 发布声明
 
