@@ -45,6 +45,16 @@ const DEFAULT_OUTPUT_TAIL_MAX_BYTES = 4_096;
  */
 const ABSOLUTE_PATH_PATTERN = /(?<![\w:/])\/(?:[^\s/"']+\/)+[^\s/"']*/gu;
 
+/**
+ * Windows absolute paths collapse the same way: a drive-letter or UNC prefix
+ * followed by two or more segments, with `\` and `/` accepted as separators
+ * interchangeably (Windows APIs and several tools mix them). The pattern only
+ * fires on a drive/UNC prefix, so POSIX text is matched byte-identically by
+ * the pattern above.
+ */
+const WINDOWS_ABSOLUTE_PATH_PATTERN =
+  /(?<![\w:\\])(?:[A-Za-z]:[\\/]|\\\\)(?:[^\s\\/"']+[\\/])+[^\s\\"']*/gu;
+
 /** Bound a string to its trailing `maxBytes` UTF-8 bytes (never splits a code point). */
 export function boundOutputTail(text: string, maxBytes = DEFAULT_OUTPUT_TAIL_MAX_BYTES): string {
   if (Buffer.byteLength(text, "utf8") <= maxBytes) return text;
@@ -62,7 +72,12 @@ export function redactSchedulerText(
   text: string,
   maxBytes = DEFAULT_OUTPUT_TAIL_MAX_BYTES,
 ): string {
-  return boundOutputTail(text.replace(ABSOLUTE_PATH_PATTERN, REDACTED_PATH), maxBytes);
+  return boundOutputTail(
+    text
+      .replace(ABSOLUTE_PATH_PATTERN, REDACTED_PATH)
+      .replace(WINDOWS_ABSOLUTE_PATH_PATTERN, REDACTED_PATH),
+    maxBytes,
+  );
 }
 
 /**

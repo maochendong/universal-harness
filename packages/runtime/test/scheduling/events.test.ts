@@ -20,6 +20,8 @@ import {
 // resulting value.
 const SYNTHETIC_USERS = ["", "Users"].join("/");
 const ALICE_PROJECT = `${SYNTHETIC_USERS}/alice/project`;
+// Same trick for Windows: assemble the drive-rooted prefix at runtime.
+const SYNTHETIC_WINDOWS_USERS = ["C:", "Users"].join("\\");
 
 describe("scheduler event builders", () => {
   it("covers exactly the eight M4 event types", () => {
@@ -130,6 +132,15 @@ describe("scheduler text redaction", () => {
     expect(
       redactSchedulerText(`wrote ${SYNTHETIC_USERS}/alice/repo/src/a.ts and /tmp/build/x`),
     ).toBe("wrote <redacted-path> and <redacted-path>");
+  });
+
+  it("strips Windows absolute paths with either separator from free text", () => {
+    const home = `${SYNTHETIC_WINDOWS_USERS}\\runner\\project`;
+    expect(redactSchedulerText(`wrote ${home}\\src\\a.ts`)).toBe("wrote <redacted-path>");
+    expect(redactSchedulerText(`wrote ${home}/src/a.ts`)).toBe("wrote <redacted-path>");
+    expect(redactSchedulerText(`copied \\\\server\\share\\dir\\f.ts`)).toBe(
+      "copied <redacted-path>",
+    );
   });
 
   it("bounds the tail to the trailing bytes", () => {
