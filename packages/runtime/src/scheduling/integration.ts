@@ -218,8 +218,14 @@ export interface WaveIntegrationGitPort {
 
 const execFileAsync = promisify(execFile);
 
+// Pin core.autocrlf off so candidate worktree contents, patches and digests
+// are identical regardless of the host's global Git configuration, and
+// disable auto gc so no detached background maintenance rewrites .git after
+// an operation has returned (mirrors the VCS adapter runner).
+const GIT_CONFIG_PINS = ["-c", "core.autocrlf=false", "-c", "gc.auto=0"] as const;
+
 async function gitStdout(cwd: string, args: readonly string[]): Promise<string> {
-  const { stdout } = await execFileAsync("git", [...args], { cwd });
+  const { stdout } = await execFileAsync("git", [...GIT_CONFIG_PINS, ...args], { cwd });
   return stdout;
 }
 
@@ -321,9 +327,13 @@ export function createGitWaveIntegrationGit(
 
     async readRef(ref) {
       try {
-        const { stdout } = await execFileAsync("git", ["rev-parse", "--verify", "--quiet", ref], {
-          cwd: options.repositoryRoot,
-        });
+        const { stdout } = await execFileAsync(
+          "git",
+          [...GIT_CONFIG_PINS, "rev-parse", "--verify", "--quiet", ref],
+          {
+            cwd: options.repositoryRoot,
+          },
+        );
         const oid = stdout.trim();
         return oid === "" ? undefined : oid;
       } catch {

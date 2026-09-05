@@ -118,12 +118,18 @@ export interface TaskWorkspaceManagerOptions {
 
 const execFileAsync = promisify(execFile);
 
+// Pin core.autocrlf off so scratch-index contents, patches and tree digests
+// are identical regardless of the host's global Git configuration, and
+// disable auto gc so no detached background maintenance rewrites .git after
+// an operation has returned (mirrors the VCS adapter runner).
+const GIT_CONFIG_PINS = ["-c", "core.autocrlf=false", "-c", "gc.auto=0"] as const;
+
 async function git(
   cwd: string,
   args: readonly string[],
   env?: Readonly<Record<string, string>>,
 ): Promise<string> {
-  const { stdout } = await execFileAsync("git", [...args], {
+  const { stdout } = await execFileAsync("git", [...GIT_CONFIG_PINS, ...args], {
     cwd,
     env: env === undefined ? undefined : { ...process.env, ...env },
   });
@@ -133,7 +139,7 @@ async function git(
 /** Whether a git command exits 0 (used for rev-parse / merge-base checks). */
 async function gitSucceeds(cwd: string, args: readonly string[]): Promise<boolean> {
   try {
-    await execFileAsync("git", [...args], { cwd });
+    await execFileAsync("git", [...GIT_CONFIG_PINS, ...args], { cwd });
     return true;
   } catch {
     return false;

@@ -24,8 +24,14 @@ import type { IsolatedWorkspacePort, PatchFile, WorkspaceHandle } from "./worksp
  */
 const execFileAsync = promisify(execFile);
 
+// Pin core.autocrlf off so worktree contents and digests are identical
+// regardless of the host's global Git configuration, and disable auto gc so
+// no detached background maintenance rewrites .git after an operation has
+// returned (mirrors the VCS adapter runner).
+const GIT_CONFIG_PINS = ["-c", "core.autocrlf=false", "-c", "gc.auto=0"] as const;
+
 async function git(cwd: string, args: readonly string[]): Promise<string> {
-  const { stdout } = await execFileAsync("git", [...args], { cwd });
+  const { stdout } = await execFileAsync("git", [...GIT_CONFIG_PINS, ...args], { cwd });
   return stdout;
 }
 
