@@ -24,7 +24,9 @@ const BOUNDARIES = [
 describe("M4 scheduler fault-injection release matrix", () => {
   it(
     "executes all twelve production-seam cases and proves every required invariant",
-    { timeout: 240_000 },
+    // Each case spawns a nested vitest run; on Windows (cmd.exe shim plus a
+    // 2-3x slower filesystem) twelve sequential runs need a wider budget.
+    { timeout: process.platform === "win32" ? 900_000 : 240_000 },
     () => {
       expect(M4_FAULT_CASES.map((faultCase) => faultCase.id)).toEqual(BOUNDARIES);
       expect(

@@ -2,7 +2,8 @@ import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
 import { mkdtempSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
 import { describe, expect, it } from "vitest";
 
@@ -25,6 +26,9 @@ import {
 
 const COMMIT_A = "a".repeat(40);
 const COMMIT_B = "b".repeat(40);
+// The fake repository root is POSIX-shaped; resolve() renders the platform's
+// canonical form so fixtures match production expectations on Windows too.
+const FAKE_REPOSITORY_ROOT = "/repo";
 // Synthetic user paths are assembled at runtime so the standalone scan does
 // not mistake them for real machine paths; release-safe text validation must
 // still recognize the resulting value.
@@ -79,10 +83,10 @@ function report(
     coverage: "full",
     config_path:
       suite === "performance"
-        ? "/repo/vitest.performance.ts"
+        ? resolve(FAKE_REPOSITORY_ROOT, "vitest.performance.ts")
         : suite === "playwright-dashboard"
-          ? "/repo/playwright.dashboard.config.ts"
-          : "/repo/vitest.workspace.ts",
+          ? resolve(FAKE_REPOSITORY_ROOT, "playwright.dashboard.config.ts")
+          : resolve(FAKE_REPOSITORY_ROOT, "vitest.workspace.ts"),
     files_total: 1,
     files_failed: 0,
     failed_files: [],
@@ -260,7 +264,7 @@ describe("canonical M4 release suite reports", () => {
       ["security", report("security", commands.security)],
       ["fault", report("fault", commands.fault)],
     ]);
-    expect(assertCanonicalSuiteReports(reports, commands, COMMIT_A, "/repo")).toEqual({
+    expect(assertCanonicalSuiteReports(reports, commands, COMMIT_A, FAKE_REPOSITORY_ROOT)).toEqual({
       main: "inv-main",
       security: "inv-security",
       fault: "inv-fault",
@@ -284,19 +288,19 @@ describe("canonical M4 release suite reports", () => {
       changedSuite,
       report(changedSuite, commands[changedSuite as keyof typeof commands], overrides),
     );
-    expect(() => assertCanonicalSuiteReports(reports, commands, COMMIT_A, "/repo")).toThrow(
-      ReleaseEvidenceError,
-    );
+    expect(() =>
+      assertCanonicalSuiteReports(reports, commands, COMMIT_A, FAKE_REPOSITORY_ROOT),
+    ).toThrow(ReleaseEvidenceError);
   });
 
   it("digests canonical executed-result payload rather than source names alone", () => {
-    const first = buildCanonicalSuiteProof(report("main", "pnpm test"), "/repo");
+    const first = buildCanonicalSuiteProof(report("main", "pnpm test"), FAKE_REPOSITORY_ROOT);
     const second = buildCanonicalSuiteProof(
       report("main", "pnpm test", {
         invocation_id: "inv-main-2",
         files: [{ path: "main.test.ts", state: "skip" }],
       }),
-      "/repo",
+      FAKE_REPOSITORY_ROOT,
     );
     expect(first.config_path).toBe("vitest.workspace.ts");
     expect(digestCanonicalResult(first)).not.toBe(digestCanonicalResult(second));
@@ -733,7 +737,7 @@ describe("release command", () => {
   it("runs verify and the executable M4 fault matrix without repeating the main suite", () => {
     const packageJson = JSON.parse(
       readFileSync(
-        join(dirname(new URL(import.meta.url).pathname), "..", "..", "package.json"),
+        join(dirname(fileURLToPath(import.meta.url)), "..", "..", "package.json"),
         "utf8",
       ),
     ) as { scripts: { "test:release": string; "verify:m4:report": string } };
@@ -747,14 +751,7 @@ describe("release command", () => {
 
   it("uploads both M4 report projections as one CI evidence bundle", () => {
     const workflow = readFileSync(
-      join(
-        dirname(new URL(import.meta.url).pathname),
-        "..",
-        "..",
-        ".github",
-        "workflows",
-        "ci.yml",
-      ),
+      join(dirname(fileURLToPath(import.meta.url)), "..", "..", ".github", "workflows", "ci.yml"),
       "utf8",
     );
     const uploadStep = workflow.match(

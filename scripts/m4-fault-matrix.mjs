@@ -1,7 +1,8 @@
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname, resolve } from "node:path";
+import { createRequire } from "node:module";
+import { dirname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
 export const M4_FAULT_INVARIANTS = [
@@ -449,8 +450,22 @@ function digest(value) {
   return createHash("sha256").update(JSON.stringify(value)).digest("hex");
 }
 
-function commandExecutable() {
-  return process.platform === "win32" ? "pnpm.cmd" : "pnpm";
+function vitestEntrypoint(repositoryRoot) {
+  const require = createRequire(join(repositoryRoot, "package.json"));
+  const vitestPackage = require.resolve("vitest/package.json");
+  const { bin } = require(vitestPackage);
+  return join(dirname(vitestPackage), typeof bin === "string" ? bin : bin.vitest);
+}
+
+function vitestCommand(repositoryRoot) {
+  // Windows exposes pnpm only as a .cmd shim, and since Node 20.12
+  // (CVE-2024-27980) spawning a .cmd without a shell throws EINVAL. A shell
+  // would re-split the space-bearing -t titles, so Windows runs the vitest
+  // entrypoint directly with the current Node binary instead.
+  if (process.platform === "win32") {
+    return { file: process.execPath, argsPrefix: [vitestEntrypoint(repositoryRoot)] };
+  }
+  return { file: "pnpm", argsPrefix: ["exec", "vitest"] };
 }
 
 function escapeRegex(value) {
@@ -499,9 +514,9 @@ export function runM4FaultMatrix(options = {}) {
 
   const results = M4_FAULT_CASES.map((faultCase, index) => {
     const reportPath = resolve(resultRoot, `${String(index + 1).padStart(2, "0")}.json`);
+    const command = vitestCommand(repositoryRoot);
     const args = [
-      "exec",
-      "vitest",
+      ...command.argsPrefix,
       "run",
       "--config",
       "vitest.workspace.ts",
@@ -511,7 +526,7 @@ export function runM4FaultMatrix(options = {}) {
       "--reporter=json",
       `--outputFile=${reportPath}`,
     ];
-    const processResult = spawnSync(commandExecutable(), args, {
+    const processResult = spawnSync(command.file, args, {
       cwd: repositoryRoot,
       encoding: "utf8",
       env: { ...process.env, FORCE_COLOR: "0" },
@@ -528,7 +543,7 @@ export function runM4FaultMatrix(options = {}) {
       boundary_id: faultCase.id,
       status,
       case_identity: `${faultCase.file}::${faultCase.test}`,
-      command: [commandExecutable(), ...args],
+      command: [command.file, ...args],
       exit_code: processResult.status ?? 1,
       implementation_commit: implementationCommit,
       design_section: "M4 §23.3 / plan Task 14 Step 3",

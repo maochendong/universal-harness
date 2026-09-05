@@ -1,5 +1,5 @@
 import { existsSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { describe, expect, it } from "vitest";
@@ -87,7 +87,9 @@ describe("release suite provenance", () => {
       suite: "main",
       command: "pnpm test",
       coverage: "full",
-      config_path: "/repo/vitest.workspace.ts",
+      // Production canonicalizes with node:path resolve(); derive the
+      // expectation the same way so the fake POSIX root works on Windows.
+      config_path: resolve("/repo", "vitest.workspace.ts"),
     });
     expect(
       resolveSuiteInvocation(
@@ -102,7 +104,10 @@ describe("release suite provenance", () => {
         ["run", "--config", "/tmp/vitest.workspace.ts"],
         "/repo",
       ),
-    ).toMatchObject({ coverage: "partial", config_path: "/tmp/vitest.workspace.ts" });
+    ).toMatchObject({
+      coverage: "partial",
+      config_path: resolve("/repo", "/tmp/vitest.workspace.ts"),
+    });
   });
 
   it("keeps partial invocations in an identity-scoped path", () => {
@@ -131,7 +136,7 @@ describe("release suite provenance", () => {
       suite: "playwright-dashboard",
       command: "pnpm test:e2e:dashboard",
       coverage: "full",
-      config_path: "/repo/playwright.dashboard.config.ts",
+      config_path: resolve("/repo", "playwright.dashboard.config.ts"),
     });
     expect(
       resolvePlaywrightInvocation(

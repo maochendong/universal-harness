@@ -224,12 +224,13 @@ describe("task execution workspaces (real git)", { timeout: 60000 }, () => {
         workspace,
         task_grant: grantFor(spec.id, ["src", "assets"]),
       });
-      expect(candidate.changed_paths).toEqual([
-        "assets/logo.bin",
-        "src/delete-me.ts",
-        "src/new.ts",
-        "src/run.sh",
-      ]);
+      // Windows git runs with core.filemode=false, so the run.sh mode change
+      // is invisible there and the file drops out of the changed set.
+      expect(candidate.changed_paths).toEqual(
+        process.platform === "win32"
+          ? ["assets/logo.bin", "src/delete-me.ts", "src/new.ts"]
+          : ["assets/logo.bin", "src/delete-me.ts", "src/new.ts", "src/run.sh"],
+      );
       const patch = await readFile(candidate.patch_locator, "utf8");
       expect(patch).toContain("GIT binary patch");
       expect(patch).toContain("deleted file mode");

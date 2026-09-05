@@ -1,7 +1,7 @@
 import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 
 import { afterEach, describe, expect, it } from "vitest";
 
@@ -315,10 +315,14 @@ describe("M4 real-provider dogfood proof", () => {
   });
 
   it("resolves the dsh session store from DSH_HOME before HOME", () => {
+    // Production joins with node:path, so mirror it for the platform's
+    // canonical rendering of these POSIX-shaped fixtures.
     expect(resolveDshSessionRoot({ dshHome: "/opt/dsh-state", home: "/home/test" })).toBe(
-      "/opt/dsh-state/sessions",
+      resolve("/opt/dsh-state", "sessions"),
     );
-    expect(resolveDshSessionRoot({ home: "/home/test" })).toBe("/home/test/.dsh/sessions");
+    expect(resolveDshSessionRoot({ home: "/home/test" })).toBe(
+      resolve(join("/home/test", ".dsh"), "sessions"),
+    );
   });
 
   it("requires the expected dsh version from an independent CLI binding", () => {

@@ -89,8 +89,16 @@ describe("plugin subprocess abort signal", () => {
     expect(result.aborted).toBe(true);
     expect(result.timed_out).toBe(false);
     expect(result.output_truncated).toBe(false);
-    expect(result.stdout).toBe("ready\nsigterm\n");
-    expect(result.exit_code).toBe(42);
+    if (process.platform === "win32") {
+      // Windows cannot deliver SIGTERM to a child: kill() terminates it
+      // outright, so the handler line and exit code never materialize.
+      expect(result.stdout).toBe("ready\n");
+      expect(result.signal).toBe("SIGTERM");
+      expect(result.exit_code).toBeNull();
+    } else {
+      expect(result.stdout).toBe("ready\nsigterm\n");
+      expect(result.exit_code).toBe(42);
+    }
   });
 
   it("kills a process that never traps SIGTERM and reports the signal", async () => {
