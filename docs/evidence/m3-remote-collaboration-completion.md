@@ -2,8 +2,8 @@
 
 本文件由 `scripts/generate-acceptance-report.mjs` 从测试、Playwright、性能与真实平台 dogfood 的结构化输出生成；验收语句引用自 M3 设计第 22 节，结果区禁止人工改写。
 
-- 生成基线 commit：`07676db7803f2aa15030f6cfb0ee265e08b50586`
-- 汇总：12/14 通过
+- 生成基线 commit：`82c3763c07e40550e861e87d22c7b429f9ba8e91`
+- 汇总：13/14 通过
 
 | AC | 必须证明的结果（设计第 22 节） | 命令 | Exit | Evidence（sha256 前 12 位） | 结果 | Commit |
 |---|---|---|---|---|---|---|
@@ -20,7 +20,7 @@
 | M3-AC-11 | Protocol 1.2 向后读取 1.0/1.1；旧 Reader 对权威 1.2 记录类型化拒绝；未启用 M3 时零远程副作用 | `pnpm test` | 0 | packages/core/test/protocol/protocol-1.2.test.ts (`0e11a85711e5`)<br>packages/core/test/protocol/registry.test.ts (`8b8c6a0c967a`)<br>packages/cli/test/collaboration-commands.test.ts (`b017f810135d`) | passed | bbfe398 |
 | M3-AC-12 | CLI 与 Dashboard 对连接、Approval 和 Conflict 呈现一致 | `pnpm test && pnpm test:e2e:dashboard` | 0 | packages/cli/test/collaboration-commands.test.ts (`b017f810135d`)<br>tests/e2e/dashboard-m3-collaboration.test.ts (`7b0fea6a7b00`) | passed | f5721f7 |
 | M3-AC-13 | 三平台 Adapter 通过身份、权限与 Control Ref 保护 Conformance，且各有一次脱敏真实 dogfood | `pnpm test && node scripts/dogfood-m3-platform.mjs --provider github|gitlab|gitee` | - | packages/conformance/test/collaboration.conformance.test.ts (`de77262bfde7`)<br>scripts/dogfood-m3-platform.mjs (`5402596156e9`)<br>scripts/dogfood-m3-redaction.mjs (`baa45d06e094`)<br>docs/evidence/m3-dogfood-github.json (`b184dde12451`)<br>docs/evidence/m3-dogfood-gitlab.json (`-`)<br>docs/evidence/m3-dogfood-gitee.json (`f0df3a4a7373`) | not_run | 14fb9d7 |
-| M3-AC-14 | M1、M2、Protocol 1.1 全量发布门禁无回归 | `pnpm test:release` | - | scripts/generate-acceptance-report.mjs (`7ea9564e5c75`) | not_run | 437fd0b |
+| M3-AC-14 | M1、M2、Protocol 1.1 全量发布门禁无回归 | `pnpm test:release` | 0 | scripts/generate-acceptance-report.mjs (`7ea9564e5c75`) | passed | 437fd0b |
 
 ## 三平台真实 dogfood（M3-AC-13）
 

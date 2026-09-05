@@ -1,24 +1,24 @@
 {
   "schema_version": "harness.m4-acceptance-results/1",
   "milestone": "M4",
-  "implementation_commit": "07676db7803f2aa15030f6cfb0ee265e08b50586",
-  "generated_at": "2026-09-03T07:45:27.399Z",
+  "implementation_commit": "82c3763c07e40550e861e87d22c7b429f9ba8e91",
+  "generated_at": "2026-09-05T11:55:36.831Z",
   "suite_invocation_ids": {
-    "main": "dfb9ae66-20cc-4af5-a074-d8177c3b26c8",
-    "security": "092189b1-5544-427a-bc08-d8372ab267dd",
-    "fault": "b2acb287-bc0f-47e7-a824-3fbbf4065faa",
-    "performance": "c1f2961f-db14-44ec-a6f2-cf62c8079ed4",
-    "e2e": "6c406767-813d-41ce-b712-5f7d64cb4066",
-    "playwright-dashboard": "0d2cd491-0abb-43d2-96b5-00bf61b45ce9"
+    "main": "2e84bef5-b7c1-4a75-8113-52861460ed10",
+    "security": "846a447a-5e05-487d-bec8-9652a8fba3b9",
+    "fault": "ede3733f-273e-4ef8-82b9-99b1b5f6cc27",
+    "performance": "20d91baa-c274-498a-821b-632dad9564e3",
+    "e2e": "6a2b276f-d797-468d-b5be-462c5290fa91",
+    "playwright-dashboard": "744bca7d-334a-4229-9bbb-6c0d27c99af3"
   },
   "suite_results": {
     "main": {
       "schema_version": "harness.acceptance-suite-report/1",
       "suite": "main",
-      "implementation_commit": "07676db7803f2aa15030f6cfb0ee265e08b50586",
-      "started_commit": "07676db7803f2aa15030f6cfb0ee265e08b50586",
-      "finished_commit": "07676db7803f2aa15030f6cfb0ee265e08b50586",
-      "invocation_id": "dfb9ae66-20cc-4af5-a074-d8177c3b26c8",
+      "implementation_commit": "82c3763c07e40550e861e87d22c7b429f9ba8e91",
+      "started_commit": "82c3763c07e40550e861e87d22c7b429f9ba8e91",
+      "finished_commit": "82c3763c07e40550e861e87d22c7b429f9ba8e91",
+      "invocation_id": "2e84bef5-b7c1-4a75-8113-52861460ed10",
       "command": "pnpm test",
       "coverage": "full",
       "config_path": "vitest.workspace.ts",
@@ -1718,10 +1718,10 @@
     "security": {
       "schema_version": "harness.acceptance-suite-report/1",
       "suite": "security",
-      "implementation_commit": "07676db7803f2aa15030f6cfb0ee265e08b50586",
-      "started_commit": "07676db7803f2aa15030f6cfb0ee265e08b50586",
-      "finished_commit": "07676db7803f2aa15030f6cfb0ee265e08b50586",
-      "invocation_id": "092189b1-5544-427a-bc08-d8372ab267dd",
+      "implementation_commit": "82c3763c07e40550e861e87d22c7b429f9ba8e91",
+      "started_commit": "82c3763c07e40550e861e87d22c7b429f9ba8e91",
+      "finished_commit": "82c3763c07e40550e861e87d22c7b429f9ba8e91",
+      "invocation_id": "846a447a-5e05-487d-bec8-9652a8fba3b9",
       "command": "pnpm test:security",
       "coverage": "full",
       "config_path": "vitest.workspace.ts",
@@ -1805,10 +1805,10 @@
     "fault": {
       "schema_version": "harness.acceptance-suite-report/1",
       "suite": "fault",
-      "implementation_commit": "07676db7803f2aa15030f6cfb0ee265e08b50586",
-      "started_commit": "07676db7803f2aa15030f6cfb0ee265e08b50586",
-      "finished_commit": "07676db7803f2aa15030f6cfb0ee265e08b50586",
-      "invocation_id": "b2acb287-bc0f-47e7-a824-3fbbf4065faa",
+      "implementation_commit": "82c3763c07e40550e861e87d22c7b429f9ba8e91",
+      "started_commit": "82c3763c07e40550e861e87d22c7b429f9ba8e91",
+      "finished_commit": "82c3763c07e40550e861e87d22c7b429f9ba8e91",
+      "invocation_id": "ede3733f-273e-4ef8-82b9-99b1b5f6cc27",
       "command": "pnpm test:fault",
       "coverage": "full",
       "config_path": "vitest.workspace.ts",
@@ -1908,10 +1908,10 @@
     "performance": {
       "schema_version": "harness.acceptance-suite-report/1",
       "suite": "performance",
-      "implementation_commit": "07676db7803f2aa15030f6cfb0ee265e08b50586",
-      "started_commit": "07676db7803f2aa15030f6cfb0ee265e08b50586",
-      "finished_commit": "07676db7803f2aa15030f6cfb0ee265e08b50586",
-      "invocation_id": "c1f2961f-db14-44ec-a6f2-cf62c8079ed4",
+      "implementation_commit": "82c3763c07e40550e861e87d22c7b429f9ba8e91",
+      "started_commit": "82c3763c07e40550e861e87d22c7b429f9ba8e91",
+      "finished_commit": "82c3763c07e40550e861e87d22c7b429f9ba8e91",
+      "invocation_id": "20d91baa-c274-498a-821b-632dad9564e3",
       "command": "pnpm test:performance",
       "coverage": "full",
       "config_path": "vitest.performance.ts",
@@ -1983,10 +1983,10 @@
     "e2e": {
       "schema_version": "harness.acceptance-suite-report/1",
       "suite": "e2e",
-      "implementation_commit": "07676db7803f2aa15030f6cfb0ee265e08b50586",
-      "started_commit": "07676db7803f2aa15030f6cfb0ee265e08b50586",
-      "finished_commit": "07676db7803f2aa15030f6cfb0ee265e08b50586",
-      "invocation_id": "6c406767-813d-41ce-b712-5f7d64cb4066",
+      "implementation_commit": "82c3763c07e40550e861e87d22c7b429f9ba8e91",
+      "started_commit": "82c3763c07e40550e861e87d22c7b429f9ba8e91",
+      "finished_commit": "82c3763c07e40550e861e87d22c7b429f9ba8e91",
+      "invocation_id": "6a2b276f-d797-468d-b5be-462c5290fa91",
       "command": "pnpm test:e2e",
       "coverage": "full",
       "config_path": "vitest.workspace.ts",
@@ -2098,10 +2098,10 @@
     "playwright-dashboard": {
       "schema_version": "harness.acceptance-suite-report/1",
       "suite": "playwright-dashboard",
-      "implementation_commit": "07676db7803f2aa15030f6cfb0ee265e08b50586",
-      "started_commit": "07676db7803f2aa15030f6cfb0ee265e08b50586",
-      "finished_commit": "07676db7803f2aa15030f6cfb0ee265e08b50586",
-      "invocation_id": "0d2cd491-0abb-43d2-96b5-00bf61b45ce9",
+      "implementation_commit": "82c3763c07e40550e861e87d22c7b429f9ba8e91",
+      "started_commit": "82c3763c07e40550e861e87d22c7b429f9ba8e91",
+      "finished_commit": "82c3763c07e40550e861e87d22c7b429f9ba8e91",
+      "invocation_id": "744bca7d-334a-4229-9bbb-6c0d27c99af3",
       "command": "pnpm test:e2e:dashboard",
       "coverage": "full",
       "config_path": "playwright.dashboard.config.ts",
@@ -2140,17 +2140,17 @@
     }
   },
   "suite_result_digests": {
-    "main": "867705be7a9d5b685ba01cde037da155cba8a397978c667ad60f4cc0d98d9bff",
-    "security": "c811403f7a81cc5c047b20de4073393dd944657e0db0b58fd64b6a92245d4f30",
-    "fault": "3624a7511d8cbf4a7dc124b5acd7f24da5ac79dff1787492cb92f8e20a4d8e0d",
-    "performance": "49e302dcd26b015aee4e1011ff0da3daf218791696f06eb3ba81b2e682aca7f5",
-    "e2e": "4869590e644b3f61ee6a9278f8bb5dfadd3233d3ac25d4e69004238120756159",
-    "playwright-dashboard": "7b3ece3735bcebb30d6357f25b4776b4b2c80881a8c4e7aa0a43c2c93684b533"
+    "main": "91b7ac54d7a4001bc7d8ca6cdfb04362b749d342a54364a7e6b8f806df17c468",
+    "security": "fb2042c7d9385e51831fec3c17f2e3accc5e71520035bbc5d731777a06c977cf",
+    "fault": "592334fc8273e5e2ea4189519360d250b9ccc8a903aab033c32e89547986c170",
+    "performance": "2a1c139d5f0b2e158bae57ccad85d98e38fe4387e045ca4e9a0b35881de9fb76",
+    "e2e": "69a872ec373b127d01547f26be749a61d2c51f93ca39e3c962f7f8c77eaad31d",
+    "playwright-dashboard": "d132839982ab8057da35d9c78e3c7e5e1e3136c7535e31cfe44f17dbc6c5316a"
   },
   "dogfood_result": {
     "present": true,
     "schema_version": 1,
-    "implementation_commit": "07676db7803f2aa15030f6cfb0ee265e08b50586",
+    "implementation_commit": "82c3763c07e40550e861e87d22c7b429f9ba8e91",
     "status": "blocked",
     "blocker": "real_adapter_unattended_ineligible",
     "command": "<redacted-path> --profile headless <TaskEnvelope>",
@@ -2170,8 +2170,8 @@
     "credential_material_recorded": false,
     "credential_material_hashed": false,
     "build_provenance": {
-      "implementation_commit": "07676db7803f2aa15030f6cfb0ee265e08b50586",
-      "source_head": "07676db7803f2aa15030f6cfb0ee265e08b50586",
+      "implementation_commit": "82c3763c07e40550e861e87d22c7b429f9ba8e91",
+      "source_head": "82c3763c07e40550e861e87d22c7b429f9ba8e91",
       "source_head_matches_implementation_commit": true,
       "tracked_source_clean": true,
       "build_command": "pnpm build",
@@ -2195,7 +2195,7 @@
       ],
       "package_count": 13,
       "external_runtime_dependency_count": 7,
-      "provenance_sha256": "3879159b15b99b4f8c2ecbb8a11eb4ff3b2290162d1a53c79765c4b22fad6032"
+      "provenance_sha256": "69831b0d80268d6bf8544006b4147bc9f366001eb17786a6b0ff14be995c1c6a"
     },
     "adapter_manifest_digest": "63285cb9f1573c0c522011bd80e3df5ef0207796cf646643366fec34a0f8a1bf",
     "requested_task_count": 4,
@@ -2243,16 +2243,16 @@
     },
     "dsh_session_observation": {
       "source": "dsh_local_zstd_session",
-      "session_sha256": "20845dc1a75b89f157afd0f179caaf54f61b548c275e8c1c1f9552a04511dc71",
+      "session_sha256": "ba7445b4fd6c89b53e7cf6a552be65cc7c8f3c80c3d42007789293cb5b0ecc1a",
       "raw_session_persisted_in_release_bundle": false,
       "usage": {
         "metering": "dsh_session_observed",
-        "model_call_count": 5,
-        "input_tokens": 10776,
-        "cache_read_input_tokens": 42752,
-        "output_tokens": 1082,
-        "reasoning_tokens": 501,
-        "total_tokens": 54610
+        "model_call_count": 6,
+        "input_tokens": 10855,
+        "cache_read_input_tokens": 53504,
+        "output_tokens": 1044,
+        "reasoning_tokens": 471,
+        "total_tokens": 65403
       }
     },
     "supervised_probe": {
@@ -2266,14 +2266,14 @@
       "evidence": [
         {
           "kind": "transcript",
-          "digest": "519ea6178033bf8032d54c198489bb56294348ce53b31adabb4e038707d5c852"
+          "digest": "7e8a6c0c6a2fd77a54e8c4bd0d9133bd5747150796d5f0f46a09de40f665d607"
         },
         {
           "kind": "diff",
-          "digest": "b3b6fe9c707a5d6579dc0f313256f4de25a7fe1f0ad5f4ace82e87c208167405"
+          "digest": "47d35c923640da38e71ebfb379bd3f5d5d538e68dcc26555bd770b4c66a35abc"
         }
       ],
-      "duration_ms": 11619
+      "duration_ms": 10784
     },
     "overlap_proven": false,
     "overlap_intervals": [],
@@ -2284,7 +2284,7 @@
     "raw_transcript_persisted_in_release_bundle": false,
     "command_executable_basename": "bin.js"
   },
-  "dogfood_result_digest": "8ecfd231960b66ca4a1901c765c8937bb7be9b0a06faa5b49f257ef76e28eeb4",
+  "dogfood_result_digest": "bcdc5c422e276f3787d940ccc1a79c0f9f5842746c00548127ac2a13f5dd13b6",
   "results": [
     {
       "acceptance_id": "AC-01",
@@ -2294,7 +2294,7 @@
         "main"
       ],
       "suite_invocation_ids": {
-        "main": "dfb9ae66-20cc-4af5-a074-d8177c3b26c8"
+        "main": "2e84bef5-b7c1-4a75-8113-52861460ed10"
       },
       "commands": [
         "pnpm test"
@@ -2304,13 +2304,13 @@
         "packages/runtime/test/scheduling/task-dag-port.test.ts",
         "tests/e2e/m4-local-multi-agent.test.ts"
       ],
-      "tracked_evidence_digest": "54351b77ffc536e2858310a51558c86099a590976732271a07960dd6132d18b6",
+      "tracked_evidence_digest": "f60bc02269eec41a1c34990d0ebd930e9f70384dd1b3fc73197c168dd4df62ed",
       "suite_result_digests": {
-        "main": "867705be7a9d5b685ba01cde037da155cba8a397978c667ad60f4cc0d98d9bff"
+        "main": "91b7ac54d7a4001bc7d8ca6cdfb04362b749d342a54364a7e6b8f806df17c468"
       },
       "design_section": "§24",
       "detail": "no extra readiness proof required",
-      "evidence_digest": "8987ab8fb0c448bccbd1ecea04773359ec763ef27e014ebb8e18b1c1ed0af4d9"
+      "evidence_digest": "4bd712343464a289337cdc6f5d351dbe87646036c03f029ad272742050f0a0b1"
     },
     {
       "acceptance_id": "AC-02",
@@ -2320,7 +2320,7 @@
         "main"
       ],
       "suite_invocation_ids": {
-        "main": "dfb9ae66-20cc-4af5-a074-d8177c3b26c8"
+        "main": "2e84bef5-b7c1-4a75-8113-52861460ed10"
       },
       "commands": [
         "pnpm test"
@@ -2330,11 +2330,11 @@
       ],
       "tracked_evidence_digest": "7f928aac37a2307783764ed5e2e7593dbffeff1cc7515ec0828baddf98c761c7",
       "suite_result_digests": {
-        "main": "867705be7a9d5b685ba01cde037da155cba8a397978c667ad60f4cc0d98d9bff"
+        "main": "91b7ac54d7a4001bc7d8ca6cdfb04362b749d342a54364a7e6b8f806df17c468"
       },
       "design_section": "§24",
       "detail": "no extra readiness proof required",
-      "evidence_digest": "79d3653b2a6c63a005a0319d8c98774c921702e174746eb604508a839f76e011"
+      "evidence_digest": "a4ad4a9dde05f7e0bcc2b6f2dc51399d5d2a5a287154352761e90b725c411928"
     },
     {
       "acceptance_id": "AC-03",
@@ -2345,8 +2345,8 @@
         "performance"
       ],
       "suite_invocation_ids": {
-        "main": "dfb9ae66-20cc-4af5-a074-d8177c3b26c8",
-        "performance": "c1f2961f-db14-44ec-a6f2-cf62c8079ed4"
+        "main": "2e84bef5-b7c1-4a75-8113-52861460ed10",
+        "performance": "20d91baa-c274-498a-821b-632dad9564e3"
       },
       "commands": [
         "pnpm test",
@@ -2358,12 +2358,12 @@
       ],
       "tracked_evidence_digest": "03684282929f06b1c293a3d1bd05f427ff5709c96cd16e6d94a5939e60d58b43",
       "suite_result_digests": {
-        "main": "867705be7a9d5b685ba01cde037da155cba8a397978c667ad60f4cc0d98d9bff",
-        "performance": "49e302dcd26b015aee4e1011ff0da3daf218791696f06eb3ba81b2e682aca7f5"
+        "main": "91b7ac54d7a4001bc7d8ca6cdfb04362b749d342a54364a7e6b8f806df17c468",
+        "performance": "2a1c139d5f0b2e158bae57ccad85d98e38fe4387e045ca4e9a0b35881de9fb76"
       },
       "design_section": "§24",
       "detail": "no extra readiness proof required",
-      "evidence_digest": "e9210729dd6e183ad293f53520b42631e564c939d187a92b4b29ad2172732041"
+      "evidence_digest": "94c526c6353d4294ab072f7c39570390b45218946607d5791dca98b2ef1c91da"
     },
     {
       "acceptance_id": "AC-04",
@@ -2373,7 +2373,7 @@
         "main"
       ],
       "suite_invocation_ids": {
-        "main": "dfb9ae66-20cc-4af5-a074-d8177c3b26c8"
+        "main": "2e84bef5-b7c1-4a75-8113-52861460ed10"
       },
       "commands": [
         "pnpm test"
@@ -2384,11 +2384,11 @@
       ],
       "tracked_evidence_digest": "1ca2527ea85b2e939e1cb9ec04e625002d9b7ac01cef315f1e2b7730d61e93bd",
       "suite_result_digests": {
-        "main": "867705be7a9d5b685ba01cde037da155cba8a397978c667ad60f4cc0d98d9bff"
+        "main": "91b7ac54d7a4001bc7d8ca6cdfb04362b749d342a54364a7e6b8f806df17c468"
       },
       "design_section": "§24",
       "detail": "no extra readiness proof required",
-      "evidence_digest": "bc3dedd9026fd2978e8703954c4bfe7dc89883883fa678ea7cd0051144c09ca3"
+      "evidence_digest": "10e27704c77a9f5499ba8c31b96ebe2c6ae343be733788691b1aa39eda32031c"
     },
     {
       "acceptance_id": "AC-05",
@@ -2398,7 +2398,7 @@
         "main"
       ],
       "suite_invocation_ids": {
-        "main": "dfb9ae66-20cc-4af5-a074-d8177c3b26c8"
+        "main": "2e84bef5-b7c1-4a75-8113-52861460ed10"
       },
       "commands": [
         "pnpm test",
@@ -2411,12 +2411,12 @@
       ],
       "tracked_evidence_digest": "e9fe09705af04b11b0264956ed93e98a8fc91ec3f9ee00fe5a682760351f0450",
       "suite_result_digests": {
-        "main": "867705be7a9d5b685ba01cde037da155cba8a397978c667ad60f4cc0d98d9bff"
+        "main": "91b7ac54d7a4001bc7d8ca6cdfb04362b749d342a54364a7e6b8f806df17c468"
       },
-      "dogfood_result_digest": "8ecfd231960b66ca4a1901c765c8937bb7be9b0a06faa5b49f257ef76e28eeb4",
+      "dogfood_result_digest": "bcdc5c422e276f3787d940ccc1a79c0f9f5842746c00548127ac2a13f5dd13b6",
       "design_section": "§24",
       "detail": "no extra readiness proof required",
-      "evidence_digest": "ec7e1fc12ba0abdd9ba9ee828447e12e7113091ce7d6440590279a9051ccbdcc"
+      "evidence_digest": "db889bcf1d86f679919d6c879d7850c363a0e4430ce2eb3406189f9dd9a62162"
     },
     {
       "acceptance_id": "AC-06",
@@ -2432,10 +2432,10 @@
       ],
       "tracked_evidence_digest": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
       "suite_result_digests": {},
-      "dogfood_result_digest": "8ecfd231960b66ca4a1901c765c8937bb7be9b0a06faa5b49f257ef76e28eeb4",
+      "dogfood_result_digest": "bcdc5c422e276f3787d940ccc1a79c0f9f5842746c00548127ac2a13f5dd13b6",
       "design_section": "§24",
       "detail": "real parallel overlap proof is incomplete",
-      "evidence_digest": "dcdc9a7c5b32922acd088e1d5f655ebb4ea46ed809915ffe5b9946a5154a9f13"
+      "evidence_digest": "467f1871d51b69ba79c22d723254d4e3d45cb7eb8e6af0877cd0a2986cceea09"
     },
     {
       "acceptance_id": "AC-07",
@@ -2446,8 +2446,8 @@
         "e2e"
       ],
       "suite_invocation_ids": {
-        "main": "dfb9ae66-20cc-4af5-a074-d8177c3b26c8",
-        "e2e": "6c406767-813d-41ce-b712-5f7d64cb4066"
+        "main": "2e84bef5-b7c1-4a75-8113-52861460ed10",
+        "e2e": "6a2b276f-d797-468d-b5be-462c5290fa91"
       },
       "commands": [
         "pnpm test",
@@ -2458,14 +2458,14 @@
         "packages/runtime/test/scheduling/agent-pool.test.ts",
         "tests/e2e/m4-local-multi-agent.test.ts"
       ],
-      "tracked_evidence_digest": "05cbe6eb104d292e39df78ea8bd778026b0189268645873cb92b97c766c39cf2",
+      "tracked_evidence_digest": "a2f0254e794eb2f1cf8258afaba43d8c009154729522e2c550f47998c8548f66",
       "suite_result_digests": {
-        "main": "867705be7a9d5b685ba01cde037da155cba8a397978c667ad60f4cc0d98d9bff",
-        "e2e": "4869590e644b3f61ee6a9278f8bb5dfadd3233d3ac25d4e69004238120756159"
+        "main": "91b7ac54d7a4001bc7d8ca6cdfb04362b749d342a54364a7e6b8f806df17c468",
+        "e2e": "69a872ec373b127d01547f26be749a61d2c51f93ca39e3c962f7f8c77eaad31d"
       },
       "design_section": "§24",
       "detail": "no extra readiness proof required",
-      "evidence_digest": "4c8527c0f772ce3d81f8763ab5101a894bfd6496231964eac3a11985977aeb4f"
+      "evidence_digest": "290505facd30ba5bb9b3c43672d55c811102dc84235fd6a524047364d0251081"
     },
     {
       "acceptance_id": "AC-08",
@@ -2476,8 +2476,8 @@
         "fault"
       ],
       "suite_invocation_ids": {
-        "main": "dfb9ae66-20cc-4af5-a074-d8177c3b26c8",
-        "fault": "b2acb287-bc0f-47e7-a824-3fbbf4065faa"
+        "main": "2e84bef5-b7c1-4a75-8113-52861460ed10",
+        "fault": "ede3733f-273e-4ef8-82b9-99b1b5f6cc27"
       },
       "commands": [
         "pnpm test",
@@ -2487,14 +2487,14 @@
         "packages/runtime/test/scheduling/recovery.test.ts",
         "tests/fault/m4-scheduler-crash-matrix.test.ts"
       ],
-      "tracked_evidence_digest": "a36c5c4407bfff01eb070423cc26facf825b92ad0c4432a2d9adb816d64e3661",
+      "tracked_evidence_digest": "0aa70822f09490af023a483994f515ab99d03e0987f3379b7d47c963842450e5",
       "suite_result_digests": {
-        "main": "867705be7a9d5b685ba01cde037da155cba8a397978c667ad60f4cc0d98d9bff",
-        "fault": "3624a7511d8cbf4a7dc124b5acd7f24da5ac79dff1787492cb92f8e20a4d8e0d"
+        "main": "91b7ac54d7a4001bc7d8ca6cdfb04362b749d342a54364a7e6b8f806df17c468",
+        "fault": "592334fc8273e5e2ea4189519360d250b9ccc8a903aab033c32e89547986c170"
       },
       "design_section": "§24",
       "detail": "no extra readiness proof required",
-      "evidence_digest": "fa2fe994ad0db3762e712fb15ce770e842eba670ac8b27d355e6d2350aa3b8e0"
+      "evidence_digest": "e07755e30d41f2831d2a1e747b09f058079cd10d9a1b5162e85c43052b64629b"
     },
     {
       "acceptance_id": "AC-09",
@@ -2505,8 +2505,8 @@
         "e2e"
       ],
       "suite_invocation_ids": {
-        "main": "dfb9ae66-20cc-4af5-a074-d8177c3b26c8",
-        "e2e": "6c406767-813d-41ce-b712-5f7d64cb4066"
+        "main": "2e84bef5-b7c1-4a75-8113-52861460ed10",
+        "e2e": "6a2b276f-d797-468d-b5be-462c5290fa91"
       },
       "commands": [
         "pnpm test",
@@ -2516,14 +2516,14 @@
         "packages/runtime/test/scheduling/budget.test.ts",
         "tests/e2e/m4-local-multi-agent.test.ts"
       ],
-      "tracked_evidence_digest": "0cc354737aab14edd54acc1d33a16fc88983876833abbfc6488bf470cba54de8",
+      "tracked_evidence_digest": "b20f3181ac08e92d0a14b6d9380282d62099ad0d7f0c34ad54b74ae690302e24",
       "suite_result_digests": {
-        "main": "867705be7a9d5b685ba01cde037da155cba8a397978c667ad60f4cc0d98d9bff",
-        "e2e": "4869590e644b3f61ee6a9278f8bb5dfadd3233d3ac25d4e69004238120756159"
+        "main": "91b7ac54d7a4001bc7d8ca6cdfb04362b749d342a54364a7e6b8f806df17c468",
+        "e2e": "69a872ec373b127d01547f26be749a61d2c51f93ca39e3c962f7f8c77eaad31d"
       },
       "design_section": "§24",
       "detail": "no extra readiness proof required",
-      "evidence_digest": "6835f7ae44916d24df055aebd026fcb060417d7fd7aece54859dde5f96fa02ab"
+      "evidence_digest": "d7c3c2436a17c01ed25e316ca274a1a9bea84e4eafe39495e4eaf805d549221f"
     },
     {
       "acceptance_id": "AC-10",
@@ -2535,9 +2535,9 @@
         "e2e"
       ],
       "suite_invocation_ids": {
-        "main": "dfb9ae66-20cc-4af5-a074-d8177c3b26c8",
-        "fault": "b2acb287-bc0f-47e7-a824-3fbbf4065faa",
-        "e2e": "6c406767-813d-41ce-b712-5f7d64cb4066"
+        "main": "2e84bef5-b7c1-4a75-8113-52861460ed10",
+        "fault": "ede3733f-273e-4ef8-82b9-99b1b5f6cc27",
+        "e2e": "6a2b276f-d797-468d-b5be-462c5290fa91"
       },
       "commands": [
         "pnpm test",
@@ -2550,13 +2550,13 @@
       ],
       "tracked_evidence_digest": "6e24c8964e5795c1fcf789bb1a2e4af38429ddc0ed97568a5801250aac029b2d",
       "suite_result_digests": {
-        "main": "867705be7a9d5b685ba01cde037da155cba8a397978c667ad60f4cc0d98d9bff",
-        "fault": "3624a7511d8cbf4a7dc124b5acd7f24da5ac79dff1787492cb92f8e20a4d8e0d",
-        "e2e": "4869590e644b3f61ee6a9278f8bb5dfadd3233d3ac25d4e69004238120756159"
+        "main": "91b7ac54d7a4001bc7d8ca6cdfb04362b749d342a54364a7e6b8f806df17c468",
+        "fault": "592334fc8273e5e2ea4189519360d250b9ccc8a903aab033c32e89547986c170",
+        "e2e": "69a872ec373b127d01547f26be749a61d2c51f93ca39e3c962f7f8c77eaad31d"
       },
       "design_section": "§24",
       "detail": "tests/e2e/m4-production-policy-source.test.ts passed in canonical e2e",
-      "evidence_digest": "d1dfc2062a2f3ede242ad3fe011192a2ad19b7cf6bce606c3f64d92990006003"
+      "evidence_digest": "5c11da8f06bb7657715a784b82b5066b9998d93af96789f790bb4aa832e53d30"
     },
     {
       "acceptance_id": "AC-11",
@@ -2567,8 +2567,8 @@
         "e2e"
       ],
       "suite_invocation_ids": {
-        "main": "dfb9ae66-20cc-4af5-a074-d8177c3b26c8",
-        "e2e": "6c406767-813d-41ce-b712-5f7d64cb4066"
+        "main": "2e84bef5-b7c1-4a75-8113-52861460ed10",
+        "e2e": "6a2b276f-d797-468d-b5be-462c5290fa91"
       },
       "commands": [
         "pnpm test",
@@ -2578,14 +2578,14 @@
         "packages/runtime/test/scheduling/integration.test.ts",
         "tests/e2e/m4-local-multi-agent.test.ts"
       ],
-      "tracked_evidence_digest": "ec7b805c36122ff5028c845b9347008b662f986955fa1072bd0869b7c95d142c",
+      "tracked_evidence_digest": "abc26ecd44883b8bd9fad0b65d55a65b28cda3f47b36ae1238244258efd231a0",
       "suite_result_digests": {
-        "main": "867705be7a9d5b685ba01cde037da155cba8a397978c667ad60f4cc0d98d9bff",
-        "e2e": "4869590e644b3f61ee6a9278f8bb5dfadd3233d3ac25d4e69004238120756159"
+        "main": "91b7ac54d7a4001bc7d8ca6cdfb04362b749d342a54364a7e6b8f806df17c468",
+        "e2e": "69a872ec373b127d01547f26be749a61d2c51f93ca39e3c962f7f8c77eaad31d"
       },
       "design_section": "§24",
       "detail": "no extra readiness proof required",
-      "evidence_digest": "baa386de9fc42a2162e547a46f2592573262f773953e6a067224ee3aa7e86fe6"
+      "evidence_digest": "a3bfd51d341511b7189ab231ff92d98903d9c4c26fff8896db16123ea0e7eb81"
     },
     {
       "acceptance_id": "AC-12",
@@ -2596,8 +2596,8 @@
         "fault"
       ],
       "suite_invocation_ids": {
-        "main": "dfb9ae66-20cc-4af5-a074-d8177c3b26c8",
-        "fault": "b2acb287-bc0f-47e7-a824-3fbbf4065faa"
+        "main": "2e84bef5-b7c1-4a75-8113-52861460ed10",
+        "fault": "ede3733f-273e-4ef8-82b9-99b1b5f6cc27"
       },
       "commands": [
         "pnpm test",
@@ -2607,14 +2607,14 @@
         "packages/runtime/test/scheduling/scheduler.test.ts",
         "tests/fault/m4-scheduler-crash-matrix.test.ts"
       ],
-      "tracked_evidence_digest": "dfc2c7d4384d50a601e12336ea2ca252c2a7e18d49eb0db29599f9627f8015e3",
+      "tracked_evidence_digest": "9893024a8d842aa70a34c02fd7009e2cfc42c69de9e2f63f6fee86dcd5937ec5",
       "suite_result_digests": {
-        "main": "867705be7a9d5b685ba01cde037da155cba8a397978c667ad60f4cc0d98d9bff",
-        "fault": "3624a7511d8cbf4a7dc124b5acd7f24da5ac79dff1787492cb92f8e20a4d8e0d"
+        "main": "91b7ac54d7a4001bc7d8ca6cdfb04362b749d342a54364a7e6b8f806df17c468",
+        "fault": "592334fc8273e5e2ea4189519360d250b9ccc8a903aab033c32e89547986c170"
       },
       "design_section": "§24",
       "detail": "no extra readiness proof required",
-      "evidence_digest": "4522075f30538584efa03b1233e6a39e47c59500e76947f23e3ab1ca2e36610c"
+      "evidence_digest": "5641b1dd57af574f57ba62232eada6ac5a0820ab8830a24318c5360685e21215"
     },
     {
       "acceptance_id": "AC-13",
@@ -2625,8 +2625,8 @@
         "security"
       ],
       "suite_invocation_ids": {
-        "main": "dfb9ae66-20cc-4af5-a074-d8177c3b26c8",
-        "security": "092189b1-5544-427a-bc08-d8372ab267dd"
+        "main": "2e84bef5-b7c1-4a75-8113-52861460ed10",
+        "security": "846a447a-5e05-487d-bec8-9652a8fba3b9"
       },
       "commands": [
         "pnpm test",
@@ -2638,12 +2638,12 @@
       ],
       "tracked_evidence_digest": "f39520ad6340b3f5ddc09524c649272392418963541ccab99aed35e4dd0a287b",
       "suite_result_digests": {
-        "main": "867705be7a9d5b685ba01cde037da155cba8a397978c667ad60f4cc0d98d9bff",
-        "security": "c811403f7a81cc5c047b20de4073393dd944657e0db0b58fd64b6a92245d4f30"
+        "main": "91b7ac54d7a4001bc7d8ca6cdfb04362b749d342a54364a7e6b8f806df17c468",
+        "security": "fb2042c7d9385e51831fec3c17f2e3accc5e71520035bbc5d731777a06c977cf"
       },
       "design_section": "§24",
       "detail": "no extra readiness proof required",
-      "evidence_digest": "c878ff33bac7b4503f4b57fc323b74a9d8ca054a4e7b16c3dfae52d712a07f04"
+      "evidence_digest": "c3e2745233efc65057310e599b1a36424996364ad62341a8fb801c8fa9df7284"
     },
     {
       "acceptance_id": "AC-14",
@@ -2654,8 +2654,8 @@
         "fault"
       ],
       "suite_invocation_ids": {
-        "main": "dfb9ae66-20cc-4af5-a074-d8177c3b26c8",
-        "fault": "b2acb287-bc0f-47e7-a824-3fbbf4065faa"
+        "main": "2e84bef5-b7c1-4a75-8113-52861460ed10",
+        "fault": "ede3733f-273e-4ef8-82b9-99b1b5f6cc27"
       },
       "commands": [
         "pnpm test",
@@ -2665,14 +2665,14 @@
         "packages/runtime/test/scheduling/recovery.test.ts",
         "tests/fault/m4-scheduler-crash-matrix.test.ts"
       ],
-      "tracked_evidence_digest": "a36c5c4407bfff01eb070423cc26facf825b92ad0c4432a2d9adb816d64e3661",
+      "tracked_evidence_digest": "0aa70822f09490af023a483994f515ab99d03e0987f3379b7d47c963842450e5",
       "suite_result_digests": {
-        "main": "867705be7a9d5b685ba01cde037da155cba8a397978c667ad60f4cc0d98d9bff",
-        "fault": "3624a7511d8cbf4a7dc124b5acd7f24da5ac79dff1787492cb92f8e20a4d8e0d"
+        "main": "91b7ac54d7a4001bc7d8ca6cdfb04362b749d342a54364a7e6b8f806df17c468",
+        "fault": "592334fc8273e5e2ea4189519360d250b9ccc8a903aab033c32e89547986c170"
       },
       "design_section": "§24",
       "detail": "no extra readiness proof required",
-      "evidence_digest": "559e2f70c496ba8f65dcf3db337228f761971fbda35ed2c236ff8fb0096687b1"
+      "evidence_digest": "28b5a15f3f1f1a107bce5066bc18ea2153643119236d6a1b58232d6420c5bd0f"
     },
     {
       "acceptance_id": "AC-15",
@@ -2683,8 +2683,8 @@
         "e2e"
       ],
       "suite_invocation_ids": {
-        "main": "dfb9ae66-20cc-4af5-a074-d8177c3b26c8",
-        "e2e": "6c406767-813d-41ce-b712-5f7d64cb4066"
+        "main": "2e84bef5-b7c1-4a75-8113-52861460ed10",
+        "e2e": "6a2b276f-d797-468d-b5be-462c5290fa91"
       },
       "commands": [
         "pnpm test",
@@ -2694,14 +2694,14 @@
         "packages/runtime/test/scheduling/integration.test.ts",
         "tests/e2e/m4-local-multi-agent.test.ts"
       ],
-      "tracked_evidence_digest": "ec7b805c36122ff5028c845b9347008b662f986955fa1072bd0869b7c95d142c",
+      "tracked_evidence_digest": "abc26ecd44883b8bd9fad0b65d55a65b28cda3f47b36ae1238244258efd231a0",
       "suite_result_digests": {
-        "main": "867705be7a9d5b685ba01cde037da155cba8a397978c667ad60f4cc0d98d9bff",
-        "e2e": "4869590e644b3f61ee6a9278f8bb5dfadd3233d3ac25d4e69004238120756159"
+        "main": "91b7ac54d7a4001bc7d8ca6cdfb04362b749d342a54364a7e6b8f806df17c468",
+        "e2e": "69a872ec373b127d01547f26be749a61d2c51f93ca39e3c962f7f8c77eaad31d"
       },
       "design_section": "§24",
       "detail": "no extra readiness proof required",
-      "evidence_digest": "f51369945fce4897f7ec89994047140aedc83c2813fa4fefd9237148c7e2ee52"
+      "evidence_digest": "9ef4a3d5a4c2c64d02740c3effac2de7c61997f82727374f7a3f96d2b1fe0225"
     },
     {
       "acceptance_id": "AC-16",
@@ -2712,8 +2712,8 @@
         "playwright-dashboard"
       ],
       "suite_invocation_ids": {
-        "main": "dfb9ae66-20cc-4af5-a074-d8177c3b26c8",
-        "playwright-dashboard": "0d2cd491-0abb-43d2-96b5-00bf61b45ce9"
+        "main": "2e84bef5-b7c1-4a75-8113-52861460ed10",
+        "playwright-dashboard": "744bca7d-334a-4229-9bbb-6c0d27c99af3"
       },
       "commands": [
         "pnpm test",
@@ -2725,12 +2725,12 @@
       ],
       "tracked_evidence_digest": "87287f563353f591bc943ad64a3530885ee8f303a50b706a2747a2728068fc15",
       "suite_result_digests": {
-        "main": "867705be7a9d5b685ba01cde037da155cba8a397978c667ad60f4cc0d98d9bff",
-        "playwright-dashboard": "7b3ece3735bcebb30d6357f25b4776b4b2c80881a8c4e7aa0a43c2c93684b533"
+        "main": "91b7ac54d7a4001bc7d8ca6cdfb04362b749d342a54364a7e6b8f806df17c468",
+        "playwright-dashboard": "d132839982ab8057da35d9c78e3c7e5e1e3136c7535e31cfe44f17dbc6c5316a"
       },
       "design_section": "§24",
       "detail": "tests/e2e/dashboard-m4-governed-controls.test.ts passed in canonical playwright-dashboard",
-      "evidence_digest": "5b29bea08afd704945f6c00bf9411e3b7ee26addf39a092f4ceb309ebcc755ca"
+      "evidence_digest": "9bd225b4efb8334e89cb6230514849ae00a713b096bbba20986cf1ced3da304e"
     },
     {
       "acceptance_id": "AC-17",
@@ -2742,9 +2742,9 @@
         "e2e"
       ],
       "suite_invocation_ids": {
-        "main": "dfb9ae66-20cc-4af5-a074-d8177c3b26c8",
-        "fault": "b2acb287-bc0f-47e7-a824-3fbbf4065faa",
-        "e2e": "6c406767-813d-41ce-b712-5f7d64cb4066"
+        "main": "2e84bef5-b7c1-4a75-8113-52861460ed10",
+        "fault": "ede3733f-273e-4ef8-82b9-99b1b5f6cc27",
+        "e2e": "6a2b276f-d797-468d-b5be-462c5290fa91"
       },
       "commands": [
         "pnpm test",
@@ -2755,15 +2755,15 @@
         "packages/cli/test/m4-scheduling.test.ts",
         "tests/fault/m4-scheduler-crash-matrix.test.ts"
       ],
-      "tracked_evidence_digest": "27670ac55adf8e100fedd122d87db26ced793b30902ef11bb30d7431cfef527e",
+      "tracked_evidence_digest": "2c9221049ba55bd75f74f455c7f6919c21a4a8e2340acd006a49ae247dfec016",
       "suite_result_digests": {
-        "main": "867705be7a9d5b685ba01cde037da155cba8a397978c667ad60f4cc0d98d9bff",
-        "fault": "3624a7511d8cbf4a7dc124b5acd7f24da5ac79dff1787492cb92f8e20a4d8e0d",
-        "e2e": "4869590e644b3f61ee6a9278f8bb5dfadd3233d3ac25d4e69004238120756159"
+        "main": "91b7ac54d7a4001bc7d8ca6cdfb04362b749d342a54364a7e6b8f806df17c468",
+        "fault": "592334fc8273e5e2ea4189519360d250b9ccc8a903aab033c32e89547986c170",
+        "e2e": "69a872ec373b127d01547f26be749a61d2c51f93ca39e3c962f7f8c77eaad31d"
       },
       "design_section": "§24",
       "detail": "tests/e2e/m4-live-driver-approval.test.ts passed in canonical e2e",
-      "evidence_digest": "e17bd2f3084981a154d8f1372774b4202fff4bb5abaa617aaca83b0bb0a94bd9"
+      "evidence_digest": "6443a7bcb28f7ad0818713ac98dd187c762ecc50238b92afc7e2004a43019ff2"
     },
     {
       "acceptance_id": "AC-18",
@@ -2773,7 +2773,7 @@
         "performance"
       ],
       "suite_invocation_ids": {
-        "performance": "c1f2961f-db14-44ec-a6f2-cf62c8079ed4"
+        "performance": "20d91baa-c274-498a-821b-632dad9564e3"
       },
       "commands": [
         "pnpm test:performance"
@@ -2781,13 +2781,13 @@
       "evidence": [
         "tests/performance/m4-sqlite-rebuild.test.ts"
       ],
-      "tracked_evidence_digest": "7696eb7b87920b3c11207ccd925d0c2394024157d52902cc3f6b941d90c1622c",
+      "tracked_evidence_digest": "17ec219902c89ce305626de916c45f71f4b47ea3c03cafd25e89bc6f94b0e70e",
       "suite_result_digests": {
-        "performance": "49e302dcd26b015aee4e1011ff0da3daf218791696f06eb3ba81b2e682aca7f5"
+        "performance": "2a1c139d5f0b2e158bae57ccad85d98e38fe4387e045ca4e9a0b35881de9fb76"
       },
       "design_section": "§24",
       "detail": "no extra readiness proof required",
-      "evidence_digest": "ba25d87216b4204a66bd9827df95ac3222e649c3140bc75e6ae298d517b95b0e"
+      "evidence_digest": "4828469615f7cccc586fd642388b24a696328cf5f679be86dce84555fe26b11d"
     },
     {
       "acceptance_id": "AC-19",
@@ -2798,8 +2798,8 @@
         "e2e"
       ],
       "suite_invocation_ids": {
-        "main": "dfb9ae66-20cc-4af5-a074-d8177c3b26c8",
-        "e2e": "6c406767-813d-41ce-b712-5f7d64cb4066"
+        "main": "2e84bef5-b7c1-4a75-8113-52861460ed10",
+        "e2e": "6a2b276f-d797-468d-b5be-462c5290fa91"
       },
       "commands": [
         "pnpm test",
@@ -2811,12 +2811,12 @@
       ],
       "tracked_evidence_digest": "6448f286fb83a70dc927fc48e080d3805f35c46b03c17063d774ae824c0b2711",
       "suite_result_digests": {
-        "main": "867705be7a9d5b685ba01cde037da155cba8a397978c667ad60f4cc0d98d9bff",
-        "e2e": "4869590e644b3f61ee6a9278f8bb5dfadd3233d3ac25d4e69004238120756159"
+        "main": "91b7ac54d7a4001bc7d8ca6cdfb04362b749d342a54364a7e6b8f806df17c468",
+        "e2e": "69a872ec373b127d01547f26be749a61d2c51f93ca39e3c962f7f8c77eaad31d"
       },
       "design_section": "§24",
       "detail": "no extra readiness proof required",
-      "evidence_digest": "e0922a74f4b7fb39f54d4ca6094b1ecbe9e3e1ca453a853d0cf99a752190d33e"
+      "evidence_digest": "512e49e91f579f69d971c628415f5b4ae65a02ef54be4518a44fdf85f41f2850"
     },
     {
       "acceptance_id": "AC-20",
@@ -2831,12 +2831,12 @@
         "playwright-dashboard"
       ],
       "suite_invocation_ids": {
-        "main": "dfb9ae66-20cc-4af5-a074-d8177c3b26c8",
-        "security": "092189b1-5544-427a-bc08-d8372ab267dd",
-        "fault": "b2acb287-bc0f-47e7-a824-3fbbf4065faa",
-        "performance": "c1f2961f-db14-44ec-a6f2-cf62c8079ed4",
-        "e2e": "6c406767-813d-41ce-b712-5f7d64cb4066",
-        "playwright-dashboard": "0d2cd491-0abb-43d2-96b5-00bf61b45ce9"
+        "main": "2e84bef5-b7c1-4a75-8113-52861460ed10",
+        "security": "846a447a-5e05-487d-bec8-9652a8fba3b9",
+        "fault": "ede3733f-273e-4ef8-82b9-99b1b5f6cc27",
+        "performance": "20d91baa-c274-498a-821b-632dad9564e3",
+        "e2e": "6a2b276f-d797-468d-b5be-462c5290fa91",
+        "playwright-dashboard": "744bca7d-334a-4229-9bbb-6c0d27c99af3"
       },
       "commands": [
         "pnpm test",
@@ -2854,17 +2854,17 @@
       ],
       "tracked_evidence_digest": "85942526f9a0080282189c6384371c9821d5fbbf7daa601fb4a5f52e0f0d1522",
       "suite_result_digests": {
-        "main": "867705be7a9d5b685ba01cde037da155cba8a397978c667ad60f4cc0d98d9bff",
-        "security": "c811403f7a81cc5c047b20de4073393dd944657e0db0b58fd64b6a92245d4f30",
-        "fault": "3624a7511d8cbf4a7dc124b5acd7f24da5ac79dff1787492cb92f8e20a4d8e0d",
-        "performance": "49e302dcd26b015aee4e1011ff0da3daf218791696f06eb3ba81b2e682aca7f5",
-        "e2e": "4869590e644b3f61ee6a9278f8bb5dfadd3233d3ac25d4e69004238120756159",
-        "playwright-dashboard": "7b3ece3735bcebb30d6357f25b4776b4b2c80881a8c4e7aa0a43c2c93684b533"
+        "main": "91b7ac54d7a4001bc7d8ca6cdfb04362b749d342a54364a7e6b8f806df17c468",
+        "security": "fb2042c7d9385e51831fec3c17f2e3accc5e71520035bbc5d731777a06c977cf",
+        "fault": "592334fc8273e5e2ea4189519360d250b9ccc8a903aab033c32e89547986c170",
+        "performance": "2a1c139d5f0b2e158bae57ccad85d98e38fe4387e045ca4e9a0b35881de9fb76",
+        "e2e": "69a872ec373b127d01547f26be749a61d2c51f93ca39e3c962f7f8c77eaad31d",
+        "playwright-dashboard": "d132839982ab8057da35d9c78e3c7e5e1e3136c7535e31cfe44f17dbc6c5316a"
       },
-      "dogfood_result_digest": "8ecfd231960b66ca4a1901c765c8937bb7be9b0a06faa5b49f257ef76e28eeb4",
+      "dogfood_result_digest": "bcdc5c422e276f3787d940ccc1a79c0f9f5842746c00548127ac2a13f5dd13b6",
       "design_section": "§24",
       "detail": "full real Scheduler/Gate/Evaluate/Snapshot dogfood is incomplete",
-      "evidence_digest": "197d2f1dcc52a169b59f71a125f8467fa467c677b3a9edda1b3b1445659f3176"
+      "evidence_digest": "663e2c02fe03a6d8ff9e947c60b74987100c632ff4e889dbec25497d878dd9e6"
     }
   ]
 }
