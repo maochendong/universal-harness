@@ -126,6 +126,7 @@ function makeFakeLockHost(
     cancelOperation: () => {
       throw new Error("unexpected scheduler cancellation in a driver-lock drive test");
     },
+    close: () => {},
   };
   (fake as { host: ProjectSchedulerHost }).host = host;
   return fake;

@@ -109,6 +109,7 @@ describe("M4 real-Git local multi-agent release proof", () => {
         }
         expect(existsSync(join(fixture.projectRoot, "src/task_api/outcome.ts"))).toBe(false);
       } finally {
+        fixture.closeHosts();
         cleanupDirectories();
       }
     },

@@ -57,7 +57,13 @@ import { makeStartInput } from "../workflow/helpers.js";
  * integration, the real default gate suite — only the policy resolver and the
  * agent slot factory are substituted.
  */
-afterEach(cleanupDirectories);
+const openHosts: ProjectSchedulerHost[] = [];
+afterEach(() => {
+  // Hosts pin the SQLite projection file handle; release them before the
+  // temp directories are removed (Windows refuses to unlink an open file).
+  while (openHosts.length > 0) openHosts.pop()?.close();
+  cleanupDirectories();
+});
 
 const ITERATION_ID = "iteration_host1";
 const REQUIREMENT_DIGEST = "a".repeat(64);
@@ -436,8 +442,8 @@ async function makeDrivenProject(
   } as const;
   const createHost = (
     overrides: { readonly adapterManifestDigest?: string } = {},
-  ): ProjectSchedulerHost =>
-    createProjectSchedulerHost({
+  ): ProjectSchedulerHost => {
+    const created = createProjectSchedulerHost({
       ...hostOptions,
       agentSlotFactory: {
         ...hostOptions.agentSlotFactory,
@@ -445,6 +451,9 @@ async function makeDrivenProject(
           overrides.adapterManifestDigest ?? hostOptions.agentSlotFactory.adapter_manifest_digest,
       },
     });
+    openHosts.push(created);
+    return created;
+  };
   const host = createHost();
   return {
     projectRoot,
@@ -764,6 +773,9 @@ describe("createProjectSchedulerHost", () => {
     }).readFacts(fixture.operationId);
     const refBefore = readGitRef(fixture.projectRoot, operationRefFor(fixture.operationId));
 
+    // The live driver still holds the projection handle; close it before the
+    // deliberate deletion (Windows refuses to unlink an open file).
+    fixture.host.close();
     rmSync(fixture.projectionStorePath, { force: true });
 
     const recovered = await fixture.createHost().readSchedulerModel(fixture.operationId);

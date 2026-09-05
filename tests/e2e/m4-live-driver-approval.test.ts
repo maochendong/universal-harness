@@ -155,6 +155,13 @@ function writingAdapter(envelope: AgentTaskEnvelope, worktreeRoot: string): Agen
   return successResult(envelope.task_id);
 }
 
+const openHosts: ProjectSchedulerHost[] = [];
+
+/** Hosts pin their SQLite projection handle; close before temp-dir cleanup. */
+function closeOpenHosts(): void {
+  while (openHosts.length > 0) openHosts.pop()?.close();
+}
+
 function createTestHost(
   fixture: M4E2eFixture,
   options: {
@@ -167,7 +174,7 @@ function createTestHost(
     ) => Promise<AgentRunResult> | AgentRunResult;
   },
 ): ProjectSchedulerHost {
-  return createProjectSchedulerHost({
+  const host = createProjectSchedulerHost({
     projectRoot: fixture.projectRoot,
     readBaseline: () => headOf(fixture.projectRoot),
     agentSlotFactory: {
@@ -202,6 +209,8 @@ function createTestHost(
     now: () => FIXED_NOW,
     newId: sequentialIds(options.namespace),
   });
+  openHosts.push(host);
+  return host;
 }
 
 function runInput(fixture: M4E2eFixture): {
@@ -322,6 +331,7 @@ describe("M4 AC-17 live-driver approval and durable cancellation", () => {
       }
       expect(afterCompletion.wave_integrations).toHaveLength(3);
     } finally {
+      closeOpenHosts();
       cleanupDirectories();
     }
   }, 240_000);
@@ -431,6 +441,7 @@ describe("M4 AC-17 live-driver approval and durable cancellation", () => {
           .sort(),
       ).toEqual(["task_api", "task_ui"]);
     } finally {
+      closeOpenHosts();
       cleanupDirectories();
     }
   }, 120_000);

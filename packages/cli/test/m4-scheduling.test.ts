@@ -808,6 +808,7 @@ function makeFakeSchedulerHost(input: {
         },
       });
     },
+    close: () => {},
   };
   (fake as { host: ProjectSchedulerHost }).host = host;
   return fake;

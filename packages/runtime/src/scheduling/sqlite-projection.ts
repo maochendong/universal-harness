@@ -122,6 +122,7 @@ function parseTaskRow(row: Row): SchedulerTaskLiveObservation | null {
 export interface SqliteSchedulerProjectionStore extends SchedulerProjectionStore {
   /** Test/inspection escape hatch; production code must use the store methods. */
   unsafeDatabase(): DatabaseSync;
+  /** Releases the OS file handle; ProjectSchedulerHost.close() delegates here. */
   close(): void;
 }
 

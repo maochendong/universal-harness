@@ -184,6 +184,8 @@ export interface M4E2eFixture {
   readonly projectionStorePath: string;
   /** Start a fresh production Host over the same persisted Ledger/Git facts. */
   createHost(): ProjectSchedulerHost;
+  /** Close every Host this fixture created (releases the SQLite projection handle). */
+  closeHosts(): void;
   runGenericTail(): Promise<OrchestrationOutcome>;
 }
 
@@ -434,8 +436,9 @@ export async function createM4E2eFixture(options?: {
   const projectionStorePath = options?.sqliteProjection
     ? join(projectRoot, ".harness", "scheduler-projection-real.sqlite")
     : ":memory:";
-  const createHost = (): ProjectSchedulerHost =>
-    createProjectSchedulerHost({
+  const openHosts: ProjectSchedulerHost[] = [];
+  const createHost = (): ProjectSchedulerHost => {
+    const host = createProjectSchedulerHost({
       projectRoot,
       readBaseline: () => headOf(projectRoot),
       agentSlotFactory: {
@@ -494,6 +497,9 @@ export async function createM4E2eFixture(options?: {
       now: () => FIXED_NOW,
       newId: hostIds,
     });
+    openHosts.push(host);
+    return host;
+  };
   const host = createHost();
   return {
     projectRoot,
@@ -507,6 +513,12 @@ export async function createM4E2eFixture(options?: {
     gateWorkspaceRoots,
     projectionStorePath,
     createHost,
+    closeHosts(): void {
+      // The SQLite projection handle pins the store file; release all hosts
+      // before the temp directories are removed (Windows refuses to unlink
+      // an open file).
+      while (openHosts.length > 0) openHosts.pop()?.close();
+    },
     async runGenericTail() {
       const tailDeps: OrchestratorDependencies = {
         ...deps,

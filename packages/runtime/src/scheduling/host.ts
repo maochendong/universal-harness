@@ -165,6 +165,13 @@ export interface ProjectSchedulerHost {
   readSchedulerModel(operationId: string): Promise<SchedulerReadModel>;
   acquireDriverLock(operationId: string): Promise<DriverLockHandle>;
   cancelOperation(operationId: string, reason: string): Promise<SchedulerCancelResult>;
+  /**
+   * Release the live-projection handle. The SQLite store holds an OS file
+   * handle for the host's lifetime; callers must close the host before the
+   * store file or the project directory may be removed (Windows refuses to
+   * unlink an open file). Idempotent; the host is unusable afterwards.
+   */
+  close(): void;
 }
 
 const DEFAULT_CEILINGS: SchedulerCeilingBounds = {
@@ -523,6 +530,12 @@ export function createProjectSchedulerHost(
       : createSqliteSchedulerProjectionStore({
           path: options.projectionStorePath ?? join(harnessRoot, "scheduler-projection.sqlite"),
         });
+  let projectionStoreClosed = false;
+  const closeProjectionStore = (): void => {
+    if (projectionStoreClosed) return;
+    projectionStoreClosed = true;
+    (projectionStore as { close?: () => void }).close?.();
+  };
 
   // --- Policy ----------------------------------------------------------------
 
@@ -1030,5 +1043,6 @@ export function createProjectSchedulerHost(
         if (activeHandle === undefined) await handle.release();
       }
     },
+    close: closeProjectionStore,
   };
 }
