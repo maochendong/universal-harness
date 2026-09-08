@@ -27,7 +27,7 @@ Universal Harness 是一个 Graph-native、Provider-neutral 的工程 Harness，
 
 M1、M2 与 Protocol 1.1 的 19-task 能力已经形成统一产品面。除 M1/M2 的执行治理、Finding、Dashboard 与实时事件流外，Harness 还具备三档 Profile、动态 Capability DAG、受管 PRD Capture、DesignSet、可证明 TDD、四个领域模型 Port 与四用途 Grounded Synthesis。请从 [快速开始](docs/getting-started.md) 运行第一次闭环，并在 [完整 Graph-native 模型](docs/graph-driven-harness-model.md) 中理解各能力怎样共同驱动迭代。
 
-当前受版本控制的实现已通过 2182 项全量测试以及 security、fault、performance、E2E、Dashboard 和 pack smoke；打包 CLI 的 Lite / Standard / Governed 三档闭环均到达 completed Snapshot，Governed 留下 `Baseline → Red → Green` 的成对账本证据。发布状态仍以自动报告为准：M1 为 27/28，只有同 commit 的 Ubuntu/macOS/Windows 证据 AC25 尚未验证；M2 为 13/13。详见 [全量评审修复完成证据](docs/evidence/full-review-remediation-completion.md)，不要把本地通过误读为跨平台发布完成。
+打包 CLI 的 Lite / Standard / Governed 三档闭环已有完成 Snapshot 的验证，Governed 留下 `Baseline → Red → Green` 的成对账本证据。当前完成状态、测试结果与适用实现提交统一以生成报告为准：[M1](docs/m1-acceptance-report.md)、[M2](docs/m2-acceptance-report.md)、[M3](docs/evidence/m3-remote-collaboration-completion.md)、[M4](docs/evidence/m4-local-multi-agent-scheduling-completion.md)。CI 通过、报告完整性通过与里程碑验收完成是不同结论；真实平台或 Provider 证据缺口必须继续显示为未验证/阻塞。历史修复过程见 [全量评审修复完成证据](docs/evidence/full-review-remediation-completion.md)，其中日期、测试计数和环境限制仅描述当时基线，不代表当前状态。
 
 ## Dashboard 效果
 

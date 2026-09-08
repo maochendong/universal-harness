@@ -5,6 +5,7 @@ import {
   readFileSync,
   renameSync,
   writeFileSync,
+  statSync,
 } from "node:fs";
 import { join } from "node:path";
 
@@ -78,12 +79,42 @@ export function readLiveObservations(projectRoot: string): ObservationEvent[] {
   return observations(join(projectRoot, ".harness", "cache", "event-stream"));
 }
 
-function lastSequence(directory: string): number {
-  return observations(directory).at(-1)?.sequence ?? 0;
+interface RetainedObservation {
+  readonly event: ObservationEvent;
+  readonly encoded: string;
+  readonly bytes: number;
+}
+interface SpoolState {
+  signature: string;
+  sequence: number;
+  records: RetainedObservation[];
+  bytes: number;
+}
+
+function signature(directory: string): string {
+  try {
+    return readdirSync(directory)
+      .filter((name) => name.endsWith(".jsonl"))
+      .sort()
+      .map((name) => {
+        const stat = statSync(join(directory, name));
+        return `${name}:${String(stat.dev)}:${String(stat.ino)}:${String(stat.size)}:${String(stat.mtimeMs)}:${String(stat.ctimeMs)}`;
+      })
+      .join("|");
+  } catch (error) {
+    if (error !== null && typeof error === "object" && "code" in error && error.code === "ENOENT")
+      return "";
+    throw error;
+  }
+}
+
+function retained(event: ObservationEvent): RetainedObservation {
+  const encoded = `${canonicalizeJson(event)}\n`;
+  return { event, encoded, bytes: Buffer.byteLength(encoded) };
 }
 
 export class FileLiveSpool {
-  private readonly sequences = new Map<string, number>();
+  private readonly states = new Map<string, SpoolState>();
 
   constructor(
     private readonly projectRoot: string,
@@ -100,7 +131,19 @@ export class FileLiveSpool {
       throw new LiveSpoolError("maxBytes must be a positive integer");
     }
     const directory = join(this.projectRoot, ".harness", "cache", "event-stream", input.streamId);
-    const sequence = (this.sequences.get(input.streamId) ?? lastSequence(directory)) + 1;
+    const currentSignature = signature(directory);
+    let state = this.states.get(input.streamId);
+    if (state === undefined || state.signature !== currentSignature) {
+      const records = observations(directory).map(retained);
+      state = {
+        signature: currentSignature,
+        records,
+        bytes: records.reduce((total, record) => total + record.bytes, 0),
+        sequence: Math.max(state?.sequence ?? 0, records.at(-1)?.event.sequence ?? 0),
+      };
+      this.states.set(input.streamId, state);
+    }
+    const sequence = state.sequence + 1;
     const event: ObservationEvent = {
       stream_version: 1,
       stream_id: input.streamId,
@@ -126,19 +169,24 @@ export class FileLiveSpool {
     mkdirSync(directory, { recursive: true });
     const segment = join(directory, "segment-000001.jsonl");
     appendFileSync(segment, encodedEvent, "utf8");
-    const current = observations(directory);
-    let retained = current.slice(-maxRecords);
-    const serialize = (events: readonly ObservationEvent[]): string =>
-      `${events.map((record) => canonicalizeJson(record)).join("\n")}\n`;
-    while (retained.length > 1 && Buffer.byteLength(serialize(retained)) > maxBytes) {
-      retained = retained.slice(1);
+    state.records.push({ event, encoded: encodedEvent, bytes: Buffer.byteLength(encodedEvent) });
+    state.bytes += Buffer.byteLength(encodedEvent);
+    let removed = 0;
+    while (
+      state.records.length - removed > 1 &&
+      (state.records.length - removed > maxRecords || state.bytes > maxBytes)
+    ) {
+      state.bytes -= state.records[removed]!.bytes;
+      removed += 1;
     }
-    if (retained.length !== current.length) {
+    if (removed > 0) {
+      state.records = state.records.slice(removed);
       const temporary = `${segment}.tmp`;
-      writeFileSync(temporary, serialize(retained), "utf8");
+      writeFileSync(temporary, state.records.map((record) => record.encoded).join(""), "utf8");
       renameSync(temporary, segment);
     }
-    this.sequences.set(input.streamId, sequence);
+    state.signature = signature(directory);
+    state.sequence = sequence;
     return event;
   }
 }

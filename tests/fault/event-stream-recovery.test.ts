@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { afterEach, describe, expect, it } from "vitest";
+import { LedgerRepository, type LifecycleEvent } from "../../packages/core/src/index.js";
 
 import {
   FileEventStream,
@@ -18,7 +19,7 @@ function root(): string {
   return value;
 }
 
-function ledgerEvent(observationKey: string): Record<string, unknown> {
+function ledgerEvent(observationKey: string): LifecycleEvent {
   return {
     protocol_version: "1.0.0",
     record_kind: "event",
@@ -81,9 +82,17 @@ describe("Event stream fault recovery", () => {
       timestamp: "2026-08-16T00:00:01.000Z",
       payload: { gate_id: "gate_recovery", passed: true },
     });
-    const eventPath = join(projectRoot, ".harness", "events", "2026-08", "ledger.jsonl");
-    mkdirSync(join(eventPath, ".."), { recursive: true });
-    writeFileSync(eventPath, `${JSON.stringify(ledgerEvent(observationKey))}\n`, "utf8");
+    await new LedgerRepository({
+      projectRoot,
+      readBaseline: () => "abcdef0123456789",
+      now: () => "2026-08-16T00:00:02.000Z",
+    }).commit({
+      ledger_operation_id: "ledger_recovery",
+      workflow_operation_id: "workflow_recovery",
+      attempt_id: "attempt_recovery",
+      expected_baseline: "abcdef0123456789",
+      events: [ledgerEvent(observationKey)],
+    });
 
     const before = await new FileEventStream(projectRoot).read({ limit: 10 });
     expect(before.items).toEqual([
@@ -114,6 +123,6 @@ describe("Event stream fault recovery", () => {
     mkdirSync(join(path, ".."), { recursive: true });
     writeFileSync(path, '{"stream_version":1,"event_type":"OperationCompleted"', "utf8");
 
-    await expect(new FileEventStream(projectRoot).read()).resolves.toEqual({ items: [] });
+    await expect(new FileEventStream(projectRoot).read()).resolves.toMatchObject({ items: [] });
   });
 });

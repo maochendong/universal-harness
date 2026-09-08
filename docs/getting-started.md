@@ -32,7 +32,7 @@ pnpm pack:smoke   # 打包、离线安装到干净临时环境并跑通 new/adop
 harness new my-project --intent "Build the first capability"
 ```
 
-这一条编排命令会创建项目目录、初始化 Git 仓库和 `.harness/` 控制平面（manifest、pack lockfile、Ledger、SQLite 查询缓存），然后开始首次迭代。迭代不会一口气跑完：Harness 在每个强制批准点安全暂停。
+这一条编排命令会创建项目目录、初始化 Git 仓库和 `.harness/` 控制平面（manifest、pack lockfile、Ledger、SQLite 查询缓存），并要求选择、确认 Lite / Standard / Governed，再开始首次迭代。Lite 适合先验证最小闭环；Standard/Governed 根据启用能力增加影响分析、设计、评估或严格 TDD。未启用的阶段不物化；必要输入、审批和外部授权仍会安全暂停。
 
 非交互会话中，暂停以结构化 JSON 返回（`--json`，退出码 11 `approval_required`）：
 
@@ -42,12 +42,9 @@ harness approve <request-id> --decision approve --actor human:you
 harness resume <workflow-operation-id>
 ```
 
-`new` 的完整闭环包含两个强制批准点：
+批准次数不固定。以 final CapabilityPlan、风险和 Policy 实际产生的 ApprovalRequest 为准：需求接受、启用后的 ImpactSet/DesignSet、执行授权或 Policy 调整都可能需要批准。Lite 不为未启用的 Impact/Design 阶段产生空壳审批；任何档位都不能跳过必要授权。
 
-1. **RequirementBaseline**——录入并冻结需求基线；
-2. **ImpactSet**——冻结影响集，之后才能生成声明式 ExecutionPlan。
-
-两次批准并 resume 之后，编排继续完成规划、Context 编译、执行、三层质量门禁、Run Evaluation，并落地锚定最终 commit 的 Iteration Snapshot：
+按返回的 request-id 审批并 resume 后，编排继续执行当前项目实际启用的计划、Context、执行、Gate 和可选 Evaluation，最后落地锚定源码提交的 Iteration Snapshot：
 
 ```bash
 harness snapshot --json   # 查看最近快照
@@ -72,7 +69,7 @@ harness status            # 项目状态、缓存健康与下一步动作
 harness iterate "Implement the next change"
 ```
 
-`iterate` 在同一个受管项目内运行与 `new` 完全相同的闭环（录入 → 影响分析 → 规划 → 编译 Context → 执行 → 门禁 → 评估 → 修复 → 快照），批准点与暂停规则一致。意图歧义时，迭代会在录入阶段以 `input_required` 挂起并返回带显式选项（含 `other` 逃逸项）的澄清问题；用更明确的意图重新发起即可，回答仍走需求基线批准门。较大的变更会被分解为多个带依赖的小任务（整个计划一次批准），逐任务执行与评估，中断恢复只重跑未完成的任务。
+`iterate` 在同一个受管项目内按 final CapabilityPlan 推进：Capture → [Impact] → [Design] → Plan → Context → Execute → Verify → [Evaluate] → Snapshot；方括号表示可选能力，失败按治理规则回流。意图歧义时在 Capture 暂停；优先使用返回的澄清会话与 resume 指令补充答案，不重复新建尚未结束的迭代。较大变更会被分解为带依赖的 Task；只有计划和对应授权有效时才执行，恢复不重复接受已完成结果。
 
 执行 Agent 任务前还会出现 **ExecutionAuthorizationSpec** 批准点。它把 Plan、Impact coverage、每个 Task 的 ContextBundle 与 CapabilityGrant、Policy、基线提交和 Adapter Control Profile 封装成一个不可变 digest。批准后其中任一项变化，旧批准立即失效，必须重新分析或授权。
 
@@ -82,14 +79,24 @@ harness iterate "Implement the next change"
 
 ## 配置真实 Agent 与项目门禁
 
+配置后先运行 `harness doctor --json` 查看 Agent 的控制级别、轨迹可见性、用量可用性和受监督单槽位限制。此预检只读取配置与 Adapter 能力声明，不调用模型，也不把“配置存在”当作“Provider 已连通”。dsh 的受监督任务通过不能替代 M4 真实双槽并行验收；真实验证需要单独的调用授权与预算。
+
 受管项目可以提交 `.harness/runtime.json`，把真实 Agent 后端、可读写边界和项目自己的测试命令绑定到同一条迭代链。下面的配置使用经版本探针校验的 dsh headless，并把一个仓库内脚本注册为强制项目门禁：
+
+先准备并核对固定版本（此命令可能下载 npm 依赖，但只查询版本，不执行模型任务）：
+
+```bash
+npm exec --yes --package=@deepseek-ai/dsh@0.1.1-rc.2 -- dsh --version
+```
 
 ```json
 {
   "runtime_config_version": 1,
   "agent": {
     "provider": "dsh",
-    "expected_version": "0.1.0-rc.6",
+    "executable": "npx",
+    "launcher_args": ["--no-install", "@deepseek-ai/dsh@0.1.1-rc.2"],
+    "expected_version": "0.1.1-rc.2",
     "allowed_read_paths": ["docs", "src", "tests"],
     "proposed_write_paths": ["src", "tests"]
   },
@@ -110,9 +117,10 @@ harness iterate "Implement the next change"
 - Agent 和 Gate 进程都以参数数组启动，不经过 shell；Gate 可执行文件必须是仓库内相对路径。
 - `proposed_write_paths` 不能包含 `.git` 或 `.harness`；每个任务的 Capability Grant 只会进一步收窄该范围。
 - dsh 凭据从显式环境变量白名单注入，不写入配置或 Ledger。当前默认需要 `DEEPSEEK_API_KEY`。
+- 版本和模型要分别验证：不要只看环境变量名称就认定实际模型。一次 Task 可能包含多次模型请求；dsh 会话用量是事后观测，当前 Adapter 的 token/step 上限不是可强制执行的硬预算。
 - 每次验证都会保存项目门禁日志的摘要和 SHA-256 Evidence；Agent transcript 与前后仓库摘要保存在 `.harness/raw-traces/`，不作为权威状态提交。
 - Dashboard 的 `08 Approvals` 从已提交 ApprovalRequest/ApprovalDecision artifact 重建待审批队列；即使页面在审批事件之后才打开，也可按原始对象 digest 决策并恢复工作流。
-- dsh 版本、退出码和失败映射的实测契约见 [dsh headless 本机契约](dsh-headless-contract.md)。
+- dsh 旧版本退出码和失败映射见 [历史 headless 本机契约](dsh-headless-contract.md)；`0.1.1-rc.2` 的单任务诊断见 [2026-09-08 实测](evidence/2026-09-08-supervised-provider-probe.json)，不等同于完整迭代/并行验收。
 
 ## 接管已有项目
 

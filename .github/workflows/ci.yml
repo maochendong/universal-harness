@@ -178,8 +178,8 @@ jobs:
         run: |
           git config --global user.name "Harness CI"
           git config --global user.email "ci@harness.invalid"
-      - run: pnpm test
-      - run: pnpm pack:smoke
+      # The complete release entry already runs verify/test and pack:smoke.
+      # Keep canonical suite invocations and Evidence bindings unchanged.
       - run: pnpm test:release
       # The authoritative reports can only be generated here: the full
       # evidence set (CI platform artifacts, dogfood and performance outputs)

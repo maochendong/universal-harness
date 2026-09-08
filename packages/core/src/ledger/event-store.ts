@@ -1,9 +1,9 @@
 import { createHash } from "node:crypto";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { basename } from "node:path";
 
 import type { EdgeRecord } from "../schema/edge.js";
-import type { LifecycleEvent } from "../schema/event.js";
+import { EVENT_TYPES, type LifecycleEvent } from "../schema/event.js";
 import type { LedgerOperation } from "../schema/operation.js";
 import { validateSchema, type SchemaKey } from "../schema/registry.js";
 import { PROTOCOL_1_3_VERSION, assertProtocolReaderCanProject } from "../protocol.js";
@@ -97,15 +97,28 @@ export function readCommittedOperations(
   if (!existsSync(operationsDir)) return [];
   const operations = readdirSync(operationsDir)
     .filter((fileName) => fileName.endsWith(".json"))
-    .map((fileName) => ({
-      manifest: parseManifest(
-        fileName,
-        readFileSync(join(operationsDir, fileName), "utf8"),
-        readerVersion,
-      ),
-      manifestPath: join(operationsDir, fileName),
-    }));
+    .map((fileName) => readCommittedOperation(harnessRoot, fileName, { readerVersion }));
   return operations.sort((left, right) => left.manifest.sequence - right.manifest.sequence);
+}
+
+/** Validate a single committed manifest, also used by incremental observers. */
+export function readCommittedOperation(
+  harnessRoot: string,
+  fileName: string,
+  options?: LedgerReadOptions,
+): CommittedOperation {
+  if (basename(fileName) !== fileName || !fileName.endsWith(".json")) {
+    throw new LedgerCorruptionError("invalid operation manifest file name");
+  }
+  const manifestPath = resolveHarnessPath(harnessRoot, `ledger/operations/${fileName}`);
+  return {
+    manifest: parseManifest(
+      fileName,
+      readFileSync(manifestPath, "utf8"),
+      options?.readerVersion ?? PROTOCOL_1_3_VERSION,
+    ),
+    manifestPath,
+  };
 }
 
 export function nextSequence(operations: readonly CommittedOperation[]): number {
@@ -191,6 +204,7 @@ function readShardRecords<T>(
   relativePath: string,
   schemaKey: SchemaKey,
   expectedDigest: string | undefined,
+  unknownEventTypes: "reject" | "skip" = "reject",
 ): T[] {
   const absolutePath = resolveHarnessPath(harnessRoot, relativePath);
   if (!existsSync(absolutePath)) {
@@ -212,7 +226,20 @@ function readShardRecords<T>(
     } catch {
       throw new LedgerCorruptionError(`unparsable record at ${relativePath}:${index + 1}`);
     }
-    const result = validateSchema(schemaKey, parsed);
+    const eventType = plainRecordField(parsed, "event_type");
+    const unknown =
+      schemaKey === "event" &&
+      typeof eventType === "string" &&
+      eventType.trim().length > 0 &&
+      !EVENT_TYPES.some((known) => known === eventType);
+    // Unknown observation types may be skipped only after digest and the entire
+    // common event envelope validate. A generic known discriminator exercises
+    // that same schema without relaxing any of its envelope fields.
+    const skip = unknown && unknownEventTypes === "skip" && expectedDigest !== undefined;
+    const result = validateSchema(
+      schemaKey,
+      skip ? { ...(parsed as Record<string, unknown>), event_type: "OperationStarted" } : parsed,
+    );
     if (!result.valid) {
       const detail = result.errors
         .map((issue) => `${issue.instancePath}: ${issue.message}`)
@@ -222,6 +249,37 @@ function readShardRecords<T>(
     records.push(parsed as T);
   });
   return records;
+}
+
+/** The strict Ledger replay and observer share shard validation and binding. */
+export function readCommittedEventShard(
+  harnessRoot: string,
+  operation: CommittedOperation,
+  options?: { readonly unknownEventTypes?: "reject" | "skip" },
+): readonly LifecycleEvent[] {
+  const { manifest } = operation;
+  const events = readShardRecords<LifecycleEvent>(
+    harnessRoot,
+    manifest.event_file,
+    "event",
+    manifest.event_file_digest,
+    options?.unknownEventTypes,
+  );
+  let previousSequence = 0;
+  const ids = new Set<string>();
+  for (const event of events) {
+    if (
+      event.ledger_operation_id !== manifest.ledger_operation_id ||
+      event.workflow_operation_id !== manifest.workflow_operation_id ||
+      event.sequence <= previousSequence ||
+      ids.has(event.event_id)
+    ) {
+      throw new LedgerCorruptionError(`invalid event binding or sequence: ${manifest.event_file}`);
+    }
+    previousSequence = event.sequence;
+    ids.add(event.event_id);
+  }
+  return events.filter((event) => EVENT_TYPES.some((known) => known === event.event_type));
 }
 
 /**
@@ -242,14 +300,7 @@ export function replayLedger(harnessRoot: string, options?: LedgerReadOptions): 
         operation.manifest.edge_file_digest,
       ),
     );
-    events.push(
-      ...readShardRecords<LifecycleEvent>(
-        harnessRoot,
-        operation.manifest.event_file,
-        "event",
-        operation.manifest.event_file_digest,
-      ),
-    );
+    events.push(...readCommittedEventShard(harnessRoot, operation));
   }
   return { operations, edges, events };
 }

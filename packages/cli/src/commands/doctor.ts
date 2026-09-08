@@ -7,6 +7,8 @@ import { usageError } from "../errors.js";
 import { parseCommandArgs, type CommandResult } from "../io.js";
 import { probeShippedPromptRegistry } from "../prompt-registry.js";
 import type { CommandContext } from "../router.js";
+import { readProjectRuntimeConfig } from "../project-runtime-config.js";
+import { createConfiguredAgentExecutor } from "../project-agent.js";
 
 const USAGE = "harness doctor";
 
@@ -23,6 +25,15 @@ export function runDoctorCommand(args: readonly string[], context: CommandContex
   const probes = collectDoctorProbes(context.cwd, {
     gitVersion: context.gitVersion,
     promptRegistry: probeShippedPromptRegistry,
+    agent: (root) => {
+      const config = readProjectRuntimeConfig(root);
+      if (config.agent === undefined) return undefined;
+      // Constructor only: the executable/version probe is never invoked by doctor.
+      return {
+        manifest: createConfiguredAgentExecutor(root, config.agent).adapterProfile,
+        requestedSlots: config.agent_pool?.slots ?? 1,
+      };
+    },
   });
   const report = evaluateDoctorDiagnostics(probes);
   return {

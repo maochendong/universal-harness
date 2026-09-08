@@ -1083,6 +1083,7 @@ export {
   type EventStreamErrorKind,
   type EventStreamItem,
   type EventStreamPage,
+  type EventStreamReadView,
   type EventStreamPort,
   type EventStreamQuery,
   type FileEventStreamOptions,

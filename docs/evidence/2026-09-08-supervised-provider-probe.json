@@ -1,0 +1,69 @@
+{
+  "kind": "supervised_one_task_diagnostic",
+  "release_evidence": false,
+  "source_state": "uncommitted_working_tree",
+  "baseline_commit": "20846174e45b35e2675ffea431f5089156234b41",
+  "completed_at": "2026-09-08T04:15:33.687Z",
+  "agent_task_invocations": 1,
+  "automatic_retries": 0,
+  "expected_version": "0.1.1-rc.2",
+  "observed_version": "0.1.1-rc.2",
+  "requested_model": "deepseek-v4-flash",
+  "provider_reported_outcome": "handoff",
+  "termination_reason": "completion",
+  "duration_ms": 17300,
+  "verification": {
+    "status": "passed",
+    "expected_path": "src/dogfood/probe.ts",
+    "changed_paths": ["src/dogfood/probe.ts"],
+    "observed_paths": [
+      ".harness/raw-traces/agent-dsh/transcript-task_real_dsh_probe.json",
+      "src/dogfood/probe.ts"
+    ],
+    "raw_trace_paths": [".harness/raw-traces/agent-dsh/transcript-task_real_dsh_probe.json"],
+    "unauthorized_paths": [],
+    "output_exists": true,
+    "output_regular_file": true,
+    "output_realpath_contained": true,
+    "exact_bytes_match": true,
+    "only_allowed_path_changed": true,
+    "expected_bytes_sha256": "280032bc4b96bbb28094e839a85881eb5510dd1461a882b39f48d6492fad4c92",
+    "actual_bytes_sha256": "280032bc4b96bbb28094e839a85881eb5510dd1461a882b39f48d6492fad4c92"
+  },
+  "adapter_manifest": {
+    "provider": "dsh",
+    "control": "delegated",
+    "trajectory_visibility": "external-only",
+    "usage_metering": false,
+    "side_effect_interception": false,
+    "resume_semantics": "none"
+  },
+  "adapter_usage": {
+    "input_tokens": null,
+    "output_tokens": null,
+    "total_tokens": null,
+    "duration_ms": 16808,
+    "metering": "unmetered"
+  },
+  "session": {
+    "provider": "deepseek-official",
+    "model": "deepseek-v4-flash",
+    "identity_source": "dsh_session_request_context_and_assistant_source",
+    "requested_model": "deepseek-v4-flash",
+    "requested_model_matches_observed": true,
+    "usage": {
+      "metering": "dsh_session_observed",
+      "model_call_count": 4,
+      "input_tokens": 10368,
+      "cache_read_input_tokens": 31104,
+      "output_tokens": 827,
+      "reasoning_tokens": 433,
+      "total_tokens": 42299
+    },
+    "session_observation_source": "dsh_local_zstd_session",
+    "session_sha256": "0a3e6c3e593386e81a33a68804a6dc8636b43421769f3ce262ce6d971d89ad32",
+    "raw_session_persisted_in_release_bundle": false
+  },
+  "transcript_sha256": "d4388214d36f5073371835414c6c8bfd06efb56d79b6b28b7d9ee7577d485c90",
+  "scope": "one supervised task only; not full iteration or M4 parallel dogfood"
+}

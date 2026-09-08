@@ -1,10 +1,10 @@
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { afterEach, describe, expect, it } from "vitest";
 
-import type { LifecycleEvent } from "@universal-harness-internal/core";
+import { buildManifest, sha256Hex, type LifecycleEvent } from "@universal-harness-internal/core";
 import { FileLiveSpool } from "@universal-harness-internal/runtime";
 
 import type { CliIo } from "../src/index.js";
@@ -63,8 +63,34 @@ function writeEvents(
   fileName: string,
   events: readonly LifecycleEvent[],
 ): void {
-  const body = events.map((event) => `${JSON.stringify(event)}\n`).join("");
+  const ledgerId = fileName.replace(/\.jsonl$/u, "");
+  const body = events
+    .map((event) => `${JSON.stringify({ ...event, ledger_operation_id: ledgerId })}\n`)
+    .join("");
   writeFileSync(join(projectRoot, ".harness", "events", "2026-08", fileName), body);
+  const operations = join(projectRoot, ".harness/ledger/operations");
+  const edges = join(projectRoot, ".harness/ledger/edges/2026-08");
+  mkdirSync(operations, { recursive: true });
+  mkdirSync(edges, { recursive: true });
+  writeFileSync(join(edges, fileName), "");
+  writeFileSync(
+    join(operations, `${ledgerId}.json`),
+    JSON.stringify(
+      buildManifest({
+        ledger_operation_id: ledgerId,
+        workflow_operation_id: events[0]!.workflow_operation_id,
+        attempt_id: "attempt_watch",
+        baseline_commit: "abcdef0123456789",
+        sequence: readdirSync(operations).length + 1,
+        artifact_digests: [],
+        edge_file: `ledger/edges/2026-08/${fileName}`,
+        edge_file_digest: sha256Hex(""),
+        event_file: `events/2026-08/${fileName}`,
+        event_file_digest: sha256Hex(body),
+        committed_at: "2026-08-15T10:00:00.000Z",
+      }),
+    ),
+  );
 }
 
 function makeContext(captured: Captured, json: boolean, cwd: string): CommandContext {

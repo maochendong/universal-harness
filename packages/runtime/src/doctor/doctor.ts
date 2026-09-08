@@ -7,6 +7,10 @@ import {
   resolveHarnessPath,
 } from "@universal-harness-internal/core";
 import { checkGraphCache, type GraphCacheCheck } from "@universal-harness-internal/graph";
+import {
+  assessUnattendedEligibility,
+  type AgentProviderManifest,
+} from "@universal-harness-internal/plugin-sdk";
 
 /**
  * Doctor diagnostics (design 11.2, plan Task 22). Every check produces an
@@ -60,6 +64,7 @@ export interface DoctorProbes {
 }
 
 export interface DoctorProjectProbes {
+  readonly agent?: { readonly manifest: AgentProviderManifest; readonly requestedSlots: number };
   readonly projectRoot: string;
   readonly projectName?: string;
   /** Set when the managed manifest could not be read or validated. */
@@ -148,6 +153,25 @@ function checkGit(probes: DoctorProbes): DoctorDiagnostic {
 
 function projectDiagnostics(project: DoctorProjectProbes): DoctorDiagnostic[] {
   const diagnostics: DoctorDiagnostic[] = [];
+  if (project.agent !== undefined) {
+    const { manifest, requestedSlots } = project.agent;
+    const assessment = assessUnattendedEligibility(manifest);
+    diagnostics.push({
+      name: "agent_execution_capabilities",
+      category: "adapter",
+      status: assessment.eligible ? "pass" : "warn",
+      detail:
+        `${manifest.provider}: control=${manifest.control}, trajectory=${manifest.trajectory_visibility}, ` +
+        `usage=${manifest.usage_metering ? "provider_reported" : "unavailable"}, resume=${manifest.resume_semantics}; ` +
+        `请求槽位=${String(requestedSlots)}；${assessment.eligible ? "Adapter 满足无人值守准入" : "Adapter 仅允许受监督单槽位执行"}。` +
+        "这是能力声明预检，不代表 Provider 已连通；最终授权和并发仍由 Profile/Policy 决定。",
+      ...(assessment.eligible
+        ? {}
+        : {
+            remedy: `保持受监督执行；如需无人值守并行，先补齐并验证：${assessment.reasons.join("；")}。不能仅修改 manifest 声明。`,
+          }),
+    });
+  }
   if (project.manifestError !== undefined) {
     diagnostics.push({
       name: "project_layout",
@@ -264,6 +288,7 @@ export function collectDoctorProbes(
   probes: {
     readonly gitVersion: () => string | undefined;
     readonly nodeVersion?: string;
+    readonly agent?: (projectRoot: string) => DoctorProjectProbes["agent"];
     /** PG-8: shipped prompt registry integrity probe (never throws). */
     readonly promptRegistry?: () => {
       readonly contractCount: number;
@@ -298,6 +323,13 @@ export function collectDoctorProbes(
   const cache = checkGraphCache(
     resolveHarnessPath(harnessRootFor(projectRoot), GRAPH_DATABASE_RELATIVE_PATH),
   );
+  let agent: DoctorProjectProbes["agent"];
+  let adapterErrors: readonly string[] | undefined;
+  try {
+    agent = probes.agent?.(projectRoot);
+  } catch {
+    adapterErrors = ["项目 Agent 配置读取失败；请检查 .harness/runtime.json（预检不会启动模型）"];
+  }
   return {
     ...base,
     project: {
@@ -307,6 +339,8 @@ export function collectDoctorProbes(
       ...(packCount === undefined ? {} : { packCount }),
       ...(packLockError === undefined ? {} : { packLockError }),
       cache,
+      ...(agent === undefined ? {} : { agent }),
+      ...(adapterErrors === undefined ? {} : { adapterErrors }),
     },
   };
 }

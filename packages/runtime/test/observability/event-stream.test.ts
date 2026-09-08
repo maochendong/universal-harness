@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { afterEach, describe, expect, it } from "vitest";
+import { LedgerRepository } from "@universal-harness-internal/core";
 
 import { FileEventStream, FileLiveSpool } from "../../src/index.js";
 
@@ -53,21 +54,30 @@ describe("FileEventStream", () => {
         payload: { gate_id: "gate_01", passed: true },
       },
     ]);
-    writeJsonl(join(root, ".harness/events/2026-08/ledger_01.jsonl"), [
-      {
-        protocol_version: "1.0.0",
-        record_kind: "event",
-        event_id: "event_gate-completed_01",
-        event_type: "GateCompleted",
-        project_id: "project_01",
-        iteration_id: "iteration_01",
-        workflow_operation_id: "workflow_01",
-        ledger_operation_id: "ledger_01",
-        sequence: 1,
-        timestamp: "2026-08-16T00:00:03.000Z",
-        payload: { gate_id: "gate_01", passed: true, observation_key: observationKey },
-      },
-    ]);
+    await new LedgerRepository({
+      projectRoot: root,
+      readBaseline: () => "abcdef0123456789",
+    }).commit({
+      ledger_operation_id: "ledger_01",
+      workflow_operation_id: "workflow_01",
+      attempt_id: "attempt_01",
+      expected_baseline: "abcdef0123456789",
+      events: [
+        {
+          protocol_version: "1.0.0",
+          record_kind: "event",
+          event_id: "event_gate-completed_01",
+          event_type: "GateCompleted",
+          project_id: "project_01",
+          iteration_id: "iteration_01",
+          workflow_operation_id: "workflow_01",
+          ledger_operation_id: "ledger_01",
+          sequence: 1,
+          timestamp: "2026-08-16T00:00:03.000Z",
+          payload: { gate_id: "gate_01", passed: true, observation_key: observationKey },
+        },
+      ],
+    });
 
     const page = await new FileEventStream(root).read({ limit: 20 });
 
