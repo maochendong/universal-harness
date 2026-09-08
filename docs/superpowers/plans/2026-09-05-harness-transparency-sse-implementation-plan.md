@@ -4,7 +4,7 @@
 
 **Goal:** 让已提交决定、状态流转和指定版本产出可靠可见，修复事件读取正确性并实现有界共享 SSE。
 
-**进度说明（2026-09-08）：** 共享事件读取基础修复与产出盘点已在[运行优化计划](2026-09-08-operational-optimization-plan.md)中落实。同日 Task 1 Step 1–5 已补齐并验证：新增表征/RED 测试 10 项（逆序 id 分页、整批原子可见与重试去重、view 精确分页断言、5 类 writer 缓存场景、坏行不隐藏后续行），CLI watch 增加 reset 提示与 JSON 结构化输出（人类/JSON 模式各 1 项测试），性能门槛按 §7.3 落地为 `tests/performance/event-stream-incremental.test.ts` 与 `scripts/generate-performance-dataset.mjs --mode=event-stream`，机器样本存 [2026-09-08-event-stream-perf.json](../../evidence/2026-09-08-event-stream-perf.json)（F=1万 p95 155ms、10万事件 RSS +14MiB）。Step 6 已提交（`684f296`）并通过独立评审（放行但有后续项：P2 证据 JSON 缺同 F 相对阈值与 E 布局分项，P3 "更大 rename"测试判别力弱，P4 watch reset 测试有 60ms 时序敏感性；P1 证据覆写已在 `53c4df2` 修复，样本写入改为 `HARNESS_PERF_EVIDENCE=1` 显式开启）。同日 Task 2 与 Task 3 已实施、提交（`36a7b37` 注册 Protocol 1.4 与真实决定事件；`574f5bb` 有界共享 SSE Hub）并通过联合独立评审（双双放行；后续项：Hub `checkStall` 仅在 tick 边界检查、共享扫描断言的分项在 Task 6 保留）。Task 4–6 复选框不因上述进展勾选。
+**进度说明（2026-09-08）：** 共享事件读取基础修复与产出盘点已在[运行优化计划](2026-09-08-operational-optimization-plan.md)中落实。同日 Task 1 Step 1–5 已补齐并验证：新增表征/RED 测试 10 项（逆序 id 分页、整批原子可见与重试去重、view 精确分页断言、5 类 writer 缓存场景、坏行不隐藏后续行），CLI watch 增加 reset 提示与 JSON 结构化输出（人类/JSON 模式各 1 项测试），性能门槛按 §7.3 落地为 `tests/performance/event-stream-incremental.test.ts` 与 `scripts/generate-performance-dataset.mjs --mode=event-stream`，机器样本存 [2026-09-08-event-stream-perf.json](../../evidence/2026-09-08-event-stream-perf.json)（F=1万 p95 155ms、10万事件 RSS +14MiB）。Step 6 已提交（`684f296`）并通过独立评审（放行但有后续项：P2 证据 JSON 缺同 F 相对阈值与 E 布局分项，P3 "更大 rename"测试判别力弱，P4 watch reset 测试有 60ms 时序敏感性；P1 证据覆写已在 `53c4df2` 修复，样本写入改为 `HARNESS_PERF_EVIDENCE=1` 显式开启）。同日 Task 2 与 Task 3 已实施、提交（`36a7b37` 注册 Protocol 1.4 与真实决定事件；`574f5bb` 有界共享 SSE Hub）并通过联合独立评审（双双放行；后续项：Hub `checkStall` 仅在 tick 边界检查、共享扫描断言的分项在 Task 6 保留）。同日 Task 4 已实施、提交（`e24ab80`）并通过独立评审（放行但有后续项：Playwright 层缺"重复事件/远程时间"两场景，由单测覆盖并在 Task 6 证据说明）。评审发现的 HT-AC-01 缺陷——orchestrator 本地 reject 逃生路径不提交 ApprovalDecided——已在 `0dfe2f2` 修复（含 RED→GREEN 回归测试）。Task 5、6 复选框不因上述进展勾选。
 
 **Architecture:** Ledger manifest 决定权威可见性，Live Spool 承载实时观察；FileEventStream 复用 core 校验并维护内存 position 索引。Dashboard Hub 共享源刷新、分页追平和有界扇出；产出正文通过已有读接口的受控扩展提供。
 
@@ -12,7 +12,7 @@
 
 **Spec:** [开发过程透明化与 SSE 呈现设计](../specs/2026-09-05-harness-transparency-sse-design.md)
 
-**Status:** 2026-09-08 已按评审修订。Task 1、2、3 已实施、提交并通过独立评审；Task 4（依赖 Task 2+3）已放行待实施；Task 5、6 未开始。
+**Status:** 2026-09-08 已按评审修订。Task 1、2、3、4 已实施、提交并通过独立评审；Task 5（依赖 Task 4 合入）已放行待实施；Task 6 未开始。
 
 **Baseline:** `2084617`；原始两份文档未跟踪，`teach/` 为无关未跟踪目录。执行时先核对最新 Git 状态；已有变更不覆盖、不顺手提交。
 
@@ -417,7 +417,7 @@ interface ApprovalSummary {
 }
 ```
 
-- [ ] **Step 1: 写摘要与卡片状态RED**
+- [x] **Step 1: 写摘要与卡片状态RED**
 
 摘要读取仅接受已提交manifest验证的Decision，字节digest匹配；输出actor_display按设计§10生成，
 不返回raw actor。测试同一引用在CLI和Dashboard显示相同决定/身份/时间；404不推断成功。
@@ -428,7 +428,7 @@ expect(JSON.stringify(summary)).not.toContain("reviewer@example.test");
 expect(summary.decided_at).toBe(remoteDecision.decided_at);
 ```
 
-- [ ] **Step 2: 实现共享摘要和完整命名事件注册**
+- [x] **Step 2: 实现共享摘要和完整命名事件注册**
 
 ```ts
 // 已认证session响应增加字段；不改变既有csrf/expires_at。
@@ -446,7 +446,7 @@ runtime共享摘要按已提交manifest定位Decision并验证bytes；Task 5通�
 不得保留两套来源验证。actor_display使用项目作用域稳定hash的短标识，原actor不进入事件/SSE视图。
 CLI不依赖dashboard package，presentation由同一摘要富化；同步遵守32KiB/200字符的最终护栏。
 
-- [ ] **Step 3: 实现request聚合、幂等和reset恢复**
+- [x] **Step 3: 实现request聚合、幂等和reset恢复**
 
 ```ts
 const requestStillPending = summary.decision === "defer";
@@ -458,7 +458,7 @@ defer卡片显示“已暂缓，仍待处理”并保留后续操作；approve/r
 pending列表用于待办状态复核，不推断actor/decided_at。reset时重新读取pending和已知决定摘要、按权威
 提交顺序恢复，清理旧Live代际并提示缺口；观察更新本身不调用批准/resume写接口。
 
-- [ ] **Step 4: Playwright证明真实浏览器更新，再提交**
+- [x] **Step 4: Playwright证明真实浏览器更新，再提交**
 
 扩展现有dashboard-live-approval（已在Playwright配置中），包括两浏览器/CLI异处决定、
 defer→approve、远程时间、刷新、重复事件及stream_reset。打开页面后从另一命令路径决定，
