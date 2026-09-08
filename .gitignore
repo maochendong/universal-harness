@@ -9,3 +9,5 @@ coverage/
 .superpowers/
 .env
 .env.*
+teach/
+teach-v2/
