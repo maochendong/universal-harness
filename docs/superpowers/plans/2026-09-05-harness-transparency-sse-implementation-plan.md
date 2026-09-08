@@ -4,7 +4,7 @@
 
 **Goal:** 让已提交决定、状态流转和指定版本产出可靠可见，修复事件读取正确性并实现有界共享 SSE。
 
-**进度说明（2026-09-08）：** 共享事件读取基础修复与产出盘点已在[运行优化计划](2026-09-08-operational-optimization-plan.md)中落实。同日 Task 1 Step 1–5 已补齐并验证：新增表征/RED 测试 10 项（逆序 id 分页、整批原子可见与重试去重、view 精确分页断言、5 类 writer 缓存场景、坏行不隐藏后续行），CLI watch 增加 reset 提示与 JSON 结构化输出（人类/JSON 模式各 1 项测试），性能门槛按 §7.3 落地为 `tests/performance/event-stream-incremental.test.ts` 与 `scripts/generate-performance-dataset.mjs --mode=event-stream`，机器样本存 [2026-09-08-event-stream-perf.json](../../evidence/2026-09-08-event-stream-perf.json)（F=1万 p95 155ms、10万事件 RSS +14MiB）。Step 6 提交与评审未执行。Task 2–6 复选框不因上述进展勾选。
+**进度说明（2026-09-08）：** 共享事件读取基础修复与产出盘点已在[运行优化计划](2026-09-08-operational-optimization-plan.md)中落实。同日 Task 1 Step 1–5 已补齐并验证：新增表征/RED 测试 10 项（逆序 id 分页、整批原子可见与重试去重、view 精确分页断言、5 类 writer 缓存场景、坏行不隐藏后续行），CLI watch 增加 reset 提示与 JSON 结构化输出（人类/JSON 模式各 1 项测试），性能门槛按 §7.3 落地为 `tests/performance/event-stream-incremental.test.ts` 与 `scripts/generate-performance-dataset.mjs --mode=event-stream`，机器样本存 [2026-09-08-event-stream-perf.json](../../evidence/2026-09-08-event-stream-perf.json)（F=1万 p95 155ms、10万事件 RSS +14MiB）。Step 6 已提交（`684f296`）并通过独立评审（放行但有后续项：P2 证据 JSON 缺同 F 相对阈值与 E 布局分项，P3 "更大 rename"测试判别力弱，P4 watch reset 测试有 60ms 时序敏感性；P1 证据覆写已在 `53c4df2` 修复，样本写入改为 `HARNESS_PERF_EVIDENCE=1` 显式开启）。Task 2–6 复选框不因上述进展勾选。
 
 **Architecture:** Ledger manifest 决定权威可见性，Live Spool 承载实时观察；FileEventStream 复用 core 校验并维护内存 position 索引。Dashboard Hub 共享源刷新、分页追平和有界扇出；产出正文通过已有读接口的受控扩展提供。
 
@@ -184,7 +184,7 @@ pnpm exec vitest run --config vitest.performance.ts tests/performance/event-stre
 Expected: 权威/恢复/缓存全部PASS；同F的p95≤max(小数据×2,25ms)，1万文件对p95≤200ms，10万事件RSS增量≤256MiB。
 若预算失败，记录原因并停止该任务完成声明，不缩小fixture冒充原验收。
 
-- [ ] **Step 6: 提交与评审**
+- [x] **Step 6: 提交与评审**
 
 ```bash
 git add packages/core/src/ledger/event-store.ts packages/core/src/ledger/index.ts packages/core/test/ledger/event-visibility.test.ts
