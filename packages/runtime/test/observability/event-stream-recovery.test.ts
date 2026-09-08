@@ -12,7 +12,11 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { canonicalizeJson, LedgerRepository, type LifecycleEvent } from "@universal-harness-internal/core";
+import {
+  canonicalizeJson,
+  LedgerRepository,
+  type LifecycleEvent,
+} from "@universal-harness-internal/core";
 
 import { FileEventStream, FileLiveSpool, readLiveObservations } from "../../src/index.js";
 
@@ -309,21 +313,19 @@ describe("event stream recovery", () => {
       expected_baseline: "abcdef0123456789",
       artifacts: [],
       edges: [],
-      events: [1, 2, 3].map(
-        (sequence): LifecycleEvent => ({
-          protocol_version: "1.0.0",
-          record_kind: "event",
-          event_id: `event_atomic_${String(sequence)}`,
-          event_type: "OperationStarted",
-          project_id: "project_test",
-          iteration_id: "iteration_test",
-          workflow_operation_id: "workflow_test",
-          ledger_operation_id: "ledger_atomic",
-          sequence,
-          timestamp,
-          payload: {},
-        }),
-      ),
+      events: [1, 2, 3].map((sequence): LifecycleEvent => ({
+        protocol_version: "1.0.0",
+        record_kind: "event",
+        event_id: `event_atomic_${String(sequence)}`,
+        event_type: "OperationStarted",
+        project_id: "project_test",
+        iteration_id: "iteration_test",
+        workflow_operation_id: "workflow_test",
+        ledger_operation_id: "ledger_atomic",
+        sequence,
+        timestamp,
+        payload: {},
+      })),
     });
     await expect(repository.commit(makeInput())).rejects.toThrow("fault_before_manifest");
     expect(repository.operations()).toEqual([]);
