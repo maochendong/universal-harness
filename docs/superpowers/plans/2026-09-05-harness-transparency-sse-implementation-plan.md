@@ -4,7 +4,7 @@
 
 **Goal:** 让已提交决定、状态流转和指定版本产出可靠可见，修复事件读取正确性并实现有界共享 SSE。
 
-**进度说明（2026-09-08）：** 共享事件读取基础修复与产出盘点已在[运行优化计划](2026-09-08-operational-optimization-plan.md)中落实。同日 Task 1 Step 1–5 已补齐并验证：新增表征/RED 测试 10 项（逆序 id 分页、整批原子可见与重试去重、view 精确分页断言、5 类 writer 缓存场景、坏行不隐藏后续行），CLI watch 增加 reset 提示与 JSON 结构化输出（人类/JSON 模式各 1 项测试），性能门槛按 §7.3 落地为 `tests/performance/event-stream-incremental.test.ts` 与 `scripts/generate-performance-dataset.mjs --mode=event-stream`，机器样本存 [2026-09-08-event-stream-perf.json](../../evidence/2026-09-08-event-stream-perf.json)（F=1万 p95 155ms、10万事件 RSS +14MiB）。Step 6 已提交（`684f296`）并通过独立评审（放行但有后续项：P2 证据 JSON 缺同 F 相对阈值与 E 布局分项，P3 "更大 rename"测试判别力弱，P4 watch reset 测试有 60ms 时序敏感性；P1 证据覆写已在 `53c4df2` 修复，样本写入改为 `HARNESS_PERF_EVIDENCE=1` 显式开启）。同日 Task 2 与 Task 3 已实施、提交（`36a7b37` 注册 Protocol 1.4 与真实决定事件；`574f5bb` 有界共享 SSE Hub）并通过联合独立评审（双双放行；后续项：Hub `checkStall` 仅在 tick 边界检查、共享扫描断言的分项在 Task 6 保留）。同日 Task 4 已实施、提交（`e24ab80`）并通过独立评审（放行但有后续项：Playwright 层缺"重复事件/远程时间"两场景，由单测覆盖并在 Task 6 证据说明）。评审发现的 HT-AC-01 缺陷——orchestrator 本地 reject 逃生路径不提交 ApprovalDecided——已在 `0dfe2f2` 修复（含 RED→GREEN 回归测试）。Task 5、6 复选框不因上述进展勾选。
+**进度说明（2026-09-08）：** 共享事件读取基础修复与产出盘点已在[运行优化计划](2026-09-08-operational-optimization-plan.md)中落实。同日 Task 1 Step 1–5 已补齐并验证：新增表征/RED 测试 10 项（逆序 id 分页、整批原子可见与重试去重、view 精确分页断言、5 类 writer 缓存场景、坏行不隐藏后续行），CLI watch 增加 reset 提示与 JSON 结构化输出（人类/JSON 模式各 1 项测试），性能门槛按 §7.3 落地为 `tests/performance/event-stream-incremental.test.ts` 与 `scripts/generate-performance-dataset.mjs --mode=event-stream`，机器样本存 [2026-09-08-event-stream-perf.json](../../evidence/2026-09-08-event-stream-perf.json)（F=1万 p95 155ms、10万事件 RSS +14MiB）。Step 6 已提交（`684f296`）并通过独立评审（放行但有后续项：P2 证据 JSON 缺同 F 相对阈值与 E 布局分项，P3 "更大 rename"测试判别力弱，P4 watch reset 测试有 60ms 时序敏感性；P1 证据覆写已在 `53c4df2` 修复，样本写入改为 `HARNESS_PERF_EVIDENCE=1` 显式开启）。同日 Task 2 与 Task 3 已实施、提交（`36a7b37` 注册 Protocol 1.4 与真实决定事件；`574f5bb` 有界共享 SSE Hub）并通过联合独立评审（双双放行；后续项：Hub `checkStall` 仅在 tick 边界检查、共享扫描断言的分项在 Task 6 保留）。同日 Task 4 已实施、提交（`e24ab80`）并通过独立评审（放行但有后续项：Playwright 层缺"重复事件/远程时间"两场景，由单测覆盖并在 Task 6 证据说明）。评审发现的 HT-AC-01 缺陷——orchestrator 本地 reject 逃生路径不提交 ApprovalDecided——已在 `0dfe2f2` 修复（含 RED→GREEN 回归测试）。同日 Task 5 已实施、提交（`d650f2e`，含唯一补缺事件 ArtifactAvailable 与 10 个提交点）并通过独立评审（放行；后续项：覆盖表 50–53 行计数"9 个提交点"应更正为 10 并补 evaluation-contributor 行，纳入 Task 6 证据收尾；phaseExecute legacy TDD 批次与 DAG runner 路径的缺口在 Task 6 证据中说明）。Task 6 复选框不因上述进展勾选。
 
 **Architecture:** Ledger manifest 决定权威可见性，Live Spool 承载实时观察；FileEventStream 复用 core 校验并维护内存 position 索引。Dashboard Hub 共享源刷新、分页追平和有界扇出；产出正文通过已有读接口的受控扩展提供。
 
@@ -12,7 +12,7 @@
 
 **Spec:** [开发过程透明化与 SSE 呈现设计](../specs/2026-09-05-harness-transparency-sse-design.md)
 
-**Status:** 2026-09-08 已按评审修订。Task 1、2、3、4 已实施、提交并通过独立评审；Task 5（依赖 Task 4 合入）已放行待实施；Task 6 未开始。
+**Status:** 2026-09-08 已按评审修订。Task 1–5 已实施、提交并通过独立评审；Task 6（Conformance、真实 dogfood 与发布证据）已放行待实施。
 
 **Baseline:** `2084617`；原始两份文档未跟踪，`teach/` 为无关未跟踪目录。执行时先核对最新 Git 状态；已有变更不覆盖、不顺手提交。
 
@@ -543,7 +543,7 @@ interface ArtifactView {
 // readArtifactView(projectRoot, query): Promise<ArtifactView>
 ```
 
-- [ ] **Step 1: 前置盘点，写出真实覆盖表**
+- [x] **Step 1: 前置盘点，写出真实覆盖表**
 
 ```bash
 rg -n 'phaseLifecycleEvents|commitCheckpoint|eventType:|artifact_digests' packages/runtime/src packages/core/src/ledger
@@ -557,7 +557,7 @@ fixture和目标测试。Finding组/Run摘要是派生视图时注明源记录�
 先确定已有事件的manifest引用能否覆盖；只有无法定位的提交才列入ArtifactAvailable补缺清单，列明
 具体提交函数和artifact类别。盘点表是前置交付，后续未通过的格子保持“未实现/未验证”，不能打勾。
 
-- [ ] **Step 2: 为指定版本读取和安全边界写RED**
+- [x] **Step 2: 为指定版本读取和安全边界写RED**
 
 同对象提交两个版本，旧事件必须打开旧版本；修改/缺失已提交artifact要报错。测试未提交文件、
 任意path、符号链接逃逸、kind伪装、secret/邮箱原文、超大正文、分页digest不变以及空结果。
@@ -576,7 +576,7 @@ expect(result.ref.digest).not.toBe(newArtifactDigest);
 以真实Ledger fixture产生manifest/artifact；Read API不接受客户端提供路径，不能根据digest猜一个文件名。
 摘要不足以代表正文；输出需要标记safe_view及原始digest来源，不能给脱敏结果冒用原始bytes hash。
 
-- [ ] **Step 3: 实现最小解析、正文分页和导航数据**
+- [x] **Step 3: 实现最小解析、正文分页和导航数据**
 
 ```ts
 // 服务端构造同源只读URL；digest先验证格式，kind使用固定枚举。
@@ -592,7 +592,7 @@ Decision来源验证，旧事件正文不可解时明确回退，不能链接最
 REST对集合按1..100分页、默认20；文本8KiB UTF-8安全分片；响应≤256KiB。字段白名单不能排除
 理解结果所需的业务字段；不安全的原始日志仅返回安全摘要和不可展示原因，不能声称提供完整日志。
 
-- [ ] **Step 4: 按前置清单补缺事件，落实实际socket护栏**
+- [x] **Step 4: 按前置清单补缺事件，落实实际socket护栏**
 
 若清单非空，严格注册唯一ArtifactAvailable，payload为`artifact_kind/record_digest/summary`；
 在已盘点的原子提交中加入，不新开第二条写入路径；包含它的事务pin1.4，补齐Schema生成物及测试。
@@ -609,7 +609,7 @@ if (Buffer.byteLength(frame, "utf8") > 32 * 1024) {
 Unicode字符，包含旧240字符路径。测试超大actor/既有payload、中文/emoji、多链接，验证无部分
 业务帧写出、无无限自动重试。正文读取错误不改变领域事实或批准状态。
 
-- [ ] **Step 5: 注册浏览器测试，验证实际订阅和点击**
+- [x] **Step 5: 注册浏览器测试，验证实际订阅和点击**
 
 新建Playwright `tests/e2e/dashboard-transparency.test.ts`，明确加入`playwright.dashboard.config.ts`
 的testMatch，同时加入`vitest.workspace.ts` exclude。Node HTTP的sse-reconnect继续只由Vitest执行。
@@ -634,7 +634,7 @@ pnpm exec vitest run --config vitest.workspace.ts packages/runtime/test/observab
 pnpm exec playwright test --config playwright.dashboard.config.ts dashboard-transparency.test.ts dashboard-live-approval.test.ts
 ```
 
-- [ ] **Step 6: 提交并审核覆盖表**
+- [x] **Step 6: 提交并审核覆盖表**
 
 ```bash
 git add docs/evidence/artifact-reference-coverage.md packages/runtime/src/observability packages/runtime/test/observability
