@@ -2214,6 +2214,67 @@ describe("phase orchestrator", { timeout: 60_000 * TEST_TIMEOUT_SCALE }, () => {
     expect(next.status).toBe("approval_required");
   });
 
+  it("commits exactly one ApprovalDecided event in the local reject escape path", async () => {
+    const newId = sequentialIds();
+    const projectRoot = await bootstrapProject("orch-reject-event", newId);
+    const deps = makeDeps(projectRoot, newId);
+    const outcome = await runIteration(deps, { intent: INTENT, intentShape: "pack-converted" });
+    expect(outcome.status).toBe("approval_required");
+    if (outcome.status !== "approval_required") return;
+
+    // The reject escape hatch commits the decision artifact directly, without
+    // reopening the paused operation — and must still emit the truthful
+    // decision event in that same transaction.
+    const rejected = await resolveApproval(deps, {
+      requestId: outcome.required.request_id,
+      decision: "reject",
+      actor: "human:reviewer",
+    });
+    expect(rejected.decision).toBe("reject");
+
+    const workflowOperationId = outcome.required.workflow_operation_id;
+    const replay = new LedgerRepository({
+      projectRoot,
+      readBaseline: () => headOf(projectRoot),
+    }).replay();
+    const decided = replay.events.filter(
+      (event) =>
+        event.workflow_operation_id === workflowOperationId &&
+        event.event_type === "ApprovalDecided",
+    );
+    expect(decided).toHaveLength(1);
+
+    const decisions = readApprovalDecisions(
+      harnessRootFor(projectRoot),
+      readCommittedOperations(harnessRootFor(projectRoot)),
+      workflowOperationId,
+    );
+    expect(decisions).toHaveLength(1);
+    const record = decisions[0];
+    if (record === undefined) throw new Error("expected one committed decision");
+
+    // The event binds the decision artifact by its manifest byte digest and
+    // keeps the record's own decided_at; the 1.4 event pins the transaction.
+    const committing = replay.operations.find((operation) =>
+      operation.manifest.artifact_digests.includes(rejected.approvalDigest),
+    );
+    expect(committing).toBeDefined();
+    expect(committing?.manifest.required_reader_version).toBe("1.4.0");
+    expect(decided[0]?.ledger_operation_id).toBe(committing?.manifest.ledger_operation_id);
+    expect(decided[0]).toMatchObject({
+      protocol_version: "1.4.0",
+      payload: {
+        request_id: outcome.required.request_id,
+        approval_id: record.approval_id,
+        decision: "reject",
+        object_digest: outcome.required.object_digest,
+        decision_digest: rejected.approvalDigest,
+        decided_at: record.decided_at,
+      },
+    });
+    expect(Object.keys(decided[0]?.payload ?? {})).toHaveLength(6);
+  });
+
   it("keeps a deferred interactive decision resumable and continues in the same session", async () => {
     const newId = sequentialIds();
     const projectRoot = await bootstrapProject("orch-interactive", newId);

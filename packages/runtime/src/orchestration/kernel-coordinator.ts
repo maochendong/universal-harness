@@ -547,6 +547,8 @@ export async function commitArtifacts(
     readonly eventType: LifecycleEvent["event_type"];
     readonly iterationId: string;
     readonly payload: Record<string, unknown>;
+    /** Authoritative protocol version override; defaults to PROTOCOL_VERSION. */
+    readonly protocolVersion?: string;
   }[] = [],
 ): Promise<void> {
   const ledgerOperationId = newIdOf(deps, "ledger");
@@ -566,7 +568,7 @@ export async function commitArtifacts(
       .reduce((maximum, event) => Math.max(maximum, event.sequence), 0) + 1;
   const events = lifecycleEvents.map((spec, index) => {
     const draft = {
-      protocol_version: PROTOCOL_VERSION,
+      protocol_version: spec.protocolVersion ?? PROTOCOL_VERSION,
       record_kind: "event",
       event_id: newIdOf(deps, "event"),
       event_type: spec.eventType,

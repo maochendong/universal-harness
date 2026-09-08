@@ -26,6 +26,7 @@ import {
 } from "../approval/request.js";
 import { resumeCommandFor } from "../approval/interaction.js";
 import { evidenceBindingsOf, type GateEvidenceRecord } from "../gates/evidence.js";
+import { approvalDecidedEvent } from "./lifecycle-events.js";
 import { hashWorktreeCode } from "../snapshot/anchor.js";
 import { readExecutionPlanContent } from "../planning/execution-plan.js";
 import { type SnapshotRecord } from "../snapshot/builder.js";
@@ -453,11 +454,26 @@ export async function resolveApproval(
       objectDigest: request.object_digest,
       decidedAt: nowOf(deps),
     });
+    const artifact = approvalDecisionArtifact(rejected);
+    // The truthful decision event commits in this same transaction (spec
+    // §5.1); commitArtifacts pins the manifest to the carried 1.4 event.
+    const decided = approvalDecidedEvent(rejected, sha256Hex(artifact.content));
     await commitArtifacts(
       deps,
       request.workflow_operation_id,
       current?.attempt_id ?? "attempt_abort",
-      [approvalDecisionArtifact(rejected)],
+      [artifact],
+      [],
+      [
+        {
+          eventType: decided.eventType,
+          iterationId: current?.iteration_id ?? "iteration_unknown",
+          payload: decided.payload,
+          ...(decided.protocolVersion === undefined
+            ? {}
+            : { protocolVersion: decided.protocolVersion }),
+        },
+      ],
     );
     return {
       requestId: rejected.request_id,
