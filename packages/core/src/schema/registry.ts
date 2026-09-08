@@ -2,7 +2,12 @@ import type { ValidateFunction } from "ajv/dist/2020.js";
 import type { TSchema } from "@sinclair/typebox";
 
 import { isProtocolCompatible } from "../version.js";
-import { PROTOCOL_1_1_VERSION, PROTOCOL_1_2_VERSION, PROTOCOL_1_3_VERSION } from "../protocol.js";
+import {
+  PROTOCOL_1_1_VERSION,
+  PROTOCOL_1_2_VERSION,
+  PROTOCOL_1_3_VERSION,
+  PROTOCOL_1_4_VERSION,
+} from "../protocol.js";
 import { createDomainSchemaRegistry, mergeSchemaDocuments } from "./domain-registry.js";
 import { CapabilityPlanRecordSchema, CapabilityPlanRecordV13Schema } from "./capability.js";
 import {
@@ -25,7 +30,7 @@ import {
   ClarificationQuestionRecordSchema,
 } from "./capture.js";
 import { EdgeSchema } from "./edge.js";
-import { EventSchema } from "./event.js";
+import { ApprovalDecidedPayloadSchema, EventSchema } from "./event.js";
 import { FeedbackSchema } from "./feedback.js";
 import {
   FeedbackAnalysisInputSchema,
@@ -133,6 +138,31 @@ const validators = new Map<SchemaKey, ValidateFunction>(
   SCHEMA_KEYS.map((key) => [key, compileAjvSchema(SCHEMA_REGISTRY[key])]),
 );
 
+const approvalDecidedPayloadValidator = compileAjvSchema(ApprovalDecidedPayloadSchema);
+
+/**
+ * Semantic validation for the one event type whose payload is authoritative
+ * evidence (spec §5.1): ApprovalDecided must be written at protocol 1.4.0 and
+ * its payload must be exactly the six bound fields. Every other event type
+ * keeps the generic record payload tolerance unchanged.
+ */
+function validateApprovalDecidedEvent(value: Record<string, unknown>): ValidationResult {
+  const errors: ValidationIssue[] = [];
+  if (value["protocol_version"] !== PROTOCOL_1_4_VERSION) {
+    errors.push({
+      instancePath: "/protocol_version",
+      keyword: "eventProtocolPin",
+      message: `ApprovalDecided events must be written at protocol ${PROTOCOL_1_4_VERSION}`,
+    });
+  }
+  if (!approvalDecidedPayloadValidator(value["payload"])) {
+    for (const issue of normalizeErrors(approvalDecidedPayloadValidator.errors)) {
+      errors.push({ ...issue, instancePath: `/payload${issue.instancePath}` });
+    }
+  }
+  return errors.length === 0 ? { valid: true, errors: [] } : { valid: false, errors };
+}
+
 function protocolVersionOf(value: unknown): string | undefined {
   if (typeof value !== "object" || value === null || !("protocol_version" in value)) {
     return undefined;
@@ -170,6 +200,15 @@ export function validateSchema(key: SchemaKey, value: unknown): ValidationResult
         },
       ],
     };
+  }
+
+  if (
+    key === "event" &&
+    typeof value === "object" &&
+    value !== null &&
+    (value as Record<string, unknown>)["event_type"] === "ApprovalDecided"
+  ) {
+    return validateApprovalDecidedEvent(value as Record<string, unknown>);
   }
 
   return { valid: true, errors: [] };
@@ -303,6 +342,17 @@ export const PROTOCOL_1_3_SCHEMA_REGISTRY = createDomainSchemaRegistry({
 });
 
 /**
+ * Protocol 1.4 (transparency): no new domain record kinds — the only addition
+ * is the authoritative ApprovalDecided event payload, whose strict schema is
+ * exported so writers and readers share the same six-field contract. The
+ * payload carries no raw actor by design.
+ */
+export const PROTOCOL_1_4_SCHEMA_REGISTRY = createDomainSchemaRegistry({
+  protocolVersion: PROTOCOL_1_4_VERSION,
+  entries: [{ key: "approval-decided-payload", schema: ApprovalDecidedPayloadSchema }],
+});
+
+/**
  * The Protocol 1.3 CapabilityPlan revision schema (M4 design 10.2). It is not
  * a new domain record kind — it versions the existing `capability_plan` kind —
  * so the version-suffixed document name keeps both generations readable
@@ -328,5 +378,6 @@ export const SCHEMA_EXPORT_DOCUMENTS = mergeSchemaDocuments(
   PROTOCOL_1_1_SCHEMA_REGISTRY.documents(),
   PROTOCOL_1_2_SCHEMA_REGISTRY.documents(),
   PROTOCOL_1_3_SCHEMA_REGISTRY.documents(),
+  PROTOCOL_1_4_SCHEMA_REGISTRY.documents(),
   CAPABILITY_PLAN_1_3_SCHEMA_DOCUMENTS,
 );

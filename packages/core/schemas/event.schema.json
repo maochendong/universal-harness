@@ -67,7 +67,8 @@
         { "const": "TaskRetryScheduled", "type": "string" },
         { "const": "WaveGateCompleted", "type": "string" },
         { "const": "WaveIntegrated", "type": "string" },
-        { "const": "SchedulerRecovered", "type": "string" }
+        { "const": "SchedulerRecovered", "type": "string" },
+        { "const": "ApprovalDecided", "type": "string" }
       ]
     },
     "project_id": {

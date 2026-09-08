@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   buildCollaborationRecord,
   LedgerRepository,
+  sha256Hex,
   type CollaborationConnectionRecord,
   type ControlRecord,
   type IntegrationRecord,
@@ -12,6 +13,7 @@ import {
 import {
   ApprovalService,
   WorkflowEngine,
+  approvalDecisionArtifact,
   createCollaborationCoordinator,
   materializeRemoteApprovalDecision,
   remoteDecisionIdFor,
@@ -490,6 +492,20 @@ describe("remote approval materialization fault injection", () => {
       expect(
         replay.events.filter((event) => event.event_type === "RemoteApprovalMaterialized"),
       ).toHaveLength(1);
+      // The truthful decision event commits exactly once alongside the
+      // materialized decision; neither the crash retry nor the lost-response
+      // retry duplicates it.
+      const decided = replay.events.filter((event) => event.event_type === "ApprovalDecided");
+      expect(decided).toHaveLength(1);
+      expect(decided[0]?.payload).toMatchObject({
+        request_id: request.request_id,
+        approval_id: materialized.decision.approval_id,
+        decision: "approve",
+        decided_at: DECIDED_AT,
+      });
+      expect(decided[0]?.payload["decision_digest"]).toBe(
+        sha256Hex(approvalDecisionArtifact(materialized.decision).content),
+      );
     } finally {
       cleanupDirectories();
     }

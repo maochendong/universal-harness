@@ -96,9 +96,12 @@ describe("persisted schemas", () => {
     }
 
     for (const eventType of EVENT_TYPES) {
+      // ApprovalDecided is the one event whose payload is authoritative
+      // evidence: it validates strictly at protocol 1.4 (spec §5.1).
+      const approvalDecided = eventType === "ApprovalDecided";
       expect(
         validateSchema("event", {
-          protocol_version: "1.0.0",
+          protocol_version: approvalDecided ? "1.4.0" : "1.0.0",
           record_kind: "event",
           event_id: `event_${eventType.toLowerCase()}_01`,
           event_type: eventType,
@@ -108,7 +111,16 @@ describe("persisted schemas", () => {
           ledger_operation_id: "ledger_01K1ABCDEFGHIJKLMNOPQRST",
           sequence: 1,
           timestamp,
-          payload: {},
+          payload: approvalDecided
+            ? {
+                request_id: "approval_request_01",
+                approval_id: "approval_decision_01",
+                decision: "approve",
+                object_digest: digest,
+                decision_digest: digest,
+                decided_at: timestamp,
+              }
+            : {},
         }),
         eventType,
       ).toMatchObject({ valid: true });

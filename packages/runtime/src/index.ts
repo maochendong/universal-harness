@@ -274,8 +274,10 @@ export {
   approvalRequiredOutcome,
   parseApprovalDecision,
   promptForApprovalDecision,
+  promptForApprovalOutcome,
   resumeCommandFor,
   type ApprovalPrompter,
+  type ApprovalPromptOutcome,
   type ApprovalRequiredOutcome,
 } from "./approval/interaction.js";
 export {
@@ -1026,6 +1028,7 @@ export {
   type OrchestrationPhase,
 } from "./orchestration/phases.js";
 export {
+  approvalDecidedEvent,
   assertLifecycleOrder,
   phaseLifecycleEvents,
   remoteApprovalMaterializedEvent,

@@ -1,6 +1,6 @@
 import { Type, type Static } from "@sinclair/typebox";
 
-import { PROTOCOL_1_2_VERSION, PROTOCOL_1_3_VERSION } from "../protocol.js";
+import { PROTOCOL_1_2_VERSION, PROTOCOL_1_3_VERSION, PROTOCOL_1_4_VERSION } from "../protocol.js";
 import {
   DigestSchema,
   ExtensionsSchema,
@@ -99,7 +99,7 @@ export const LedgerOperationSchema = strictObject({
   // closed with `protocol_upgrade_required` instead of silently projecting the
   // record. The value is exactly the newest carried version.
   required_reader_version: Type.Optional(
-    enumerated([PROTOCOL_1_2_VERSION, PROTOCOL_1_3_VERSION] as const),
+    enumerated([PROTOCOL_1_2_VERSION, PROTOCOL_1_3_VERSION, PROTOCOL_1_4_VERSION] as const),
   ),
   committed_at: TimestampSchema,
   digest: DigestSchema,

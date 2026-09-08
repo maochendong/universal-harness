@@ -6,7 +6,7 @@ import {
 
 import {
   approvalRequiredOutcome,
-  promptForApprovalDecision,
+  promptForApprovalOutcome,
   resumeCommandFor,
   type ApprovalRequiredOutcome,
 } from "../approval/interaction.js";
@@ -14,7 +14,6 @@ import {
   approvalDecisionArtifact,
   readApprovalDecisions,
   readApprovalRequests,
-  type ApprovalDecision,
   type ApprovalDecisionRecord,
   type ApprovalRequestRecord,
   type ApprovalRisk,
@@ -109,16 +108,19 @@ export function createApprovalRuntime(): ApprovalRuntime {
       const resolveInteractive = async (request: ApprovalRequestRecord): Promise<ApprovalStep> => {
         const prompter = deps.prompter;
         if (prompter === undefined) return blockAndReport(request);
-        const decision: ApprovalDecision = await promptForApprovalDecision(request, prompter);
-        if (decision === "defer") return blockAndReport(request);
+        const outcome = await promptForApprovalOutcome(request, prompter);
+        // EOF/Ctrl-C/unparseable input commits nothing and only blocks.
+        if (outcome.kind === "no_decision") return blockAndReport(request);
         const record = await service.resolveDecision({
           requestId: request.request_id,
-          decision,
+          decision: outcome.decision,
           objectDigest: request.object_digest,
           actor: deps.decisionActor ?? "human:interactive",
         });
         refresh(ctx);
-        if (decision === "reject") return { status: "rejected" };
+        // An explicit defer is a committed decision; the request stays pending.
+        if (outcome.decision === "defer") return blockAndReport(request);
+        if (outcome.decision === "reject") return { status: "rejected" };
         return { status: "approved", approvalDigest: approvalDigestOf(record) };
       };
 

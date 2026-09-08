@@ -1,11 +1,12 @@
 import { afterEach, describe, expect, it } from "vitest";
 
-import { LedgerRepository, sha256Hex } from "@universal-harness-internal/core";
+import { LedgerRepository, harnessRootFor, sha256Hex } from "@universal-harness-internal/core";
 
 import {
   ApprovalService,
   WorkflowEngine,
   approvalDecisionArtifact,
+  readApprovalDecisions,
   remoteDecisionDigestOf,
   resumeWorkflowOperation,
   type ApprovalDependencies,
@@ -411,7 +412,7 @@ describe("ApprovalService.requestApprovalInteractively", () => {
     ["unparseable input", () => Promise.resolve("whatever")],
     ["Ctrl-C (prompter throws)", () => Promise.reject(new Error("SIGINT"))],
   ])("defers on %s and keeps the operation resumable", async (_label, prompt) => {
-    const { engine, service, workflowOperationId } = await setup(`l${_label.length}`);
+    const { projectRoot, engine, service, workflowOperationId } = await setup(`l${_label.length}`);
     const outcome = await service.requestApprovalInteractively(
       makeRequestInput(workflowOperationId),
       { prompt },
@@ -423,6 +424,36 @@ describe("ApprovalService.requestApprovalInteractively", () => {
     expect(outcome.required.resume_command).toBe(`harness resume ${workflowOperationId}`);
     expect(engine.getOperation(workflowOperationId)?.state).toBe("blocked");
     expect(service.pendingRequests(workflowOperationId)).toHaveLength(1);
+
+    // No decision of any kind is committed for an interrupted prompt.
+    const operations = new LedgerRepository({ projectRoot, readBaseline: () => BASELINE });
+    const decisions = readApprovalDecisions(
+      harnessRootFor(projectRoot),
+      operations.operations(),
+      workflowOperationId,
+    );
+    expect(decisions).toEqual([]);
+  });
+
+  it("commits an explicit defer through the decision path and keeps the request pending", async () => {
+    const { projectRoot, service, workflowOperationId } = await setup("m");
+    const outcome = await service.requestApprovalInteractively(
+      makeRequestInput(workflowOperationId),
+      { prompt: () => Promise.resolve("defer") },
+      "user:bob",
+    );
+
+    expect(outcome.status).toBe("deferred");
+    expect(service.pendingRequests(workflowOperationId)).toHaveLength(1);
+
+    const operations = new LedgerRepository({ projectRoot, readBaseline: () => BASELINE });
+    const decisions = readApprovalDecisions(
+      harnessRootFor(projectRoot),
+      operations.operations(),
+      workflowOperationId,
+    );
+    expect(decisions).toHaveLength(1);
+    expect(decisions[0]).toMatchObject({ decision: "defer", actor: "user:bob" });
   });
 });
 

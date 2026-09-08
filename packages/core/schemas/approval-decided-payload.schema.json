@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.universal-harness.dev/1.4/approval-decided-payload.schema.json",
+  "additionalProperties": false,
+  "type": "object",
+  "required": [
+    "request_id",
+    "approval_id",
+    "decision",
+    "object_digest",
+    "decision_digest",
+    "decided_at"
+  ],
+  "properties": {
+    "request_id": {
+      "minLength": 3,
+      "maxLength": 160,
+      "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+      "type": "string"
+    },
+    "approval_id": {
+      "minLength": 3,
+      "maxLength": 160,
+      "pattern": "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$",
+      "type": "string"
+    },
+    "decision": {
+      "anyOf": [
+        { "const": "approve", "type": "string" },
+        { "const": "reject", "type": "string" },
+        { "const": "defer", "type": "string" }
+      ]
+    },
+    "object_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
+    "decision_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
+    "decided_at": { "format": "date-time", "type": "string" }
+  }
+}

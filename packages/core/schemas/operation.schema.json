@@ -144,7 +144,8 @@
         "required_reader_version": {
           "anyOf": [
             { "const": "1.2.0", "type": "string" },
-            { "const": "1.3.0", "type": "string" }
+            { "const": "1.3.0", "type": "string" },
+            { "const": "1.4.0", "type": "string" }
           ]
         },
         "committed_at": { "format": "date-time", "type": "string" },

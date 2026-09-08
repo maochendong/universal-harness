@@ -1,6 +1,7 @@
 import {
   harnessRootFor,
   PROTOCOL_1_2_VERSION,
+  PROTOCOL_1_4_VERSION,
   sha256Hex,
   ulid,
   type CommitHooks,
@@ -31,13 +32,16 @@ import {
 } from "./request.js";
 import {
   approvalRequiredOutcome,
-  promptForApprovalDecision,
+  promptForApprovalOutcome,
   resumeCommandFor,
   type ApprovalPrompter,
   type ApprovalRequiredOutcome,
 } from "./interaction.js";
 import { bindingDrift, reissueRequestSpec, type ApprovalBindingSnapshot } from "./invalidation.js";
-import { remoteApprovalMaterializedEvent } from "../orchestration/lifecycle-events.js";
+import {
+  approvalDecidedEvent,
+  remoteApprovalMaterializedEvent,
+} from "../orchestration/lifecycle-events.js";
 
 /**
  * Approval service (design 11.3). Every approval point persists the
@@ -150,6 +154,14 @@ function readerVersionPin(record: { readonly protocol_version: string }): {
     ? { requiredReaderVersion: PROTOCOL_1_2_VERSION }
     : {};
 }
+
+/**
+ * Every decision commit carries the Protocol 1.4 ApprovalDecided event, so
+ * the transaction pins 1.4.0 regardless of whether the decision record itself
+ * stays at 1.0 (local) or 1.2 (remote materialization) — the pin is the
+ * newest carried version, never the record's own version (design §4, §5.2).
+ */
+const DECISION_COMMIT_PIN = { requiredReaderVersion: PROTOCOL_1_4_VERSION } as const;
 
 export class ApprovalService {
   private readonly deps: ApprovalDependencies;
@@ -292,10 +304,11 @@ export class ApprovalService {
   }
 
   /**
-   * Interactive approval point: persists first, then prompts once. Defer —
-   * including Ctrl-C, EOF and unparseable input — blocks the operation and
-   * keeps the proposal resumable; an explicit approve/reject resolves the
-   * request immediately.
+   * Interactive approval point: persists first, then prompts once. An
+   * interrupted prompt (Ctrl-C, EOF, unparseable input) writes no decision and
+   * only blocks the operation as resumable; an explicit defer commits a real
+   * defer decision through resolveDecision and keeps the request pending; an
+   * explicit approve/reject resolves the request immediately.
    */
   async requestApprovalInteractively(
     input: RequestApprovalInput,
@@ -304,17 +317,21 @@ export class ApprovalService {
   ): Promise<AwaitDecisionOutcome> {
     const request = this.buildRequest(input);
     await this.persistRequest(request);
-    const decision = await promptForApprovalDecision(request, prompter);
-    if (decision === "defer") {
+    const outcome = await promptForApprovalOutcome(request, prompter);
+    if (outcome.kind === "no_decision") {
       await this.blockAwaitingDecision(request);
       return { status: "deferred", required: approvalRequiredOutcome(request) };
     }
     const record = await this.resolveDecision({
       requestId: request.request_id,
-      decision,
+      decision: outcome.decision,
       objectDigest: request.object_digest,
       actor: decisionActor,
     });
+    if (outcome.decision === "defer") {
+      await this.blockAwaitingDecision(request);
+      return { status: "deferred", required: approvalRequiredOutcome(request) };
+    }
     return { status: "resolved", decision: record };
   }
 
@@ -366,6 +383,7 @@ export class ApprovalService {
     const artifact = approvalDecisionArtifact(record);
     await this.engine().commitCheckpoint(request.workflow_operation_id, {
       boundary: "approval",
+      ...DECISION_COMMIT_PIN,
       proposal: {
         add_approval_digests: [sha256Hex(artifact.content)],
         reconcile_blockers:
@@ -374,6 +392,7 @@ export class ApprovalService {
             : { resolved_approval_ids: [request.request_id] },
       },
       artifacts: [artifact],
+      events: [approvalDecidedEvent(record, sha256Hex(artifact.content))],
     });
     return record;
   }
@@ -477,7 +496,7 @@ export class ApprovalService {
     const artifact = approvalDecisionArtifact(record);
     await this.engine().commitCheckpoint(request.workflow_operation_id, {
       boundary: "approval",
-      ...readerVersionPin(record),
+      ...DECISION_COMMIT_PIN,
       proposal: {
         add_approval_digests: [sha256Hex(artifact.content)],
         reconcile_blockers:
@@ -494,6 +513,7 @@ export class ApprovalService {
           remoteDecisionDigest: input.remoteDecisionDigest,
           principalId: input.actor,
         }),
+        approvalDecidedEvent(record, sha256Hex(artifact.content)),
       ],
     });
     return { decision: record, replayed: false };

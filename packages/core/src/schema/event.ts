@@ -1,6 +1,7 @@
 import { Type, type Static } from "@sinclair/typebox";
 
 import {
+  DigestSchema,
   ExtensionsSchema,
   IdentifierSchema,
   TimestampSchema,
@@ -8,6 +9,7 @@ import {
   persistedRecordProperties,
   strictObject,
 } from "./common.js";
+import { APPROVAL_DECISIONS } from "./runtime.js";
 
 export const EVENT_TYPES = [
   "OperationStarted",
@@ -52,7 +54,28 @@ export const EVENT_TYPES = [
   "WaveGateCompleted",
   "WaveIntegrated",
   "SchedulerRecovered",
+  // Protocol 1.4 (transparency): the truthful approval-decision event. It is
+  // emitted in the same transaction as the ApprovalDecision artifact it binds
+  // and never carries a raw actor.
+  "ApprovalDecided",
 ] as const;
+
+/**
+ * The exact six-field payload of an ApprovalDecided event (spec §5.1). The
+ * decision_digest is the byte SHA-256 of the committed ApprovalDecision
+ * artifact — the same digest the transaction manifest records — never a
+ * recomputed semantic digest.
+ */
+export const ApprovalDecidedPayloadSchema = strictObject({
+  request_id: IdentifierSchema,
+  approval_id: IdentifierSchema,
+  decision: enumerated(APPROVAL_DECISIONS),
+  object_digest: DigestSchema,
+  decision_digest: DigestSchema,
+  decided_at: TimestampSchema,
+});
+
+export type ApprovalDecidedPayload = Static<typeof ApprovalDecidedPayloadSchema>;
 
 export const EventSchema = strictObject({
   ...persistedRecordProperties("event"),

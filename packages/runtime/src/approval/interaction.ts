@@ -5,12 +5,12 @@ import {
 } from "./request.js";
 
 /**
- * Interactive approval prompt contract (design 11.3). The interaction layer
- * never owns I/O: the caller injects a prompter, so non-interactive mode
- * provably never reads stdin. Only an explicit approve/reject/defer is a
- * decision — Ctrl-C, EOF, terminal disconnect and unparseable input all
- * collapse to `defer`, keeping the proposal resumable; nothing is ever
- * inferred as approval or rejection.
+ * Interactive approval prompt contract (design 11.3, transparency spec §5.3).
+ * The interaction layer never owns I/O: the caller injects a prompter, so
+ * non-interactive mode provably never reads stdin. Only an explicit
+ * approve/reject/defer is a decision — Ctrl-C, EOF, terminal disconnect and
+ * unparseable input are `no_decision` outcomes that merely keep the proposal
+ * blocked and resumable; nothing is ever inferred as approval or rejection.
  */
 export interface ApprovalPrompter {
   /** Render the preview and return the raw human input; may throw on Ctrl-C. */
@@ -21,37 +21,77 @@ export interface ApprovalPrompter {
 }
 
 /**
- * Normalize raw input into an explicit decision. `null` (EOF/disconnect),
- * empty input and anything outside the request's allowed decisions parse as
- * `defer`.
+ * The truthful outcome of one prompt: either an explicit decision the caller
+ * may commit, or a reasoned absence of one that must only block and wait.
+ */
+export type ApprovalPromptOutcome =
+  | { readonly kind: "decision"; readonly decision: ApprovalDecision }
+  | { readonly kind: "no_decision"; readonly reason: "eof" | "interrupted" | "invalid_input" };
+
+/**
+ * Normalize raw input into an explicit decision outcome. `null` (EOF or
+ * disconnect) is `eof`; empty input and anything outside the request's
+ * allowed decisions is `invalid_input` — notably a "defer" the request does
+ * not allow is invalid input, never an implicit defer decision.
+ */
+export function parseApprovalOutcome(
+  input: string | null | undefined,
+  allowedDecisions: readonly ApprovalDecision[],
+): ApprovalPromptOutcome {
+  if (input === null || input === undefined) return { kind: "no_decision", reason: "eof" };
+  const normalized = input.trim().toLowerCase();
+  if (normalized === "approve" && allowedDecisions.includes("approve")) {
+    return { kind: "decision", decision: "approve" };
+  }
+  if (normalized === "reject" && allowedDecisions.includes("reject")) {
+    return { kind: "decision", decision: "reject" };
+  }
+  if (normalized === "defer" && allowedDecisions.includes("defer")) {
+    return { kind: "decision", decision: "defer" };
+  }
+  return { kind: "no_decision", reason: "invalid_input" };
+}
+
+/**
+ * Compatibility wrapper over parseApprovalOutcome: every no_decision outcome
+ * collapses to `defer`, preserving the pre-1.4 signature.
  */
 export function parseApprovalDecision(
   input: string | null | undefined,
   allowedDecisions: readonly ApprovalDecision[],
 ): ApprovalDecision {
-  if (input === null || input === undefined) return "defer";
-  const normalized = input.trim().toLowerCase();
-  if (normalized === "approve" && allowedDecisions.includes("approve")) return "approve";
-  if (normalized === "reject" && allowedDecisions.includes("reject")) return "reject";
-  if (normalized === "defer" && allowedDecisions.includes("defer")) return "defer";
-  return "defer";
+  const outcome = parseApprovalOutcome(input, allowedDecisions);
+  return outcome.kind === "decision" ? outcome.decision : "defer";
 }
 
 /**
- * Prompt once for one exact request. A prompter failure (Ctrl-C, disconnect)
- * is a defer; the caller persists the outcome, this function never does.
+ * Prompt once for one exact request, preserving why no decision was made. A
+ * prompter failure (Ctrl-C, disconnect) is `interrupted`; the caller persists
+ * the outcome, this function never does.
+ */
+export async function promptForApprovalOutcome(
+  request: ApprovalRequestRecord,
+  prompter: ApprovalPrompter,
+): Promise<ApprovalPromptOutcome> {
+  let raw: string | null;
+  try {
+    raw = await prompter.prompt(renderApprovalPreview(request), request.allowed_decisions);
+  } catch {
+    return { kind: "no_decision", reason: "interrupted" };
+  }
+  return parseApprovalOutcome(raw, request.allowed_decisions);
+}
+
+/**
+ * Compatibility wrapper over promptForApprovalOutcome: every no_decision
+ * outcome collapses to `defer`, preserving the pre-1.4 signature.
  */
 export async function promptForApprovalDecision(
   request: ApprovalRequestRecord,
   prompter: ApprovalPrompter,
 ): Promise<ApprovalDecision> {
-  let raw: string | null;
-  try {
-    raw = await prompter.prompt(renderApprovalPreview(request), request.allowed_decisions);
-  } catch {
-    return "defer";
-  }
-  return parseApprovalDecision(raw, request.allowed_decisions);
+  const outcome = await promptForApprovalOutcome(request, prompter);
+  return outcome.kind === "decision" ? outcome.decision : "defer";
 }
 
 export const APPROVAL_REQUIRED_CATEGORY = "approval_required" as const;

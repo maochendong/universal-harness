@@ -119,8 +119,8 @@ export interface TransactionInput {
   /**
    * Protocol 1.2+: required exactly when the transaction carries an
    * authoritative Artifact/Event at protocol 1.2.0 or newer; the only accepted
-   * value is the newest carried version ("1.2.0" or "1.3.0"). Plain 1.0/1.1
-   * transactions never write the field.
+   * value is the newest carried version ("1.2.0", "1.3.0" or "1.4.0"). Plain
+   * 1.0/1.1 transactions never write the field.
    */
   readonly required_reader_version?: string;
 }

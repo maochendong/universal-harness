@@ -1,6 +1,7 @@
-import { PROTOCOL_1_2_VERSION } from "@universal-harness-internal/core";
+import { PROTOCOL_1_2_VERSION, PROTOCOL_1_4_VERSION } from "@universal-harness-internal/core";
 import type { LifecycleEvent } from "@universal-harness-internal/core";
 
+import type { ApprovalDecisionRecord } from "../approval/request.js";
 import type { SchedulerEventSpec } from "../scheduling/events.js";
 
 /**
@@ -62,6 +63,31 @@ export function remoteApprovalMaterializedEvent(
       remote_decision_id: details.remoteDecisionId,
       remote_decision_digest: details.remoteDecisionDigest,
       principal_id: details.principalId,
+    },
+  };
+}
+
+/**
+ * The Protocol 1.4 truthful decision event (spec §5.1): exactly one per
+ * committed ApprovalDecision, emitted in the same atomic commit as the
+ * decision artifact. `decisionDigest` is the byte SHA-256 of that artifact as
+ * recorded in the transaction manifest — never a recomputed digest — and the
+ * payload carries no raw actor.
+ */
+export function approvalDecidedEvent(
+  record: ApprovalDecisionRecord,
+  decisionDigest: string,
+): PhaseLifecycleEventSpec {
+  return {
+    eventType: "ApprovalDecided",
+    protocolVersion: PROTOCOL_1_4_VERSION,
+    payload: {
+      request_id: record.request_id,
+      approval_id: record.approval_id,
+      decision: record.decision,
+      object_digest: record.object_digest,
+      decision_digest: decisionDigest,
+      decided_at: record.decided_at,
     },
   };
 }
