@@ -1,0 +1,67 @@
+{
+  "name": "event-stream-incremental-performance",
+  "spec": "docs/superpowers/specs/2026-09-05-harness-transparency-sse-design.md#7.3",
+  "environment": {
+    "node": "v22.23.1",
+    "platform": "darwin",
+    "arch": "arm64"
+  },
+  "method": {
+    "dataset_generator": "scripts/generate-performance-dataset.mjs --mode=event-stream",
+    "seed": 1,
+    "warmup_rounds": 20,
+    "sample_rounds": 200,
+    "rss": "process.memoryUsage().rss delta over the 100k-event index build, measured in-process after global.gc() when --expose-gc is available",
+    "zero_reread": "fs.readFileSync/readSync spies count historical content bytes; JSON.parse spy excludes v2/legacy cursor decodes"
+  },
+  "scenarios": [
+    {
+      "name": "f-layout-discovery-poll",
+      "layout": "f",
+      "files": 1000,
+      "events": 1000,
+      "p50_ms": 8.537041999999929,
+      "p95_ms": 8.889166999999816,
+      "max_ms": 10.278084000000035,
+      "threshold_ms": 200
+    },
+    {
+      "name": "f-layout-discovery-poll",
+      "layout": "f",
+      "files": 10000,
+      "events": 10000,
+      "p50_ms": 101.43604199999936,
+      "p95_ms": 155.35229099999924,
+      "max_ms": 286.7716249999976,
+      "threshold_ms": 200
+    },
+    {
+      "name": "e-layout-index-rss",
+      "layout": "e",
+      "files": 100,
+      "events": 100000,
+      "rss_baseline_bytes": 294338560,
+      "rss_after_bytes": 309067776,
+      "rss_delta_bytes": 14729216,
+      "rss_delta_mib": 14.046875,
+      "gc_available": true,
+      "threshold_mib": 256
+    },
+    {
+      "name": "warm-poll-zero-history-reread",
+      "layout": "f",
+      "files": 1000,
+      "events": 1000,
+      "read_file_sync_calls": 0,
+      "read_sync_calls": 0,
+      "history_content_bytes": 0,
+      "history_parse_count": 0
+    }
+  ],
+  "skipped": [
+    {
+      "name": "shared-scan-4-caught-up-clients",
+      "reason": "同布局空轮询 4 个已追平客户端共享扫描属于 Task 2；EventStreamHub 尚不存在，本任务不实现。"
+    }
+  ]
+}

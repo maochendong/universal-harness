@@ -11,6 +11,18 @@
  *
  * Usage: node scripts/generate-performance-dataset.mjs --out <directory>
  *
+ * Event-stream mode (transparency/SSE design 7.3, plan Task 1 Step 5) emits a
+ * real temporary Ledger instead of the M1 graph: <files> committed
+ * manifest-shard pairs under `.harness/ledger/operations` and `.harness/events`,
+ * carrying <events> schema-valid LifecycleEvent records in total. Layouts follow
+ * the spec: the E layout scales event count at a fixed file count, the F layout
+ * scales the manifest-shard pair count; `--layout` only records intent in the
+ * metadata. Every digest is recomputed with the same canonicalization the core
+ * Ledger uses, so the strict reader accepts the fixture byte-for-byte.
+ *
+ * Usage: node scripts/generate-performance-dataset.mjs --mode=event-stream \
+ *   --out <project-root> --events <count> --files <pairs> [--layout e|f] [--seed n]
+ *
  * The output directory is published atomically (write to a sibling temporary
  * directory, then rename) so concurrent test workers never observe a half
  * generated dataset.
@@ -80,6 +92,18 @@ function canonicalize(value) {
 
 function pad(value, width) {
   return String(value).padStart(width, "0");
+}
+
+/** Deterministic uint32 PRNG; the only entropy source in event-stream mode. */
+function mulberry32(seed) {
+  let state = seed >>> 0;
+  return () => {
+    state = (state + 0x6d2b79f5) >>> 0;
+    let value = state;
+    value = Math.imul(value ^ (value >>> 15), value | 1);
+    value ^= value + Math.imul(value ^ (value >>> 7), value | 61);
+    return (value ^ (value >>> 14)) >>> 0;
+  };
 }
 
 function provenance() {
@@ -207,26 +231,196 @@ function countBy(records, key) {
   return counts;
 }
 
+const EVENT_STREAM_BASELINE = "abcdef0123456789";
+const EVENT_STREAM_MONTH = FIXED_TIMESTAMP.slice(0, 7);
+
+function eventStreamOperationId(index) {
+  return `ledger_op${pad(index + 1, 7)}`;
+}
+
+/** Mirrors packages/core/src/ledger/repository.ts serializeJsonl. */
+function serializeJsonl(records) {
+  if (records.length === 0) return "";
+  return `${records.map((record) => canonicalize(record)).join("\n")}\n`;
+}
+
+function makeEventStreamEvent(operationId, sequence, random) {
+  return {
+    protocol_version: PROTOCOL_VERSION,
+    record_kind: "event",
+    event_id: `event_${operationId.slice(7)}_s${pad(sequence, 7)}`,
+    event_type: "OperationStarted",
+    project_id: "project_perf",
+    iteration_id: ITERATION_ID,
+    workflow_operation_id: `workflow_${operationId.slice(7)}`,
+    ledger_operation_id: operationId,
+    sequence,
+    timestamp: FIXED_TIMESTAMP,
+    payload: { nonce: pad(random().toString(16), 8) },
+  };
+}
+
+/** Mirrors buildManifest in packages/core/src/ledger/transaction.ts. */
+function makeEventStreamManifest(operationId, sequence, eventFile, eventFileDigest) {
+  const content = {
+    protocol_version: PROTOCOL_VERSION,
+    record_kind: "ledger_operation",
+    ledger_operation_id: operationId,
+    workflow_operation_id: `workflow_${operationId.slice(7)}`,
+    attempt_id: `attempt_${operationId.slice(7)}`,
+    baseline_commit: EVENT_STREAM_BASELINE,
+    sequence,
+    artifact_digests: [],
+    edge_file: `ledger/edges/${EVENT_STREAM_MONTH}/${operationId}.jsonl`,
+    event_file: eventFile,
+    edge_file_digest: sha256Hex(""),
+    event_file_digest: eventFileDigest,
+  };
+  return { ...content, committed_at: FIXED_TIMESTAMP, digest: sha256Hex(canonicalize(content)) };
+}
+
+/**
+ * Emit `<files>` committed manifest-shard pairs carrying `<events>` events in
+ * total, distributed round-robin so every shard differs by at most one event.
+ */
+function generateEventStreamFiles(options) {
+  const random = mulberry32(options.seed);
+  const base = Math.floor(options.events / options.files);
+  const remainder = options.events % options.files;
+  const entries = [];
+  const manifestDigests = [];
+  for (let index = 0; index < options.files; index += 1) {
+    const operationId = eventStreamOperationId(index);
+    const count = base + (index < remainder ? 1 : 0);
+    const events = [];
+    for (let sequence = 1; sequence <= count; sequence += 1) {
+      events.push(makeEventStreamEvent(operationId, sequence, random));
+    }
+    const eventContent = serializeJsonl(events);
+    const eventFile = `events/${EVENT_STREAM_MONTH}/${operationId}.jsonl`;
+    const manifest = makeEventStreamManifest(
+      operationId,
+      index + 1,
+      eventFile,
+      sha256Hex(eventContent),
+    );
+    manifestDigests.push(manifest.digest);
+    entries.push(
+      {
+        path: `.harness/ledger/operations/${operationId}.json`,
+        content: `${JSON.stringify(manifest)}\n`,
+      },
+      { path: `.harness/${eventFile}`, content: eventContent },
+      { path: `.harness/ledger/edges/${EVENT_STREAM_MONTH}/${operationId}.jsonl`, content: "" },
+    );
+  }
+  return { entries, manifestDigests };
+}
+
+function generateEventStreamDataset(options) {
+  const { entries, manifestDigests } = generateEventStreamFiles(options);
+  const metadata = {
+    name: "event-stream-performance-dataset",
+    generator: "scripts/generate-performance-dataset.mjs",
+    version: 1,
+    mode: "event-stream",
+    layout: options.layout,
+    seed: options.seed,
+    event_count: options.events,
+    file_count: options.files,
+    shard_month: EVENT_STREAM_MONTH,
+    dataset_digest: sha256Hex(manifestDigests.join(":")),
+  };
+  entries.push({
+    path: "event-stream-dataset.json",
+    content: `${JSON.stringify(metadata, null, 2)}\n`,
+  });
+
+  const temporary = `${options.out}.tmp-${String(process.pid)}`;
+  rmSync(temporary, { recursive: true, force: true });
+  for (const entry of entries) {
+    const path = join(temporary, entry.path);
+    mkdirSync(dirname(path), { recursive: true });
+    writeFileSync(path, entry.content, "utf8");
+  }
+  publishAtomically(temporary, options.out, "event-stream-dataset.json");
+}
+
+const GRAPH_MODE_DEFAULT_OUT = join(
+  resolve(dirname(fileURLToPath(import.meta.url)), ".."),
+  "node_modules",
+  ".cache",
+  "universal-harness",
+  "performance-dataset",
+);
+
+function parseInteger(name, value) {
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed < 1) {
+    throw new Error(`${name} requires a positive integer, got: ${value}`);
+  }
+  return parsed;
+}
+
 function parseArgs(argv) {
-  const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
   const options = {
-    out: join(repoRoot, "node_modules", ".cache", "universal-harness", "performance-dataset"),
+    mode: "graph",
+    out: GRAPH_MODE_DEFAULT_OUT,
+    events: 1000,
+    files: 1,
+    layout: "custom",
+    seed: 1,
   };
   for (let index = 0; index < argv.length; index += 1) {
-    if (argv[index] === "--out") {
-      const value = argv[index + 1];
-      if (value === undefined) throw new Error("--out requires a directory argument");
-      options.out = resolve(value);
+    const argument = argv[index];
+    const equalAt = argument.indexOf("=");
+    const flag = equalAt === -1 ? argument : argument.slice(0, equalAt);
+    let inline = equalAt === -1 ? undefined : argument.slice(equalAt + 1);
+    const value = () => {
+      if (inline !== undefined) return inline;
+      const next = argv[index + 1];
+      if (next === undefined) throw new Error(`${flag} requires an argument`);
       index += 1;
+      return next;
+    };
+    if (flag === "--out") {
+      options.out = resolve(value());
+    } else if (flag === "--mode") {
+      options.mode = value();
+      if (options.mode !== "graph" && options.mode !== "event-stream") {
+        throw new Error(`unknown mode: ${options.mode}`);
+      }
+    } else if (flag === "--events") {
+      options.events = parseInteger("--events", value());
+    } else if (flag === "--files") {
+      options.files = parseInteger("--files", value());
+    } else if (flag === "--seed") {
+      options.seed = parseInteger("--seed", value());
+    } else if (flag === "--layout") {
+      options.layout = value();
+      if (options.layout !== "e" && options.layout !== "f" && options.layout !== "custom") {
+        throw new Error(`unknown layout: ${options.layout}`);
+      }
     } else {
-      throw new Error(`unknown argument: ${argv[index]}`);
+      throw new Error(`unknown argument: ${argument}`);
     }
   }
   return options;
 }
 
-function main() {
-  const options = parseArgs(process.argv.slice(2));
+function publishAtomically(temporary, out, marker) {
+  try {
+    rmSync(out, { recursive: true, force: true });
+    renameSync(temporary, out);
+  } catch (error) {
+    // A concurrent worker may have published an identical dataset first;
+    // deterministic content makes that equivalent to publishing ourselves.
+    rmSync(temporary, { recursive: true, force: true });
+    if (!existsSync(join(out, marker))) throw error;
+  }
+}
+
+function generateGraphDataset(options) {
   const nodes = generateNodes();
   const edges = generateEdges();
   const nodesContent = `${JSON.stringify(nodes)}\n`;
@@ -253,20 +447,21 @@ function main() {
   writeFileSync(join(temporary, "nodes.json"), nodesContent, "utf8");
   writeFileSync(join(temporary, "edges.json"), edgesContent, "utf8");
   writeFileSync(join(temporary, "manifest.json"), manifestContent, "utf8");
-  try {
-    rmSync(options.out, { recursive: true, force: true });
-    renameSync(temporary, options.out);
-  } catch (error) {
-    // A concurrent worker may have published an identical dataset first;
-    // deterministic content makes that equivalent to publishing ourselves.
-    rmSync(temporary, { recursive: true, force: true });
-    if (!existsSync(join(options.out, "manifest.json"))) throw error;
-  }
+  publishAtomically(temporary, options.out, "manifest.json");
 
   const check = JSON.parse(readFileSync(join(options.out, "manifest.json"), "utf8"));
   process.stdout.write(
     `${JSON.stringify({ out: options.out, node_count: check.node_count, edge_count: check.edge_count, dataset_digest: check.dataset_digest })}\n`,
   );
+}
+
+function main() {
+  const options = parseArgs(process.argv.slice(2));
+  if (options.mode === "event-stream") {
+    generateEventStreamDataset(options);
+    return;
+  }
+  generateGraphDataset(options);
 }
 
 main();

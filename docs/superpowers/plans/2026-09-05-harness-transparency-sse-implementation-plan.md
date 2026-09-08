@@ -4,7 +4,7 @@
 
 **Goal:** 让已提交决定、状态流转和指定版本产出可靠可见，修复事件读取正确性并实现有界共享 SSE。
 
-**进度说明（2026-09-08）：** 共享事件读取基础修复与产出盘点已在[运行优化计划](2026-09-08-operational-optimization-plan.md)中落实；原 Task 1 的完整规模/RSS 门槛和其余任务仍未完成。本计划复选框不因共享子集通过而整体勾选。
+**进度说明（2026-09-08）：** 共享事件读取基础修复与产出盘点已在[运行优化计划](2026-09-08-operational-optimization-plan.md)中落实。同日 Task 1 Step 1–5 已补齐并验证：新增表征/RED 测试 10 项（逆序 id 分页、整批原子可见与重试去重、view 精确分页断言、5 类 writer 缓存场景、坏行不隐藏后续行），CLI watch 增加 reset 提示与 JSON 结构化输出（人类/JSON 模式各 1 项测试），性能门槛按 §7.3 落地为 `tests/performance/event-stream-incremental.test.ts` 与 `scripts/generate-performance-dataset.mjs --mode=event-stream`，机器样本存 [2026-09-08-event-stream-perf.json](../../evidence/2026-09-08-event-stream-perf.json)（F=1万 p95 155ms、10万事件 RSS +14MiB）。Step 6 提交与评审未执行。Task 2–6 复选框不因上述进展勾选。
 
 **Architecture:** Ledger manifest 决定权威可见性，Live Spool 承载实时观察；FileEventStream 复用 core 校验并维护内存 position 索引。Dashboard Hub 共享源刷新、分页追平和有界扇出；产出正文通过已有读接口的受控扩展提供。
 
@@ -12,7 +12,7 @@
 
 **Spec:** [开发过程透明化与 SSE 呈现设计](../specs/2026-09-05-harness-transparency-sse-design.md)
 
-**Status:** 2026-09-08 已按评审修订；实施未开始。用户授权本轮文档修订，不代表任务已经完成。
+**Status:** 2026-09-08 已按评审修订。Task 1 Step 1–5 已实施并验证（证据见下方进度说明），Step 6 的提交与独立评审尚未执行；Task 2–6 未开始。
 
 **Baseline:** `2084617`；原始两份文档未跟踪，`teach/` 为无关未跟踪目录。执行时先核对最新 Git 状态；已有变更不覆盖、不顺手提交。
 
@@ -95,7 +95,7 @@ interface IncrementalEventReader extends EventStreamPort {
 `read(query)`为单消费者便捷入口：refreshView后read。Hub每轮只调用一次refreshView，再共享无I/O的view；
 view旧代际失效可检测，不对外暴露position解码。缓存索引的并发更新由读取模块串行化。
 
-- [ ] **Step 1: 表征测试与RED分开提交内容**
+- [x] **Step 1: 表征测试与RED分开提交内容**
 
 原正确行为：过滤、合法分页、limit=1..500、live→ledger事实取代、损坏Live行不生成终态。
 新RED必须包含评审复现及完整尾行修复；测试用真实临时Ledger/Spool，不只mock数组。
@@ -119,7 +119,7 @@ process/reader重启generation失效，以及已淘汰Live显示缺口。旧实�
 pnpm exec vitest run --config vitest.workspace.ts packages/runtime/test/observability/event-stream.test.ts tests/fault/event-stream-recovery.test.ts
 ```
 
-- [ ] **Step 2: 用提交边界故障证明可见性，再实现共享校验**
+- [x] **Step 2: 用提交边界故障证明可见性，再实现共享校验**
 
 ```ts
 const hooks = {
@@ -138,7 +138,7 @@ expect(
 成功提交后整批可见；重试只可见一次。验证manifest缺失、坏digest、已知坏Schema、跨operation事件；
 已提交分片坏数据必须报错，orphan不可见。core helper复用`readShardRecords`的现有实现和错误类型。
 
-- [ ] **Step 3: 实现v2 position索引与有界查询**
+- [x] **Step 3: 实现v2 position索引与有界查询**
 
 ```ts
 const view = await stream.refreshView();
@@ -156,7 +156,7 @@ expect(rest.reset).toBeUndefined();
 Live取代保留旧cursor锚点并追加权威版本；同generation位置不复用。数组/Map索引支持按页查找，
 空轮询不重新排序历史。CLI watch不自行解码cursor，遇reset明确提示并重读，JSON模式保留机器输出约定。
 
-- [ ] **Step 4: 实现文件缓存，并逐个证明writer场景**
+- [x] **Step 4: 实现文件缓存，并逐个证明writer场景**
 
 ```ts
 // 同一临时文件先写前半行、读取，再补齐后半行；只在第二次读取出现完整事件。
@@ -171,7 +171,7 @@ expect((await stream.read()).items.map((item) => item.id)).toEqual([
 Ledger immutable shard整体验证；Live byte offset与尾Buffer分离。core的来源验证不能被“缓存命中”绕过。
 使用fs/校验探针统计真实读取与解析次数；不把stat次数记为内容读取字节。
 
-- [ ] **Step 5: 现在执行性能测试，而非等Task 6**
+- [x] **Step 5: 现在执行性能测试，而非等Task 6**
 
 扩展既有`generate-performance-dataset.mjs`，新增event-stream模式、固定seed、E/F布局和临时输出目录。
 将设计§7.3的20次预热、200次采样、两类布局、RSS和p95阈值直接编码为断言；保存机器样本供Task 6使用。

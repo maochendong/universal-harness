@@ -266,6 +266,19 @@ export async function runWatchCommand(
   const onInterrupt = (): void => {
     stopped = true;
   };
+  const emitReset = (): void => {
+    if (context.json) {
+      context.io.writeStderr(
+        `${canonicalizeJson({
+          record_kind: "stream_reset",
+          message: "event stream reset; live history may have gaps",
+        })}\n`,
+      );
+      return;
+    }
+    const notice = "↻ event stream reset; live history may have gaps, re-reading";
+    context.io.writeStderr(color ? `${YELLOW}${notice}${RESET}\n` : `${notice}\n`);
+  };
   if (follow) {
     process.once("SIGINT", onInterrupt);
     const deadline =
@@ -277,7 +290,14 @@ export async function runWatchCommand(
         await sleep(resolved.pollIntervalMs);
         ticks += 1;
         const page = await stream.read({ limit: 500, ...(cursor === undefined ? {} : { cursor }) });
-        cursor = page.cursor ?? cursor;
+        if (page.reset) {
+          // The opaque cursor stays undecoded: on reset the page already holds
+          // the fresh re-read, so resume from the cursor the reader gives us.
+          emitReset();
+          cursor = page.cursor ?? page.headCursor;
+        } else {
+          cursor = page.cursor ?? cursor;
+        }
         for (const item of page.items) {
           operations.add(item.event.workflow_operation_id);
           emit(item.event);

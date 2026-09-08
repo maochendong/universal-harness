@@ -5,13 +5,14 @@ import {
   mkdtempSync,
   rmSync,
   renameSync,
+  utimesSync,
   writeFileSync,
   readFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { LedgerRepository } from "@universal-harness-internal/core";
+import { canonicalizeJson, LedgerRepository, type LifecycleEvent } from "@universal-harness-internal/core";
 
 import { FileEventStream, FileLiveSpool, readLiveObservations } from "../../src/index.js";
 
@@ -22,6 +23,8 @@ function fixture() {
   roots.push(root);
   return { root, stream: new FileEventStream(root), spool: new FileLiveSpool(root) };
 }
+const livePath = (root: string): string =>
+  join(root, ".harness/cache/event-stream/stream_test/segment-000001.jsonl");
 function append(spool: FileLiveSpool, key: string, at = timestamp) {
   return spool.append({
     streamId: "stream_test",
@@ -241,5 +244,205 @@ describe("event stream recovery", () => {
     const removed = await stream.read({ cursor: promoted.cursor });
     expect(removed.reset).toBe(true);
     expect(removed.items.every((item) => item.source === "live")).toBe(true);
+  });
+
+  it("pages a committed batch by numeric sequence even when event ids sort in reverse", async () => {
+    const { root, stream } = fixture();
+    const repository = new LedgerRepository({
+      projectRoot: root,
+      readBaseline: () => "abcdef0123456789",
+      now: () => timestamp,
+    });
+    await repository.commit({
+      ledger_operation_id: "ledger_reverse_ids",
+      workflow_operation_id: "workflow_test",
+      attempt_id: "attempt_test",
+      expected_baseline: "abcdef0123456789",
+      artifacts: [],
+      edges: [],
+      events: Array.from({ length: 12 }, (_, index): LifecycleEvent => {
+        const sequence = index + 1;
+        return {
+          protocol_version: "1.0.0",
+          record_kind: "event",
+          // Descending ids: lexicographic order is the reverse of sequence order.
+          event_id: `event_${String(12 - index).padStart(3, "0")}`,
+          event_type: "OperationStarted",
+          project_id: "project_test",
+          iteration_id: "iteration_test",
+          workflow_operation_id: "workflow_test",
+          ledger_operation_id: "ledger_reverse_ids",
+          sequence,
+          timestamp,
+          payload: {},
+        };
+      }),
+    });
+    const seen: number[] = [];
+    let cursor: string | undefined;
+    for (let pageNumber = 0; pageNumber < 20; pageNumber += 1) {
+      const page = await stream.read({ limit: 1, ...(cursor ? { cursor } : {}) });
+      if (page.items.length === 0) break;
+      seen.push(page.items[0]!.event.sequence);
+      cursor = page.cursor;
+    }
+    expect(seen).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]);
+  });
+
+  it("exposes a committed batch atomically and exactly once after a retried commit", async () => {
+    const { root, stream } = fixture();
+    let fail = true;
+    const repository = new LedgerRepository({
+      projectRoot: root,
+      readBaseline: () => "abcdef0123456789",
+      now: () => timestamp,
+      hooks: {
+        atBoundary(boundary) {
+          if (fail && boundary === "shards.renamed") throw new Error("fault_before_manifest");
+        },
+      },
+    });
+    const makeInput = () => ({
+      ledger_operation_id: "ledger_atomic",
+      workflow_operation_id: "workflow_test",
+      attempt_id: "attempt_test",
+      expected_baseline: "abcdef0123456789",
+      artifacts: [],
+      edges: [],
+      events: [1, 2, 3].map(
+        (sequence): LifecycleEvent => ({
+          protocol_version: "1.0.0",
+          record_kind: "event",
+          event_id: `event_atomic_${String(sequence)}`,
+          event_type: "OperationStarted",
+          project_id: "project_test",
+          iteration_id: "iteration_test",
+          workflow_operation_id: "workflow_test",
+          ledger_operation_id: "ledger_atomic",
+          sequence,
+          timestamp,
+          payload: {},
+        }),
+      ),
+    });
+    await expect(repository.commit(makeInput())).rejects.toThrow("fault_before_manifest");
+    expect(repository.operations()).toEqual([]);
+    expect((await stream.read()).items.filter((item) => item.authoritative)).toEqual([]);
+    fail = false;
+    await repository.commit(makeInput());
+    const page = await stream.read({ limit: 500 });
+    const ids = page.items.filter((item) => item.authoritative).map((item) => item.id);
+    expect(ids).toEqual([
+      "ledger:event_atomic_1",
+      "ledger:event_atomic_2",
+      "ledger:event_atomic_3",
+    ]);
+  });
+
+  it("pages a captured view precisely from its first item cursor to its head", async () => {
+    const { stream, spool } = fixture();
+    for (let index = 1; index <= 3; index += 1) append(spool, `key_${String(index)}`);
+    const view = await stream.refreshView();
+    const first = view.read({ limit: 1, untilCursor: view.headCursor });
+    expect(first.itemCursors?.[0]).toBe(first.cursor);
+    const rest = view.read({ cursor: first.cursor, untilCursor: view.headCursor, limit: 500 });
+    expect(rest.reset).toBeUndefined();
+    expect(rest.items.map((item) => item.event.sequence)).toEqual([2, 3]);
+  });
+
+  it("treats a larger rename replacement as a rewrite, not an append", async () => {
+    const { root, stream, spool } = fixture();
+    const first = append(spool, "key_first");
+    const warm = await stream.read();
+    const path = livePath(root);
+    writeFileSync(
+      `${path}.replacement`,
+      `${canonicalizeJson(first)}\n${canonicalizeJson({ ...first, sequence: 2, observation_key: "key_second" })}\n`,
+    );
+    renameSync(`${path}.replacement`, path);
+    const page = await stream.read({ cursor: warm.cursor });
+    expect(page.reset).toBeUndefined();
+    expect(page.items.map((item) => item.event.sequence)).toEqual([2]);
+    expect((await stream.read()).items).toHaveLength(2);
+  });
+
+  it("rereads a shrunk live file and resets readers anchored past the truncation", async () => {
+    const { root, stream, spool } = fixture();
+    const first = append(spool, "key_first");
+    append(spool, "key_second");
+    const warm = await stream.read();
+    writeFileSync(livePath(root), `${canonicalizeJson(first)}\n`);
+    const page = await stream.read({ cursor: warm.cursor });
+    expect(page.reset).toBe(true);
+    expect(page.items.map((item) => item.event.sequence)).toEqual([1]);
+  });
+
+  it("drops a deleted live file instead of replaying cached records", async () => {
+    const { root, stream, spool } = fixture();
+    append(spool, "key_first");
+    const warm = await stream.read();
+    rmSync(livePath(root));
+    const page = await stream.read({ cursor: warm.cursor });
+    expect(page.reset).toBe(true);
+    expect(page.items).toEqual([]);
+    expect((await stream.read()).items).toEqual([]);
+  });
+
+  it("rereads a live file whose mtime moved backward instead of trusting the byte offset", async () => {
+    const { root, stream, spool } = fixture();
+    const first = append(spool, "key_first");
+    const warm = await stream.read();
+    const path = livePath(root);
+    appendFileSync(
+      path,
+      `${JSON.stringify({ ...first, sequence: 2, observation_key: "key_second" })}\n`,
+    );
+    const past = new Date("2020-01-01T00:00:00.000Z");
+    utimesSync(path, past, past);
+    const page = await stream.read({ cursor: warm.cursor });
+    expect(page.items.map((item) => item.event.sequence)).toEqual([2]);
+    expect((await stream.read()).items).toHaveLength(2);
+  });
+
+  it("rereads a live file rotated between stat and open instead of trusting stale metadata", async () => {
+    const { root, stream, spool } = fixture();
+    const first = append(spool, "key_first");
+    const warm = await stream.read();
+    const path = livePath(root);
+    appendFileSync(
+      path,
+      `${JSON.stringify({ ...first, sequence: 2, observation_key: "key_second" })}\n`,
+    );
+    let swapped = false;
+    const realOpenSync = fs.openSync.bind(fs);
+    vi.spyOn(fs, "openSync").mockImplementation((...args: Parameters<typeof fs.openSync>) => {
+      if (!swapped && String(args[0]) === path) {
+        swapped = true;
+        writeFileSync(
+          `${path}.rotated`,
+          `${canonicalizeJson(first)}\n${canonicalizeJson({ ...first, sequence: 3, observation_key: "key_third" })}\n`,
+        );
+        renameSync(`${path}.rotated`, path);
+      }
+      return realOpenSync(...args);
+    });
+    syncBuiltinESMExports();
+    const page = await stream.read({ cursor: warm.cursor });
+    expect(swapped).toBe(true);
+    expect(page.items.map((item) => item.event.sequence)).toEqual([3]);
+    expect((await stream.read()).items.map((item) => item.event.sequence)).toEqual([1, 3]);
+  });
+
+  it("skips corrupt complete live lines without hiding later valid lines", async () => {
+    const { root, stream, spool } = fixture();
+    append(spool, "key_valid");
+    const path = livePath(root);
+    const valid = readFileSync(path);
+    writeFileSync(
+      path,
+      Buffer.concat([Buffer.from("not json at all\n"), Buffer.from('{"broken":true}\n'), valid]),
+    );
+    const page = await stream.read();
+    expect(page.items.map((item) => item.id)).toEqual(["live:stream_test:1"]);
   });
 });

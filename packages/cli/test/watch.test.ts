@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync, readdirSync } from "node:fs";
+import { mkdirSync, mkdtempSync, realpathSync, renameSync, rmSync, writeFileSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -274,6 +274,79 @@ describe("harness watch", () => {
       expect(lines[1]).toContain("● GateCompleted gate=gate.maven passed=true");
     } finally {
       clearTimeout(appending);
+    }
+  });
+
+  it("announces a stream reset and re-reads while following in human mode", async () => {
+    const root = makeProject();
+    const live = new FileLiveSpool(root).append({
+      streamId: "stream_watch",
+      observationKey: "watch_reset_before",
+      eventType: "RunHeartbeat",
+      projectId: "project_demo",
+      iterationId: "iteration_01M02WWWWWWWWWWWWWWWWWWWWWW",
+      workflowOperationId: "workflow_01M02WWWWWWWWWWWWWWWWWWWWW",
+      timestamp: "2026-08-15T10:00:00.000Z",
+      payload: {},
+    });
+    const captured = captureIo();
+    const replacing = setTimeout(() => {
+      const path = join(root, ".harness/cache/event-stream/stream_watch/segment-000001.jsonl");
+      writeFileSync(
+        `${path}.replacement`,
+        `${JSON.stringify({ ...live, observation_key: "watch_reset_after" })}\n`,
+      );
+      renameSync(`${path}.replacement`, path);
+    }, 60);
+    try {
+      const result = await runWatchCommand(["--follow"], makeContext(captured, false, root), {
+        pollIntervalMs: 20,
+        maxDurationMs: 240,
+      });
+      expect(result.status).toBe("ok");
+      expect(captured.stderr()).toContain("event stream reset");
+      expect(captured.stderr()).toContain("live history may have gaps");
+    } finally {
+      clearTimeout(replacing);
+    }
+  });
+
+  it("emits a machine-readable reset line while following in json mode", async () => {
+    const root = makeProject();
+    const live = new FileLiveSpool(root).append({
+      streamId: "stream_watch",
+      observationKey: "watch_reset_before",
+      eventType: "RunHeartbeat",
+      projectId: "project_demo",
+      iterationId: "iteration_01M02WWWWWWWWWWWWWWWWWWWWWW",
+      workflowOperationId: "workflow_01M02WWWWWWWWWWWWWWWWWWWWW",
+      timestamp: "2026-08-15T10:00:00.000Z",
+      payload: {},
+    });
+    const captured = captureIo();
+    const replacing = setTimeout(() => {
+      const path = join(root, ".harness/cache/event-stream/stream_watch/segment-000001.jsonl");
+      writeFileSync(
+        `${path}.replacement`,
+        `${JSON.stringify({ ...live, observation_key: "watch_reset_after" })}\n`,
+      );
+      renameSync(`${path}.replacement`, path);
+    }, 60);
+    try {
+      const result = await runWatchCommand(["--follow"], makeContext(captured, true, root), {
+        pollIntervalMs: 20,
+        maxDurationMs: 240,
+      });
+      expect(result.status).toBe("ok");
+      const lines = captured
+        .stderr()
+        .split("\n")
+        .filter((line) => line !== "")
+        .map((line) => JSON.parse(line) as Record<string, unknown>);
+      const resets = lines.filter((line) => line["record_kind"] === "stream_reset");
+      expect(resets).toHaveLength(1);
+    } finally {
+      clearTimeout(replacing);
     }
   });
 
