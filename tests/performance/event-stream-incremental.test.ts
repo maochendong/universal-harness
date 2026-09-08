@@ -15,7 +15,9 @@ import { FileEventStream } from "../../packages/runtime/src/index.js";
  * `scripts/generate-performance-dataset.mjs --mode=event-stream` at a fixed
  * seed. Every scenario warms 20 rounds and samples 200, matching the spec's
  * measurement definition. Machine-readable samples are written to
- * `docs/evidence/<date>-event-stream-perf.json` for Task 6 to reference.
+ * `docs/evidence/<date>-event-stream-perf.json` only when
+ * `HARNESS_PERF_EVIDENCE=1` is set, so routine local/CI runs never overwrite
+ * the committed reference sample that Task 6 references.
  *
  * The "4 caught-up clients share one scan" budget is not asserted here: the
  * EventStreamHub is Task 2 and does not exist yet.
@@ -73,6 +75,7 @@ afterAll(() => {
       },
     ],
   };
+  if (process.env.HARNESS_PERF_EVIDENCE !== "1") return;
   const date = new Date().toISOString().slice(0, 10);
   const path = join(repoRoot, "docs/evidence", `${date}-event-stream-perf.json`);
   mkdirSync(dirname(path), { recursive: true });
