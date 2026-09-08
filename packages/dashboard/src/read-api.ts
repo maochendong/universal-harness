@@ -20,15 +20,20 @@ import {
   type TraversalOptions,
 } from "@universal-harness-internal/graph";
 import {
-  ApprovalSummaryError,
+  ARTIFACT_LINK_LABEL,
+  ArtifactReaderError,
+  artifactHref,
   collectProjectStatus,
   latestModelInvocation,
   projectFindingGroups,
-  readApprovalSummary,
+  readArtifactView,
   readModelInvocationRecords,
   readPendingApprovalRequests,
   type ApprovalRequestRecord,
-  type ApprovalSummaryRead,
+  type ArtifactKind,
+  type ArtifactLink,
+  type ArtifactScope,
+  type ArtifactView,
 } from "@universal-harness-internal/runtime";
 
 import { DashboardProblem } from "./problem.js";
@@ -37,6 +42,7 @@ import {
   presentEdge,
   presentApproval,
   presentApprovalDecision,
+  presentArtifactView,
   presentFindingGroup,
   presentModelInvocation,
   presentNode,
@@ -53,20 +59,13 @@ export interface DashboardPage<T> {
 }
 
 /**
- * Safe content view of one committed artifact (spec §9.2): the reference, the
- * committing provenance and a redacted presentation-ready content view. The
+ * Safe content view of one committed artifact (spec §9.2): the runtime
+ * ArtifactView (reference, committing provenance, redacted content view)
+ * plus the dashboard presentation carrying verified input links. The
  * `safe_view` marker declares that `content` is a display view, never raw
  * artifact bytes.
  */
-export interface DashboardArtifactView {
-  readonly ref: {
-    readonly kind: string;
-    readonly scope: "artifact" | "manifest";
-    readonly digest: string;
-  };
-  readonly provenance: ApprovalSummaryRead["provenance"];
-  readonly content: unknown;
-  readonly safe_view: true;
+export interface DashboardArtifactView extends ArtifactView {
   readonly presentations: PresentationMap;
 }
 
@@ -97,16 +96,18 @@ export interface DashboardReadApi {
     readonly limit?: number;
   }): DashboardPage<ApprovalRequestRecord>;
   /**
-   * Controlled read of one committed artifact by manifest digest (spec §9.2).
-   * Task 4 whitelists `approval_decision` at artifact scope only; Task 5
-   * extends the kind/scope table. Unknown committed references are 404,
-   * disallowed combinations 400, and unverifiable bytes a typed error.
+   * Controlled read of one committed artifact version (spec §9.2): all 15
+   * fixed kinds at their whitelisted scope, with collection/text paging.
+   * Unknown committed references are 404, disallowed combinations 400, and
+   * unverifiable bytes 422.
    */
   artifactView(query: {
     readonly digest: string;
     readonly kind: string;
     readonly scope: string;
-  }): DashboardArtifactView;
+    readonly cursor?: string;
+    readonly limit?: number;
+  }): Promise<DashboardArtifactView>;
   /** PG-8: model invocation observability, latest revision per invocation. */
   modelInvocations(query: {
     readonly cursor?: string;
@@ -433,21 +434,22 @@ export function createDashboardReadApi(
         presentations: presentationMap(items.map((item) => presentApproval({ ...item }))),
       };
     },
-    artifactView: (query) => {
-      if (query.kind !== "approval_decision" || query.scope !== "artifact") {
-        throw new DashboardProblem(
-          400,
-          "invalid_query",
-          "Bad Request",
-          "only kind=approval_decision at scope=artifact is readable",
-        );
-      }
-      let read: ApprovalSummaryRead;
+    artifactView: async (query) => {
+      let view: ArtifactView;
       try {
-        read = readApprovalSummary(projectRoot, query.digest);
+        view = await readArtifactView(projectRoot, {
+          digest: query.digest,
+          kind: query.kind as ArtifactKind,
+          scope: query.scope as ArtifactScope,
+          ...(query.cursor === undefined ? {} : { cursor: query.cursor }),
+          ...(query.limit === undefined ? {} : { limit: query.limit }),
+        });
       } catch (error) {
-        if (error instanceof ApprovalSummaryError) {
-          if (error.kind === "approval_decision_not_found") {
+        if (error instanceof ArtifactReaderError) {
+          if (error.kind === "invalid_artifact_query") {
+            throw new DashboardProblem(400, "invalid_query", "Bad Request", error.message);
+          }
+          if (error.kind === "artifact_not_found") {
             throw new DashboardProblem(404, "artifact_not_found", "Not Found", error.message);
           }
           throw new DashboardProblem(
@@ -459,12 +461,22 @@ export function createDashboardReadApi(
         }
         throw error;
       }
+      // The card links only to the verified committed inputs; the view itself
+      // is already bound to its own digest in ref/provenance.
+      const links: readonly ArtifactLink[] = view.provenance.input_refs.map((ref) => ({
+        label_zh: ARTIFACT_LINK_LABEL,
+        ref,
+        href: artifactHref(ref),
+      }));
+      // Approval decisions keep the Task 4 decision card (keyed by
+      // approval_id) so the live approval flow renders unchanged.
+      const presentation =
+        view.ref.kind === "approval_decision"
+          ? presentApprovalDecision(view.content as Parameters<typeof presentApprovalDecision>[0])
+          : presentArtifactView(view, links);
       return {
-        ref: { kind: "approval_decision", scope: "artifact", digest: query.digest },
-        provenance: read.provenance,
-        content: read.summary,
-        safe_view: true,
-        presentations: presentationMap([presentApprovalDecision(read.summary)]),
+        ...view,
+        presentations: presentationMap([presentation]),
       };
     },
     modelInvocations: (query) => {

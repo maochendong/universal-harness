@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.universal-harness.dev/1.4/artifact-available-payload.schema.json",
+  "additionalProperties": false,
+  "type": "object",
+  "required": ["artifact_kind", "record_digest", "summary"],
+  "properties": {
+    "artifact_kind": {
+      "anyOf": [
+        { "const": "approval_decision", "type": "string" },
+        { "const": "prd", "type": "string" },
+        { "const": "design_set", "type": "string" },
+        { "const": "plan", "type": "string" },
+        { "const": "context_manifest", "type": "string" },
+        { "const": "run_summary", "type": "string" },
+        { "const": "gate_result", "type": "string" },
+        { "const": "evidence", "type": "string" },
+        { "const": "evaluation", "type": "string" },
+        { "const": "snapshot", "type": "string" },
+        { "const": "tdd_artifact", "type": "string" },
+        { "const": "finding_group", "type": "string" },
+        { "const": "wave_result", "type": "string" },
+        { "const": "integration_record", "type": "string" },
+        { "const": "task_lease", "type": "string" }
+      ]
+    },
+    "record_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
+    "summary": { "maxLength": 200, "type": "string" }
+  }
+}

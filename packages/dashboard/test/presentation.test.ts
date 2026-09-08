@@ -1,12 +1,13 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  presentApproval,
+  presentApprovalDecision,
+  presentArtifactView,
   presentEdge,
   presentEvent,
   presentFindingGroup,
   presentNode,
-  presentApproval,
-  presentApprovalDecision,
   presentSemanticProposal,
   presentationMap,
   presentationKey,
@@ -745,5 +746,72 @@ describe("approval decision presentation from the shared summary", () => {
       fallback: false,
     });
     expect(JSON.stringify(presentation)).not.toContain("actor");
+  });
+});
+
+describe("artifact links and versioned views (spec §9.2/§9.3)", () => {
+  const decisionDigest = "f".repeat(64);
+  const link = {
+    label_zh: "查看对应版本产出",
+    ref: { kind: "approval_decision", scope: "artifact" as const, digest: decisionDigest },
+    href: `/api/v1/artifacts/${decisionDigest}?kind=approval_decision&scope=artifact`,
+  };
+  const decidedItem = {
+    id: "ledger:event_d2",
+    source: "ledger",
+    authoritative: true,
+    event: {
+      event_type: "ApprovalDecided",
+      timestamp: "2026-09-05T00:00:00.000Z",
+      payload: {
+        request_id: "approval_request_02",
+        approval_id: "approval_decision_02",
+        decision: "approve",
+        object_digest: "a".repeat(64),
+        decision_digest: decisionDigest,
+        decided_at: "2026-09-05T00:00:00.000Z",
+      },
+    },
+  };
+
+  it("attaches verified artifact links to an event presentation", () => {
+    const presentation = presentEvent(decidedItem, [link]);
+    expect(presentation.artifact_links).toEqual([link]);
+  });
+
+  it("omits artifact_links entirely when no link is resolved", () => {
+    expect(presentEvent(decidedItem).artifact_links).toBeUndefined();
+    expect(presentEvent(decidedItem, []).artifact_links).toBeUndefined();
+  });
+
+  it("presents a versioned artifact view bound to its committing digest", () => {
+    const presentation = presentArtifactView(
+      {
+        ref: { kind: "plan", scope: "artifact", digest: "b".repeat(64) },
+        content: { plan_id: "plan_01", summary: "旧版迭代计划", tasks: { items: [], total: 0 } },
+      },
+      [link],
+    );
+    expect(presentation).toMatchObject({
+      entity_id: "b".repeat(64),
+      binding_digest: "b".repeat(64),
+      type_label_zh: "执行计划",
+      status_label_zh: "已提交",
+      description_zh: "旧版迭代计划",
+      fallback: false,
+    });
+    expect(presentation.artifact_links).toEqual([link]);
+  });
+
+  it("falls back to a generic description for views without a summary", () => {
+    const presentation = presentArtifactView(
+      {
+        ref: { kind: "gate_result", scope: "artifact", digest: "c".repeat(64) },
+        content: { results: { items: [], total: 3 } },
+      },
+      [],
+    );
+    expect(presentation.description_zh).toBe("该门禁结果已按提交版本安全读取。");
+    expect(presentation.artifact_links).toBeUndefined();
   });
 });

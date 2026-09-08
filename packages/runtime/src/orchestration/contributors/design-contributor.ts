@@ -11,6 +11,7 @@ import {
   readCommittedOperations,
   readManagedManifest,
   resolveHarnessPath,
+  sha256Hex,
   validateDesignReviewOutput,
   type DesignProposalPort,
   type DesignReviewDraft,
@@ -29,6 +30,7 @@ import {
 
 import { resumeCommandFor } from "../../approval/interaction.js";
 import { readApprovalRequests } from "../../approval/request.js";
+import { artifactAvailableEvent } from "../lifecycle-events.js";
 import { PHASE_CHECKPOINT_BOUNDARY } from "../phases.js";
 import {
   artifactExists,
@@ -196,6 +198,7 @@ async function commitAcceptedDesign(
       timestamp: nowOf(ctx.deps),
     },
   });
+  const designSetContent = `${canonicalizeJson(records.designSet)}\n`;
   await commitArtifacts(
     ctx.deps,
     ctx.workflowOperationId,
@@ -203,7 +206,7 @@ async function commitAcceptedDesign(
     [
       {
         path: `artifacts/design-sets/${records.designSet.id}/${String(records.designSet.revision)}.json`,
-        content: `${canonicalizeJson(records.designSet)}\n`,
+        content: designSetContent,
       },
       ...records.assets.map((asset) => ({
         path: `${ASSET_DIRECTORY[asset.type] ?? "artifacts/design-artifacts"}/${asset.id}/${String(asset.revision)}.json`,
@@ -211,6 +214,16 @@ async function commitAcceptedDesign(
       })),
     ],
     [...records.edges],
+    [
+      {
+        ...artifactAvailableEvent({
+          artifactKind: "design_set",
+          recordDigest: sha256Hex(designSetContent),
+          summary: `设计集 ${records.designSet.id} 第 ${String(records.designSet.revision)} 版已接受`,
+        }),
+        iterationId: ctx.iterationId,
+      },
+    ],
   );
   ctx.designSet = records.designSet;
   await ctx.engine.commitCheckpoint(ctx.workflowOperationId, {

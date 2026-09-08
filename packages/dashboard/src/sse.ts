@@ -1,4 +1,8 @@
-import type { EventStreamItem, EventStreamPort } from "@universal-harness-internal/runtime";
+import type {
+  ArtifactLink,
+  EventStreamItem,
+  EventStreamPort,
+} from "@universal-harness-internal/runtime";
 
 import type { EventStreamHubInterface, HubDelivery } from "./event-hub.js";
 import { presentApproval, presentEvent, presentationMap } from "./presentation.js";
@@ -32,6 +36,12 @@ export interface StreamDashboardEventsOptions {
   readonly pollIntervalMs?: number;
   /** Slow-socket budget for the Hub path; the connection closes afterwards. */
   readonly drainTimeoutMs?: number;
+  /**
+   * Resolves verified versioned-artifact links for one event (spec §9.3).
+   * Failures are swallowed by the caller into "no links" — a link lookup must
+   * never break event delivery.
+   */
+  readonly artifactLinks?: (item: EventStreamItem) => readonly ArtifactLink[];
   readonly now?: () => number;
   readonly wait?: (milliseconds: number, signal: AbortSignal) => Promise<void>;
 }
@@ -118,8 +128,20 @@ async function writeBounded(
   });
 }
 
-function eventFrame(item: EventStreamItem, cursor: string): string {
-  const presentations = [presentEvent(item)];
+function eventFrame(
+  item: EventStreamItem,
+  cursor: string,
+  artifactLinks?: (item: EventStreamItem) => readonly ArtifactLink[],
+): string {
+  let links: readonly ArtifactLink[] = [];
+  if (artifactLinks !== undefined) {
+    try {
+      links = artifactLinks(item);
+    } catch {
+      links = [];
+    }
+  }
+  const presentations = [presentEvent(item, links)];
   if (
     item.event.event_type === "ApprovalRequired" &&
     typeof item.event.payload === "object" &&
@@ -199,7 +221,7 @@ async function streamHubEvents(
         await writeBounded(response, signal, ERROR_FRAME, drainTimeoutMs);
         return;
       }
-      const frame = eventFrame(delivery.item, delivery.cursor);
+      const frame = eventFrame(delivery.item, delivery.cursor, options.artifactLinks);
       if (!frameWithinLimit(frame)) {
         await writeBounded(response, signal, OVERSIZE_FRAME, drainTimeoutMs);
         return;
@@ -268,7 +290,7 @@ export async function streamDashboardEvents(options: StreamDashboardEventsOption
       const next = page.items[0];
       if (next !== undefined && page.cursor !== undefined) {
         cursor = page.cursor;
-        const frame = eventFrame(next, cursor);
+        const frame = eventFrame(next, cursor, options.artifactLinks);
         if (!frameWithinLimit(frame)) {
           await write(response, options.signal, OVERSIZE_FRAME);
           return;

@@ -10,7 +10,7 @@ import {
 } from "@universal-harness-internal/core";
 import { type AgentRunResult } from "@universal-harness-internal/plugin-sdk";
 import { buildFindingGovernanceMetadata } from "../../finding/governance.js";
-import { phaseLifecycleEvents } from "../lifecycle-events.js";
+import { artifactAvailableEvent, phaseLifecycleEvents } from "../lifecycle-events.js";
 import { PHASE_CHECKPOINT_BOUNDARY } from "../phases.js";
 import { type ExecutionBinding } from "../execution-binding.js";
 import {
@@ -334,81 +334,98 @@ export async function evaluateTaskRun(
           }),
       now: nowOf(deps),
     });
-    await commitArtifacts(deps, ctx.workflowOperationId, currentAttemptId(ctx), [
-      {
-        path: `artifacts/evaluations/${result.evidenceId}/${String(result.record["digest"])}.json`,
-        content: `${canonicalizeJson(result.record)}\n`,
-      },
-      ...result.findings.map((finding) => {
-        const evaluationExtensionValue =
-          typeof result.record["extensions"] === "object" && result.record["extensions"] !== null
-            ? (result.record["extensions"] as Record<string, unknown>)["harness.evaluation"]
-            : undefined;
-        const evaluationExtension =
-          typeof evaluationExtensionValue === "object" && evaluationExtensionValue !== null
-            ? (evaluationExtensionValue as Record<string, unknown>)
-            : {};
-        const caseId =
-          typeof evaluationExtension["case_id"] === "string"
-            ? evaluationExtension["case_id"]
-            : `case_${taskId.slice("task_".length)}`;
-        const evidenceDigest = result.record["digest"];
-        const governance = buildFindingGovernanceMetadata({
-          rule: "evaluation/failure",
-          scopePrefix: `project/${readManagedManifest(deps.projectRoot).repository_id}/evaluation/${caseId}`,
-          severity: "blocker",
-          actionability: "human_review",
-          subjectIds: [taskId],
-          subjectDigests:
-            typeof evidenceDigest === "string" && /^[a-f0-9]{64}$/u.test(evidenceDigest)
-              ? [evidenceDigest]
-              : [],
-        });
-        const content = {
-          protocol_version: PROTOCOL_VERSION,
-          record_kind: "feedback",
-          id: finding.id,
-          type: "Finding",
-          iteration_id: ctx.iterationId,
-          status: "proposed",
-          summary: finding.summary,
-          created_at: nowOf(deps),
-          extensions: {
-            "harness.finding": {
-              origin: "evaluation",
-              blocking: true,
-              violates: [taskId],
-              blocks: [ctx.iterationId],
-              evidence: [result.evidenceId],
-              ...governance,
+    const evaluationContent = `${canonicalizeJson(result.record)}\n`;
+    await commitArtifacts(
+      deps,
+      ctx.workflowOperationId,
+      currentAttemptId(ctx),
+      [
+        {
+          path: `artifacts/evaluations/${result.evidenceId}/${String(result.record["digest"])}.json`,
+          content: evaluationContent,
+        },
+        ...result.findings.map((finding) => {
+          const evaluationExtensionValue =
+            typeof result.record["extensions"] === "object" && result.record["extensions"] !== null
+              ? (result.record["extensions"] as Record<string, unknown>)["harness.evaluation"]
+              : undefined;
+          const evaluationExtension =
+            typeof evaluationExtensionValue === "object" && evaluationExtensionValue !== null
+              ? (evaluationExtensionValue as Record<string, unknown>)
+              : {};
+          const caseId =
+            typeof evaluationExtension["case_id"] === "string"
+              ? evaluationExtension["case_id"]
+              : `case_${taskId.slice("task_".length)}`;
+          const evidenceDigest = result.record["digest"];
+          const governance = buildFindingGovernanceMetadata({
+            rule: "evaluation/failure",
+            scopePrefix: `project/${readManagedManifest(deps.projectRoot).repository_id}/evaluation/${caseId}`,
+            severity: "blocker",
+            actionability: "human_review",
+            subjectIds: [taskId],
+            subjectDigests:
+              typeof evidenceDigest === "string" && /^[a-f0-9]{64}$/u.test(evidenceDigest)
+                ? [evidenceDigest]
+                : [],
+          });
+          const content = {
+            protocol_version: PROTOCOL_VERSION,
+            record_kind: "feedback",
+            id: finding.id,
+            type: "Finding",
+            iteration_id: ctx.iterationId,
+            status: "proposed",
+            summary: finding.summary,
+            created_at: nowOf(deps),
+            extensions: {
+              "harness.finding": {
+                origin: "evaluation",
+                blocking: true,
+                violates: [taskId],
+                blocks: [ctx.iterationId],
+                evidence: [result.evidenceId],
+                ...governance,
+              },
             },
-          },
-        };
-        const record = { ...content, digest: contentDigest(content) };
-        const validation = validateSchema("feedback", record);
-        if (!validation.valid) {
-          throw new OrchestrationError(
-            "configuration",
-            `invalid evaluation finding record: ${validation.errors
-              .map((issue) => issue.message)
-              .join("; ")}`,
-          );
-        }
-        return {
-          path: `artifacts/findings/${finding.id}/proposed.json`,
-          content: `${canonicalizeJson(record)}\n`,
-        };
-      }),
-      {
-        path: evaluateArtifactPath(ctx.iterationId, runDigest),
-        content: `${canonicalizeJson({
-          record_kind: "orchestration_evaluate_result",
-          iteration_id: ctx.iterationId,
-          run_digest: runDigest,
-          result,
-        } satisfies EvaluatePhaseArtifact)}\n`,
-      },
-    ]);
+          };
+          const record = { ...content, digest: contentDigest(content) };
+          const validation = validateSchema("feedback", record);
+          if (!validation.valid) {
+            throw new OrchestrationError(
+              "configuration",
+              `invalid evaluation finding record: ${validation.errors
+                .map((issue) => issue.message)
+                .join("; ")}`,
+            );
+          }
+          return {
+            path: `artifacts/findings/${finding.id}/proposed.json`,
+            content: `${canonicalizeJson(record)}\n`,
+          };
+        }),
+        {
+          path: evaluateArtifactPath(ctx.iterationId, runDigest),
+          content: `${canonicalizeJson({
+            record_kind: "orchestration_evaluate_result",
+            iteration_id: ctx.iterationId,
+            run_digest: runDigest,
+            result,
+          } satisfies EvaluatePhaseArtifact)}\n`,
+        },
+      ],
+      [],
+      [
+        {
+          ...artifactAvailableEvent({
+            artifactKind: "evaluation",
+            recordDigest: sha256Hex(evaluationContent),
+            summary: `任务 ${taskId} 的独立评估已提交（${result.passed ? "通过" : "未通过"}）`,
+          }),
+          iterationId: ctx.iterationId,
+        },
+      ],
+    );
   }
   await commitEvaluationGraph(ctx, taskId, run.runId, result);
   return result;

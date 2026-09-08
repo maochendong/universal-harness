@@ -8,6 +8,7 @@ export default defineConfig({
     "dashboard-m3-collaboration.test.ts",
     "dashboard-m4-scheduler.test.ts",
     "dashboard-m4-governed-controls.test.ts",
+    "dashboard-transparency.test.ts",
   ],
   fullyParallel: false,
   workers: 1,

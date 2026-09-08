@@ -30,7 +30,11 @@ import {
   ClarificationQuestionRecordSchema,
 } from "./capture.js";
 import { EdgeSchema } from "./edge.js";
-import { ApprovalDecidedPayloadSchema, EventSchema } from "./event.js";
+import {
+  ApprovalDecidedPayloadSchema,
+  ArtifactAvailablePayloadSchema,
+  EventSchema,
+} from "./event.js";
 import { FeedbackSchema } from "./feedback.js";
 import {
   FeedbackAnalysisInputSchema,
@@ -139,6 +143,7 @@ const validators = new Map<SchemaKey, ValidateFunction>(
 );
 
 const approvalDecidedPayloadValidator = compileAjvSchema(ApprovalDecidedPayloadSchema);
+const artifactAvailablePayloadValidator = compileAjvSchema(ArtifactAvailablePayloadSchema);
 
 /**
  * Semantic validation for the one event type whose payload is authoritative
@@ -157,6 +162,29 @@ function validateApprovalDecidedEvent(value: Record<string, unknown>): Validatio
   }
   if (!approvalDecidedPayloadValidator(value["payload"])) {
     for (const issue of normalizeErrors(approvalDecidedPayloadValidator.errors)) {
+      errors.push({ ...issue, instancePath: `/payload${issue.instancePath}` });
+    }
+  }
+  return errors.length === 0 ? { valid: true, errors: [] } : { valid: false, errors };
+}
+
+/**
+ * Semantic validation for the artifact-navigation event (spec §9.3):
+ * ArtifactAvailable must be written at protocol 1.4.0 and its payload must be
+ * exactly the three bound fields — kind, committed record digest and a
+ * bounded summary. The payload never carries artifact content.
+ */
+function validateArtifactAvailableEvent(value: Record<string, unknown>): ValidationResult {
+  const errors: ValidationIssue[] = [];
+  if (value["protocol_version"] !== PROTOCOL_1_4_VERSION) {
+    errors.push({
+      instancePath: "/protocol_version",
+      keyword: "eventProtocolPin",
+      message: `ArtifactAvailable events must be written at protocol ${PROTOCOL_1_4_VERSION}`,
+    });
+  }
+  if (!artifactAvailablePayloadValidator(value["payload"])) {
+    for (const issue of normalizeErrors(artifactAvailablePayloadValidator.errors)) {
       errors.push({ ...issue, instancePath: `/payload${issue.instancePath}` });
     }
   }
@@ -209,6 +237,15 @@ export function validateSchema(key: SchemaKey, value: unknown): ValidationResult
     (value as Record<string, unknown>)["event_type"] === "ApprovalDecided"
   ) {
     return validateApprovalDecidedEvent(value as Record<string, unknown>);
+  }
+
+  if (
+    key === "event" &&
+    typeof value === "object" &&
+    value !== null &&
+    (value as Record<string, unknown>)["event_type"] === "ArtifactAvailable"
+  ) {
+    return validateArtifactAvailableEvent(value as Record<string, unknown>);
   }
 
   return { valid: true, errors: [] };
@@ -342,14 +379,18 @@ export const PROTOCOL_1_3_SCHEMA_REGISTRY = createDomainSchemaRegistry({
 });
 
 /**
- * Protocol 1.4 (transparency): no new domain record kinds — the only addition
- * is the authoritative ApprovalDecided event payload, whose strict schema is
- * exported so writers and readers share the same six-field contract. The
- * payload carries no raw actor by design.
+ * Protocol 1.4 (transparency): no new domain record kinds — the additions are
+ * the authoritative ApprovalDecided event payload and the ArtifactAvailable
+ * navigation payload, whose strict schemas are exported so writers and
+ * readers share the same contract. Neither payload carries a raw actor or
+ * artifact content.
  */
 export const PROTOCOL_1_4_SCHEMA_REGISTRY = createDomainSchemaRegistry({
   protocolVersion: PROTOCOL_1_4_VERSION,
-  entries: [{ key: "approval-decided-payload", schema: ApprovalDecidedPayloadSchema }],
+  entries: [
+    { key: "approval-decided-payload", schema: ApprovalDecidedPayloadSchema },
+    { key: "artifact-available-payload", schema: ArtifactAvailablePayloadSchema },
+  ],
 });
 
 /**

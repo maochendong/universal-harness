@@ -92,6 +92,7 @@ import {
   type PhaseStep,
   type PipelineContext,
 } from "./kernel-coordinator.js";
+import { artifactAvailableEvent } from "./lifecycle-events.js";
 import {
   ORCHESTRATION_PHASES,
   PHASE_CHECKPOINT_BOUNDARY,
@@ -439,12 +440,29 @@ async function phaseSnapshot(ctx: PipelineContext): Promise<PhaseStep> {
       `snapshot phase reached without a completable iteration: ${(snapshot.blockers ?? []).join("; ")}`,
     );
   }
-  await commitArtifacts(deps, ctx.workflowOperationId, currentAttemptId(ctx), [
-    {
-      path: `artifacts/snapshots/${snapshot.snapshot_id}.json`,
-      content: `${canonicalizeJson(snapshot)}\n`,
-    },
-  ]);
+  const snapshotContent = `${canonicalizeJson(snapshot)}\n`;
+  await commitArtifacts(
+    deps,
+    ctx.workflowOperationId,
+    currentAttemptId(ctx),
+    [
+      {
+        path: `artifacts/snapshots/${snapshot.snapshot_id}.json`,
+        content: snapshotContent,
+      },
+    ],
+    [],
+    [
+      {
+        ...artifactAvailableEvent({
+          artifactKind: "snapshot",
+          recordDigest: sha256Hex(snapshotContent),
+          summary: `迭代快照 ${snapshot.snapshot_id} 已提交（${snapshot.status}）`,
+        }),
+        iterationId: ctx.iterationId,
+      },
+    ],
+  );
   await commitIterationNode(ctx, "completed");
   await regenerateTasksProjection(ctx);
   await ctx.engine.advance(ctx.workflowOperationId, "completed");

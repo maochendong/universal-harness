@@ -1,8 +1,11 @@
 import { canonicalizeJson } from "../identity/canonical-json.js";
 import { contentDigest } from "../identity/digest.js";
 import { domainRecordId } from "../identity/record-id.js";
+import { sha256Hex } from "../ledger/event-store.js";
 import { LedgerError, LedgerRepository, type CommitHooks } from "../ledger/index.js";
-import { PROTOCOL_1_1_VERSION } from "../protocol.js";
+import { transactionRequiredReaderVersion } from "../ledger/transaction.js";
+import { readManagedManifest } from "../project/layout.js";
+import { PROTOCOL_1_1_VERSION, PROTOCOL_1_4_VERSION } from "../protocol.js";
 import { findPrdProposalByDigest } from "../proposal/store.js";
 import { readPrdValidationReports } from "../proposal/store.js";
 import { readPrdReviewReports } from "../review/store.js";
@@ -144,6 +147,15 @@ export function createCaptureAcceptanceStageHandler(
 ): CaptureStageHandler {
   const root = deps.projectRoot;
   const now = deps.now ?? (() => new Date().toISOString());
+  // The announcement event needs a project id; managed projects carry a
+  // manifest, bare roots (tests, pre-adoption) fall back to a stable label.
+  const projectId = (() => {
+    try {
+      return `project_${readManagedManifest(root).name}`;
+    } catch {
+      return "project_unmanaged";
+    }
+  })();
 
   return async (request) => {
     const session = request.session;
@@ -313,12 +325,14 @@ export function createCaptureAcceptanceStageHandler(
       supersedes_digest: proposal.record_digest,
     });
 
+    const acceptedPath = `artifacts/capture/accepted/${prdId}/${String(prdRevision)}.json`;
+    const acceptedContent = `${canonicalizeJson(accepted)}\n`;
     const artifacts = [
       artifact(
         `artifacts/capture/proposals/${session.session_id}/${String(acceptedProposal.revision)}.json`,
         acceptedProposal,
       ),
-      artifact(`artifacts/capture/accepted/${prdId}/${String(prdRevision)}.json`, accepted),
+      { path: acceptedPath, content: acceptedContent },
       artifact(
         `artifacts/capture/accepted/${prdId}/baseline-${String(prdRevision)}.json`,
         baseline,
@@ -326,15 +340,50 @@ export function createCaptureAcceptanceStageHandler(
       ...graph.nodes.map((node) => artifact(acceptedNodeArtifactPath(node), node)),
     ];
 
+    // Transparency (spec §9.3): the acceptance transaction announces the
+    // committed AcceptedPrd version it just wrote, so the stream can navigate
+    // to this exact artifact. The event lives in the same atomic commit;
+    // record_digest is the byte SHA-256 of the committed artifact.
+    const artifactEvent = {
+      protocol_version: PROTOCOL_1_4_VERSION,
+      record_kind: "event" as const,
+      event_id: `event_prd_available_${sha256Hex(acceptedContent).slice(0, 16)}`,
+      event_type: "ArtifactAvailable" as const,
+      project_id: projectId,
+      iteration_id: session.iteration_id,
+      workflow_operation_id: session.workflow_operation_id,
+      ledger_operation_id: ledgerOperationId,
+      sequence:
+        repository
+          .replay()
+          .events.filter((event) => event.workflow_operation_id === session.workflow_operation_id)
+          .reduce((maximum, event) => Math.max(maximum, event.sequence), 0) + 1,
+      timestamp: now(),
+      payload: {
+        artifact_kind: "prd",
+        record_digest: sha256Hex(acceptedContent),
+        summary: `已接受需求文档 ${prdId} 第 ${String(prdRevision)} 版`,
+      },
+    };
+
+    const transaction = {
+      ledger_operation_id: ledgerOperationId,
+      workflow_operation_id: session.workflow_operation_id,
+      attempt_id: approval.decision_id,
+      expected_baseline: deps.readBaseline(),
+      artifacts,
+      edges: [...graph.edges],
+      events: [artifactEvent],
+    };
+    // Reader gate (Protocol 1.2+): the ArtifactAvailable announcement is a 1.4
+    // authoritative record, so the transaction pins the newest carried version.
+    const requiredReaderVersion = transactionRequiredReaderVersion(transaction);
     try {
       await repository.commit({
-        ledger_operation_id: ledgerOperationId,
-        workflow_operation_id: session.workflow_operation_id,
-        attempt_id: approval.decision_id,
-        expected_baseline: deps.readBaseline(),
-        artifacts,
-        edges: [...graph.edges],
-        events: [],
+        ...transaction,
+        ...(requiredReaderVersion === undefined
+          ? {}
+          : { required_reader_version: requiredReaderVersion }),
       });
     } catch (error) {
       if (error instanceof LedgerError) {

@@ -31,6 +31,7 @@ export {
 export {
   presentApproval,
   presentApprovalDecision,
+  presentArtifactView,
   presentCapabilityStatus,
   presentEdge,
   presentEvent,
@@ -41,6 +42,7 @@ export {
   presentationKey,
   presentationMap,
   type BusinessPresentation,
+  type BusinessPresentationArtifactLink,
   type BusinessPresentationBadge,
   type PresentationMap,
 } from "./presentation.js";

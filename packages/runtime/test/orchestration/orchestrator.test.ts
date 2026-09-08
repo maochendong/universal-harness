@@ -40,6 +40,7 @@ import {
   proposeGraphEdge,
   readApprovalDecisions,
   readApprovalRequests,
+  readArtifactView,
   readCurrentOperation,
   readRunStreams,
   readLatestSnapshot,
@@ -555,6 +556,29 @@ describe("phase orchestrator", { timeout: 60_000 * TEST_TIMEOUT_SCALE }, () => {
     expect(eventTypes.indexOf("BeforeContextCompile")).toBeLessThan(
       eventTypes.indexOf("ContextCompiled"),
     );
+
+    // Transparency (spec §9.3): every committed artifact batch announces its
+    // version in its own transaction, and the reader resolves each announced
+    // digest back to a safe view.
+    const available = events.filter((event) => event.event_type === "ArtifactAvailable");
+    expect(
+      available.map((event) => (event.payload as { artifact_kind?: string }).artifact_kind).sort(),
+    ).toEqual(
+      ["context_manifest", "evaluation", "gate_result", "plan", "run_summary", "snapshot"].sort(),
+    );
+    for (const event of available) {
+      expect(event.protocol_version).toBe("1.4.0");
+      const payload = event.payload as { artifact_kind: string; record_digest: string };
+      const view = await readArtifactView(projectRoot, {
+        kind: payload.artifact_kind as never,
+        scope: "artifact",
+        digest: payload.record_digest,
+      });
+      expect(view.ref.digest).toBe(payload.record_digest);
+      expect(view.safe_view).toBe(true);
+      // The announcing event rides in the same transaction as the artifact.
+      expect(view.provenance.ledger_operation_id).toBe(event.ledger_operation_id);
+    }
     const streamedGates = (
       await new FileEventStream(projectRoot).read({ limit: 500 })
     ).items.filter((item) => item.event.event_type === "GateCompleted");

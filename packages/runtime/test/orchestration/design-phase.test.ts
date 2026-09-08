@@ -17,6 +17,7 @@ import {
   createNewProject,
   moduleContributionsForProfile,
   readApprovalRequests,
+  readArtifactView,
   resolveApproval,
   resolveProfileModules,
   resumeIteration,
@@ -31,6 +32,7 @@ import {
   createInMemoryDesignReviewPort,
   createProjectProfileRecord,
   harnessRootFor,
+  LedgerRepository,
   readCommittedOperations,
   type DesignProposalInput,
 } from "../../../core/src/index.js";
@@ -306,6 +308,29 @@ describe("design phase", { timeout: 90000 }, () => {
       expect(existsSync(join(harnessRoot, "artifacts", "design-sets"))).toBe(true);
       expect(existsSync(join(harnessRoot, "artifacts", "design-set-proposals"))).toBe(true);
       expect(existsSync(join(harnessRoot, "artifacts", "design-reviews"))).toBe(true);
+
+      // Transparency (spec §9.3): the design commit announces the accepted
+      // DesignSet version, and the reader resolves it back byte-exact.
+      if (outcome.status !== "completed") throw new Error("unreachable");
+      const designAvailable = new LedgerRepository({
+        projectRoot,
+        readBaseline: () => headOf(projectRoot),
+      })
+        .replay()
+        .events.filter(
+          (event) =>
+            event.event_type === "ArtifactAvailable" &&
+            (event.payload as { artifact_kind?: string }).artifact_kind === "design_set",
+        );
+      expect(designAvailable).toHaveLength(1);
+      const designView = await readArtifactView(projectRoot, {
+        kind: "design_set",
+        scope: "artifact",
+        digest: (designAvailable[0]?.payload as { record_digest: string }).record_digest,
+      });
+      expect(designView.provenance.ledger_operation_id).toBe(
+        designAvailable[0]?.ledger_operation_id,
+      );
     } finally {
       cleanupDirectories();
     }

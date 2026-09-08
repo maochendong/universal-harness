@@ -68,7 +68,8 @@
         { "const": "WaveGateCompleted", "type": "string" },
         { "const": "WaveIntegrated", "type": "string" },
         { "const": "SchedulerRecovered", "type": "string" },
-        { "const": "ApprovalDecided", "type": "string" }
+        { "const": "ApprovalDecided", "type": "string" },
+        { "const": "ArtifactAvailable", "type": "string" }
       ]
     },
     "project_id": {

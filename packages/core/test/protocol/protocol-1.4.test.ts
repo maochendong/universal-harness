@@ -224,6 +224,85 @@ describe("ApprovalDecided payload validation", () => {
   });
 });
 
+const RECORD_DIGEST = "c".repeat(64);
+
+function artifactAvailablePayload(overrides?: Record<string, unknown>): Record<string, unknown> {
+  return {
+    artifact_kind: "plan",
+    record_digest: RECORD_DIGEST,
+    summary: "执行计划 plan_t01 已生成",
+    ...overrides,
+  };
+}
+
+function artifactAvailableEventRecord(
+  eventId: string,
+  ledgerOperationId: string,
+  sequence: number,
+  overrides?: Record<string, unknown>,
+) {
+  return {
+    ...makeEvent(eventId, ledgerOperationId, sequence),
+    protocol_version: PROTOCOL_1_4_VERSION,
+    event_type: "ArtifactAvailable",
+    payload: artifactAvailablePayload(),
+    ...overrides,
+  };
+}
+
+describe("ArtifactAvailable payload validation (spec §9.3)", () => {
+  it("accepts a schema-valid three-field ArtifactAvailable event at protocol 1.4.0", () => {
+    const event = artifactAvailableEventRecord("event_t5_payload_01", "ledger-op_t5_payload", 1);
+    expect(validateSchema("event", event)).toEqual({ valid: true, errors: [] });
+  });
+
+  it("pins a transaction carrying an ArtifactAvailable event to 1.4.0", () => {
+    const input = makeInput("ledger-op_t5_01");
+    input.events.push(artifactAvailableEventRecord("event_t5_01", "ledger-op_t5_01", 1));
+    expect(transactionRequiredReaderVersion(input)).toBe("1.4.0");
+  });
+
+  it("rejects extra payload fields such as artifact content", () => {
+    const event = artifactAvailableEventRecord("event_t5_payload_02", "ledger-op_t5_payload", 1, {
+      payload: artifactAvailablePayload({ content: { raw: "全文" } }),
+    });
+    const result = validateSchema("event", event);
+    expect(result.valid).toBe(false);
+    expect(result.errors.some((issue) => issue.instancePath.startsWith("/payload"))).toBe(true);
+  });
+
+  it("rejects an artifact_kind outside the fixed enum", () => {
+    const event = artifactAvailableEventRecord("event_t5_payload_03", "ledger-op_t5_payload", 1, {
+      payload: artifactAvailablePayload({ artifact_kind: "raw_log" }),
+    });
+    expect(validateSchema("event", event).valid).toBe(false);
+  });
+
+  it("rejects a malformed record_digest and an over-long summary", () => {
+    const malformed = artifactAvailableEventRecord(
+      "event_t5_payload_04",
+      "ledger-op_t5_payload",
+      1,
+      { payload: artifactAvailablePayload({ record_digest: "artifacts/plans/plan.json" }) },
+    );
+    expect(validateSchema("event", malformed).valid).toBe(false);
+
+    const long = artifactAvailableEventRecord("event_t5_payload_05", "ledger-op_t5_payload", 1, {
+      payload: artifactAvailablePayload({ summary: "长".repeat(201) }),
+    });
+    expect(validateSchema("event", long).valid).toBe(false);
+  });
+
+  it("rejects an ArtifactAvailable event written below protocol 1.4.0", () => {
+    const event = artifactAvailableEventRecord("event_t5_payload_06", "ledger-op_t5_payload", 1, {
+      protocol_version: "1.3.0",
+    });
+    const result = validateSchema("event", event);
+    expect(result.valid).toBe(false);
+    expect(result.errors.map((issue) => issue.instancePath)).toContain("/protocol_version");
+  });
+});
+
 /**
  * Pre-1.4 writer contract, pinned as literal bytes instead of deriving from
  * the live EVENT_TYPES: an old writer only knows these event types and must
@@ -286,14 +365,18 @@ const FROZEN_1_3_EVENT_SCHEMA = strictObject({
 describe("old writer and old reader contracts", () => {
   it("keeps the frozen pre-1.4 schema an exact prefix of the live vocabulary", () => {
     expect(FROZEN_1_3_EVENT_TYPES).toEqual(
-      EVENT_TYPES.filter((eventType) => eventType !== "ApprovalDecided"),
+      EVENT_TYPES.filter(
+        (eventType) => eventType !== "ApprovalDecided" && eventType !== "ArtifactAvailable",
+      ),
     );
   });
 
-  it("a fixed pre-1.4 event schema rejects the ApprovalDecided event type", () => {
+  it("a fixed pre-1.4 event schema rejects the 1.4 event types", () => {
     const frozen = compileAjvSchema(FROZEN_1_3_EVENT_SCHEMA);
     const event = approvalDecidedEvent("event_t3_frozen_01", "ledger-op_t3_frozen", 1);
     expect(frozen(event)).toBe(false);
+    const available = artifactAvailableEventRecord("event_t3_frozen_03", "ledger-op_t3_frozen", 3);
+    expect(frozen(available)).toBe(false);
     const legacy = makeEvent("event_t3_frozen_02", "ledger-op_t3_frozen", 2);
     expect(frozen(legacy)).toBe(true);
   });

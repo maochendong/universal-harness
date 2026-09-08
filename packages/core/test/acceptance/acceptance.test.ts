@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -14,6 +14,10 @@ import {
   type AcceptanceGraphContext,
 } from "../../src/acceptance/graph.js";
 import { createCaptureAcceptanceStageHandler } from "../../src/acceptance/commit.js";
+import { deriveAcceptedPrdId } from "../../src/acceptance/records.js";
+import { sha256Hex } from "../../src/ledger/event-store.js";
+import { harnessRootFor, resolveHarnessPath } from "../../src/ledger/layout.js";
+import { PROTOCOL_1_4_VERSION } from "../../src/protocol.js";
 import {
   readAcceptedGraphNodes,
   readAcceptedPrdRecords,
@@ -235,6 +239,54 @@ describe("accepted PRD atomic commit", () => {
     expect(finalProposals[1]?.supersedes_digest).toBe(finalProposals[0]?.record_digest);
     const checkpoints = readCaptureCheckpoints(root, session.session_id);
     expect(checkpoints.at(-1)?.state).toBe("accepted");
+  });
+
+  it("announces the accepted PRD version with an ArtifactAvailable event in the same commit", async () => {
+    const root = makeRoot();
+    const session = makeSession();
+    const decisions = new FakeApprovalDecisions();
+    const { handlers } = makeAcceptPipeline(root, {
+      policy: MATERIAL_POLICY,
+      proposalDrafts: [makeValidDraft],
+    });
+    const { coordinator, outcome } = await driveToApproval(root, session, handlers, decisions);
+    const decision = approveDecision(outcome);
+    decisions.put(decision);
+    const applied = await coordinator.advance({
+      command: "apply_approval_decision",
+      session_id: session.session_id,
+      expected_session_digest: outcome.session.record_digest,
+      request_id: decision.request_id,
+      decision_id: decision.decision_id,
+    });
+    expect(applied.status).toBe("accepted");
+
+    // Transparency (spec §9.3): exactly one ArtifactAvailable announcement per
+    // acceptance, pinned to protocol 1.4.
+    const replay = new LedgerRepository({
+      projectRoot: root,
+      readBaseline: () => BASELINE,
+    }).replay();
+    const announcements = replay.events.filter((event) => event.event_type === "ArtifactAvailable");
+    expect(announcements).toHaveLength(1);
+    const announcement = announcements[0]!;
+    expect(announcement.protocol_version).toBe(PROTOCOL_1_4_VERSION);
+    const payload = announcement.payload as {
+      artifact_kind: string;
+      record_digest: string;
+      summary: string;
+    };
+    expect(payload.artifact_kind).toBe("prd");
+    expect([...payload.summary].length).toBeLessThanOrEqual(200);
+
+    // record_digest is the byte SHA-256 of the committed accepted artifact, so
+    // the stream can navigate to exactly this version.
+    const prdId = deriveAcceptedPrdId(session.session_id);
+    const acceptedPath = resolveHarnessPath(
+      harnessRootFor(root),
+      `artifacts/capture/accepted/${prdId}/1.json`,
+    );
+    expect(payload.record_digest).toBe(sha256Hex(readFileSync(acceptedPath, "utf8")));
   });
 
   it("keeps the accepted PRD immutable: a replayed decision is an idempotent no-op", async () => {

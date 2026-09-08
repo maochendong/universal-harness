@@ -5,6 +5,7 @@ import {
   ORCHESTRATION_PHASES,
   PHASE_CHECKPOINT_BOUNDARY,
   PHASE_OPERATION_STATE,
+  artifactAvailableEvent,
   assertLifecycleOrder,
   isOrchestrationPhase,
   nextPhase,
@@ -103,5 +104,34 @@ describe("phase lifecycle events", () => {
     expect(() => assertLifecycleOrder([event(1), event(2), event(5)])).not.toThrow();
     expect(() => assertLifecycleOrder([event(2), event(2)])).toThrow(/not ordered/u);
     expect(() => assertLifecycleOrder([event(3), event(1)])).toThrow(/not ordered/u);
+  });
+});
+
+describe("artifactAvailableEvent (spec §9.3)", () => {
+  it("pins protocol 1.4 and carries exactly kind, digest and summary", () => {
+    const event = artifactAvailableEvent({
+      artifactKind: "plan",
+      recordDigest: "a".repeat(64),
+      summary: "执行计划 plan_01 已生成",
+    });
+    expect(event.eventType).toBe("ArtifactAvailable");
+    expect(event.protocolVersion).toBe("1.4.0");
+    expect(event.payload).toEqual({
+      artifact_kind: "plan",
+      record_digest: "a".repeat(64),
+      summary: "执行计划 plan_01 已生成",
+    });
+  });
+
+  it("truncates an over-long summary at 200 code points, emoji-safe", () => {
+    const summary = `摘要${"🔧".repeat(300)}`;
+    const event = artifactAvailableEvent({
+      artifactKind: "run_summary",
+      recordDigest: "b".repeat(64),
+      summary,
+    });
+    const emitted = event.payload["summary"] as string;
+    expect([...emitted]).toHaveLength(200);
+    expect(emitted).toBe([...summary].slice(0, 200).join(""));
   });
 });

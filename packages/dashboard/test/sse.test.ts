@@ -475,3 +475,158 @@ describe("Dashboard SSE over the shared EventStreamHub", () => {
     expect(response.ended).toBe(true);
   });
 });
+
+describe("Dashboard SSE artifact links and frame guardrails (spec §9.3/§10)", () => {
+  const link = (seed: number) => ({
+    label_zh: "查看对应版本产出",
+    ref: {
+      kind: "approval_decision" as const,
+      scope: "artifact" as const,
+      digest: `${String(seed).padStart(2, "0")}${"f".repeat(62)}`,
+    },
+    href: `/api/v1/artifacts/${String(seed).padStart(2, "0")}${"f".repeat(62)}?kind=approval_decision&scope=artifact`,
+  });
+
+  const singlePagePort = (entry: EventStreamItem): EventStreamPort => ({
+    read: () => Promise.resolve({ items: [entry], cursor: "cursor_link" }),
+    subscribe: () => ({ [Symbol.asyncIterator]: async function* () {} }),
+  });
+
+  it("merges resolved artifact links into the event frame presentation", async () => {
+    const response = new ResponseDouble();
+    const abort = new AbortController();
+    // The port re-serves the same page forever; stop after the first frame.
+    response.once("write", () => abort.abort());
+    const entry = item(1, "ApprovalDecided");
+    const links = [link(1), link(2)];
+
+    await streamDashboardEvents({
+      response,
+      eventStream: singlePagePort(entry),
+      signal: abort.signal,
+      artifactLinks: () => links,
+      pollIntervalMs: 5,
+      heartbeatMs: 5,
+    });
+
+    const output = response.writes.join("");
+    expect(output).toContain("event: ApprovalDecided");
+    expect(output).toContain(links[0]!.href);
+    expect(output).toContain(links[1]!.href);
+    expect(output).toContain("查看对应版本产出");
+  });
+
+  it("a failing link resolver never breaks event delivery", async () => {
+    const response = new ResponseDouble();
+    const abort = new AbortController();
+    response.once("write", () => abort.abort());
+    await streamDashboardEvents({
+      response,
+      eventStream: singlePagePort(item(1)),
+      signal: abort.signal,
+      artifactLinks: () => {
+        throw new Error("ledger unavailable");
+      },
+      pollIntervalMs: 5,
+      heartbeatMs: 5,
+    });
+    const output = response.writes.join("");
+    expect(output).toContain("event: RunHeartbeat");
+    expect(output).not.toContain("artifact_links");
+  });
+
+  it("fails closed with one bounded stream_error when links push the frame over 32 KiB", async () => {
+    const response = new ResponseDouble();
+    const entry = item(1, "ApprovalDecided");
+    // Eight maximally long link labels push the serialized frame past the
+    // 32 KiB guard; the business frame must never be partially written.
+    const oversizedLinks = Array.from({ length: 8 }, (_, index) => ({
+      ...link(index + 1),
+      label_zh: `查看对应版本产出${"长".repeat(1500)}`,
+    }));
+
+    await streamDashboardEvents({
+      response,
+      eventStream: singlePagePort(entry),
+      signal: new AbortController().signal,
+      artifactLinks: () => oversizedLinks,
+    });
+
+    const output = response.writes.join("");
+    expect(output).not.toContain("event: ApprovalDecided");
+    expect(output).toContain('event: stream_error\ndata: {"code":"event_frame_too_large"}');
+    expect(response.ended).toBe(true);
+  });
+
+  it("keeps Chinese/emoji frames byte-safe at the 32 KiB boundary", async () => {
+    let delivered = 0;
+    let rejected = 0;
+    for (const length of [2500, 2900, 3400, 4000]) {
+      const response = new ResponseDouble();
+      const abort = new AbortController();
+      // Delivered frames loop forever on the static port; stop after the
+      // first write. The oversize path closes on its own.
+      response.once("write", () => abort.abort());
+      const entry = item(1, "RunOutputSummary");
+      (entry.event as { payload: Record<string, unknown> }).payload = {
+        run_id: "run_01",
+        summary: "摘要🔧".repeat(length),
+      };
+
+      await streamDashboardEvents({
+        response,
+        eventStream: singlePagePort(entry),
+        signal: abort.signal,
+      });
+
+      const output = response.writes.join("");
+      const businessFrame = response.writes.find((frame) =>
+        frame.includes("event: RunOutputSummary"),
+      );
+      if (businessFrame === undefined) {
+        // Over the limit: exactly one bounded error frame, no partial frame.
+        rejected += 1;
+        expect(output).toContain('event: stream_error\ndata: {"code":"event_frame_too_large"}');
+        expect(output).not.toContain("摘要🔧");
+      } else {
+        // Under the limit: the complete frame lands within the byte budget.
+        delivered += 1;
+        expect(Buffer.byteLength(businessFrame, "utf8")).toBeLessThanOrEqual(32 * 1024);
+        expect(businessFrame.endsWith("\n\n")).toBe(true);
+        expect(businessFrame).toContain("摘要🔧");
+      }
+      expect(response.ended).toBe(true);
+    }
+    // The sweep must actually straddle the boundary.
+    expect(delivered).toBeGreaterThan(0);
+    expect(rejected).toBeGreaterThan(0);
+  });
+
+  it("delivers nothing further after the oversize guard closes the stream", async () => {
+    const response = new ResponseDouble();
+    const oversize = item(1, "RunOutputSummary");
+    (oversize.event as { payload: Record<string, unknown> }).payload = {
+      run_id: "run_01",
+      summary: "长".repeat(40 * 1024),
+    };
+    let reads = 0;
+    const port: EventStreamPort = {
+      read: () => {
+        reads += 1;
+        return Promise.resolve({ items: [oversize], cursor: "cursor_big" });
+      },
+      subscribe: () => ({ [Symbol.asyncIterator]: async function* () {} }),
+    };
+
+    await streamDashboardEvents({
+      response,
+      eventStream: port,
+      signal: new AbortController().signal,
+    });
+
+    expect(reads).toBe(1);
+    expect(response.writes).toHaveLength(1);
+    expect(response.writes[0]).toContain("event_frame_too_large");
+    expect(response.ended).toBe(true);
+  });
+});

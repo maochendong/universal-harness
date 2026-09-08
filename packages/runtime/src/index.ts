@@ -1029,10 +1029,12 @@ export {
 } from "./orchestration/phases.js";
 export {
   approvalDecidedEvent,
+  artifactAvailableEvent,
   assertLifecycleOrder,
   phaseLifecycleEvents,
   remoteApprovalMaterializedEvent,
   schedulerPhaseLifecycleEvent,
+  type ArtifactAvailableDetails,
   type PhaseLifecycleDetails,
   type PhaseLifecycleEventSpec,
   type RemoteApprovalMaterializedDetails,
@@ -1108,6 +1110,26 @@ export {
   type RunOutputOptions,
 } from "./observability/publisher.js";
 export { projectActiveRun, type ActiveRunProjection } from "./observability/active-run.js";
+export {
+  ARTIFACT_KINDS,
+  ARTIFACT_LINK_LABEL,
+  ARTIFACT_PAGE_DEFAULT_LIMIT,
+  ARTIFACT_PAGE_MAX_LIMIT,
+  ARTIFACT_TEXT_FRAGMENT_BYTES,
+  ARTIFACT_VIEW_MAX_BYTES,
+  ArtifactReaderError,
+  artifactHref,
+  createArtifactLinkResolver,
+  readArtifactView,
+  type ArtifactKind,
+  type ArtifactLink,
+  type ArtifactLinkResolver,
+  type ArtifactQuery,
+  type ArtifactReaderErrorKind,
+  type ArtifactRef,
+  type ArtifactScope,
+  type ArtifactView,
+} from "./observability/artifact-reader.js";
 export {
   ApprovalSummaryError,
   approvalActorDisplay,

@@ -1194,6 +1194,128 @@ function updateSwimlane(event) {
   if (event.event_type === "PhasePaused") marker.classList.add("is-paused");
 }
 
+/**
+ * Server-built artifact hrefs are the only navigation targets (spec §9.3):
+ * fixed route, 64-hex digest, whitelisted kind/scope, optional server-issued
+ * paging cursor/limit. Anything else is refused before any fetch.
+ */
+const ARTIFACT_HREF_PATTERN =
+  /^\/api\/v1\/artifacts\/[a-f0-9]{64}\?kind=[a-z_]+&scope=(?:artifact|manifest)(?:&cursor=[A-Za-z0-9:._-]{1,64})?(?:&limit=[0-9]{1,3})?$/u;
+
+function artifactLinkList(links) {
+  if (!Array.isArray(links) || links.length === 0) return undefined;
+  const list = node("p", "artifact-links");
+  for (const link of links) {
+    if (!link || typeof link.href !== "string") continue;
+    const anchor = node(
+      "a",
+      "artifact-link",
+      typeof link.label_zh === "string" && link.label_zh !== ""
+        ? link.label_zh
+        : "查看对应版本产出",
+    );
+    anchor.setAttribute("href", link.href);
+    anchor.addEventListener("click", (event) => {
+      event.preventDefault();
+      void openArtifactLink(link.href);
+    });
+    list.append(anchor);
+  }
+  return list.childNodes.length > 0 ? list : undefined;
+}
+
+function artifactEntryText(entry) {
+  if (entry === null || typeof entry !== "object") return String(entry);
+  const parts = [];
+  for (const value of Object.values(entry)) {
+    if (typeof value === "string" && value !== "") parts.push(value);
+    else if (typeof value === "number" || typeof value === "boolean") parts.push(String(value));
+  }
+  return parts.length > 0 ? parts.join(" · ") : JSON.stringify(entry);
+}
+
+function appendArtifactContent(container, content) {
+  if (content === null || typeof content !== "object") {
+    container.append(node("p", "artifact-field-value", String(content)));
+    return;
+  }
+  for (const [key, value] of Object.entries(content)) {
+    if (typeof value === "string") {
+      // Business text renders as a text node so it is assertable and never
+      // parsed as markup.
+      container.append(node("p", "artifact-field-label", key));
+      container.append(node("p", "artifact-field-value", value));
+    } else if (typeof value === "number" || typeof value === "boolean") {
+      container.append(node("p", "artifact-field-value", `${key}: ${String(value)}`));
+    } else if (Array.isArray(value)) {
+      container.append(node("p", "artifact-field-label", key));
+      const list = node("ul", "artifact-list");
+      for (const entry of value) list.append(node("li", "", artifactEntryText(entry)));
+      container.append(list);
+    } else if (value !== null && typeof value === "object" && Array.isArray(value.items)) {
+      const total = Number.isFinite(value.total) ? value.total : value.items.length;
+      container.append(node("p", "artifact-field-label", `${key} · 共 ${total} 项`));
+      const list = node("ul", "artifact-list");
+      for (const entry of value.items) list.append(node("li", "", artifactEntryText(entry)));
+      container.append(list);
+    } else if (value !== null && typeof value === "object") {
+      container.append(node("p", "artifact-field-label", key));
+      const nested = node("div", "artifact-nested");
+      appendArtifactContent(nested, value);
+      container.append(nested);
+    }
+  }
+}
+
+function renderArtifactView(view, href, body) {
+  const presentation = Object.values(view.presentations || {})[0];
+  if (presentation) body.append(businessHeading(presentation, "h4"));
+  body.append(
+    node(
+      "p",
+      "artifact-meta",
+      `${view.ref.kind} · ${view.ref.scope} · ${String(view.ref.digest).slice(0, 16)}…`,
+    ),
+  );
+  appendArtifactContent(body, view.content);
+  const inputLinks = artifactLinkList(presentation?.artifact_links);
+  if (inputLinks) body.append(inputLinks);
+  if (typeof view.next_cursor === "string") {
+    const more = node("a", "artifact-link", "加载下一页");
+    const base = href.split("&cursor=", 1)[0];
+    more.setAttribute("href", `${base}&cursor=${encodeURIComponent(view.next_cursor)}`);
+    more.addEventListener("click", (event) => {
+      event.preventDefault();
+      void openArtifactLink(more.getAttribute("href"));
+    });
+    body.append(more);
+  }
+}
+
+/** Open one verified artifact link into the safe-view panel (spec §9.2). */
+async function openArtifactLink(href) {
+  const panel = $("#artifact-view");
+  const body = $("#artifact-view-body");
+  if (!panel || !body) return;
+  panel.hidden = false;
+  if (typeof href !== "string" || !ARTIFACT_HREF_PATTERN.test(href)) {
+    clear(body);
+    body.append(node("p", "artifact-error", "链接未通过校验，已拒绝打开。"));
+    status("live", "Artifact link rejected: the href failed validation.", "error");
+    return;
+  }
+  clear(body);
+  body.append(node("p", "artifact-loading", "正在读取指定版本产出…"));
+  try {
+    const view = await api(href);
+    clear(body);
+    renderArtifactView(view, href, body);
+  } catch (error) {
+    clear(body);
+    body.append(node("p", "artifact-error", `读取失败：${error.message}`));
+  }
+}
+
 function appendLiveItem(item) {
   const register = $("#live-register");
   const key = liveKey(item);
@@ -1217,6 +1339,8 @@ function appendLiveItem(item) {
     node("span", "live-source", item.authoritative ? "LEDGER" : "LIVE"),
     heading,
   );
+  const links = artifactLinkList(presentation.artifact_links);
+  if (links) row.append(links);
   if (item.event.event_type === "RunOutputSummary") {
     const payload = item.event.payload || {};
     const output = node("pre", "live-output-tail", payload.summary || "No output summary.");
@@ -1315,6 +1439,8 @@ function renderOutcomeCard(requestId, outcome) {
       `决定时间 ${summary.decided_at} · 审批者 ${summary.actor_display}`,
     ),
   );
+  const decisionLinks = artifactLinkList(presentation?.artifact_links);
+  if (decisionLinks) card.append(decisionLinks);
   if (summary.decision === "defer") {
     // A defer is a committed decision yet the request stays pending; the
     // follow-up approve/reject actions stay available (spec §5.3).
@@ -1813,7 +1939,21 @@ async function startLive() {
       })
       .then(() => startLive());
   });
-  source.addEventListener("stream_error", () => {
+  source.addEventListener("stream_error", (message) => {
+    let code;
+    try {
+      code = JSON.parse(message.data || "{}").code;
+    } catch {
+      code = undefined;
+    }
+    if (code === "event_frame_too_large") {
+      // An oversize business frame is never partially delivered; the stream
+      // stops without auto-reconnect and the artifact stays readable via REST.
+      source.close();
+      if (model.eventSource === source) model.eventSource = undefined;
+      status("live", "事件超过大小上限，实时流已断开 · 请通过产出链接读取该版本内容", "error");
+      return;
+    }
     status("live", "Event stream is temporarily unavailable.", "error");
   });
   source.onopen = () => {

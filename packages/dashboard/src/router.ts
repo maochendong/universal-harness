@@ -12,7 +12,12 @@ import {
   type NodeRecord,
 } from "@universal-harness-internal/core";
 import type { TraversalDirection } from "@universal-harness-internal/graph";
-import type { EventStreamPort, RemoteApprovalDecision } from "@universal-harness-internal/runtime";
+import type {
+  ArtifactLink,
+  EventStreamItem,
+  EventStreamPort,
+  RemoteApprovalDecision,
+} from "@universal-harness-internal/runtime";
 
 import type { DashboardCollaborationApi } from "./collaboration-api.js";
 import type { EventStreamHub } from "./event-hub.js";
@@ -64,6 +69,11 @@ export interface DashboardRouterOptions {
   readonly writeApi: DashboardWriteApi;
   readonly collaborationApi: DashboardCollaborationApi;
   readonly shutdownSignal: AbortSignal;
+  /**
+   * Versioned-artifact link resolver for SSE event presentations (spec §9.3);
+   * absent in tests that inject their own stream without a Ledger.
+   */
+  readonly artifactLinks?: (item: EventStreamItem) => readonly ArtifactLink[];
 }
 
 function sendJson(response: ServerResponse, data: unknown, status = 200): void {
@@ -550,6 +560,9 @@ export function createDashboardRouter(options: DashboardRouterOptions) {
             eventStream: options.eventStream,
             signal: disconnected.signal,
             ...(options.eventHub === undefined ? {} : { eventHub: options.eventHub }),
+            ...(options.artifactLinks === undefined
+              ? {}
+              : { artifactLinks: options.artifactLinks }),
             ...(cursor === undefined ? {} : { cursor }),
             ...(iterationId === undefined
               ? {}
@@ -593,7 +606,7 @@ export function createDashboardRouter(options: DashboardRouterOptions) {
       }
       const artifact = /^\/api\/v1\/artifacts\/([a-f0-9]{64})$/u.exec(url.pathname);
       if (artifact !== null) {
-        queryKeys(url.searchParams, new Set(["kind", "scope"]));
+        queryKeys(url.searchParams, new Set(["kind", "scope", "cursor", "limit"]));
         const kind = one(url.searchParams, "kind");
         const scope = one(url.searchParams, "scope");
         if (kind === undefined || scope === undefined) {
@@ -604,9 +617,19 @@ export function createDashboardRouter(options: DashboardRouterOptions) {
             "artifact reads require kind and scope",
           );
         }
+        // Cursors are server-issued opaque tokens (c:<offset> / t:<bytes>);
+        // they are passed through verbatim and validated by the reader.
+        const cursor = one(url.searchParams, "cursor");
+        const limit = integer(one(url.searchParams, "limit"), "limit", 1, 100);
         sendJson(
           response,
-          options.readApi.artifactView({ digest: artifact[1] ?? "", kind, scope }),
+          await options.readApi.artifactView({
+            digest: artifact[1] ?? "",
+            kind,
+            scope,
+            ...(cursor === undefined ? {} : { cursor }),
+            ...(limit === undefined ? {} : { limit }),
+          }),
         );
         return;
       }

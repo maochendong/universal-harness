@@ -1,5 +1,5 @@
 import { PROTOCOL_1_2_VERSION, PROTOCOL_1_4_VERSION } from "@universal-harness-internal/core";
-import type { LifecycleEvent } from "@universal-harness-internal/core";
+import type { ArtifactKind, LifecycleEvent } from "@universal-harness-internal/core";
 
 import type { ApprovalDecisionRecord } from "../approval/request.js";
 import type { SchedulerEventSpec } from "../scheduling/events.js";
@@ -88,6 +88,35 @@ export function approvalDecidedEvent(
       object_digest: record.object_digest,
       decision_digest: decisionDigest,
       decided_at: record.decided_at,
+    },
+  };
+}
+
+/** Facts one ArtifactAvailable navigation event binds (spec §9.3). */
+export interface ArtifactAvailableDetails {
+  readonly artifactKind: ArtifactKind;
+  /** Byte SHA-256 of the committed root artifact, as the manifest records it. */
+  readonly recordDigest: string;
+  /** Bounded human summary; truncated to the 200-code-point payload limit. */
+  readonly summary: string;
+}
+
+/**
+ * The Protocol 1.4 artifact-navigation event (spec §9.3): exactly one per
+ * committed artifact version that no other event can locate, emitted in the
+ * same atomic commit as the artifact it announces. The payload carries the
+ * kind, the manifest-recorded byte digest and a bounded summary — never the
+ * artifact content.
+ */
+export function artifactAvailableEvent(details: ArtifactAvailableDetails): PhaseLifecycleEventSpec {
+  const characters = [...details.summary];
+  return {
+    eventType: "ArtifactAvailable",
+    protocolVersion: PROTOCOL_1_4_VERSION,
+    payload: {
+      artifact_kind: details.artifactKind,
+      record_digest: details.recordDigest,
+      summary: characters.length <= 200 ? details.summary : characters.slice(0, 200).join(""),
     },
   };
 }

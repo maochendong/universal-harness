@@ -151,7 +151,7 @@ import {
 } from "../workflow/operation.js";
 import { type RecoverableBlockReason } from "../workflow/state-machine.js";
 import { type WorkingState } from "../workflow/working-state.js";
-import { phaseLifecycleEvents } from "./lifecycle-events.js";
+import { artifactAvailableEvent, phaseLifecycleEvents } from "./lifecycle-events.js";
 import { ensureApproval, rejectOperation } from "./approval-runtime.js";
 export {
   approvalDigestOf,
@@ -1749,12 +1749,29 @@ export async function blockWithSnapshot(
     block_reason: spec.reason,
     resume_phase: spec.resumePhase,
   });
-  await commitArtifacts(ctx.deps, ctx.workflowOperationId, currentAttemptId(ctx), [
-    {
-      path: `artifacts/snapshots/${snapshot.snapshot_id}.json`,
-      content: `${canonicalizeJson(snapshot)}\n`,
-    },
-  ]);
+  const blockedSnapshotContent = `${canonicalizeJson(snapshot)}\n`;
+  await commitArtifacts(
+    ctx.deps,
+    ctx.workflowOperationId,
+    currentAttemptId(ctx),
+    [
+      {
+        path: `artifacts/snapshots/${snapshot.snapshot_id}.json`,
+        content: blockedSnapshotContent,
+      },
+    ],
+    [],
+    [
+      {
+        ...artifactAvailableEvent({
+          artifactKind: "snapshot",
+          recordDigest: sha256Hex(blockedSnapshotContent),
+          summary: `阻塞快照 ${snapshot.snapshot_id} 已提交（${spec.reason}）`,
+        }),
+        iterationId: ctx.iterationId,
+      },
+    ],
+  );
   await commitIterationNode(ctx, "blocked");
   await ctx.engine.block(ctx.workflowOperationId, {
     reason: spec.reason,
@@ -2873,6 +2890,7 @@ export async function phasePlan(
         planInput,
         planContext,
       );
+  const planArtifactContent = `${canonicalizeJson(records.plan)}\n`;
   await commitArtifacts(
     deps,
     ctx.workflowOperationId,
@@ -2880,7 +2898,7 @@ export async function phasePlan(
     [
       {
         path: `artifacts/plans/${records.plan.id}.json`,
-        content: `${canonicalizeJson(records.plan)}\n`,
+        content: planArtifactContent,
       },
       ...records.tasks.map((task) => ({
         path: `artifacts/tasks/${task.id}.json`,
@@ -2888,6 +2906,16 @@ export async function phasePlan(
       })),
     ],
     [...records.edges, ...implementsEdgesFor(ctx, specifications, records.tasks)],
+    [
+      {
+        ...artifactAvailableEvent({
+          artifactKind: "plan",
+          recordDigest: sha256Hex(planArtifactContent),
+          summary: `执行计划 ${records.plan.id} 已生成，共 ${String(records.tasks.length)} 项任务`,
+        }),
+        iterationId: ctx.iterationId,
+      },
+    ],
   );
   ctx.plan = { node: records.plan, content: readExecutionPlanContent(records.plan) };
   await compileTaskTddContracts(ctx);
@@ -3004,14 +3032,31 @@ export async function phaseContext(ctx: PipelineContext): Promise<PhaseStep> {
   const orderedCompiled = [...compiled.values()].sort((left, right) =>
     left.record.task_id.localeCompare(right.record.task_id),
   );
+  const bundleArtifacts = orderedCompiled.map((bundle) => ({
+    path: `artifacts/context-bundles/${bundle.record.context_bundle_id}.json`,
+    content: `${canonicalizeJson(bundle.record)}\n`,
+  }));
+  const firstBundle = bundleArtifacts[0];
   await commitArtifacts(
     deps,
     ctx.workflowOperationId,
     currentAttemptId(ctx),
-    orderedCompiled.map((bundle) => ({
-      path: `artifacts/context-bundles/${bundle.record.context_bundle_id}.json`,
-      content: `${canonicalizeJson(bundle.record)}\n`,
-    })),
+    bundleArtifacts,
+    [],
+    // The batch anchor is the first bundle in the deterministic task order;
+    // the same transaction manifest binds every sibling bundle byte digest.
+    firstBundle === undefined
+      ? []
+      : [
+          {
+            ...artifactAvailableEvent({
+              artifactKind: "context_manifest",
+              recordDigest: sha256Hex(firstBundle.content),
+              summary: `上下文批次已提交，共 ${String(bundleArtifacts.length)} 个上下文包`,
+            }),
+            iterationId: ctx.iterationId,
+          },
+        ],
   );
   ctx.bundles = new Map(orderedCompiled.map((bundle) => [bundle.record.task_id, bundle.record]));
   // PG-6: with an enrichment port configured, every committed bundle is
@@ -3711,7 +3756,28 @@ export async function phaseExecute(ctx: PipelineContext): Promise<PhaseStep> {
           (artifact) => !artifactExists(deps, artifact.path),
         );
         if (newArtifacts.length > 0) {
-          await commitArtifacts(deps, ctx.workflowOperationId, currentAttemptId(ctx), newArtifacts);
+          // The TDD batch anchor is the cycle record; sibling evidence/grant
+          // byte digests ride in the same transaction manifest.
+          const cycleArtifact =
+            newArtifacts.find((artifact) => artifact.path.startsWith("artifacts/tdd-cycles/")) ??
+            newArtifacts[0]!;
+          await commitArtifacts(
+            deps,
+            ctx.workflowOperationId,
+            currentAttemptId(ctx),
+            newArtifacts,
+            [],
+            [
+              {
+                ...artifactAvailableEvent({
+                  artifactKind: "tdd_artifact",
+                  recordDigest: sha256Hex(cycleArtifact.content),
+                  summary: `任务 ${task.id} 的 TDD 批次已提交，共 ${String(newArtifacts.length)} 项记录`,
+                }),
+                iterationId: ctx.iterationId,
+              },
+            ],
+          );
           // TDD cycle/evidence/grant files are Harness-owned control-plane
           // writes. Refresh the VCS observation after their Ledger commit so
           // the Agent write-set attestation compares only work performed by
@@ -3841,20 +3907,37 @@ export async function phaseExecute(ctx: PipelineContext): Promise<PhaseStep> {
         ...(actualChanges === undefined ? {} : { diff_stat: actualChanges.change_summary }),
       }),
     );
-    await commitArtifacts(deps, ctx.workflowOperationId, currentAttemptId(ctx), [
-      {
-        path: runResultArtifactPath(activeRunId),
-        content: `${canonicalizeJson(result)}\n`,
-      },
-      ...(actualChanges === undefined || actualChanges.undeclared_writes.length === 0
-        ? []
-        : [
-            {
-              path: `artifacts/scope-drift/${activeRunId}.json`,
-              content: `${canonicalizeJson(actualChanges)}\n`,
-            },
-          ]),
-    ]);
+    const runResultContent = `${canonicalizeJson(result)}\n`;
+    await commitArtifacts(
+      deps,
+      ctx.workflowOperationId,
+      currentAttemptId(ctx),
+      [
+        {
+          path: runResultArtifactPath(activeRunId),
+          content: runResultContent,
+        },
+        ...(actualChanges === undefined || actualChanges.undeclared_writes.length === 0
+          ? []
+          : [
+              {
+                path: `artifacts/scope-drift/${activeRunId}.json`,
+                content: `${canonicalizeJson(actualChanges)}\n`,
+              },
+            ]),
+      ],
+      [],
+      [
+        {
+          ...artifactAvailableEvent({
+            artifactKind: "run_summary",
+            recordDigest: sha256Hex(runResultContent),
+            summary: `任务 ${task.id} 的运行结果已提交（${result.outcome}）`,
+          }),
+          iterationId: ctx.iterationId,
+        },
+      ],
+    );
     await commitRunFact(ctx, activeRunId, result);
     lastRun = { runId: activeRunId, result };
     ctx.run = lastRun;
@@ -4201,21 +4284,38 @@ export async function phaseVerify(
     // digest-versioned paths so a re-run after a repair never overwrites.
     // The per-task quality records commit alongside, passed or failed, so a
     // human always reviews exactly what was verified (card T5).
-    await commitArtifacts(deps, ctx.workflowOperationId, currentAttemptId(ctx), [
-      ...outcome.results.map((result) => ({
-        path: `artifacts/evidence/${result.evidence.evidence_id}/${result.evidence.digest}.json`,
-        content: `${canonicalizeJson(result.evidence)}\n`,
-      })),
-      ...outcome.findings.map((finding) => ({
-        path: `artifacts/findings/${finding.id}/proposed.json`,
-        content: `${canonicalizeJson(finding)}\n`,
-      })),
-      ...buildTaskQualityRecords(ctx, outcome, bindings),
-      {
-        path: verifyArtifactPath(ctx.iterationId, bindings),
-        content: `${canonicalizeJson(summary)}\n`,
-      },
-    ]);
+    const verifySummaryContent = `${canonicalizeJson(summary)}\n`;
+    await commitArtifacts(
+      deps,
+      ctx.workflowOperationId,
+      currentAttemptId(ctx),
+      [
+        ...outcome.results.map((result) => ({
+          path: `artifacts/evidence/${result.evidence.evidence_id}/${result.evidence.digest}.json`,
+          content: `${canonicalizeJson(result.evidence)}\n`,
+        })),
+        ...outcome.findings.map((finding) => ({
+          path: `artifacts/findings/${finding.id}/proposed.json`,
+          content: `${canonicalizeJson(finding)}\n`,
+        })),
+        ...buildTaskQualityRecords(ctx, outcome, bindings),
+        {
+          path: verifyArtifactPath(ctx.iterationId, bindings),
+          content: verifySummaryContent,
+        },
+      ],
+      [],
+      [
+        {
+          ...artifactAvailableEvent({
+            artifactKind: "gate_result",
+            recordDigest: sha256Hex(verifySummaryContent),
+            summary: `门禁验证批次已提交，共 ${String(summary.results.length)} 项结果`,
+          }),
+          iterationId: ctx.iterationId,
+        },
+      ],
+    );
     await commitEvidenceNodes(ctx, freshEvidenceMaterials(outcome), bindings);
   }
 

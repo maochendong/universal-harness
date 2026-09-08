@@ -6,9 +6,14 @@ import {
   harnessRootFor,
   replayLedger,
   resolveHarnessPath,
+  type LifecycleEvent,
 } from "@universal-harness-internal/core";
 import { checkGraphCache, rebuildGraphCache } from "@universal-harness-internal/graph";
-import { FileEventStream, type EventStreamPort } from "@universal-harness-internal/runtime";
+import {
+  FileEventStream,
+  createArtifactLinkResolver,
+  type EventStreamPort,
+} from "@universal-harness-internal/runtime";
 
 import {
   createDashboardCollaborationApi,
@@ -159,6 +164,10 @@ export async function startDashboardServer(
       : unavailableDashboardCollaborationApi(startupProblem);
   const sessions = new DashboardSessionStore();
   const shutdown = new AbortController();
+  // Versioned-artifact links for SSE event cards (spec §9.3); only a healthy
+  // Ledger can verify link targets, so an unavailable cache means no links.
+  const artifactResolver =
+    startupProblem === undefined ? createArtifactLinkResolver(options.projectRoot) : undefined;
   const routing: { handler?: ReturnType<typeof createDashboardRouter> } = {};
   const server = createServer((request, response) => {
     void routing.handler?.(request, response);
@@ -191,6 +200,13 @@ export async function startDashboardServer(
         : unavailableDashboardWriteApi(),
     collaborationApi,
     shutdownSignal: shutdown.signal,
+    ...(artifactResolver === undefined
+      ? {}
+      : {
+          // Observation events carry no artifact references; the resolver
+          // simply finds no links for their event_type.
+          artifactLinks: (item) => artifactResolver.linksForEvent(item.event as LifecycleEvent),
+        }),
   });
   let closed = false;
   return {

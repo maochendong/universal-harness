@@ -96,12 +96,14 @@ describe("persisted schemas", () => {
     }
 
     for (const eventType of EVENT_TYPES) {
-      // ApprovalDecided is the one event whose payload is authoritative
-      // evidence: it validates strictly at protocol 1.4 (spec §5.1).
+      // ApprovalDecided and ArtifactAvailable are the events whose payload is
+      // authoritative evidence: they validate strictly at protocol 1.4
+      // (spec §5.1, §9.3).
       const approvalDecided = eventType === "ApprovalDecided";
+      const artifactAvailable = eventType === "ArtifactAvailable";
       expect(
         validateSchema("event", {
-          protocol_version: approvalDecided ? "1.4.0" : "1.0.0",
+          protocol_version: approvalDecided || artifactAvailable ? "1.4.0" : "1.0.0",
           record_kind: "event",
           event_id: `event_${eventType.toLowerCase()}_01`,
           event_type: eventType,
@@ -120,7 +122,13 @@ describe("persisted schemas", () => {
                 decision_digest: digest,
                 decided_at: timestamp,
               }
-            : {},
+            : artifactAvailable
+              ? {
+                  artifact_kind: "plan",
+                  record_digest: digest,
+                  summary: "计划第 1 版",
+                }
+              : {},
         }),
         eventType,
       ).toMatchObject({ valid: true });

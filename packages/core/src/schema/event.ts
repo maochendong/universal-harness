@@ -58,6 +58,10 @@ export const EVENT_TYPES = [
   // emitted in the same transaction as the ApprovalDecision artifact it binds
   // and never carries a raw actor.
   "ApprovalDecided",
+  // Protocol 1.4 (transparency, spec §9.3): announces one committed artifact
+  // version that no other event can locate, emitted in the artifact's own
+  // atomic commit. Navigation payload only — never the content.
+  "ArtifactAvailable",
 ] as const;
 
 /**
@@ -76,6 +80,45 @@ export const ApprovalDecidedPayloadSchema = strictObject({
 });
 
 export type ApprovalDecidedPayload = Static<typeof ApprovalDecidedPayloadSchema>;
+
+/**
+ * The fixed versioned-artifact kinds (spec §9.2). Registered here — not in the
+ * runtime reader — so the ArtifactAvailable payload contract and the read API
+ * can never drift apart.
+ */
+export const ARTIFACT_KINDS = [
+  "approval_decision",
+  "prd",
+  "design_set",
+  "plan",
+  "context_manifest",
+  "run_summary",
+  "gate_result",
+  "evidence",
+  "evaluation",
+  "snapshot",
+  "tdd_artifact",
+  "finding_group",
+  "wave_result",
+  "integration_record",
+  "task_lease",
+] as const;
+
+export type ArtifactKind = (typeof ARTIFACT_KINDS)[number];
+
+/**
+ * The exact three-field payload of an ArtifactAvailable event (spec §9.3):
+ * which kind of artifact became readable, the byte SHA-256 of its root
+ * record as recorded in the committing manifest, and a bounded human summary
+ * (never raw content). Digest and summary alone must locate the version.
+ */
+export const ArtifactAvailablePayloadSchema = strictObject({
+  artifact_kind: enumerated(ARTIFACT_KINDS),
+  record_digest: DigestSchema,
+  summary: Type.String({ maxLength: 200 }),
+});
+
+export type ArtifactAvailablePayload = Static<typeof ArtifactAvailablePayloadSchema>;
 
 export const EventSchema = strictObject({
   ...persistedRecordProperties("event"),

@@ -4,6 +4,16 @@ export interface BusinessPresentationBadge {
   readonly tone: "neutral" | "positive" | "warning" | "critical";
 }
 
+export interface BusinessPresentationArtifactLink {
+  readonly label_zh: string;
+  readonly ref: {
+    readonly kind: string;
+    readonly scope: "artifact" | "manifest";
+    readonly digest: string;
+  };
+  readonly href: string;
+}
+
 export interface BusinessPresentation {
   readonly presentation_version: "1";
   readonly entity_id: string;
@@ -17,6 +27,8 @@ export interface BusinessPresentation {
   readonly badges: readonly BusinessPresentationBadge[];
   readonly derived_from: readonly string[];
   readonly fallback: boolean;
+  /** Versioned-artifact navigation targets (spec §9.3); omitted when empty. */
+  readonly artifact_links?: readonly BusinessPresentationArtifactLink[];
 }
 
 export type PresentationMap = Readonly<Record<string, BusinessPresentation>>;
@@ -527,7 +539,10 @@ export function presentSemanticProposal(source: PresentationSource): BusinessPre
   };
 }
 
-export function presentEvent(source: object): BusinessPresentation {
+export function presentEvent(
+  source: object,
+  artifactLinks?: readonly BusinessPresentationArtifactLink[],
+): BusinessPresentation {
   const record = source as Readonly<Record<string, unknown>>;
   const event =
     typeof record.event === "object" && record.event !== null && !Array.isArray(record.event)
@@ -571,6 +586,9 @@ export function presentEvent(source: object): BusinessPresentation {
       ]),
       derived_from: [...paths, "source", "authoritative"],
       fallback,
+      ...(artifactLinks === undefined || artifactLinks.length === 0
+        ? {}
+        : { artifact_links: artifactLinks }),
     };
   };
 
@@ -1059,5 +1077,63 @@ export function presentCapabilityStatus(source: PresentationSource): BusinessPre
     badges: limitBadges(badges),
     derived_from: ["capability_id", "generic_status", "domain_status", "resolution"],
     fallback: CAPABILITY_LABELS[capabilityId] === undefined,
+  };
+}
+
+/** Chinese labels for the fixed artifact kinds (spec §9.2). */
+const ARTIFACT_KIND_LABELS: Readonly<Record<string, string>> = {
+  approval_decision: "审批决定",
+  context_manifest: "上下文清单",
+  design_set: "设计集",
+  evaluation: "评估结果",
+  evidence: "验证证据",
+  finding_group: "问题组",
+  gate_result: "门禁结果",
+  integration_record: "集成记录",
+  plan: "执行计划",
+  prd: "需求文档",
+  run_summary: "运行摘要",
+  snapshot: "迭代快照",
+  task_lease: "任务租约",
+  tdd_artifact: "TDD 批次",
+  wave_result: "波次结果",
+};
+
+/**
+ * Versioned-artifact view presentation (spec §9.2/§9.3): the card binds to the
+ * committing digest and carries the verified input links so the browser can
+ * navigate to each committed input version. `content` is already the runtime
+ * safe view; only its business summary is projected here.
+ */
+export function presentArtifactView(
+  view: {
+    readonly ref: { readonly kind: string; readonly scope: string; readonly digest: string };
+    readonly content: unknown;
+  },
+  artifactLinks: readonly BusinessPresentationArtifactLink[],
+): BusinessPresentation {
+  const content = recordValue(view.content);
+  const summary = typeof content?.summary === "string" ? content.summary : undefined;
+  const typeLabel = ARTIFACT_KIND_LABELS[view.ref.kind] ?? `未知产出 / ${view.ref.kind}`;
+  return {
+    presentation_version: "1",
+    entity_id: view.ref.digest,
+    binding_digest: view.ref.digest,
+    title_zh: truncate(`${typeLabel} · ${view.ref.digest.slice(0, 12)}`, 80),
+    description_zh: truncate(summary ?? `该${typeLabel}已按提交版本安全读取。`, DESCRIPTION_LIMIT),
+    type_label_zh: typeLabel,
+    status_label_zh: "已提交",
+    technical_type: view.ref.kind,
+    technical_status: "committed",
+    badges: limitBadges([
+      {
+        label_zh: "读取范围",
+        value: view.ref.scope === "manifest" ? "事务清单" : "产出文件",
+        tone: "neutral",
+      },
+    ]),
+    derived_from: summary === undefined ? ["ref.kind", "ref.digest"] : ["content.summary"],
+    fallback: ARTIFACT_KIND_LABELS[view.ref.kind] === undefined,
+    ...(artifactLinks.length === 0 ? {} : { artifact_links: artifactLinks }),
   };
 }
