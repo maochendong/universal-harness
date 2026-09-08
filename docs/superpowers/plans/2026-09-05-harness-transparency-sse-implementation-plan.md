@@ -4,7 +4,7 @@
 
 **Goal:** 让已提交决定、状态流转和指定版本产出可靠可见，修复事件读取正确性并实现有界共享 SSE。
 
-**进度说明（2026-09-08）：** 共享事件读取基础修复与产出盘点已在[运行优化计划](2026-09-08-operational-optimization-plan.md)中落实。同日 Task 1 Step 1–5 已补齐并验证：新增表征/RED 测试 10 项（逆序 id 分页、整批原子可见与重试去重、view 精确分页断言、5 类 writer 缓存场景、坏行不隐藏后续行），CLI watch 增加 reset 提示与 JSON 结构化输出（人类/JSON 模式各 1 项测试），性能门槛按 §7.3 落地为 `tests/performance/event-stream-incremental.test.ts` 与 `scripts/generate-performance-dataset.mjs --mode=event-stream`，机器样本存 [2026-09-08-event-stream-perf.json](../../evidence/2026-09-08-event-stream-perf.json)（F=1万 p95 155ms、10万事件 RSS +14MiB）。Step 6 已提交（`684f296`）并通过独立评审（放行但有后续项：P2 证据 JSON 缺同 F 相对阈值与 E 布局分项，P3 "更大 rename"测试判别力弱，P4 watch reset 测试有 60ms 时序敏感性；P1 证据覆写已在 `53c4df2` 修复，样本写入改为 `HARNESS_PERF_EVIDENCE=1` 显式开启）。Task 2–6 复选框不因上述进展勾选。
+**进度说明（2026-09-08）：** 共享事件读取基础修复与产出盘点已在[运行优化计划](2026-09-08-operational-optimization-plan.md)中落实。同日 Task 1 Step 1–5 已补齐并验证：新增表征/RED 测试 10 项（逆序 id 分页、整批原子可见与重试去重、view 精确分页断言、5 类 writer 缓存场景、坏行不隐藏后续行），CLI watch 增加 reset 提示与 JSON 结构化输出（人类/JSON 模式各 1 项测试），性能门槛按 §7.3 落地为 `tests/performance/event-stream-incremental.test.ts` 与 `scripts/generate-performance-dataset.mjs --mode=event-stream`，机器样本存 [2026-09-08-event-stream-perf.json](../../evidence/2026-09-08-event-stream-perf.json)（F=1万 p95 155ms、10万事件 RSS +14MiB）。Step 6 已提交（`684f296`）并通过独立评审（放行但有后续项：P2 证据 JSON 缺同 F 相对阈值与 E 布局分项，P3 "更大 rename"测试判别力弱，P4 watch reset 测试有 60ms 时序敏感性；P1 证据覆写已在 `53c4df2` 修复，样本写入改为 `HARNESS_PERF_EVIDENCE=1` 显式开启）。同日 Task 2 与 Task 3 已实施、提交（`36a7b37` 注册 Protocol 1.4 与真实决定事件；`574f5bb` 有界共享 SSE Hub）并通过联合独立评审（双双放行；后续项：Hub `checkStall` 仅在 tick 边界检查、共享扫描断言的分项在 Task 6 保留）。Task 4–6 复选框不因上述进展勾选。
 
 **Architecture:** Ledger manifest 决定权威可见性，Live Spool 承载实时观察；FileEventStream 复用 core 校验并维护内存 position 索引。Dashboard Hub 共享源刷新、分页追平和有界扇出；产出正文通过已有读接口的受控扩展提供。
 
@@ -12,7 +12,7 @@
 
 **Spec:** [开发过程透明化与 SSE 呈现设计](../specs/2026-09-05-harness-transparency-sse-design.md)
 
-**Status:** 2026-09-08 已按评审修订。Task 1 Step 1–5 已实施并验证（证据见下方进度说明），Step 6 的提交与独立评审尚未执行；Task 2–6 未开始。
+**Status:** 2026-09-08 已按评审修订。Task 1、2、3 已实施、提交并通过独立评审；Task 4（依赖 Task 2+3）已放行待实施；Task 5、6 未开始。
 
 **Baseline:** `2084617`；原始两份文档未跟踪，`teach/` 为无关未跟踪目录。执行时先核对最新 Git 状态；已有变更不覆盖、不顺手提交。
 
@@ -210,7 +210,7 @@ git commit -m "fix(event-stream): enforce committed visibility and resumable inc
 - Produces: 设计§8的`EventStreamHub.subscribeClient(options): AsyncIterable<HubDelivery>`与`close()`。
 - sse接受HubDelivery，保留原EventStreamPort路径以兼容注入的旧Adapter；不伪造缺失的逐项cursor。
 
-- [ ] **Step 1: 写交接、过滤、隔离RED**
+- [x] **Step 1: 写交接、过滤、隔离RED**
 
 为source refresh、客户端登记和追平完成设置可控屏障；在各屏障间追加事件，两个客户端使用不同
 workflow/iteration过滤。确保read分页>500项仍追平，期间新事件不遗漏，直到H结束后再交付H之后。
@@ -237,7 +237,7 @@ await hub.close();
 pnpm exec vitest run --config vitest.workspace.ts packages/dashboard/test/event-hub.test.ts packages/dashboard/test/sse.test.ts
 ```
 
-- [ ] **Step 2: 实现登记→上界→分页→缓冲交接**
+- [x] **Step 2: 实现登记→上界→分页→缓冲交接**
 
 ```ts
 type HubDelivery =
@@ -253,7 +253,7 @@ const page = view.read({ ...query, untilCursor: view.headCursor, limit: 500 });
 先登记缓冲再取H；逐页只追平到H，再去重排空H后的缓冲。refresh只在共享循环进行，客户端不能调用
 source.read触发额外扫描。generation变化终止旧view并reset；无客户端停轮询，关闭Hub释放全部订阅。
 
-- [ ] **Step 3: 实现并测试背压及线格式**
+- [x] **Step 3: 实现并测试背压及线格式**
 
 使用fake response使write返回false，控制drain；256条/1MiB/10s任何限制达到则关闭该客户端，
 其他客户端继续。队列位置不是已交付游标；无需存服务端ack，重连以客户端Last-Event-ID为准。
@@ -268,7 +268,7 @@ expect(sourceRefreshCountWithFourClients).toBe(sourceRefreshCountWithOneClient);
 逐字验证既有heartbeat/reset/error帧结构、逐项id；无数据时heartbeat仍发送，abort/drain等待能释放。
 router维持已有过滤和认证，不因Hub共享而混合不同请求的过滤范围。
 
-- [ ] **Step 4: 用真实HTTP验证重连并提交**
+- [x] **Step 4: 用真实HTTP验证重连并提交**
 
 `tests/e2e/sse-reconnect.test.ts`明确使用Vitest+Node HTTP客户端：复用既有Dashboard认证fixture，
 断开后带Last-Event-ID重连，验证所有目标id至少可达；同代际正常恢复不跳项，reset后允许重放。
@@ -307,7 +307,7 @@ type ApprovalPromptOutcome =
 // 保留parseApprovalDecision/promptForApprovalDecision旧签名作为兼容包装。
 ```
 
-- [ ] **Step 1: 写注册、事务pin与重启读取RED**
+- [x] **Step 1: 写注册、事务pin与重启读取RED**
 
 ```ts
 expect(assertKnownProtocol("1.4.0").status).toBe("development");
@@ -328,7 +328,7 @@ expect(
 测试1.0–1.4混合记录、1.4默认Reader重启、旧Reader显式阻断；保留历史golden字节不变。
 不能通过仅删除EVENT_TYPES一项模拟所有旧版行为；至少用固定旧Schema及显式旧Reader各测其合同。
 
-- [ ] **Step 2: 注册、pin、默认Reader及payload校验一起实现**
+- [x] **Step 2: 注册、pin、默认Reader及payload校验一起实现**
 
 所有含新事件事务使用完整artifacts/events归约的最高版本；新增事件pin不可由1.0/1.2决定记录版本覆盖。
 core最新Reader默认改1.4；检索生产显式Reader pin并区分“支持版本”与“特定领域记录版本”，不批量改历史。
@@ -353,7 +353,7 @@ const event = {
 在schema registry增加已知ApprovalDecided的payload语义校验与负向用例；不改变旧事件Schema容忍范围。
 使用字节digest绑定Decision artifact，不重新发明canonical或semantic digest。
 
-- [ ] **Step 3: 分别接入本地与远程既有提交点**
+- [x] **Step 3: 分别接入本地与远程既有提交点**
 
 ```ts
 // 在原有artifacts同次提交中附加，不另开一次事务。
@@ -364,7 +364,7 @@ events: [approvalDecidedEvent(record, sha256Hex(artifact.content))];
 测试CLI显式approve/reject/defer、Dashboard命令路径和远程物化；每个Decision恰一事件，digest一致。
 远程幂等重试不新增事件；提交前故障、drift、自审批、禁用决定不产生已提交成果。remote decided_at保持原值。
 
-- [ ] **Step 4: 保留未作决定信息，证明defer不是终态**
+- [x] **Step 4: 保留未作决定信息，证明defer不是终态**
 
 ```ts
 expect(await promptForApprovalOutcome(request, eofPrompter)).toEqual({
@@ -380,7 +380,7 @@ expect(await promptForApprovalOutcome(request, explicitDeferPrompter)).toEqual({
 显式defer走resolveDecision并保持pending；EOF/Ctrl-C/空输入/无效输入只阻塞等待，不写Decision。
 验证同请求defer→defer→approve有三条决定/成果事件；远程defer保持既有拒绝物化语义。
 
-- [ ] **Step 5: 生成Schema、目标门禁、提交**
+- [x] **Step 5: 生成Schema、目标门禁、提交**
 
 ```bash
 pnpm --filter @universal-harness-internal/core schema:generate
