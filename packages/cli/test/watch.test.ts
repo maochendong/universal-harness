@@ -8,12 +8,19 @@ import {
   readdirSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 
 import { afterEach, describe, expect, it } from "vitest";
 
 import { buildManifest, sha256Hex, type LifecycleEvent } from "@universal-harness-internal/core";
-import { FileLiveSpool } from "@universal-harness-internal/runtime";
+import {
+  FileLiveSpool,
+  approvalActorDisplay,
+  approvalDecisionArtifact,
+  buildApprovalDecision,
+  type ApprovalDecision,
+  type ApprovalDecisionRecord,
+} from "@universal-harness-internal/runtime";
 
 import type { CliIo } from "../src/index.js";
 import { formatEventLine, runWatchCommand } from "../src/commands/watch.js";
@@ -70,6 +77,7 @@ function writeEvents(
   projectRoot: string,
   fileName: string,
   events: readonly LifecycleEvent[],
+  artifactDigests: readonly string[] = [],
 ): void {
   const ledgerId = fileName.replace(/\.jsonl$/u, "");
   const body = events
@@ -90,7 +98,7 @@ function writeEvents(
         attempt_id: "attempt_watch",
         baseline_commit: "abcdef0123456789",
         sequence: readdirSync(operations).length + 1,
-        artifact_digests: [],
+        artifact_digests: [...artifactDigests],
         edge_file: `ledger/edges/2026-08/${fileName}`,
         edge_file_digest: sha256Hex(""),
         event_file: `events/2026-08/${fileName}`,
@@ -99,6 +107,36 @@ function writeEvents(
       }),
     ),
   );
+}
+
+/** Commit a decision artifact into the fake project; returns its byte digest. */
+function writeDecisionArtifact(projectRoot: string, record: ApprovalDecisionRecord): string {
+  const artifact = approvalDecisionArtifact(record);
+  const absolute = join(projectRoot, ".harness", artifact.path);
+  mkdirSync(dirname(absolute), { recursive: true });
+  writeFileSync(absolute, artifact.content);
+  return sha256Hex(artifact.content);
+}
+
+function decidedEvent(
+  record: ApprovalDecisionRecord,
+  decisionDigest: string,
+  overrides: Partial<LifecycleEvent> = {},
+): LifecycleEvent {
+  return makeEvent({
+    event_id: "event_decided_01",
+    event_type: "ApprovalDecided",
+    protocol_version: "1.4.0",
+    payload: {
+      request_id: record.request_id,
+      approval_id: record.approval_id,
+      decision: record.decision,
+      object_digest: record.object_digest,
+      decision_digest: decisionDigest,
+      decided_at: record.decided_at,
+    },
+    ...overrides,
+  });
 }
 
 function makeContext(captured: Captured, json: boolean, cwd: string): CommandContext {
@@ -365,5 +403,77 @@ describe("harness watch", () => {
       runWatchCommand(["--lines", "0"], makeContext(captured, false, root)),
     ).rejects.toThrow(/--lines must be a positive integer/);
     expect(root).toBeDefined();
+  });
+});
+
+describe("harness watch ApprovalDecided enrichment", () => {
+  function makeDecision(decision: ApprovalDecision): ApprovalDecisionRecord {
+    return buildApprovalDecision({
+      approvalId: "approval_decision_w01",
+      requestId: "approval_request_w01",
+      actor: "user:carol",
+      decision,
+      objectDigest: "a".repeat(64),
+      decidedAt: "2026-08-15T10:00:05.000Z",
+    });
+  }
+
+  it("renders the shared summary (decision, redacted identity, remote time) in human mode", async () => {
+    const root = makeProject();
+    const record = makeDecision("approve");
+    const digest = writeDecisionArtifact(root, record);
+    writeEvents(root, "ledger_a.jsonl", [decidedEvent(record, digest)], [digest]);
+    const captured = captureIo();
+
+    const result = await runWatchCommand([], makeContext(captured, false, root));
+
+    expect(result.status).toBe("ok");
+    const line = captured.stderr().trim();
+    const actorDisplay = approvalActorDisplay(root, "user:carol");
+    expect(actorDisplay).toMatch(/^审批者[0-9a-f]{12}$/u);
+    expect(line).toContain(
+      `ApprovalDecided decision=approve by=${actorDisplay} at=2026-08-15T10:00:05.000Z`,
+    );
+    // The raw actor never appears in the CLI rendering (spec §10).
+    expect(line).not.toContain("user:carol");
+  });
+
+  it("attaches the same summary in json mode without the raw actor", async () => {
+    const root = makeProject();
+    const record = makeDecision("defer");
+    const digest = writeDecisionArtifact(root, record);
+    writeEvents(root, "ledger_a.jsonl", [decidedEvent(record, digest)], [digest]);
+    const captured = captureIo();
+
+    const result = await runWatchCommand([], makeContext(captured, true, root));
+
+    expect(result.status).toBe("ok");
+    const line = JSON.parse(captured.stderr().trim()) as Record<string, unknown>;
+    expect(line["event_type"]).toBe("ApprovalDecided");
+    expect(line["approval_summary"]).toEqual({
+      request_id: record.request_id,
+      approval_id: record.approval_id,
+      decision: "defer",
+      actor_display: approvalActorDisplay(root, "user:carol"),
+      decided_at: "2026-08-15T10:00:05.000Z",
+      decision_digest: digest,
+    });
+    expect(captured.stderr()).not.toContain("user:carol");
+  });
+
+  it("falls back to the event payload when the digest is not committed, never inferring", async () => {
+    const root = makeProject();
+    const record = makeDecision("approve");
+    const missingDigest = "0".repeat(64);
+    writeEvents(root, "ledger_a.jsonl", [decidedEvent(record, missingDigest)]);
+    const captured = captureIo();
+
+    const result = await runWatchCommand([], makeContext(captured, false, root));
+
+    expect(result.status).toBe("ok");
+    const line = captured.stderr().trim();
+    expect(line).toContain("ApprovalDecided decision=approve request=approval_request_w01");
+    expect(line).not.toContain("审批者");
+    expect(line).not.toContain("user:carol");
   });
 });

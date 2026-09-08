@@ -1108,6 +1108,15 @@ export {
   type RunOutputOptions,
 } from "./observability/publisher.js";
 export { projectActiveRun, type ActiveRunProjection } from "./observability/active-run.js";
+export {
+  ApprovalSummaryError,
+  approvalActorDisplay,
+  readApprovalSummary,
+  type ApprovalSummary,
+  type ApprovalSummaryErrorKind,
+  type ApprovalSummaryProvenance,
+  type ApprovalSummaryRead,
+} from "./observability/approval-summary.js";
 
 export {
   COLLABORATION_CONTROL_REF,

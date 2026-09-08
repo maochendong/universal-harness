@@ -175,6 +175,17 @@ const DECISION_LABELS: Readonly<Record<string, string>> = {
   reject: "拒绝",
 };
 
+/** Display summaries are capped at 200 Unicode characters (spec §10). */
+const DESCRIPTION_LIMIT = 200;
+
+const APPROVAL_DECISION_STATES: Readonly<
+  Record<string, { readonly value: string; readonly tone: BusinessPresentationBadge["tone"] }>
+> = {
+  approve: { value: "已批准", tone: "positive" },
+  reject: { value: "已拒绝", tone: "critical" },
+  defer: { value: "已暂缓", tone: "warning" },
+};
+
 const ITERATION_STATE_LABELS: Readonly<
   Record<string, { readonly value: string; readonly tone: BusinessPresentationBadge["tone"] }>
 > = {
@@ -394,7 +405,7 @@ export function presentNode(source: PresentationSource): BusinessPresentation {
     title_zh: truncate(title?.value ?? `${typeLabel} · ${entityId}`, 80),
     description_zh: truncate(
       description?.value ?? FALLBACK_DESCRIPTIONS[technicalType] ?? `该记录表示一个${typeLabel}。`,
-      240,
+      DESCRIPTION_LIMIT,
     ),
     type_label_zh: typeLabel,
     status_label_zh: statusLabel,
@@ -423,7 +434,7 @@ export function presentEdge(source: PresentationSource): BusinessPresentation {
     title_zh: typeLabel,
     description_zh: truncate(
       description?.value ?? "该关系连接两个受治理对象，具体业务说明尚未记录。",
-      240,
+      DESCRIPTION_LIMIT,
     ),
     type_label_zh: typeLabel,
     status_label_zh: statusLabel,
@@ -461,7 +472,7 @@ export function presentFindingGroup(source: object): BusinessPresentation {
     title_zh: truncate(ruleLabel, 80),
     description_zh: truncate(
       `${scopeLabel}存在${ruleLabel}的问题，共 ${String(openCount)} 项待处理。`,
-      240,
+      DESCRIPTION_LIMIT,
     ),
     type_label_zh: "问题组",
     status_label_zh: openCount > 0 ? "待处理" : "已处理",
@@ -496,7 +507,10 @@ export function presentSemanticProposal(source: PresentationSource): BusinessPre
     entity_id: entityId,
     binding_digest: digest,
     title_zh: "候选影响关系",
-    description_zh: truncate(reason?.value ?? "该关系由确定性语义特征提出，尚未获得批准。", 240),
+    description_zh: truncate(
+      reason?.value ?? "该关系由确定性语义特征提出，尚未获得批准。",
+      DESCRIPTION_LIMIT,
+    ),
     type_label_zh: "语义候选",
     status_label_zh: "待批准",
     technical_type: "SemanticProposal",
@@ -542,7 +556,7 @@ export function presentEvent(source: object): BusinessPresentation {
       entity_id: entityId,
       binding_digest: null,
       title_zh: truncate(title, 80),
-      description_zh: truncate(description, 240),
+      description_zh: truncate(description, DESCRIPTION_LIMIT),
       type_label_zh: "实时事件",
       status_label_zh: status,
       technical_type: eventType,
@@ -759,6 +773,26 @@ export function presentEvent(source: object): BusinessPresentation {
       typeof payload.request_id !== "string",
     );
   }
+  if (eventType === "ApprovalDecided") {
+    // The event payload carries no actor (Protocol 1.4, spec §5.1); the card
+    // view reloads the shared redacted summary by decision_digest, so this
+    // presentation renders payload facts only.
+    const decision = typeof payload.decision === "string" ? payload.decision : "unknown";
+    const state = APPROVAL_DECISION_STATES[decision] ?? {
+      value: `未知 / ${decision}`,
+      tone: "neutral" as const,
+    };
+    const requestId = typeof payload.request_id === "string" ? payload.request_id : "未知请求";
+    return present(
+      "审批决定已提交",
+      `审批请求 ${requestId} 的${state.value}决定已写入账本。`,
+      state.value,
+      [{ label_zh: "决定", value: state.value, tone: state.tone }],
+      ["event.payload.request_id", "event.payload.decision", "event.payload.decision_digest"],
+      APPROVAL_DECISION_STATES[decision] === undefined ||
+        typeof payload.decision_digest !== "string",
+    );
+  }
 
   return present(
     `运行事件 · ${eventType}`,
@@ -790,7 +824,10 @@ export function presentApproval(source: PresentationSource): BusinessPresentatio
     entity_id: entityId,
     binding_digest: digest,
     title_zh: truncate(`批准${objectLabel}`, 80),
-    description_zh: truncate(reason?.value ?? "该受治理对象需要人工确认后才能继续。", 240),
+    description_zh: truncate(
+      reason?.value ?? "该受治理对象需要人工确认后才能继续。",
+      DESCRIPTION_LIMIT,
+    ),
     type_label_zh: "审批请求",
     status_label_zh: "等待决策",
     technical_type: objectType,
@@ -808,6 +845,47 @@ export function presentApproval(source: PresentationSource): BusinessPresentatio
       APPROVAL_OBJECT_LABELS[objectType] === undefined ||
       RISK_LABELS[risk] === undefined ||
       reason === undefined,
+  };
+}
+
+/**
+ * Decision card presentation enriched from the shared runtime summary
+ * (spec §5.3, §10): the same summary the CLI prints drives the card, so one
+ * reference shows the same decision, redacted identity and decision time in
+ * both surfaces. A defer stays visibly pending; approve/reject are terminal.
+ */
+export function presentApprovalDecision(summary: {
+  readonly request_id: string;
+  readonly approval_id: string;
+  readonly decision: string;
+  readonly actor_display: string;
+  readonly decided_at: string;
+  readonly decision_digest: string;
+}): BusinessPresentation {
+  const state = APPROVAL_DECISION_STATES[summary.decision] ?? {
+    value: `未知 / ${summary.decision}`,
+    tone: "neutral" as const,
+  };
+  return {
+    presentation_version: "1",
+    entity_id: summary.approval_id,
+    binding_digest: summary.decision_digest,
+    title_zh: truncate(`审批决定 · ${state.value}`, 80),
+    description_zh: truncate(
+      `${summary.actor_display} 于 ${summary.decided_at} 记录了该决定。`,
+      DESCRIPTION_LIMIT,
+    ),
+    type_label_zh: "审批决定",
+    status_label_zh: summary.decision === "defer" ? "已暂缓，仍待处理" : state.value,
+    technical_type: "ApprovalDecision",
+    technical_status: summary.decision,
+    badges: limitBadges([
+      { label_zh: "决定", value: state.value, tone: state.tone },
+      { label_zh: "审批者", value: truncate(summary.actor_display, 48), tone: "neutral" },
+      { label_zh: "决定时间", value: truncate(summary.decided_at, 48), tone: "neutral" },
+    ]),
+    derived_from: ["decision", "actor_display", "decided_at"],
+    fallback: APPROVAL_DECISION_STATES[summary.decision] === undefined,
   };
 }
 
@@ -929,7 +1007,7 @@ export function presentModelInvocation(source: PresentationSource): BusinessPres
     title_zh: truncate(`${typeLabel} · ${statusLabel}`, 80),
     description_zh: truncate(
       `端口 ${portId}${purpose === undefined ? "" : `（${purpose}）`}，契约 ${String(source.prompt_contract_id ?? "unknown")} v${contractVersion}。`,
-      240,
+      DESCRIPTION_LIMIT,
     ),
     type_label_zh: typeLabel,
     status_label_zh: statusLabel,
@@ -973,7 +1051,7 @@ export function presentCapabilityStatus(source: PresentationSource): BusinessPre
     entity_id: capabilityId,
     binding_digest: null,
     title_zh: truncate(typeLabel, 80),
-    description_zh: truncate(`能力 ${capabilityId}：${statusLabel}。`, 240),
+    description_zh: truncate(`能力 ${capabilityId}：${statusLabel}。`, DESCRIPTION_LIMIT),
     type_label_zh: typeLabel,
     status_label_zh: statusLabel,
     technical_type: capabilityId,

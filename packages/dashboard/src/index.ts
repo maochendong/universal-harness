@@ -30,6 +30,7 @@ export {
 } from "./scheduler-api.js";
 export {
   presentApproval,
+  presentApprovalDecision,
   presentCapabilityStatus,
   presentEdge,
   presentEvent,

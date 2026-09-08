@@ -455,6 +455,40 @@ describe("ApprovalService.requestApprovalInteractively", () => {
     expect(decisions).toHaveLength(1);
     expect(decisions[0]).toMatchObject({ decision: "defer", actor: "user:bob" });
   });
+
+  it("keeps a committed defer out of the approval bindings so a later approve can resume", async () => {
+    const { projectRoot, engine, service, workflowOperationId, now } = await setup("mb");
+    const outcome = await service.requestApproval(makeRequestInput(workflowOperationId));
+    await resume(projectRoot, "mb", workflowOperationId, now);
+    await service.resolveDecision({
+      requestId: outcome.request_id,
+      decision: "defer",
+      objectDigest: OBJECT_DIGEST,
+      actor: "user:bob",
+    });
+
+    // The resume protocol re-verifies every approval binding as an approve; a
+    // committed defer must stay out of those bindings, or a deferred request
+    // could never be approved through the resume-gated command path (§5.3).
+    const decision = await service.resolveDecision({
+      requestId: outcome.request_id,
+      decision: "approve",
+      objectDigest: OBJECT_DIGEST,
+      actor: "user:bob",
+    });
+
+    expect(service.pendingRequests(workflowOperationId)).toEqual([]);
+    expect(engine.getWorkingState(workflowOperationId)?.approval_digests).toEqual([
+      sha256Hex(approvalDecisionArtifact(decision).content),
+    ]);
+    const operations = new LedgerRepository({ projectRoot, readBaseline: () => BASELINE });
+    const decisions = readApprovalDecisions(
+      harnessRootFor(projectRoot),
+      operations.operations(),
+      workflowOperationId,
+    );
+    expect(decisions.map((decision) => decision.decision)).toEqual(["defer", "approve"]);
+  });
 });
 
 describe("ApprovalService.resolveRemoteDecision", () => {

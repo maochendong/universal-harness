@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -21,13 +21,16 @@ import {
 } from "../../packages/dashboard/src/index.js";
 import { rebuildGraphCache } from "../../packages/graph/src/index.js";
 import {
+  FileLiveSpool,
   createGenericInterpreter,
   createNewProject,
   readApprovalDecisions,
+  readApprovalSummary,
   readCurrentOperation,
   resolveApproval,
   resumeIteration,
   runIteration,
+  type ApprovalDecision,
   type OrchestratorDependencies,
 } from "../../packages/runtime/src/index.js";
 
@@ -41,6 +44,15 @@ interface LiveDashboardFixture {
   readonly firstObjectType: string;
   readonly firstObjectDigest: string;
   readonly firstAllowedDecisions: readonly string[];
+  /**
+   * Decide the first request through the CLI-equivalent command path
+   * (resolveApproval), never through the page's own UI callback, so the
+   * browser can only learn about it over SSE + the shared summary endpoint.
+   */
+  readonly decide: (
+    decision: ApprovalDecision,
+    actor: string,
+  ) => Promise<{ readonly approvalDigest: string }>;
 }
 
 function head(projectRoot: string): string {
@@ -130,6 +142,15 @@ const test = base.extend<{ dashboard: LiveDashboardFixture }>({
         firstObjectType: started.required.object_type,
         firstObjectDigest: started.required.object_digest,
         firstAllowedDecisions: started.required.allowed_decisions,
+        decide: async (decision, actor) => {
+          const resolved = await resolveApproval(deps, {
+            requestId: started.required.request_id,
+            decision,
+            actor,
+            expectedObjectDigest: started.required.object_digest,
+          });
+          return { approvalDigest: resolved.approvalDigest };
+        },
       });
     } finally {
       await server.close();
@@ -347,5 +368,119 @@ test.describe("Dashboard live approval journey", () => {
     await expect(page.getByText("DECISION RECORDED")).toBeVisible();
     expect(decisionBody?.expected_digest).toBe(firstObjectDigest);
     expect(decisionBody?.expected_digest).not.toBe(alteredDigest);
+  });
+
+  test("pushes defer and terminal decisions made on another command path into two browser queues", async ({
+    dashboard,
+  }) => {
+    const { page, server, projectRoot, decide } = dashboard;
+    const second = await page.context().newPage();
+    await second.goto(server.origin + "/");
+    try {
+      for (const browser of [page, second]) {
+        await browser.getByRole("link", { name: /Live/u }).click();
+        await browser.getByRole("link", { name: /Approvals/u }).click();
+        await expect(browser.locator("#approval-queue .approval-card")).toHaveCount(1);
+      }
+
+      // A defer committed elsewhere: the card shows the shared summary, keeps
+      // the request pending and keeps the follow-up actions available.
+      const deferred = await decide("defer", "human:cli-defer");
+      const deferSummary = readApprovalSummary(projectRoot, deferred.approvalDigest).summary;
+      expect(deferSummary.decision).toBe("defer");
+      for (const browser of [page, second]) {
+        const queue = browser.locator("#approval-queue");
+        await expect(queue).toContainText("已暂缓，仍待处理");
+        await expect(queue).toContainText(deferSummary.actor_display);
+        await expect(queue).toContainText(deferSummary.decided_at);
+        await expect(queue.getByRole("button", { name: "APPROVE" })).toBeEnabled();
+      }
+
+      // A terminal approve committed elsewhere: both browsers show the same
+      // decision, redacted identity and record time; the raw actor and the
+      // decision form leave the terminal card.
+      const approved = await decide("approve", "human:cli-approve");
+      const approveSummary = readApprovalSummary(projectRoot, approved.approvalDigest).summary;
+      for (const browser of [page, second]) {
+        const queue = browser.locator("#approval-queue");
+        await expect(queue).toContainText("审批决定 · 已批准");
+        await expect(queue).toContainText(approveSummary.actor_display);
+        await expect(queue).toContainText(approveSummary.decided_at);
+        await expect(queue).not.toContainText("human:cli-approve");
+        await expect(queue.getByRole("button", { name: "APPROVE" })).toHaveCount(0);
+        await expect(browser.locator("#approval-count")).toHaveText("0 pending");
+      }
+    } finally {
+      await second.close();
+    }
+  });
+
+  test("rebuilds the decision card from the authoritative replay after a refresh", async ({
+    dashboard,
+  }) => {
+    const { page, firstRequestId, decide } = dashboard;
+    await page.getByRole("link", { name: /Live/u }).click();
+    await page.getByRole("link", { name: /Approvals/u }).click();
+    await expect(page.locator("#approval-queue .approval-card")).toHaveCount(1);
+
+    await decide("defer", "human:cli-defer");
+    await decide("approve", "human:cli-approve");
+    await expect(page.locator("#approval-queue")).toContainText("审批决定 · 已批准");
+
+    await page.reload();
+    await page.getByRole("link", { name: /Live/u }).click();
+    await page.getByRole("link", { name: /Approvals/u }).click();
+    const cards = page.locator(`#approval-queue [data-request-id="${firstRequestId}"]`);
+    await expect(cards).toHaveCount(1);
+    await expect(cards.first()).toContainText("审批决定 · 已批准");
+    // The replayed older defer must not downgrade the terminal state.
+    await expect(page.locator("#approval-queue")).not.toContainText("已暂缓，仍待处理");
+    await expect(page.locator("#approval-count")).toHaveText("0 pending");
+  });
+
+  test("recovers pending and decision state after a real stream reset, flagging live gaps", async ({
+    dashboard,
+  }) => {
+    const { page, projectRoot, workflowOperationId, firstRequestId, decide } = dashboard;
+    // Seed a Live observation so the browser cursor advances past a Live
+    // segment the test can then replace to force a real source reset.
+    const live = new FileLiveSpool(projectRoot).append({
+      streamId: "stream_reset_e2e",
+      observationKey: "obs_reset_before",
+      eventType: "RunHeartbeat",
+      projectId: "project_dashboard_live",
+      iterationId: "iteration_01M02WWWWWWWWWWWWWWWWWWWWWW",
+      workflowOperationId,
+      timestamp: "2026-09-08T00:00:00.000Z",
+      payload: { run_id: "run_reset_e2e" },
+    });
+
+    await page.getByRole("link", { name: /Live/u }).click();
+    await expect(page.locator("#live-register")).toContainText("RunHeartbeat");
+    await page.getByRole("link", { name: /Approvals/u }).click();
+    await decide("approve", "human:cli-reset");
+    await expect(page.locator("#approval-queue")).toContainText("审批决定 · 已批准");
+
+    // Replace the Live segment: the shared source drops the old generation,
+    // the Hub evicts the browser cursor and emits a real stream_reset frame.
+    const segment = join(
+      projectRoot,
+      ".harness/cache/event-stream/stream_reset_e2e/segment-000001.jsonl",
+    );
+    writeFileSync(
+      `${segment}.replacement`,
+      `${JSON.stringify({ ...live, observation_key: "obs_reset_after" })}\n`,
+    );
+    renameSync(`${segment}.replacement`, segment);
+
+    await expect(page.locator("#live-register .live-gap-note")).toContainText(
+      "live history may have gaps",
+    );
+    // The authoritative replay restores the decision card in committed order.
+    await expect(page.locator("#approval-queue")).toContainText("审批决定 · 已批准");
+    await expect(page.locator(`#approval-queue [data-request-id="${firstRequestId}"]`)).toHaveCount(
+      1,
+    );
+    await expect(page.locator("#approval-count")).toHaveText("0 pending");
   });
 });

@@ -138,6 +138,19 @@ const ERROR_FRAME = `event: stream_error\ndata: ${JSON.stringify({ code: "event_
 const HEARTBEAT_FRAME = ": heartbeat\n\n";
 
 /**
+ * Hard runtime guardrail (spec §10): one serialized SSE frame may not exceed
+ * 32 KiB UTF-8. An oversize business frame is never delivered; the client
+ * gets a bounded stream_error and the connection closes, leaving the
+ * authoritative record readable over REST.
+ */
+export const MAX_SSE_FRAME_BYTES = 32 * 1024;
+const OVERSIZE_FRAME = `event: stream_error\ndata: ${JSON.stringify({ code: "event_frame_too_large" })}\n\n`;
+
+function frameWithinLimit(frame: string): boolean {
+  return Buffer.byteLength(frame, "utf8") <= MAX_SSE_FRAME_BYTES;
+}
+
+/**
  * Hub path: deliveries arrive from the shared bounded fanout. The heartbeat
  * timer is per connection and never waits for data; a socket that cannot
  * drain within the budget is closed without touching other subscribers.
@@ -186,15 +199,12 @@ async function streamHubEvents(
         await writeBounded(response, signal, ERROR_FRAME, drainTimeoutMs);
         return;
       }
-      if (
-        !(await writeBounded(
-          response,
-          signal,
-          eventFrame(delivery.item, delivery.cursor),
-          drainTimeoutMs,
-        ))
-      )
+      const frame = eventFrame(delivery.item, delivery.cursor);
+      if (!frameWithinLimit(frame)) {
+        await writeBounded(response, signal, OVERSIZE_FRAME, drainTimeoutMs);
         return;
+      }
+      if (!(await writeBounded(response, signal, frame, drainTimeoutMs))) return;
       lastWrite = now();
     }
   } finally {
@@ -258,7 +268,12 @@ export async function streamDashboardEvents(options: StreamDashboardEventsOption
       const next = page.items[0];
       if (next !== undefined && page.cursor !== undefined) {
         cursor = page.cursor;
-        await write(response, options.signal, eventFrame(next, cursor));
+        const frame = eventFrame(next, cursor);
+        if (!frameWithinLimit(frame)) {
+          await write(response, options.signal, OVERSIZE_FRAME);
+          return;
+        }
+        await write(response, options.signal, frame);
         lastWrite = now();
         // Yield to the socket and disconnect handlers before scanning the
         // next page. Without this fairness point a large historical stream

@@ -425,4 +425,53 @@ describe("Dashboard SSE over the shared EventStreamHub", () => {
     await fastDone;
     expect(fast.ended).toBe(true);
   });
+
+  it("never delivers an oversize business frame; it sends a bounded stream_error and closes", async () => {
+    const response = new ResponseDouble();
+    const oversize = item(1, "RunOutputSummary");
+    (oversize.event as { payload: Record<string, unknown> }).payload = {
+      run_id: "run_01",
+      summary: "长".repeat(40 * 1024),
+    };
+    const port: EventStreamPort = {
+      read: () => Promise.resolve({ items: [oversize], cursor: "cursor_big" }),
+      subscribe: () => ({ [Symbol.asyncIterator]: async function* () {} }),
+    };
+
+    await streamDashboardEvents({
+      response,
+      eventStream: port,
+      signal: new AbortController().signal,
+    });
+
+    const output = response.writes.join("");
+    expect(output).not.toContain("event: RunOutputSummary");
+    expect(output).toContain('event: stream_error\ndata: {"code":"event_frame_too_large"}');
+    expect(response.ended).toBe(true);
+  });
+
+  it("applies the same frame guard on the Hub fanout path", async () => {
+    const hub = new HubDouble();
+    const response = new ResponseDouble();
+    const abort = new AbortController();
+    const oversize = item(1, "RunOutputSummary");
+    (oversize.event as { payload: Record<string, unknown> }).payload = {
+      run_id: "run_01",
+      summary: "长".repeat(40 * 1024),
+    };
+
+    const running = streamDashboardEvents({
+      response,
+      eventHub: hub,
+      signal: abort.signal,
+    });
+    await Promise.resolve();
+    hub.push({ kind: "item", item: oversize, cursor: "cursor_big" });
+    await running;
+
+    const output = response.writes.join("");
+    expect(output).not.toContain("event: RunOutputSummary");
+    expect(output).toContain('event: stream_error\ndata: {"code":"event_frame_too_large"}');
+    expect(response.ended).toBe(true);
+  });
 });

@@ -385,7 +385,13 @@ export class ApprovalService {
       boundary: "approval",
       ...DECISION_COMMIT_PIN,
       proposal: {
-        add_approval_digests: [sha256Hex(artifact.content)],
+        // Only an approve binds the working state: the resume protocol
+        // re-verifies every recorded approval digest as an approve, so a
+        // committed defer/reject must stay out of the bindings — otherwise a
+        // deferred request could never be approved afterwards (spec §5.3).
+        ...(record.decision === "approve"
+          ? { add_approval_digests: [sha256Hex(artifact.content)] }
+          : {}),
         reconcile_blockers:
           record.decision === "defer"
             ? { pending_approval_ids: [request.request_id] }
@@ -498,7 +504,12 @@ export class ApprovalService {
       boundary: "approval",
       ...DECISION_COMMIT_PIN,
       proposal: {
-        add_approval_digests: [sha256Hex(artifact.content)],
+        // Same binding rule as local decisions: only an approve is recorded
+        // as a working-state approval binding (a materialized reject must not
+        // poison later resume verification).
+        ...(record.decision === "approve"
+          ? { add_approval_digests: [sha256Hex(artifact.content)] }
+          : {}),
         reconcile_blockers:
           record.decision === "defer"
             ? { pending_approval_ids: [request.request_id] }

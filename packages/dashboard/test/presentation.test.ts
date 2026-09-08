@@ -6,6 +6,7 @@ import {
   presentFindingGroup,
   presentNode,
   presentApproval,
+  presentApprovalDecision,
   presentSemanticProposal,
   presentationMap,
   presentationKey,
@@ -75,13 +76,14 @@ describe("Dashboard business presentation", () => {
       type: "Component",
       status: "proposed",
       display_name: `  ${"界".repeat(81)}  `,
-      description: `第一行\n${"😀".repeat(241)}`,
+      description: `第一行\n${"😀".repeat(201)}`,
     });
 
     expect([...presentation.title_zh]).toHaveLength(80);
     expect(presentation.title_zh).toBe(`${"界".repeat(79)}…`);
-    expect([...presentation.description_zh]).toHaveLength(240);
-    expect(presentation.description_zh).toBe(`第一行 ${"😀".repeat(235)}…`);
+    // Display summaries are capped at 200 Unicode characters (spec §10).
+    expect([...presentation.description_zh]).toHaveLength(200);
+    expect(presentation.description_zh).toBe(`第一行 ${"😀".repeat(195)}…`);
     expect(presentation).toMatchObject({
       type_label_zh: "组件",
       status_label_zh: "待确认",
@@ -669,5 +671,79 @@ describe("Dashboard business presentation", () => {
     for (const item of [...approval.badges, ...finding.badges]) {
       expect([...item.value].length).toBeLessThanOrEqual(48);
     }
+  });
+});
+
+describe("approval decision presentation from the shared summary", () => {
+  const summary = {
+    request_id: "approval_request_01",
+    approval_id: "approval_decision_01",
+    decision: "approve" as const,
+    actor_display: "审批者0123456789ab",
+    decided_at: "2026-08-29T00:00:00.000Z",
+    decision_digest: "f".repeat(64),
+  };
+
+  it("presents a terminal decision with the shared identity and time", () => {
+    expect(presentApprovalDecision(summary)).toEqual({
+      presentation_version: "1",
+      entity_id: "approval_decision_01",
+      binding_digest: "f".repeat(64),
+      title_zh: "审批决定 · 已批准",
+      description_zh: "审批者0123456789ab 于 2026-08-29T00:00:00.000Z 记录了该决定。",
+      type_label_zh: "审批决定",
+      status_label_zh: "已批准",
+      technical_type: "ApprovalDecision",
+      technical_status: "approve",
+      badges: [
+        { label_zh: "决定", value: "已批准", tone: "positive" },
+        { label_zh: "审批者", value: "审批者0123456789ab", tone: "neutral" },
+        { label_zh: "决定时间", value: "2026-08-29T00:00:00.000Z", tone: "neutral" },
+      ],
+      derived_from: ["decision", "actor_display", "decided_at"],
+      fallback: false,
+    });
+  });
+
+  it("presents a defer as deferred and still pending", () => {
+    const presentation = presentApprovalDecision({ ...summary, decision: "defer" });
+    expect(presentation.title_zh).toBe("审批决定 · 已暂缓");
+    expect(presentation.status_label_zh).toBe("已暂缓，仍待处理");
+    expect(presentation.technical_status).toBe("defer");
+    expect(presentation.badges[0]).toEqual({ label_zh: "决定", value: "已暂缓", tone: "warning" });
+  });
+
+  it("presents a reject as a terminal rejection", () => {
+    const presentation = presentApprovalDecision({ ...summary, decision: "reject" });
+    expect(presentation.status_label_zh).toBe("已拒绝");
+    expect(presentation.badges[0]).toEqual({ label_zh: "决定", value: "已拒绝", tone: "critical" });
+  });
+
+  it("presents an ApprovalDecided event without any actor field", () => {
+    const presentation = presentEvent({
+      id: "ledger:event_d1",
+      source: "ledger",
+      authoritative: true,
+      event: {
+        event_type: "ApprovalDecided",
+        timestamp: "2026-08-29T00:00:01.000Z",
+        payload: {
+          request_id: "approval_request_01",
+          approval_id: "approval_decision_01",
+          decision: "defer",
+          object_digest: "a".repeat(64),
+          decision_digest: "f".repeat(64),
+          decided_at: "2026-08-29T00:00:00.000Z",
+        },
+      },
+    });
+    expect(presentation).toMatchObject({
+      title_zh: "审批决定已提交",
+      status_label_zh: "已暂缓",
+      technical_type: "ApprovalDecided",
+      technical_status: "authoritative",
+      fallback: false,
+    });
+    expect(JSON.stringify(presentation)).not.toContain("actor");
   });
 });

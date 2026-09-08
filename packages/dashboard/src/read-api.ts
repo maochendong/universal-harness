@@ -20,12 +20,15 @@ import {
   type TraversalOptions,
 } from "@universal-harness-internal/graph";
 import {
+  ApprovalSummaryError,
   collectProjectStatus,
   latestModelInvocation,
   projectFindingGroups,
+  readApprovalSummary,
   readModelInvocationRecords,
   readPendingApprovalRequests,
   type ApprovalRequestRecord,
+  type ApprovalSummaryRead,
 } from "@universal-harness-internal/runtime";
 
 import { DashboardProblem } from "./problem.js";
@@ -33,6 +36,7 @@ import { readLocalConnection } from "./collaboration-api.js";
 import {
   presentEdge,
   presentApproval,
+  presentApprovalDecision,
   presentFindingGroup,
   presentModelInvocation,
   presentNode,
@@ -45,6 +49,24 @@ import {
 export interface DashboardPage<T> {
   readonly items: readonly T[];
   readonly next_cursor?: string;
+  readonly presentations: PresentationMap;
+}
+
+/**
+ * Safe content view of one committed artifact (spec §9.2): the reference, the
+ * committing provenance and a redacted presentation-ready content view. The
+ * `safe_view` marker declares that `content` is a display view, never raw
+ * artifact bytes.
+ */
+export interface DashboardArtifactView {
+  readonly ref: {
+    readonly kind: string;
+    readonly scope: "artifact" | "manifest";
+    readonly digest: string;
+  };
+  readonly provenance: ApprovalSummaryRead["provenance"];
+  readonly content: unknown;
+  readonly safe_view: true;
   readonly presentations: PresentationMap;
 }
 
@@ -74,6 +96,17 @@ export interface DashboardReadApi {
     readonly cursor?: string;
     readonly limit?: number;
   }): DashboardPage<ApprovalRequestRecord>;
+  /**
+   * Controlled read of one committed artifact by manifest digest (spec §9.2).
+   * Task 4 whitelists `approval_decision` at artifact scope only; Task 5
+   * extends the kind/scope table. Unknown committed references are 404,
+   * disallowed combinations 400, and unverifiable bytes a typed error.
+   */
+  artifactView(query: {
+    readonly digest: string;
+    readonly kind: string;
+    readonly scope: string;
+  }): DashboardArtifactView;
   /** PG-8: model invocation observability, latest revision per invocation. */
   modelInvocations(query: {
     readonly cursor?: string;
@@ -398,6 +431,40 @@ export function createDashboardReadApi(
           ? { next_cursor: last.request_id }
           : {}),
         presentations: presentationMap(items.map((item) => presentApproval({ ...item }))),
+      };
+    },
+    artifactView: (query) => {
+      if (query.kind !== "approval_decision" || query.scope !== "artifact") {
+        throw new DashboardProblem(
+          400,
+          "invalid_query",
+          "Bad Request",
+          "only kind=approval_decision at scope=artifact is readable",
+        );
+      }
+      let read: ApprovalSummaryRead;
+      try {
+        read = readApprovalSummary(projectRoot, query.digest);
+      } catch (error) {
+        if (error instanceof ApprovalSummaryError) {
+          if (error.kind === "approval_decision_not_found") {
+            throw new DashboardProblem(404, "artifact_not_found", "Not Found", error.message);
+          }
+          throw new DashboardProblem(
+            422,
+            "artifact_unverified",
+            "Unprocessable Entity",
+            error.message,
+          );
+        }
+        throw error;
+      }
+      return {
+        ref: { kind: "approval_decision", scope: "artifact", digest: query.digest },
+        provenance: read.provenance,
+        content: read.summary,
+        safe_view: true,
+        presentations: presentationMap([presentApprovalDecision(read.summary)]),
       };
     },
     modelInvocations: (query) => {

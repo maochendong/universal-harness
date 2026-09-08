@@ -3,7 +3,12 @@ import {
   type LifecycleEvent,
   type ObservationEvent,
 } from "@universal-harness-internal/core";
-import { FileEventStream, type EventStreamItem } from "@universal-harness-internal/runtime";
+import {
+  FileEventStream,
+  readApprovalSummary,
+  type ApprovalSummary,
+  type EventStreamItem,
+} from "@universal-harness-internal/runtime";
 
 import { usageError } from "../errors.js";
 import { parseCommandArgs, requireProjectRoot, type CommandResult } from "../io.js";
@@ -44,6 +49,7 @@ const EVENT_STYLES: Record<string, EventStyle> = {
   OperationStarted: { icon: "▶", color: CYAN },
   OperationCompleted: { icon: "✔", color: GREEN },
   ApprovalRequired: { icon: "⏸", color: YELLOW },
+  ApprovalDecided: { icon: "✍", color: GREEN },
   CheckpointCommitted: { icon: "◉", color: BLUE },
   PlanAccepted: { icon: "▤", color: CYAN },
   BeforeContextCompile: { icon: "↧", color: BLUE },
@@ -115,6 +121,10 @@ function describePayload(event: StreamEvent): string {
       ]
         .filter((part) => part !== undefined)
         .join(" ");
+    case "ApprovalDecided":
+      // Payload-only fallback: the committed summary never made it to the
+      // reader, so render the event facts without inferring actor or time.
+      return `decision=${first("decision") ?? "?"} request=${first("request_id") ?? "?"}`;
     case "PlanAccepted":
       return [
         first("mode") === undefined ? undefined : `mode=${first("mode")}`,
@@ -165,9 +175,16 @@ function clockOf(timestamp: string): string {
 /**
  * Render one lifecycle event as a single human-readable line. Pure and
  * side-effect free so tests can pin the exact formatting; `color` toggles the
- * ANSI styling (callers disable it for non-TTY streams and NO_COLOR).
+ * ANSI styling (callers disable it for non-TTY streams and NO_COLOR). For
+ * ApprovalDecided the caller passes the shared committed summary so the line
+ * shows the same decision, redacted identity and decision time the Dashboard
+ * shows; without it the payload-only fallback never infers them.
  */
-export function formatEventLine(event: StreamEvent, options: { color: boolean }): string {
+export function formatEventLine(
+  event: StreamEvent,
+  options: { color: boolean },
+  approvalSummary?: ApprovalSummary,
+): string {
   const style = EVENT_STYLES[event.event_type];
   const clock = clockOf(event.timestamp);
   const failed =
@@ -177,10 +194,30 @@ export function formatEventLine(event: StreamEvent, options: { color: boolean })
     event.payload["passed"] === false;
   const color = failed ? RED : (style?.color ?? GRAY);
   const icon = style?.icon ?? "·";
-  const detail = describePayload(event);
+  const detail =
+    event.event_type === "ApprovalDecided" && approvalSummary !== undefined
+      ? `decision=${approvalSummary.decision} by=${approvalSummary.actor_display} at=${approvalSummary.decided_at}`
+      : describePayload(event);
   const body = detail === "" ? event.event_type : `${event.event_type} ${detail}`;
   if (!options.color) return `${clock} ${icon} ${body}`;
   return `${GRAY}${clock}${RESET} ${color}${icon} ${body}${RESET}`;
+}
+
+/**
+ * The shared committed summary for an ApprovalDecided event, or undefined
+ * when the decision digest is not (yet) committed or fails verification --
+ * the caller then renders the payload-only fallback and never infers a
+ * decision, actor or time.
+ */
+function approvalSummaryOf(projectRoot: string, event: StreamEvent): ApprovalSummary | undefined {
+  if (event.event_type !== "ApprovalDecided") return undefined;
+  const digest = (event.payload as Record<string, unknown>)["decision_digest"];
+  if (typeof digest !== "string") return undefined;
+  try {
+    return readApprovalSummary(projectRoot, digest).summary;
+  } catch {
+    return undefined;
+  }
 }
 
 function colorEnabled(): boolean {
@@ -237,11 +274,16 @@ export async function runWatchCommand(
   let rendered = 0;
   const emit = (event: StreamEvent): void => {
     rendered += 1;
+    const summary = approvalSummaryOf(projectRoot, event);
     if (context.json) {
-      context.io.writeStderr(`${canonicalizeJson(event)}\n`);
+      context.io.writeStderr(
+        `${canonicalizeJson(summary === undefined ? event : { ...event, approval_summary: summary })}\n`,
+      );
       return;
     }
-    context.io.writeStderr(`${formatEventLine(event, { color })}\n`);
+    context.io.writeStderr(
+      `${formatEventLine(event, { color }, ...(summary === undefined ? [] : [summary]))}\n`,
+    );
   };
 
   const stream = new FileEventStream(projectRoot, { pollIntervalMs: resolved.pollIntervalMs });

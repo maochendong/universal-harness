@@ -119,6 +119,7 @@ function unavailableReadApi(problem: DashboardProblem): DashboardReadApi {
     findingGroups: reject,
     semanticProposals: reject,
     approvals: reject,
+    artifactView: reject,
     modelInvocations: reject,
   };
 }

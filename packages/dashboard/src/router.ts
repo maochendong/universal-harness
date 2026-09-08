@@ -2,8 +2,10 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 
 import {
   EDGE_STATUSES,
+  EVENT_TYPES,
   NODE_STATUSES,
   NODE_TYPES,
+  OBSERVATION_EVENT_TYPES,
   RELATION_TYPES,
   REMOTE_APPROVAL_DECISIONS,
   type EdgeRecord,
@@ -43,6 +45,13 @@ const DIRECTIONS = new Set<TraversalDirection>(["incoming", "outgoing", "both"])
 const EVENT_CURSOR = /^cursor_[A-Za-z0-9_-]{1,2048}$/u;
 const DIGEST = /^[a-f0-9]{64}$/u;
 const MAX_WRITE_BODY_BYTES = 32 * 1024;
+
+/**
+ * Every registered Ledger/Live event type the browser should subscribe to
+ * (spec §9.4), served on the authenticated session response; older servers
+ * without this field keep the client's static fallback table.
+ */
+const SESSION_EVENT_TYPES = [...new Set([...EVENT_TYPES, ...OBSERVATION_EVENT_TYPES])];
 
 export interface DashboardRouterOptions {
   readonly origin: string;
@@ -575,7 +584,30 @@ export function createDashboardRouter(options: DashboardRouterOptions) {
 
       if (url.pathname === "/api/v1/session") {
         queryKeys(url.searchParams, new Set());
-        sendJson(response, { csrf_token: session.csrfToken, expires_at: session.expiresAt });
+        sendJson(response, {
+          csrf_token: session.csrfToken,
+          expires_at: session.expiresAt,
+          event_types: SESSION_EVENT_TYPES,
+        });
+        return;
+      }
+      const artifact = /^\/api\/v1\/artifacts\/([a-f0-9]{64})$/u.exec(url.pathname);
+      if (artifact !== null) {
+        queryKeys(url.searchParams, new Set(["kind", "scope"]));
+        const kind = one(url.searchParams, "kind");
+        const scope = one(url.searchParams, "scope");
+        if (kind === undefined || scope === undefined) {
+          throw new DashboardProblem(
+            400,
+            "invalid_query",
+            "Bad Request",
+            "artifact reads require kind and scope",
+          );
+        }
+        sendJson(
+          response,
+          options.readApi.artifactView({ digest: artifact[1] ?? "", kind, scope }),
+        );
         return;
       }
       if (url.pathname === "/api/v1/project") {

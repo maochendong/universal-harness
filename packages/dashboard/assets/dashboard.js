@@ -1,4 +1,4 @@
-/* global document, window, location, fetch, URLSearchParams, EventSource, FormData, navigator, setInterval, AbortController */
+/* global document, window, location, fetch, URLSearchParams, EventSource, FormData, navigator, setInterval, AbortController, CSS */
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
 
@@ -10,11 +10,18 @@ const model = {
   findingCursor: undefined,
   csrfToken: undefined,
   eventSource: undefined,
+  // undefined = not fetched yet; the static fallback covers pre-1.4 servers
+  // whose session response has no event_types field (spec §9.4).
+  eventTypes: undefined,
   pendingApprovals: new Set(),
   liveByKey: new Map(),
   heartbeatByRun: new Map(),
   unknownRuns: new Set(),
   approvalById: new Map(),
+  // request_id -> committed decision aggregate; rebuilt from the authoritative
+  // replay after a stream reset (spec §5.3: approval_id idempotent, committed
+  // order, terminal never downgraded back to pending).
+  approvalOutcomes: new Map(),
   schedulerOperationId: undefined,
   schedulerView: undefined,
   schedulerGeneration: 0,
@@ -1259,6 +1266,127 @@ async function approvalDetails(item) {
   renderApproval(merged, presentation, { card: $("#approval-card"), view: "live" });
 }
 
+const DECISION_STATE_LABELS = { approve: "已批准", reject: "已拒绝", defer: "已暂缓" };
+
+/**
+ * Read the shared redacted decision summary for one committed Decision
+ * through the controlled artifact endpoint (spec §9.2). A 404/typed error is
+ * surfaced as-is; the card never infers a decision from a missing summary.
+ */
+async function loadDecisionSummary(decisionDigest) {
+  return api(
+    `/api/v1/artifacts/${encodeURIComponent(decisionDigest)}?kind=approval_decision&scope=artifact`,
+  );
+}
+
+function refreshApprovalCount() {
+  const label = $("#approval-count");
+  if (label) label.textContent = `${model.pendingApprovals.size} pending`;
+}
+
+function renderOutcomeCard(requestId, outcome) {
+  const queue = $("#approval-queue");
+  const summary = outcome.terminal || outcome.deferred;
+  if (!queue || !summary) return;
+  let card = queue.querySelector(`[data-request-id="${CSS.escape(requestId)}"]`);
+  if (!card) {
+    card = node("article", "approval-card approval-queue-card approval-outcome-card");
+    card.dataset.requestId = requestId;
+    queue.querySelector(".approval-empty")?.remove();
+    queue.prepend(card);
+  }
+  clear(card);
+  const presentation = outcome.presentations?.[`${summary.approval_id}@${summary.decision_digest}`];
+  card.append(node("p", "eyebrow", "审批决定 · DECISION COMMITTED"));
+  if (presentation) card.append(businessHeading(presentation, "h4"));
+  else {
+    card.append(
+      node(
+        "h4",
+        "",
+        `${DECISION_STATE_LABELS[summary.decision] || summary.decision} · ${summary.actor_display}`,
+      ),
+    );
+  }
+  card.append(
+    node(
+      "p",
+      "approval-decision-meta",
+      `决定时间 ${summary.decided_at} · 审批者 ${summary.actor_display}`,
+    ),
+  );
+  if (summary.decision === "defer") {
+    // A defer is a committed decision yet the request stays pending; the
+    // follow-up approve/reject actions stay available (spec §5.3).
+    card.append(node("p", "approval-deferred-note", "已暂缓，仍待处理"));
+    const approval = model.approvalById.get(requestId);
+    if (approval) appendApprovalDecisionForm(card, approval, "approvals");
+    else card.append(node("p", "approval-deferred-note", "待审批详情不可用；请刷新队列。"));
+  }
+}
+
+function reapplyApprovalOutcomes() {
+  for (const [requestId, outcome] of model.approvalOutcomes) {
+    renderOutcomeCard(requestId, outcome);
+  }
+}
+
+/**
+ * Aggregate one ApprovalDecided event by request_id (spec §5.3): approval_id
+ * idempotent, ordered by committed delivery order, and a terminal decision is
+ * never downgraded back to pending by an older replayed event. The card is
+ * updated only after the shared summary verifies against the committed
+ * manifest; observation updates never call approval/resume write interfaces.
+ */
+async function approvalDecided(item) {
+  const payload = item.event.payload || {};
+  const requestId = payload.request_id;
+  const approvalId = payload.approval_id;
+  const digest = payload.decision_digest;
+  if (typeof requestId !== "string" || typeof approvalId !== "string" || typeof digest !== "string")
+    return;
+  let outcome = model.approvalOutcomes.get(requestId);
+  if (!outcome) {
+    outcome = {
+      seen: new Set(),
+      terminal: undefined,
+      deferred: undefined,
+      presentations: undefined,
+    };
+    model.approvalOutcomes.set(requestId, outcome);
+  }
+  if (outcome.seen.has(approvalId)) return;
+  outcome.seen.add(approvalId);
+  if (outcome.terminal) return;
+  let view;
+  try {
+    view = await loadDecisionSummary(digest);
+  } catch (error) {
+    status("approvals", `决定 ${approvalId} 的摘要不可读：${error.message}`, "error");
+    return;
+  }
+  const summary = view.content || {};
+  outcome.presentations = view.presentations;
+  if (summary.decision === "defer") {
+    outcome.deferred = summary;
+  } else {
+    outcome.terminal = summary;
+    model.pendingApprovals.delete(requestId);
+  }
+  if (
+    summary.decision === "defer" &&
+    !model.approvalById.has(requestId) &&
+    model.loaded.has("approvals")
+  ) {
+    // The queue was rendered before this request was known to the page;
+    // reload the authoritative pending list, then reapply known decisions.
+    await loadApprovals();
+    return;
+  }
+  renderOutcomeCard(requestId, outcome);
+  refreshApprovalCount();
+}
+
 function appendApprovalDecisionForm(card, approval, view, disabled = false) {
   const form = node(
     "form",
@@ -1453,11 +1581,13 @@ async function loadApprovals() {
         ),
       );
       queue.append(empty);
+      reapplyApprovalOutcomes();
       status("approvals", "No committed approval request is pending.", "empty");
       return;
     }
     for (const approval of page.items) {
       const card = node("article", "approval-card approval-queue-card");
+      card.dataset.requestId = approval.request_id;
       const presentation =
         presentationFor(page.presentations, { id: approval.request_id }, approval.object_digest) ||
         technicalPresentation(
@@ -1472,6 +1602,7 @@ async function loadApprovals() {
       renderApproval(approval, presentation, { card, view: "approvals" });
       queue.append(card);
     }
+    reapplyApprovalOutcomes();
     status("approvals", `${page.items.length} authoritative approval request(s) loaded.`);
   } catch (error) {
     clear(queue);
@@ -1619,34 +1750,68 @@ function receiveLive(message) {
     }
   }
   if (item.event.event_type === "ApprovalRequired") void approvalDetails(item);
+  if (item.event.event_type === "ApprovalDecided") void approvalDecided(item);
   status("live", `${item.authoritative ? "Ledger" : "Live"} event · ${item.event.event_type}`);
 }
 
-function startLive() {
+/**
+ * Pre-1.4 servers have no session event_types field; clients keep this fixed
+ * legacy subscription table there (spec §9.4).
+ */
+const FALLBACK_EVENT_TYPES = [
+  "PhaseStarted",
+  "PhaseCompleted",
+  "PhasePaused",
+  "GateStarted",
+  "GateCompleted",
+  "RunStarted",
+  "RunHeartbeat",
+  "RunOutputSummary",
+  "BudgetUpdated",
+  "ApprovalRequired",
+];
+
+async function startLive() {
   if (model.eventSource) return;
   status("live", "Connecting to the unified event stream…");
+  if (model.eventTypes === undefined) {
+    try {
+      const session = await api("/api/v1/session");
+      model.csrfToken = model.csrfToken || session.csrf_token;
+      model.eventTypes = Array.isArray(session.event_types)
+        ? session.event_types.filter((type) => typeof type === "string")
+        : FALLBACK_EVENT_TYPES;
+    } catch {
+      model.eventTypes = FALLBACK_EVENT_TYPES;
+    }
+  }
   const source = new EventSource("/events");
   model.eventSource = source;
-  for (const type of [
-    "PhaseStarted",
-    "PhaseCompleted",
-    "PhasePaused",
-    "GateStarted",
-    "GateCompleted",
-    "RunStarted",
-    "RunHeartbeat",
-    "RunOutputSummary",
-    "BudgetUpdated",
-    "ApprovalRequired",
-  ])
-    source.addEventListener(type, receiveLive);
+  for (const type of model.eventTypes) source.addEventListener(type, receiveLive);
   source.addEventListener("stream_reset", () => {
     source.close();
     model.eventSource = undefined;
     model.liveByKey.clear();
-    clear($("#live-register"));
-    status("live", "Live cursor rotated; authoritative snapshot refreshed.", "empty");
-    void loadOverview().then(startLive);
+    // Known decision aggregates are rebuilt from the authoritative replay in
+    // committed order; approval_id dedup starts fresh so replays re-render.
+    model.approvalOutcomes.clear();
+    const register = $("#live-register");
+    clear(register);
+    // The gap hint is a durable register row: the transient status line is
+    // overwritten by the replayed events that arrive right after the reset.
+    register?.prepend(
+      node("li", "live-event live-gap-note", "实时历史可能有缺口 · live history may have gaps"),
+    );
+    status(
+      "live",
+      "Live cursor rotated; authoritative snapshot refreshed; live history may have gaps.",
+      "empty",
+    );
+    void loadOverview()
+      .then(async () => {
+        if (model.loaded.has("approvals")) await loadApprovals();
+      })
+      .then(() => startLive());
   });
   source.addEventListener("stream_error", () => {
     status("live", "Event stream is temporarily unavailable.", "error");
