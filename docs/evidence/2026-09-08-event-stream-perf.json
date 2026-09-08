@@ -20,9 +20,9 @@
       "layout": "f",
       "files": 1000,
       "events": 1000,
-      "p50_ms": 8.537041999999929,
-      "p95_ms": 8.889166999999816,
-      "max_ms": 10.278084000000035,
+      "p50_ms": 8.94833299999982,
+      "p95_ms": 10.311749999999847,
+      "max_ms": 35.111667000000125,
       "threshold_ms": 200
     },
     {
@@ -30,9 +30,9 @@
       "layout": "f",
       "files": 10000,
       "events": 10000,
-      "p50_ms": 101.43604199999936,
-      "p95_ms": 155.35229099999924,
-      "max_ms": 286.7716249999976,
+      "p50_ms": 102.96116599999732,
+      "p95_ms": 176.88108300000022,
+      "max_ms": 290.97979099999975,
       "threshold_ms": 200
     },
     {
@@ -40,10 +40,10 @@
       "layout": "e",
       "files": 100,
       "events": 100000,
-      "rss_baseline_bytes": 294338560,
-      "rss_after_bytes": 309067776,
-      "rss_delta_bytes": 14729216,
-      "rss_delta_mib": 14.046875,
+      "rss_baseline_bytes": 365887488,
+      "rss_after_bytes": 380600320,
+      "rss_delta_bytes": 14712832,
+      "rss_delta_mib": 14.03125,
       "gc_available": true,
       "threshold_mib": 256
     },
@@ -56,12 +56,22 @@
       "read_sync_calls": 0,
       "history_content_bytes": 0,
       "history_parse_count": 0
-    }
-  ],
-  "skipped": [
+    },
     {
       "name": "shared-scan-4-caught-up-clients",
-      "reason": "同布局空轮询 4 个已追平客户端共享扫描属于 Task 2；EventStreamHub 尚不存在，本任务不实现。"
+      "layout": "f",
+      "files": 1000,
+      "events": 1000,
+      "ticks": 30,
+      "source_refreshes_one_client": 30,
+      "source_refreshes_four_clients": 30,
+      "source_read_calls_one_client": 0,
+      "source_read_calls_four_clients": 0,
+      "source_read_bytes_one_client": 0,
+      "source_read_bytes_four_clients": 0,
+      "output_deliveries_one_client": 1000,
+      "output_deliveries_four_clients": 4000,
+      "note": "输出开销随客户端数线性增长，单独报告；共享源扫描与源读取工作量不随客户端数增长。"
     }
   ]
 }

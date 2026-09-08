@@ -15,6 +15,7 @@ import {
   unavailableDashboardCollaborationApi,
   type DashboardCollaborationApi,
 } from "./collaboration-api.js";
+import { EventStreamHub } from "./event-hub.js";
 import { DashboardProblem } from "./problem.js";
 import { createDashboardReadApi, type DashboardReadApi } from "./read-api.js";
 import { unavailableDashboardSchedulerApi, type DashboardSchedulerApi } from "./scheduler-api.js";
@@ -145,6 +146,11 @@ export async function startDashboardServer(
     );
   }
   const startupProblem = prepareCache(options.projectRoot);
+  // An injected legacy Adapter keeps the per-connection EventStreamPort path;
+  // the owned FileEventStream is served through the shared bounded Hub.
+  const ownedStream =
+    options.eventStream === undefined ? new FileEventStream(options.projectRoot) : undefined;
+  const eventHub = ownedStream === undefined ? undefined : new EventStreamHub(ownedStream);
   const collaborationApi =
     startupProblem === undefined
       ? (options.collaborationApi ??
@@ -176,7 +182,8 @@ export async function startDashboardServer(
       startupProblem === undefined
         ? (options.schedulerApi ?? unavailableDashboardSchedulerApi())
         : unavailableDashboardSchedulerApi(),
-    eventStream: options.eventStream ?? new FileEventStream(options.projectRoot),
+    eventStream: options.eventStream ?? ownedStream!,
+    ...(eventHub === undefined ? {} : { eventHub }),
     writeApi:
       startupProblem === undefined
         ? (options.writeApi ?? unavailableDashboardWriteApi())
@@ -194,6 +201,7 @@ export async function startDashboardServer(
       if (closed) return;
       closed = true;
       shutdown.abort();
+      await eventHub?.close();
       sessions.clear();
       await close(server);
     },

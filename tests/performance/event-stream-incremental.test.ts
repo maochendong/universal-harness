@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
+import { EventStreamHub } from "../../packages/dashboard/src/event-hub.js";
 import { FileEventStream } from "../../packages/runtime/src/index.js";
 
 /**
@@ -19,8 +20,9 @@ import { FileEventStream } from "../../packages/runtime/src/index.js";
  * `HARNESS_PERF_EVIDENCE=1` is set, so routine local/CI runs never overwrite
  * the committed reference sample that Task 6 references.
  *
- * The "4 caught-up clients share one scan" budget is not asserted here: the
- * EventStreamHub is Task 2 and does not exist yet.
+ * The "4 caught-up clients share one scan" budget runs through the Task 2
+ * EventStreamHub over a real FileEventStream: refresh/read work must not scale
+ * with client count; per-client output fanout is recorded separately.
  */
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "../..");
 const GENERATOR = join(repoRoot, "scripts/generate-performance-dataset.mjs");
@@ -67,13 +69,6 @@ afterAll(() => {
         "fs.readFileSync/readSync spies count historical content bytes; JSON.parse spy excludes v2/legacy cursor decodes",
     },
     scenarios,
-    skipped: [
-      {
-        name: "shared-scan-4-caught-up-clients",
-        reason:
-          "同布局空轮询 4 个已追平客户端共享扫描属于 Task 2；EventStreamHub 尚不存在，本任务不实现。",
-      },
-    ],
   };
   if (process.env.HARNESS_PERF_EVIDENCE !== "1") return;
   const date = new Date().toISOString().slice(0, 10);
@@ -234,5 +229,105 @@ describe("event stream incremental cost", () => {
       history_content_bytes: contentBytes,
       history_parse_count: historyParses,
     });
+  }, 120_000);
+
+  it("shares one source scan across four caught-up clients", async () => {
+    const projectRoot = root();
+    generateDataset(projectRoot, { events: 1_000, files: 1_000, layout: "f" });
+    const TICKS = 30;
+    const run = async (
+      clientCount: number,
+    ): Promise<{
+      refreshes: number;
+      contentBytes: number;
+      readCalls: number;
+      deliveries: number;
+    }> => {
+      const stream = new FileEventStream(projectRoot);
+      // Warm the index; cold builds are reported by the other scenarios.
+      await stream.refreshView();
+      let contentBytes = 0;
+      const readFileSyncOriginal = fs.readFileSync;
+      const wholeReads = vi.spyOn(fs, "readFileSync").mockImplementation(((
+        ...args: Parameters<typeof fs.readFileSync>
+      ) => {
+        const result = readFileSyncOriginal(...args);
+        contentBytes += typeof result === "string" ? Buffer.byteLength(result) : result.byteLength;
+        return result;
+      }) as typeof fs.readFileSync);
+      const readSyncOriginal = fs.readSync;
+      const rangeReads = vi.spyOn(fs, "readSync").mockImplementation(((
+        ...args: Parameters<typeof fs.readSync>
+      ) => {
+        const read = readSyncOriginal(...args);
+        contentBytes += read;
+        return read;
+      }) as typeof fs.readSync);
+      syncBuiltinESMExports();
+      let refreshes = 0;
+      const source = {
+        refreshView: async () => {
+          refreshes += 1;
+          return stream.refreshView();
+        },
+      };
+      let ticks = 0;
+      const hub = new EventStreamHub(source, {
+        pollIntervalMs: 1,
+        sleep: () => {
+          ticks += 1;
+          return new Promise<void>((resolve) => setImmediate(resolve));
+        },
+      });
+      const received = new Array<number>(clientCount).fill(0);
+      const consumers = Array.from({ length: clientCount }, (_, index) =>
+        (async () => {
+          const controller = new AbortController();
+          const subscription = hub.subscribeClient({ signal: controller.signal });
+          for await (const delivery of subscription) {
+            if (delivery.kind === "item") received[index]! += 1;
+          }
+        })(),
+      );
+      while (ticks < TICKS) await new Promise<void>((resolve) => setImmediate(resolve));
+      await hub.close();
+      await Promise.all(consumers);
+      const result = {
+        refreshes,
+        contentBytes,
+        readCalls: wholeReads.mock.calls.length + rangeReads.mock.calls.length,
+        deliveries: received.reduce((total, count) => total + count, 0),
+      };
+      vi.restoreAllMocks();
+      syncBuiltinESMExports();
+      return result;
+    };
+
+    const one = await run(1);
+    const four = await run(4);
+    const record: ScenarioRecord = {
+      name: "shared-scan-4-caught-up-clients",
+      layout: "f",
+      files: 1_000,
+      events: 1_000,
+      ticks: TICKS,
+      source_refreshes_one_client: one.refreshes,
+      source_refreshes_four_clients: four.refreshes,
+      source_read_calls_one_client: one.readCalls,
+      source_read_calls_four_clients: four.readCalls,
+      source_read_bytes_one_client: one.contentBytes,
+      source_read_bytes_four_clients: four.contentBytes,
+      output_deliveries_one_client: one.deliveries,
+      output_deliveries_four_clients: four.deliveries,
+      note: "输出开销随客户端数线性增长，单独报告；共享源扫描与源读取工作量不随客户端数增长。",
+    };
+    scenarios.push(record);
+    console.info("Shared scan across caught-up clients:", JSON.stringify(record));
+    expect(four.refreshes).toBe(one.refreshes);
+    expect(four.readCalls).toBe(one.readCalls);
+    expect(four.contentBytes).toBe(one.contentBytes);
+    expect(one.contentBytes).toBe(0);
+    expect(four.deliveries).toBe(4 * one.deliveries);
+    expect(one.deliveries).toBe(1_000);
   }, 120_000);
 });

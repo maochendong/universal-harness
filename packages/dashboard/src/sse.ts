@@ -1,10 +1,12 @@
 import type { EventStreamItem, EventStreamPort } from "@universal-harness-internal/runtime";
 
+import type { EventStreamHubInterface, HubDelivery } from "./event-hub.js";
 import { presentApproval, presentEvent, presentationMap } from "./presentation.js";
 import { DASHBOARD_SECURITY_HEADERS } from "./problem.js";
 
 const DEFAULT_HEARTBEAT_MS = 10_000;
 const DEFAULT_POLL_INTERVAL_MS = 250;
+const DEFAULT_DRAIN_TIMEOUT_MS = 10_000;
 
 export interface SseResponse {
   statusCode: number;
@@ -18,13 +20,18 @@ export interface SseResponse {
 
 export interface StreamDashboardEventsOptions {
   readonly response: SseResponse;
-  readonly eventStream: EventStreamPort;
+  /** Legacy injected-Adapter path; ignored when eventHub is provided. */
+  readonly eventStream?: EventStreamPort;
+  /** Bounded shared fanout path; takes precedence over eventStream. */
+  readonly eventHub?: EventStreamHubInterface;
   readonly cursor?: string;
   readonly iterationId?: string;
   readonly workflowOperationId?: string;
   readonly signal: AbortSignal;
   readonly heartbeatMs?: number;
   readonly pollIntervalMs?: number;
+  /** Slow-socket budget for the Hub path; the connection closes afterwards. */
+  readonly drainTimeoutMs?: number;
   readonly now?: () => number;
   readonly wait?: (milliseconds: number, signal: AbortSignal) => Promise<void>;
 }
@@ -83,6 +90,34 @@ async function write(response: SseResponse, signal: AbortSignal, frame: string):
   if (!response.write(frame)) await drain(response, signal);
 }
 
+/** Hub-path write: returns false when the socket cannot drain in budget. */
+async function writeBounded(
+  response: SseResponse,
+  signal: AbortSignal,
+  frame: string,
+  drainTimeoutMs: number,
+): Promise<boolean> {
+  if (signal.aborted) return false;
+  if (response.write(frame)) return true;
+  return await new Promise<boolean>((resolve) => {
+    const timer = setTimeout(() => done(false), drainTimeoutMs);
+    function done(result: boolean): void {
+      clearTimeout(timer);
+      response.off("drain", onDrained);
+      signal.removeEventListener("abort", onAbort);
+      resolve(result);
+    }
+    function onDrained(): void {
+      done(true);
+    }
+    function onAbort(): void {
+      done(false);
+    }
+    response.once("drain", onDrained);
+    signal.addEventListener("abort", onAbort, { once: true });
+  });
+}
+
 function eventFrame(item: EventStreamItem, cursor: string): string {
   const presentations = [presentEvent(item)];
   if (
@@ -98,6 +133,75 @@ function eventFrame(item: EventStreamItem, cursor: string): string {
   })}\n\n`;
 }
 
+const RESET_FRAME = `event: stream_reset\ndata: ${JSON.stringify({ reason: "cursor_evicted" })}\n\n`;
+const ERROR_FRAME = `event: stream_error\ndata: ${JSON.stringify({ code: "event_stream_unavailable" })}\n\n`;
+const HEARTBEAT_FRAME = ": heartbeat\n\n";
+
+/**
+ * Hub path: deliveries arrive from the shared bounded fanout. The heartbeat
+ * timer is per connection and never waits for data; a socket that cannot
+ * drain within the budget is closed without touching other subscribers.
+ */
+async function streamHubEvents(
+  options: StreamDashboardEventsOptions,
+  heartbeatMs: number,
+  drainTimeoutMs: number,
+): Promise<void> {
+  const now = options.now ?? Date.now;
+  const wait = options.wait ?? defaultWait;
+  const { response, signal } = options;
+  const subscription = options.eventHub!.subscribeClient({
+    signal,
+    ...(options.cursor === undefined ? {} : { cursor: options.cursor }),
+    ...(options.iterationId === undefined ? {} : { iterationId: options.iterationId }),
+    ...(options.workflowOperationId === undefined
+      ? {}
+      : { workflowOperationId: options.workflowOperationId }),
+  });
+  const iterator = subscription[Symbol.asyncIterator]();
+  let pending: Promise<IteratorResult<HubDelivery>> | undefined;
+  let lastWrite = now();
+  try {
+    while (!signal.aborted) {
+      pending ??= iterator.next();
+      const remaining = Math.max(1, heartbeatMs - (now() - lastWrite));
+      const outcome = await Promise.race([
+        pending.then((result) => ({ result })),
+        abortableWait(wait, remaining, signal).then(() => undefined),
+      ]);
+      if (outcome === undefined) {
+        if (signal.aborted) return;
+        if (!(await writeBounded(response, signal, HEARTBEAT_FRAME, drainTimeoutMs))) return;
+        lastWrite = now();
+        continue;
+      }
+      pending = undefined;
+      if (outcome.result.done === true) return;
+      const delivery = outcome.result.value;
+      if (delivery.kind === "reset") {
+        await writeBounded(response, signal, RESET_FRAME, drainTimeoutMs);
+        return;
+      }
+      if (delivery.kind === "error") {
+        await writeBounded(response, signal, ERROR_FRAME, drainTimeoutMs);
+        return;
+      }
+      if (
+        !(await writeBounded(
+          response,
+          signal,
+          eventFrame(delivery.item, delivery.cursor),
+          drainTimeoutMs,
+        ))
+      )
+        return;
+      lastWrite = now();
+    }
+  } finally {
+    await iterator.return?.();
+  }
+}
+
 /**
  * Stream the unified EventStreamPort as resumable SSE. Reading one item per
  * cursor step makes every emitted SSE id an exact restart point.
@@ -107,6 +211,10 @@ export async function streamDashboardEvents(options: StreamDashboardEventsOption
   const pollIntervalMs = positive(
     options.pollIntervalMs ?? DEFAULT_POLL_INTERVAL_MS,
     "pollIntervalMs",
+  );
+  const drainTimeoutMs = positive(
+    options.drainTimeoutMs ?? DEFAULT_DRAIN_TIMEOUT_MS,
+    "drainTimeoutMs",
   );
   const now = options.now ?? Date.now;
   const wait = options.wait ?? defaultWait;
@@ -122,8 +230,16 @@ export async function streamDashboardEvents(options: StreamDashboardEventsOption
   response.setHeader("connection", "keep-alive");
   response.flushHeaders?.();
   try {
+    if (options.eventHub !== undefined) {
+      await streamHubEvents(options, heartbeatMs, drainTimeoutMs);
+      return;
+    }
+    const eventStream = options.eventStream;
+    if (eventStream === undefined) {
+      throw new Error("streamDashboardEvents requires an eventStream or an eventHub");
+    }
     while (!options.signal.aborted) {
-      const page = await options.eventStream.read({
+      const page = await eventStream.read({
         limit: 1,
         ...(cursor === undefined ? {} : { cursor }),
         ...(options.iterationId === undefined ? {} : { iterationId: options.iterationId }),

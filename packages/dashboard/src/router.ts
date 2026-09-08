@@ -13,6 +13,7 @@ import type { TraversalDirection } from "@universal-harness-internal/graph";
 import type { EventStreamPort, RemoteApprovalDecision } from "@universal-harness-internal/runtime";
 
 import type { DashboardCollaborationApi } from "./collaboration-api.js";
+import type { EventStreamHub } from "./event-hub.js";
 
 import {
   DashboardProblem,
@@ -49,6 +50,8 @@ export interface DashboardRouterOptions {
   readonly readApi: DashboardReadApi;
   readonly schedulerApi: DashboardSchedulerApi;
   readonly eventStream: EventStreamPort;
+  /** Shared bounded fanout for /events; takes precedence over eventStream. */
+  readonly eventHub?: EventStreamHub;
   readonly writeApi: DashboardWriteApi;
   readonly collaborationApi: DashboardCollaborationApi;
   readonly shutdownSignal: AbortSignal;
@@ -537,6 +540,7 @@ export function createDashboardRouter(options: DashboardRouterOptions) {
             response,
             eventStream: options.eventStream,
             signal: disconnected.signal,
+            ...(options.eventHub === undefined ? {} : { eventHub: options.eventHub }),
             ...(cursor === undefined ? {} : { cursor }),
             ...(iterationId === undefined
               ? {}

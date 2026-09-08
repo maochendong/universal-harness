@@ -9,6 +9,7 @@ import type {
   EventStreamQuery,
 } from "@universal-harness-internal/runtime";
 
+import type { HubDelivery } from "../src/event-hub.js";
 import { streamDashboardEvents, type SseResponse } from "../src/sse.js";
 
 function item(sequence: number, eventType = "RunHeartbeat"): EventStreamItem {
@@ -226,5 +227,202 @@ describe("Dashboard SSE", () => {
     waits.shift()?.resolve();
     await running;
     expect(response.ended).toBe(true);
+  });
+});
+
+/** Controllable in-memory Hub double; deliveries are pushed by the test. */
+class HubDouble {
+  readonly subscriptions: {
+    cursor?: string;
+    iterationId?: string;
+    workflowOperationId?: string;
+  }[] = [];
+  private readonly queues: ((result: IteratorResult<HubDelivery>) => void)[] = [];
+
+  subscribeClient(options: {
+    cursor?: string;
+    iterationId?: string;
+    workflowOperationId?: string;
+    signal: AbortSignal;
+  }): AsyncIterable<HubDelivery> {
+    this.subscriptions.push({
+      ...(options.cursor === undefined ? {} : { cursor: options.cursor }),
+      ...(options.iterationId === undefined ? {} : { iterationId: options.iterationId }),
+      ...(options.workflowOperationId === undefined
+        ? {}
+        : { workflowOperationId: options.workflowOperationId }),
+    });
+    const pending: HubDelivery[] = [];
+    const waiters: ((result: IteratorResult<HubDelivery>) => void)[] = [];
+    this.queues.push((result) => {
+      if (result.done === true) {
+        while (waiters.length > 0) waiters.shift()!({ done: true, value: undefined });
+        return;
+      }
+      const waiter = waiters.shift();
+      if (waiter !== undefined) waiter(result);
+      else pending.push(result.value);
+    });
+    options.signal.addEventListener("abort", () => {
+      while (waiters.length > 0) waiters.shift()!({ done: true, value: undefined });
+    });
+    return {
+      [Symbol.asyncIterator]: () => ({
+        next: () => {
+          const queued = pending.shift();
+          if (queued !== undefined) return Promise.resolve({ done: false, value: queued });
+          return new Promise<IteratorResult<HubDelivery>>((resolve) => waiters.push(resolve));
+        },
+      }),
+    };
+  }
+
+  push(delivery: HubDelivery): void {
+    for (const enqueue of this.queues) enqueue({ done: false, value: delivery });
+  }
+
+  finish(): void {
+    for (const enqueue of this.queues) enqueue({ done: true, value: undefined });
+  }
+}
+
+describe("Dashboard SSE over the shared EventStreamHub", () => {
+  it("renders Hub item deliveries with the legacy frame shape and per-item cursors", async () => {
+    const hub = new HubDouble();
+    const response = new ResponseDouble();
+    const abort = new AbortController();
+    const running = streamDashboardEvents({
+      response,
+      eventHub: hub,
+      cursor: "cursor_00",
+      workflowOperationId: "workflow_01",
+      signal: abort.signal,
+    });
+    await Promise.resolve();
+    expect(hub.subscriptions).toEqual([
+      { cursor: "cursor_00", workflowOperationId: "workflow_01" },
+    ]);
+
+    hub.push({ kind: "item", item: item(1), cursor: "cursor_01" });
+    hub.push({ kind: "item", item: item(2), cursor: "cursor_02" });
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    const body = response.writes.join("");
+    expect(body).toContain("id: cursor_01\nevent: RunHeartbeat\n");
+    expect(body).toContain("id: cursor_02\nevent: RunHeartbeat\n");
+    const dataLines = [...body.matchAll(/^data: (.+)$/gmu)].map((match) => match[1]);
+    expect(dataLines.map((line) => (JSON.parse(line ?? "{}") as { id: string }).id)).toEqual([
+      "live:stream_01:1",
+      "live:stream_01:2",
+    ]);
+
+    abort.abort();
+    hub.finish();
+    await running;
+    expect(response.ended).toBe(true);
+  });
+
+  it("writes the exact stream_reset frame for Hub reset deliveries and closes", async () => {
+    const hub = new HubDouble();
+    const response = new ResponseDouble();
+    const running = streamDashboardEvents({
+      response,
+      eventHub: hub,
+      signal: new AbortController().signal,
+    });
+    await Promise.resolve();
+    hub.push({ kind: "reset", reason: "cursor_evicted" });
+    await running;
+    expect(response.writes).toContain(
+      `event: stream_reset\ndata: ${JSON.stringify({ reason: "cursor_evicted" })}\n\n`,
+    );
+    expect(response.ended).toBe(true);
+  });
+
+  it("writes the exact stream_error frame for Hub error deliveries and closes", async () => {
+    const hub = new HubDouble();
+    const response = new ResponseDouble();
+    const running = streamDashboardEvents({
+      response,
+      eventHub: hub,
+      signal: new AbortController().signal,
+    });
+    await Promise.resolve();
+    hub.push({ kind: "error", code: "event_stream_unavailable" });
+    await running;
+    expect(response.writes).toContain(
+      `event: stream_error\ndata: ${JSON.stringify({ code: "event_stream_unavailable" })}\n\n`,
+    );
+    expect(response.ended).toBe(true);
+  });
+
+  it("sends heartbeat comments while a Hub subscription stays idle", async () => {
+    const hub = new HubDouble();
+    const response = new ResponseDouble();
+    const abort = new AbortController();
+    const waits: ReturnType<typeof deferred>[] = [];
+    let now = 0;
+    const heartbeatWritten = new Promise<void>((resolve) => {
+      response.once("write", () => resolve());
+    });
+    const running = streamDashboardEvents({
+      response,
+      eventHub: hub,
+      signal: abort.signal,
+      heartbeatMs: 10,
+      now: () => now,
+      wait: () => {
+        const pending = deferred();
+        waits.push(pending);
+        return pending.promise;
+      },
+    });
+    await Promise.resolve();
+    now = 10;
+    waits.shift()?.resolve();
+    await heartbeatWritten;
+    expect(response.writes).toContain(": heartbeat\n\n");
+
+    abort.abort();
+    waits.shift()?.resolve();
+    hub.finish();
+    await running;
+    expect(response.ended).toBe(true);
+  });
+
+  it("closes a socket that never drains after the drain budget while other clients continue", async () => {
+    const hub = new HubDouble();
+    const slow = new ResponseDouble();
+    const fast = new ResponseDouble();
+    const abort = new AbortController();
+    // The slow socket accepts one frame into its kernel buffer and then applies
+    // permanent backpressure without ever emitting drain.
+    slow.backpressure = true;
+    const slowDone = streamDashboardEvents({
+      response: slow,
+      eventHub: hub,
+      signal: abort.signal,
+      drainTimeoutMs: 30,
+    });
+    const fastDone = streamDashboardEvents({
+      response: fast,
+      eventHub: hub,
+      signal: abort.signal,
+      drainTimeoutMs: 30,
+    });
+    await Promise.resolve();
+    hub.push({ kind: "item", item: item(1), cursor: "cursor_01" });
+    hub.push({ kind: "item", item: item(2), cursor: "cursor_02" });
+    await slowDone;
+    expect(slow.ended).toBe(true);
+    expect(fast.ended).toBe(false);
+
+    hub.push({ kind: "item", item: item(3), cursor: "cursor_03" });
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    expect(fast.writes.join("")).toContain("id: cursor_03");
+    abort.abort();
+    hub.finish();
+    await fastDone;
+    expect(fast.ended).toBe(true);
   });
 });
