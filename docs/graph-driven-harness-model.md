@@ -316,7 +316,7 @@ DesignSet 同时扩展既有关系端点：`DesignSet DERIVES_FROM ImpactSet` �
 
 Harness 使用两条不同生命周期的事件流。43+ 类 Lifecycle Event 是写入 Git-native Ledger 的权威治理事实；11 类 Observation Event 是写入 Live Spool 的实时观察。两者可以在读取侧关联展示，但不能互相替代。
 
-### 3.1 37 类权威 Lifecycle Event（16 类通用工作流事件 + 9 类 TDD 事件 + 4 类 M3 远程协作事件 + 8 类 M4 本地调度事件）
+### 3.1 39 类权威 Lifecycle Event（18 类通用工作流事件 + 9 类 TDD 事件 + 4 类 M3 远程协作事件 + 8 类 M4 本地调度事件）
 
 Lifecycle Event 记录一次受治理操作已经发生的关键里程碑。每条事件绑定 `project_id`、`iteration_id`、`workflow_operation_id`、`ledger_operation_id`、单调 `sequence`、`timestamp` 和结构化 `payload`。它们随 append-only Ledger 提交，可重放、可验证，并参与恢复、审计、投影和完成状态判断。
 
@@ -331,6 +331,8 @@ Lifecycle Event 记录一次受治理操作已经发生的关键里程碑。每�
 | `BeforeToolCall` | 工具调用前 | 工具与批准 | 在发生外部动作前记录意图、参数摘要和控制条件。 |
 | `AfterToolCall` | 工具调用后 | 工具与批准 | 记录工具结果、对账信息和副作用完成状态。 |
 | `ApprovalRequired` | 需要批准 | 工具与批准 | 记录工作流因精确对象和风险需要人类决议。 |
+| `ApprovalDecided` | 批准已决定 | 工具与批准 | 证明一条 ApprovalDecision 已提交；payload 绑定决定产物的字节 digest，不携带原始操作者身份。 |
+| `ArtifactAvailable` | 产出已可用 | 工具与批准 | 公告一次提交中产生的 artifact kind、record digest 与摘要，供指定版本的安全正文导航。 |
 | `CheckpointCommitted` | 检查点已提交 | 恢复与质量 | 证明可恢复进度已原子进入 Ledger。 |
 | `CheckpointInvalidated` | 检查点已失效 | 恢复与质量 | 记录因上游权威对象变化而失效的旧进度，恢复时不得复用该检查点。 |
 | `GateCompleted` | 门禁已完成 | 恢复与质量 | 保存门禁的最终治理结果，而不是仅显示实时进度。 |
