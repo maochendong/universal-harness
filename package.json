@@ -25,7 +25,8 @@
     "test:security": "vitest run --config vitest.workspace.ts tests/security",
     "typecheck": "pnpm -r --if-present typecheck",
     "verify": "pnpm format:check && pnpm lint && pnpm build && pnpm typecheck && pnpm test && node scripts/check-standalone.mjs",
-    "verify:m4:report": "node scripts/generate-acceptance-report.mjs --verify-report-commit"
+    "verify:m4:report": "node scripts/generate-acceptance-report.mjs --verify-report-commit",
+    "verify:transparency": "node scripts/verify-transparency-evidence.mjs"
   },
   "devDependencies": {
     "@playwright/test": "1.55.0",

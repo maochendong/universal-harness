@@ -1,5 +1,6 @@
 export * from "./assertions.js";
 export * from "./collaboration.js";
+export * from "./event-stream.js";
 export * from "./fixtures.js";
 export * from "./runner.js";
 export * from "./scheduling.js";

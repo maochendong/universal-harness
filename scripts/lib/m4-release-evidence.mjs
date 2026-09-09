@@ -239,6 +239,9 @@ const REPORT_PATHS = new Set([
   "docs/evidence/m3-remote-collaboration-completion.md",
   "docs/evidence/m4-local-multi-agent-scheduling-completion.md",
   "docs/evidence/m4-local-multi-agent-scheduling-results.json",
+  "docs/evidence/transparency-sse-completion.json",
+  "docs/evidence/transparency-sse-completion.md",
+  "docs/evidence/artifact-reference-coverage.md",
 ]);
 
 const M4_READINESS_TESTS = Object.freeze({

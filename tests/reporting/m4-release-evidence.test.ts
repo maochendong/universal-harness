@@ -438,6 +438,90 @@ describe("tracked Evidence and report commit", () => {
   }, 20_000);
 });
 
+describe("transparency report paths in the report-commit whitelist", () => {
+  function transparencyFiles(): Record<string, string> {
+    return {
+      "docs/evidence/transparency-sse-completion.json":
+        '{"schema_version":"harness.transparency-acceptance/1"}\n',
+      "docs/evidence/transparency-sse-completion.md": "# 开发过程透明化与 SSE 呈现验收证据\n",
+      "docs/evidence/artifact-reference-coverage.md": "# SSE 产出引用盘点\n",
+    };
+  }
+
+  function commitReport(
+    root: string,
+    sidecar: unknown,
+    extraFiles: Record<string, string> = {},
+  ): string {
+    for (const [path, content] of Object.entries({
+      "docs/evidence/m4-local-multi-agent-scheduling-results.json": `${JSON.stringify(sidecar)}\n`,
+      "docs/evidence/m4-local-multi-agent-scheduling-completion.md": renderM4Markdown(
+        sidecar as Parameters<typeof renderM4Markdown>[0],
+      ),
+      ...extraFiles,
+    })) {
+      const absolute = join(root, path);
+      mkdirSync(dirname(absolute), { recursive: true });
+      writeFileSync(absolute, content, "utf8");
+    }
+    git(root, [
+      "add",
+      "docs/evidence/m4-local-multi-agent-scheduling-results.json",
+      "docs/evidence/m4-local-multi-agent-scheduling-completion.md",
+      ...Object.keys(extraFiles),
+    ]);
+    git(root, ["commit", "-m", "report"]);
+    return git(root, ["rev-parse", "HEAD"]);
+  }
+
+  function reportBaseline(root: string): { implementation: string; sidecar: unknown } {
+    const implementation = evidenceBaseline(root, { readinessTests: true });
+    const sidecar = buildM4AcceptanceSidecar({
+      repositoryRoot: root,
+      implementationCommit: implementation,
+      suiteReports: releaseReports(root, implementation),
+      dogfood: blockedDogfood(implementation),
+      generatedAt: "2026-09-02T00:00:00.000Z",
+    });
+    return { implementation, sidecar };
+  }
+
+  it("accepts a report commit that also carries the three transparency evidence files", () => {
+    const root = repository();
+    const { implementation, sidecar } = reportBaseline(root);
+    commitReport(root, sidecar, transparencyFiles());
+    expect(isM4ReportCommit(root)).toBe(true);
+    expect(verifyM4ReportCommit(root)).toMatchObject({ implementation_commit: implementation });
+  }, 20_000);
+
+  it.each([
+    ["source code", "packages/core/src/smuggled.ts", "export {};\n"],
+    ["a non-whitelisted document", "docs/evidence/other-completion.md", "# other\n"],
+  ])(
+    "rejects a report commit mixing in %s",
+    (_name, path, content) => {
+      const root = repository();
+      const { sidecar } = reportBaseline(root);
+      commitReport(root, sidecar, { ...transparencyFiles(), [path]: content });
+      expect(isM4ReportCommit(root)).toBe(false);
+      expect(() => verifyM4ReportCommit(root)).toThrow(
+        /must change only approved Markdown\/typed JSON reports/u,
+      );
+    },
+    20_000,
+  );
+
+  it("rejects a report commit whose parent is not the evaluated implementation", () => {
+    const root = repository();
+    const { sidecar } = reportBaseline(root);
+    commitFile(root, "src/unrelated.ts", "export {};\n", "other implementation");
+    commitReport(root, sidecar, transparencyFiles());
+    expect(() => verifyM4ReportCommit(root)).toThrow(
+      /parent is not the evaluated implementation commit/u,
+    );
+  }, 20_000);
+});
+
 describe("M4 Markdown projection", () => {
   it("projects the frozen dogfood proof without credentials or machine paths", () => {
     const source = {
