@@ -28,6 +28,7 @@ import {
   createModelBackedFeedbackAnalysisPort,
   createModelBackedGroundedSynthesisPort,
   createModelBackedImpactAdvisoryPort,
+  createJevImpactAdvisoryPort,
   createModelBackedPlanProposalPort,
   materializeProjectGraph,
   PLAN_PROPOSAL_PROMPT_PORT_ID,
@@ -37,6 +38,7 @@ import {
 } from "@universal-harness-internal/runtime";
 
 import { assembleModelProviders } from "./model-providers.js";
+import { impactProviderContract } from "./impact-provider-contract.js";
 import { createShippedPromptContractRegistry } from "./prompt-registry.js";
 import type { ProjectRuntimeConfig } from "./project-runtime-config.js";
 
@@ -226,13 +228,18 @@ export function createManagedPipelinePorts(deps: ManagedPipelinePortsDeps): Mana
     profile_id: deps.profile_id,
   } as const;
 
-  const designProposal = resolver.resolve(DESIGN_PROPOSAL_PROMPT_PORT_ID);
-  const designReview = resolver.resolve(DESIGN_REVIEW_PROMPT_PORT_ID);
+  const managedPrompt = (slot: string) => {
+    const resolved = resolver.resolve(slot);
+    if (resolved?.kind === "jev_impact") failClosed(`Jev cannot serve non-impact slot ${slot}`);
+    return resolved;
+  };
+  const designProposal = managedPrompt(DESIGN_PROPOSAL_PROMPT_PORT_ID);
+  const designReview = managedPrompt(DESIGN_REVIEW_PROMPT_PORT_ID);
   const impactAdvisory = resolver.resolve(IMPACT_ADVISORY_PROMPT_PORT_ID);
-  const planProposal = resolver.resolve(PLAN_PROPOSAL_PROMPT_PORT_ID);
-  const contextEnrichment = resolver.resolve("context_enrichment");
-  const iterationNarrative = resolver.resolve("iteration_narrative");
-  const feedbackAnalysis = resolver.resolve("feedback_analysis");
+  const planProposal = managedPrompt(PLAN_PROPOSAL_PROMPT_PORT_ID);
+  const contextEnrichment = managedPrompt("context_enrichment");
+  const iterationNarrative = managedPrompt("iteration_narrative");
+  const feedbackAnalysis = managedPrompt("feedback_analysis");
 
   // Provider closure is re-verified deterministically at preflight (design
   // 11.2): a required blocking slot with no coverage must never degrade to
@@ -266,6 +273,24 @@ export function createManagedPipelinePorts(deps: ManagedPipelinePortsDeps): Mana
   const budgetOf = (resolved: ResolvedManagedProvider): { budget?: ManagedInvocationBudget } =>
     resolved.budget === undefined ? {} : { budget: resolved.budget };
 
+  const impactPort = (resolved: ResolvedManagedProvider): ImpactAdvisoryPort => {
+    const selected = impactProviderContract(resolved.kind);
+    const contract = registry.resolve({
+      port_id: IMPACT_ADVISORY_PROMPT_PORT_ID,
+      prompt_version: selected.prompt_version,
+    });
+    if (contract.output_schema_id !== selected.output_schema_id)
+      failClosed("impact provider contract differs from its selected output schema");
+    const impactDeps = {
+      ...shared,
+      provider_config: resolved.provider_config,
+      ...budgetOf(resolved),
+    };
+    return resolved.kind === "jev_impact"
+      ? createJevImpactAdvisoryPort({ ...impactDeps, provider_factory: { bind: resolved.bind } })
+      : createModelBackedImpactAdvisoryPort({ ...impactDeps, provider: resolved.provider });
+  };
+
   return {
     ...(designProposal === undefined && designReview === undefined
       ? {}
@@ -296,12 +321,7 @@ export function createManagedPipelinePorts(deps: ManagedPipelinePortsDeps): Mana
     ...(impactAdvisory === undefined
       ? {}
       : {
-          impactAdvisory: createModelBackedImpactAdvisoryPort({
-            ...shared,
-            provider_config: impactAdvisory.provider_config,
-            provider: impactAdvisory.provider,
-            ...budgetOf(impactAdvisory),
-          }),
+          impactAdvisory: impactPort(impactAdvisory),
         }),
     ...(planProposal === undefined
       ? {}

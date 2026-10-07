@@ -679,9 +679,15 @@ export function createManagedCaptureCoordinator(
     "project_discovery",
     "approval_brief",
   ] as const;
-  const resolvedBySlot = new Map<string, ResolvedManagedProvider>();
+  type CaptureProvider = Extract<ResolvedManagedProvider, { kind: "managed_prompt" }>;
+  const resolvedBySlot = new Map<string, CaptureProvider>();
   for (const slot of slots) {
     const provider = resolver.resolve(slot);
+    if (provider?.kind === "jev_impact")
+      throw new ManagedCaptureCoordinatorError(
+        "slot_unresolved",
+        `Jev cannot serve capture slot ${slot}`,
+      );
     if (provider !== undefined) resolvedBySlot.set(slot, provider);
   }
   const missing = slots.filter((slot) => !resolvedBySlot.has(slot));
@@ -692,7 +698,7 @@ export function createManagedCaptureCoordinator(
     );
   }
   // Post-check lookup: the missing-slot throw above makes this total.
-  const covered = (slot: (typeof slots)[number]): ResolvedManagedProvider => {
+  const covered = (slot: (typeof slots)[number]): CaptureProvider => {
     const provider = resolvedBySlot.get(slot);
     if (provider === undefined) {
       throw new ManagedCaptureCoordinatorError(

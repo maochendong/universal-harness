@@ -49,6 +49,18 @@ export type ImpactAdvisoryResult =
       readonly risk_signals: readonly ImpactRiskSignal[];
       readonly missing_facts: readonly ImpactMissingFact[];
       readonly questions: readonly ImpactClarificationQuestion[];
+      /** Local preparation diagnostic, never a model answer or domain digest. */
+      readonly local_diagnostic?: {
+        readonly code: "no_candidates" | "candidate_scope";
+        readonly candidate_count: number;
+        readonly excluded_count: number;
+        /** Mutually exclusive reasons, in this order of precedence. */
+        readonly excluded_by_reason: {
+          readonly already_deterministic: number;
+          readonly not_accepted: number;
+          readonly unsupported_type: number;
+        };
+      };
     }
   | {
       readonly status: "clarification_required";

@@ -83,6 +83,15 @@ describe("untrusted source boundary", () => {
     expectBoundaryFailure(credentialPath, "untrusted_source_boundary_failed");
   });
 
+  it("rejects TypeSafe key-shaped material without echoing it", () => {
+    const syntheticKey = "apikey_" + "a".repeat(32) + "_" + "b".repeat(64);
+    const result = compileWithText(syntheticKey);
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.failure.code).toBe("untrusted_source_boundary_failed");
+    expect(result.failure.summary).not.toContain(syntheticKey);
+  });
+
   it("rejects oversize input with prompt_size_exceeded", () => {
     expectBoundaryFailure(
       "x".repeat(DEFAULT_UNTRUSTED_LIMITS.max_total_bytes + 1),

@@ -13,7 +13,7 @@ import {
 } from "../src/prompt-registry.js";
 
 /**
- * PG-9 golden matrix (plan T19): all eleven shipped contracts compile
+ * PG-9 golden matrix (plan T19): all twelve shipped contracts compile
  * across all three profiles with digests pinned to the committed golden.
  * Any contract, overlay, schema or compiler drift fails this test; a new
  * contract without a golden regeneration fails it too.
@@ -71,7 +71,7 @@ describe("prompt contract golden matrix", () => {
 
   it("keeps profile overlays distinct and compilation deterministic", () => {
     const matrix = computeMatrix();
-    expect(matrix).toHaveLength(33);
+    expect(matrix).toHaveLength(36);
     for (const registration of SHIPPED_PROMPT_CONTRACT_REGISTRATIONS) {
       const rows = matrix.filter((row) => row.contract_id === registration.contract.contract_id);
       const overlays = new Set(rows.map((row) => row.profile_overlay_digest));

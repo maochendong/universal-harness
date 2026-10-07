@@ -105,8 +105,8 @@ export function createModelBackedImpactAdvisoryPort(
         rule_registry_digest: input.rule_registry_digest,
       });
       if (issues.length > 0) {
-        // Domain rejection: the invocation stays validated-but-unconsumed, and
-        // the deterministic set proceeds without the advisory.
+        // Domain rejection: retain validated-but-unconsumed evidence; the
+        // enabled phase blocks instead of silently dropping the advisory.
         return {
           status: "failed",
           failure: {

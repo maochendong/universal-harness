@@ -1158,6 +1158,42 @@ h2 {
   font: 0.52rem/1.4 var(--mono);
   text-transform: uppercase;
 }
+.model-invocations {
+  margin-top: 2rem;
+  border-top: 1px solid var(--rule-bright);
+}
+.model-invocations h3 {
+  margin: 0.6rem 0 0;
+  font: 500 1.2rem/1.4 var(--body);
+}
+.model-invocation-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 24rem), 1fr));
+  gap: 1rem;
+  margin: 1rem 0;
+}
+.model-invocation-card {
+  min-width: 0;
+  padding: 1.4rem;
+  border: 1px solid var(--rule-bright);
+  background: var(--ink-soft);
+}
+.model-invocation-card .business-title {
+  margin-top: 0.7rem;
+  font-size: 1.05rem;
+}
+.model-provider,
+.model-result-reference {
+  display: grid;
+  gap: 0.5rem;
+  margin-top: 1rem;
+  color: var(--paper-muted);
+  font: 0.65rem/1.6 var(--mono);
+  overflow-wrap: anywhere;
+}
+.model-provider code {
+  color: var(--signal);
+}
 .approval-bay {
   align-self: start;
   min-height: 30rem;

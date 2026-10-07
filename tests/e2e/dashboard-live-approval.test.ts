@@ -12,6 +12,8 @@ import {
   harnessRootFor,
   readCommittedOperations,
   resolveHarnessPath,
+  sealRecordEnvelope,
+  type ModelInvocationRecord,
 } from "../../packages/core/src/index.js";
 import {
   DashboardWriteError,
@@ -22,6 +24,7 @@ import {
 import { rebuildGraphCache } from "../../packages/graph/src/index.js";
 import {
   FileLiveSpool,
+  appendModelInvocationRecord,
   createGenericInterpreter,
   createNewProject,
   readApprovalDecisions,
@@ -57,6 +60,37 @@ interface LiveDashboardFixture {
 
 function head(projectRoot: string): string {
   return execFileSync("git", ["rev-parse", "HEAD"], { cwd: projectRoot, encoding: "utf8" }).trim();
+}
+
+function modelInvocation(
+  suffix: string,
+  overrides: Partial<Omit<ModelInvocationRecord, "record_digest">> = {},
+): ModelInvocationRecord {
+  return sealRecordEnvelope({
+    protocol_version: "1.1.0",
+    record_kind: "model_invocation",
+    invocation_id: `invocation_jev_${suffix}`,
+    conversation_id: `conversation_jev_${suffix}`,
+    run_id: `run_jev_${suffix}`,
+    attempt: 1,
+    revision: 1,
+    port_id: "impact_advisory",
+    prompt_contract_id: "harness:prompt:jev-impact-advisory",
+    prompt_contract_version: "1.0.0",
+    prompt_contract_digest: "1".repeat(64),
+    output_schema_id: "jev-impact-judgments",
+    output_schema_digest: "2".repeat(64),
+    profile_overlay_digest: "3".repeat(64),
+    policy_overlay_digest: "4".repeat(64),
+    input_bundle_digest: "5".repeat(64),
+    compiled_prompt_digest: "6".repeat(64),
+    provider_identity: "provider_typesafe",
+    config_digest: "7".repeat(64),
+    budget_profile: "operation-standard",
+    cache_key: "8".repeat(64),
+    state: "consumed",
+    ...overrides,
+  });
 }
 
 const test = base.extend<{ dashboard: LiveDashboardFixture }>({
@@ -160,6 +194,118 @@ const test = base.extend<{ dashboard: LiveDashboardFixture }>({
 });
 
 test.describe("Dashboard live approval journey", () => {
+  test("shows project-level model invocation pages and refreshes a recovered Jev attempt safely", async ({
+    dashboard,
+  }, testInfo) => {
+    const { page, projectRoot } = dashboard;
+    const unsafeProvider = '<img src="/jev-injected-image" onerror="alert(1)">';
+    const resultLocator = "artifacts/model-results/invocation_jev_002/attempt-1.json";
+    appendModelInvocationRecord(
+      projectRoot,
+      modelInvocation("001", {
+        state: "failed",
+        failure: {
+          code: "provider_unavailable",
+          summary: "raw prompt and synthetic key must not appear in the card",
+          retryable: true,
+        },
+      }),
+    );
+    appendModelInvocationRecord(
+      projectRoot,
+      modelInvocation("002", {
+        usage: { tokens: 320 },
+        result_locator: resultLocator,
+      }),
+    );
+    appendModelInvocationRecord(
+      projectRoot,
+      modelInvocation("003", { provider_identity: unsafeProvider }),
+    );
+    for (let index = 4; index <= 21; index += 1) {
+      appendModelInvocationRecord(projectRoot, modelInvocation(String(index).padStart(3, "0")));
+    }
+
+    const requests: URL[] = [];
+    page.on("request", (request) => requests.push(new URL(request.url())));
+    await page.getByRole("link", { name: /Live/u }).click();
+    const panel = page.getByRole("region", { name: "项目级模型调用记录" });
+    await expect(panel).toBeVisible();
+    await expect(panel).toContainText("不代表当前迭代的证据");
+    await expect(panel.getByRole("article")).toHaveCount(20);
+    await expect(panel).toContainText("Jev");
+    await expect(panel).toContainText("provider_typesafe");
+    await expect(panel).toContainText("320 tokens");
+    await expect(panel).toContainText("建议强度非正确率");
+    const failed = panel.getByRole("article").filter({ hasText: "已失败" });
+    await expect(failed).toContainText("Provider 不可用");
+    await expect(failed).toContainText("不可用");
+    await expect(failed).not.toContainText("0 tokens");
+    await expect(panel).not.toContainText("raw prompt and synthetic key");
+    await expect(panel.getByText(unsafeProvider, { exact: true })).toBeVisible();
+    await expect(panel.getByRole("img")).toHaveCount(0);
+    await expect(panel.getByText(resultLocator, { exact: true })).toBeVisible();
+    await expect(panel.getByRole("button", { name: "复制结果引用" })).toHaveCount(1);
+    await expect(panel.getByRole("link")).toHaveCount(0);
+    await page
+      .context()
+      .grantPermissions(["clipboard-read", "clipboard-write"], { origin: dashboard.server.origin });
+    await panel.getByRole("button", { name: "复制结果引用" }).click();
+    await expect(panel.getByRole("button", { name: "已复制", exact: true })).toBeVisible();
+    expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(resultLocator);
+    // Keep the register title below the fixed Observatory masthead in the artifact.
+    await panel.evaluate((element) =>
+      window.scrollTo({ top: window.scrollY + element.getBoundingClientRect().top - 110 }),
+    );
+    await page.screenshot({ path: testInfo.outputPath("jev-model-invocations-desktop.png") });
+
+    await panel.getByRole("button", { name: "加载更多模型调用" }).click();
+    await expect(panel.getByRole("article")).toHaveCount(21);
+    await expect(panel.getByRole("button", { name: "加载更多模型调用" })).toBeHidden();
+    const invocationRequests = requests.filter(
+      (url) => url.pathname === "/api/v1/model-invocations",
+    );
+    expect(invocationRequests.map((url) => url.searchParams.get("limit"))).toEqual(["20", "20"]);
+    expect(invocationRequests[1]?.searchParams.get("cursor")).toBe("invocation_jev_020");
+    expect(invocationRequests.some((url) => url.searchParams.has("operation_id"))).toBe(false);
+    expect(requests.some((url) => url.pathname.includes("/model-results/"))).toBe(false);
+    expect(requests.some((url) => url.pathname === "/jev-injected-image")).toBe(false);
+
+    // Recovery is a new invocation identity. The old failure remains a project fact.
+    appendModelInvocationRecord(
+      projectRoot,
+      modelInvocation("000_recovered", { usage: { tokens: 654 } }),
+    );
+    await panel.getByRole("button", { name: "刷新模型调用" }).click();
+    await expect(panel.getByRole("article")).toHaveCount(20);
+    await expect(panel).toContainText("654 tokens");
+    await expect(panel.getByRole("article").filter({ hasText: "已失败" })).toHaveCount(1);
+  });
+
+  test("keeps the model register empty on read failure and retries without fabricating local calls", async ({
+    dashboard,
+  }) => {
+    const { page } = dashboard;
+    await page.route("**/api/v1/model-invocations?**", (route) =>
+      route.fulfill({
+        status: 503,
+        json: { detail: "raw-provider-diagnostic-do-not-display" },
+      }),
+    );
+    await page.getByRole("link", { name: /Live/u }).click();
+    const panel = page.getByRole("region", { name: "项目级模型调用记录" });
+    await expect(panel.getByRole("status")).toContainText("读取失败");
+    await expect(panel.getByRole("article")).toHaveCount(0);
+    await expect(panel).not.toContainText("raw-provider-diagnostic");
+    await expect(panel.getByRole("button", { name: "刷新模型调用" })).toBeEnabled();
+    await page.unroute("**/api/v1/model-invocations?**");
+    await panel.getByRole("button", { name: "刷新模型调用" }).click();
+    await expect(panel.getByRole("status")).toContainText("暂无项目级模型调用记录");
+    await expect(panel).toContainText("本地补证或零调用不会生成模型调用卡片");
+    await expect(panel.getByRole("article")).toHaveCount(0);
+    await expect(panel.getByRole("button", { name: "加载更多模型调用" })).toBeHidden();
+  });
+
   test("renders a readable dsh output tail with stream provenance", async ({ dashboard }) => {
     const { page, workflowOperationId } = dashboard;
     const liveId = "live:dsh-output:1";

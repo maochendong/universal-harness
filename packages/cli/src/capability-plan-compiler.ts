@@ -30,6 +30,7 @@ import {
 } from "@universal-harness-internal/runtime";
 
 import { assembleModelProviders } from "./model-providers.js";
+import { impactProviderContract } from "./impact-provider-contract.js";
 import { createShippedPromptContractRegistry } from "./prompt-registry.js";
 import type { ProjectRuntimeConfig } from "./project-runtime-config.js";
 
@@ -128,13 +129,18 @@ function modelProviderConfig(
   slot: OperationSlot,
   resolved: ResolvedManagedProvider,
 ): ModelProviderConfig {
+  if (resolved.kind === "jev_impact" && slot.slot_id !== "impact_advisory") {
+    throw new CapabilityPlanCompilerConfigurationError("Jev cannot bind a non-impact model slot");
+  }
+  const selection =
+    slot.slot_id === "impact_advisory" ? impactProviderContract(resolved.kind) : slot;
   return {
     slot_id: slot.slot_id,
     ...(slot.purpose === undefined ? {} : { purpose: slot.purpose }),
     provider_identity: resolved.provider_config.provider_identity,
     config_digest: resolved.provider_config.config_digest,
-    prompt_version: slot.prompt_version,
-    schema_version: slot.schema_version,
+    prompt_version: selection.prompt_version,
+    schema_version: selection.schema_version,
     budget_profile: resolved.provider_config.budget_profile,
   };
 }

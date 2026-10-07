@@ -210,6 +210,36 @@
     "compiled_prompt_digest": "472f9e18aeab0ef852daa08c5dfba8df1a6302d58c7380b18bcd3b4b42e5b9f1"
   },
   {
+    "contract_id": "harness:prompt:jev-impact-advisory",
+    "prompt_version": "impact_advisory.jev.v1",
+    "profile": "governed",
+    "contract_digest": "dc2d4091e8a87640b770dba1cb258c88b45ef32c1ca5a44cd4f24ce2804b43f3",
+    "profile_overlay_digest": "97f82f09241960338aaf82cb1d3645708b062d50dee96c045379a248cf3ede75",
+    "output_schema_digest": "4ae7deecde06be0ac8c18bee109684f4b3c2d197d018222eaa8e169a98d209d5",
+    "input_bundle_digest": "c8f885b2301f9abf9548454517a2d0beed6c16568728511c2400aeb182801c40",
+    "compiled_prompt_digest": "b94b6218bfcc91774b0a2ee42ab73093d86053490d8cd3731a26f2cae08d9954"
+  },
+  {
+    "contract_id": "harness:prompt:jev-impact-advisory",
+    "prompt_version": "impact_advisory.jev.v1",
+    "profile": "lite",
+    "contract_digest": "dc2d4091e8a87640b770dba1cb258c88b45ef32c1ca5a44cd4f24ce2804b43f3",
+    "profile_overlay_digest": "d99e103d5850fa0c91cef7286b5147440a66f6e28c6e5a67d9cf34a62d299fb2",
+    "output_schema_digest": "4ae7deecde06be0ac8c18bee109684f4b3c2d197d018222eaa8e169a98d209d5",
+    "input_bundle_digest": "c8f885b2301f9abf9548454517a2d0beed6c16568728511c2400aeb182801c40",
+    "compiled_prompt_digest": "01c220e51341e4945d9d8285a7cd2051d4a3d2e99275083f8da15929584f28d3"
+  },
+  {
+    "contract_id": "harness:prompt:jev-impact-advisory",
+    "prompt_version": "impact_advisory.jev.v1",
+    "profile": "standard",
+    "contract_digest": "dc2d4091e8a87640b770dba1cb258c88b45ef32c1ca5a44cd4f24ce2804b43f3",
+    "profile_overlay_digest": "b6e680fda8c55fd55921f3dac796daa4eb7e8e0370e2fda3e5c6ca25be7d35ab",
+    "output_schema_digest": "4ae7deecde06be0ac8c18bee109684f4b3c2d197d018222eaa8e169a98d209d5",
+    "input_bundle_digest": "c8f885b2301f9abf9548454517a2d0beed6c16568728511c2400aeb182801c40",
+    "compiled_prompt_digest": "5a5a60bd2d5920c1d7173013d283039f3a273d0834167756c8a207703393d35e"
+  },
+  {
     "contract_id": "harness:prompt:plan-proposal",
     "prompt_version": "plan_proposal.v1",
     "profile": "governed",

@@ -1,5 +1,6 @@
 import type { ManagedInvocationBudget, ManagedModelProviderPort } from "./managed-runner.js";
 import type { ModelBackedProviderConfig } from "./capture-adapters.js";
+import type { JevImpactProviderFactory } from "./jev-impact-provider.js";
 
 /**
  * Per-slot provider resolution (managed model layer). Each DAG node's model
@@ -9,25 +10,28 @@ import type { ModelBackedProviderConfig } from "./capture-adapters.js";
  * runner's existing `provider_required` fail-closed path stays authoritative.
  */
 
-export interface ManagedProviderRegistration {
-  readonly provider: ManagedModelProviderPort;
+interface ManagedProviderMetadata {
   readonly provider_config: ModelBackedProviderConfig;
-  /** Slot or port identifiers this registration serves. */
-  readonly slots: readonly string[];
-  readonly is_default: boolean;
-  /**
-   * Invocation budget the host declared alongside the provider (e.g. the
-   * configured timeout); adapters fall back to their built-in default when
-   * absent.
-   */
+  /** Host-declared invocation budget; absent means adapter defaults. */
   readonly budget?: ManagedInvocationBudget;
 }
 
-export interface ResolvedManagedProvider {
-  readonly provider: ManagedModelProviderPort;
-  readonly provider_config: ModelBackedProviderConfig;
-  readonly budget?: ManagedInvocationBudget;
-}
+type ProviderImplementation =
+  | { readonly kind?: "managed_prompt"; readonly provider: ManagedModelProviderPort }
+  | { readonly kind: "jev_impact"; readonly bind: JevImpactProviderFactory["bind"] };
+
+export type ManagedProviderRegistration = ManagedProviderMetadata &
+  ProviderImplementation & {
+    /** Slot or port identifiers this registration serves. */
+    readonly slots: readonly string[];
+    readonly is_default: boolean;
+  };
+
+export type ResolvedManagedProvider = ManagedProviderMetadata &
+  (
+    | { readonly kind: "managed_prompt"; readonly provider: ManagedModelProviderPort }
+    | { readonly kind: "jev_impact"; readonly bind: JevImpactProviderFactory["bind"] }
+  );
 
 export interface ManagedProviderResolver {
   resolve(slot: string): ResolvedManagedProvider | undefined;
@@ -48,8 +52,20 @@ export function createManagedProviderResolver(
   const bySlot = new Map<string, ResolvedManagedProvider>();
   let fallback: ResolvedManagedProvider | undefined;
   for (const registration of registrations) {
+    if (
+      registration.kind === "jev_impact" &&
+      (registration.is_default ||
+        registration.slots.length !== 1 ||
+        registration.slots[0] !== "impact_advisory")
+    ) {
+      throw new ProviderRegistryError(
+        "Jev requires one explicit impact_advisory slot and cannot be a default provider",
+      );
+    }
     const resolved: ResolvedManagedProvider = {
-      provider: registration.provider,
+      ...(registration.kind === "jev_impact"
+        ? { kind: "jev_impact", bind: registration.bind }
+        : { kind: "managed_prompt", provider: registration.provider }),
       provider_config: registration.provider_config,
       ...(registration.budget === undefined ? {} : { budget: registration.budget }),
     };

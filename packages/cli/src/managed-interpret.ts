@@ -213,6 +213,7 @@ export function createManagedIntentInterpreter(
   });
   const resolved = resolver.resolve(PRD_PROPOSAL_PROMPT_PORT_ID);
   if (resolved === undefined) return undefined;
+  if (resolved.kind === "jev_impact") failClosed("Jev cannot serve the PRD proposal interpreter");
 
   const registry = createShippedPromptContractRegistry();
   const contextAdapter = createLocalGitProjectContextAdapter({ projectRoot: deps.projectRoot });

@@ -8,6 +8,8 @@ const model = {
   iterationCursor: undefined,
   evidenceCursor: undefined,
   findingCursor: undefined,
+  modelInvocationCursor: undefined,
+  modelInvocationsLoading: false,
   csrfToken: undefined,
   eventSource: undefined,
   // undefined = not fetched yet; the static fallback covers pre-1.4 servers
@@ -1144,6 +1146,91 @@ async function loadScheduler() {
   }
 }
 
+function modelInvocationCard(record, presentations) {
+  const identity = { id: record.invocation_id, digest: record.record_digest };
+  const presentation =
+    presentationFor(presentations, identity) ||
+    technicalPresentation({
+      ...identity,
+      type: record.port_id,
+      status: record.state,
+    });
+  const card = node("article", "model-invocation-card");
+  card.append(businessHeading(presentation, "h4"));
+  const provider = node("div", "model-provider");
+  provider.append(node("span", "", "PROVIDER"), node("code", "", record.provider_identity));
+  card.append(provider);
+  if (record.output_schema_id === "jev-impact-judgments") {
+    card.append(
+      node(
+        "p",
+        "projection-note",
+        "Jev · 建议强度非正确率；模型输出仅辅助判断，不替代确定性传播或人工审批。",
+      ),
+    );
+  }
+  if (record.result_locator) {
+    const reference = node("div", "model-result-reference");
+    const value = node("code", "digest-full", record.result_locator);
+    value.tabIndex = 0;
+    const copy = node("button", "digest-copy", "复制结果引用");
+    copy.type = "button";
+    copy.addEventListener("click", async () => {
+      try {
+        await navigator.clipboard.writeText(record.result_locator);
+        copyFeedback("已复制模型结果引用。");
+        copy.textContent = "已复制";
+      } catch {
+        copyFeedback("无法自动复制；结果引用已显示，可手动选择。");
+      }
+    });
+    reference.append(node("span", "", "结果引用 · 仅复制，不读取本地文件"), value, copy);
+    card.append(reference);
+  }
+  card.append(
+    auditDetails(presentation, [
+      ["INVOCATION", record.invocation_id],
+      ["ATTEMPT", record.attempt],
+      ["RUN", record.run_id],
+      ["CONVERSATION", record.conversation_id],
+    ]),
+  );
+  return card;
+}
+
+async function loadModelInvocations({ append = false } = {}) {
+  if (model.modelInvocationsLoading) return;
+  model.modelInvocationsLoading = true;
+  const refresh = $("#model-invocation-refresh");
+  const more = $("#model-invocation-more");
+  refresh.disabled = true;
+  more.disabled = true;
+  status("model-invocations", "正在读取项目级模型调用…");
+  const query = new URLSearchParams({ limit: "20" });
+  if (append && model.modelInvocationCursor) query.set("cursor", model.modelInvocationCursor);
+  try {
+    const page = await api(`/api/v1/model-invocations?${query}`);
+    const list = $("#model-invocation-list");
+    if (!append) clear(list);
+    for (const record of page.items) list.append(modelInvocationCard(record, page.presentations));
+    model.modelInvocationCursor = page.next_cursor;
+    more.hidden = !page.next_cursor;
+    status(
+      "model-invocations",
+      list.children.length
+        ? `已显示 ${list.children.length} 条项目级模型调用记录`
+        : "暂无项目级模型调用记录；本地补证或零调用不会生成模型调用卡片。",
+      list.children.length ? "ready" : "empty",
+    );
+  } catch {
+    status("model-invocations", "模型调用记录读取失败；保留上次列表，可刷新重试。", "error");
+  } finally {
+    model.modelInvocationsLoading = false;
+    refresh.disabled = false;
+    more.disabled = false;
+  }
+}
+
 function liveKey(item) {
   return item.event.observation_key || item.event.payload?.observation_key || item.id;
 }
@@ -1996,7 +2083,9 @@ const loaders = {
   evidence: loadEvidence,
   findings: loadFindings,
   scheduler: loadScheduler,
-  live: async () => startLive(),
+  live: async () => {
+    await Promise.all([startLive(), loadModelInvocations()]);
+  },
   approvals: async () => {
     await ensureConnection();
     await Promise.all([loadApprovals(), loadRemoteInbox(), loadConflicts()]);
@@ -2036,6 +2125,11 @@ $("#evidence-controls").addEventListener("submit", (event) => {
 $("#evidence-more").addEventListener("click", () => void loadEvidence({ append: true }));
 $("#finding-more").addEventListener("click", () => void loadFindings({ append: true }));
 $("#scheduler-refresh").addEventListener("click", () => void loadScheduler());
+$("#model-invocation-refresh").addEventListener("click", () => void loadModelInvocations());
+$("#model-invocation-more").addEventListener(
+  "click",
+  () => void loadModelInvocations({ append: true }),
+);
 $("#approval-refresh").addEventListener("click", () => {
   void Promise.all([loadApprovals(), loadRemoteInbox(), loadConflicts()]);
 });

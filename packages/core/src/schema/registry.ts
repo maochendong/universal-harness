@@ -2,6 +2,7 @@ import type { ValidateFunction } from "ajv/dist/2020.js";
 import type { TSchema } from "@sinclair/typebox";
 
 import { isProtocolCompatible } from "../version.js";
+import { JevImpactJudgmentsSchema } from "./jev-impact-judgments.js";
 import {
   PROTOCOL_1_1_VERSION,
   PROTOCOL_1_2_VERSION,
@@ -300,6 +301,7 @@ export const PROTOCOL_1_1_SCHEMA_REGISTRY = createDomainSchemaRegistry({
     { key: "model-port-failure", schema: ModelPortFailureSchema },
     { key: "impact-advisory", schema: ImpactAdvisoryRecordSchema },
     { key: "impact-advisory-output", schema: ImpactAdvisoryOutputSchema },
+    { key: "jev-impact-judgments", schema: JevImpactJudgmentsSchema },
     { key: "design-set-proposal", schema: DesignSetProposalRecordSchema },
     { key: "design-set-content", schema: DesignSetContentSchema },
     { key: "design-artifact-content", schema: DesignArtifactContentSchema },

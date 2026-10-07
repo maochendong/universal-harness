@@ -1,9 +1,14 @@
 import { describe, expect, it } from "vitest";
 
 import { createGitVcsAdapter } from "@universal-harness-internal/adapter-vcs-git";
-import { contentDigest, type NodeRecord } from "@universal-harness-internal/core";
+import {
+  contentDigest,
+  createPromptContractRegistry,
+  type NodeRecord,
+} from "@universal-harness-internal/core";
 import {
   RELATION_RULE_REGISTRY,
+  IMPACT_ADVISORY_PROMPT_REGISTRATION,
   createInMemoryImpactAdvisoryPort,
   generateImpactSet,
   readImpactSetContent,
@@ -19,6 +24,10 @@ import {
   type OrchestratorDependencies,
 } from "../../src/index.js";
 import { adviseImpactSet } from "../../src/orchestration/contributors/impact-contributor.js";
+import { PromptPreparationFailureError } from "../../src/model/capture-adapters.js";
+import { ManagedRunnerError } from "../../src/model/managed-runner.js";
+import { createModelBackedImpactAdvisoryPort } from "../../src/model/impact-advisory-adapter.js";
+import { readModelInvocationRecords } from "../../src/model/invocation-store.js";
 import {
   FIXED_NOW,
   cleanupDirectories,
@@ -31,8 +40,8 @@ const PIPELINE_INTENT = "Ship a CSV export for the monthly report.";
 
 /**
  * PG-3 contributor wiring: the optional advisory runs between propagation and
- * approval. A clean advisory folds into the set the human approves; a failed
- * or clarification-only advisory leaves the deterministic set untouched.
+ * approval. Enabled advisory failures and clarification block the phase;
+ * neither may silently fall back to approving the deterministic set.
  */
 function makeNode(id: string, type: NodeRecord["type"]): NodeRecord {
   const record: Record<string, unknown> = {
@@ -83,6 +92,105 @@ function deterministicSet(): NodeRecord {
 }
 
 describe("impact contributor advisory wiring", () => {
+  it("retains candidate exclusion counts and reasons before whole-set approval", async () => {
+    const set = deterministicSet();
+    const diagnostic = {
+      code: "candidate_scope" as const,
+      candidate_count: 1,
+      excluded_count: 1,
+      excluded_by_reason: { already_deterministic: 1, not_accepted: 0, unsupported_type: 0 },
+    };
+    let observed: unknown;
+    await expect(
+      adviseImpactSet(
+        IDS,
+        set,
+        NODES,
+        {
+          name: "scope-advisor",
+          advise: async () => ({
+            status: "proposed",
+            additions: [],
+            edge_candidates: [],
+            risk_signals: [],
+            missing_facts: [],
+            questions: [],
+            local_diagnostic: diagnostic,
+          }),
+        },
+        (value) => {
+          observed = value;
+        },
+      ),
+    ).resolves.toEqual(set);
+    expect(observed).toEqual(diagnostic);
+  });
+
+  it.each([0, 2, -1])("rejects inconsistent local scope counts: %s", async (candidateCount) => {
+    await expect(
+      adviseImpactSet(IDS, deterministicSet(), NODES, {
+        name: "invalid-scope-advisor",
+        advise: async () => ({
+          status: "proposed",
+          additions: [],
+          edge_candidates: [],
+          risk_signals: [],
+          missing_facts: [],
+          questions: [],
+          local_diagnostic: {
+            code: "candidate_scope",
+            candidate_count: candidateCount,
+            excluded_count: 1,
+            excluded_by_reason: { already_deterministic: 1, not_accepted: 0, unsupported_type: 0 },
+          },
+        }),
+      }),
+    ).rejects.toMatchObject({ reason: "missing_input" });
+  });
+
+  it("gives each explicit attempt an independent conversation for the existing managed adapter", async () => {
+    const projectRoot = makeTempDir("harness-impact-conversation-");
+    try {
+      const set = deterministicSet();
+      const port = createModelBackedImpactAdvisoryPort({
+        projectRoot,
+        registry: createPromptContractRegistry([IMPACT_ADVISORY_PROMPT_REGISTRATION]),
+        profile_id: "standard",
+        provider_config: {
+          provider_identity: "provider_fixture",
+          config_digest: "c".repeat(64),
+          budget_profile: "managed-standard",
+        },
+        provider: {
+          invoke: async () => ({
+            ok: true,
+            content: JSON.stringify({
+              purpose: "impact_advisory",
+              schema_version: "impact-advisory.v1",
+              impact_set_digest: readImpactSetContent(set).content_digest,
+              additions: [],
+              edge_candidates: [],
+              risk_signals: [],
+              missing_facts: [],
+              questions: [],
+            }),
+          }),
+        },
+      });
+      await adviseImpactSet(IDS, set, NODES, port);
+      await expect(
+        adviseImpactSet({ ...IDS, attempt_id: "attempt_02" }, set, NODES, port),
+      ).resolves.toEqual(set);
+      const consumed = readModelInvocationRecords(projectRoot).filter(
+        (record) => record.state === "consumed",
+      );
+      expect(consumed).toHaveLength(2);
+      expect(new Set(consumed.map((record) => record.conversation_id)).size).toBe(2);
+      expect(new Set(consumed.map((record) => record.run_id)).size).toBe(2);
+    } finally {
+      cleanupDirectories();
+    }
+  });
   it("binds the deterministic set, graph and rule registry into the advisory input", async () => {
     const set = deterministicSet();
     let seen: ImpactAdvisoryInput | undefined;
@@ -141,7 +249,7 @@ describe("impact contributor advisory wiring", () => {
     expect(merged.status).toBe("proposed");
   });
 
-  it("leaves the deterministic set untouched when the advisory fails closed", async () => {
+  it("blocks instead of approving the deterministic set when an enabled advisory fails", async () => {
     const set = deterministicSet();
     const port = createInMemoryImpactAdvisoryPort(() => ({
       additions: [
@@ -166,13 +274,12 @@ describe("impact contributor advisory wiring", () => {
       missing_facts: [],
       questions: [],
     }));
-    const result = await adviseImpactSet(IDS, set, NODES, port);
-    expect(readImpactSetContent(result).content_digest).toBe(
-      readImpactSetContent(set).content_digest,
-    );
+    await expect(adviseImpactSet(IDS, set, NODES, port)).rejects.toMatchObject({
+      reason: "missing_input",
+    });
   });
 
-  it("leaves the deterministic set untouched on a clarification-only advisory", async () => {
+  it("blocks a clarification-only advisory before approval", async () => {
     const set = deterministicSet();
     const port = createInMemoryImpactAdvisoryPort(() => ({
       additions: [],
@@ -181,11 +288,101 @@ describe("impact contributor advisory wiring", () => {
       missing_facts: [],
       questions: [{ question: "does the export path include the audit log?" }],
     }));
-    const result = await adviseImpactSet(IDS, set, NODES, port);
-    expect(readImpactSetContent(result).content_digest).toBe(
-      readImpactSetContent(set).content_digest,
-    );
+    await expect(adviseImpactSet(IDS, set, NODES, port)).rejects.toMatchObject({
+      reason: "missing_input",
+    });
   });
+
+  it.each([
+    ["uncertain", false, "uncertain_external_action"],
+    ["budget_exhausted", false, "budget_ceiling"],
+    ["timeout", true, "transient_environment_failure"],
+    ["provider_unavailable", true, "transient_environment_failure"],
+    ["invalid_output", false, "missing_input"],
+  ] as const)(
+    "maps %s into a recoverable blocker without exposing provider text",
+    async (code, retryable, reason) => {
+      await expect(
+        adviseImpactSet(IDS, deterministicSet(), NODES, {
+          name: "failed-fixture",
+          advise: async () => ({
+            status: "failed",
+            failure: { code, retryable, summary: "secret-provider-body" },
+          }),
+        }),
+      ).rejects.toMatchObject({
+        reason,
+        message: expect.not.stringContaining("secret-provider-body"),
+      });
+    },
+  );
+
+  it("does not swallow unexpected adapter defects", async () => {
+    const defect = new TypeError("unexpected adapter defect");
+    await expect(
+      adviseImpactSet(IDS, deterministicSet(), NODES, {
+        name: "broken-fixture",
+        advise: async () => {
+          throw defect;
+        },
+      }),
+    ).rejects.toBe(defect);
+  });
+
+  it.each([
+    [
+      new PromptPreparationFailureError({
+        code: "prompt_size_exceeded",
+        summary: "too large",
+        retryable: false,
+      }),
+      "budget_ceiling",
+    ],
+    [new ManagedRunnerError("identity_conflict", "conflict"), "missing_input"],
+  ] as const)("blocks a known preparation or identity failure", async (failure, reason) => {
+    await expect(
+      adviseImpactSet(IDS, deterministicSet(), NODES, {
+        name: "known-failure-fixture",
+        advise: async () => {
+          throw failure;
+        },
+      }),
+    ).rejects.toMatchObject({ reason });
+  });
+
+  it.each(["missing_facts", "questions"] as const)(
+    "blocks proposed additions with unresolved %s",
+    async (field) => {
+      await expect(
+        adviseImpactSet(IDS, deterministicSet(), NODES, {
+          name: "incomplete-fixture",
+          advise: async () => ({
+            status: "proposed",
+            additions: [],
+            edge_candidates: [],
+            risk_signals: [],
+            missing_facts:
+              field === "missing_facts"
+                ? [
+                    {
+                      subject_id: "requirement_01",
+                      fact: "missing contract",
+                      why_it_matters: "cannot judge",
+                      source_refs: [
+                        { kind: "graph_node", ref: "requirement_01", digest: NODES[0]!.digest },
+                      ],
+                    },
+                  ]
+                : [],
+            questions:
+              field === "questions"
+                ? [{ question: `secret at ${["", "Users", "fixture-user", "private"].join("/")}` }]
+                : [],
+          }),
+        }),
+      ).rejects.toMatchObject({ reason: "missing_input" });
+    },
+  );
 });
 
 /**

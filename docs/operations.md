@@ -1,6 +1,6 @@
 # M2 运维指南
 
-本文覆盖 M2 的 Finding 分组、确定性语义建议、可选 LLM Judge、本地 Dashboard、事件恢复和 runtime config v2。基础批准、Checkpoint、Resume 与 Ledger 故障处理仍见 [运维与恢复手册](operations-and-recovery.md)。
+本文覆盖 M2 的 Finding 分组、确定性语义建议、可选 LLM Judge、本地 Dashboard、事件恢复和 runtime config v2/v3。基础批准、Checkpoint、Resume 与 Ledger 故障处理仍见 [运维与恢复手册](operations-and-recovery.md)。
 
 ## 1. 默认配置与兼容性
 
@@ -110,32 +110,56 @@ Judge 的 pass/warn/fail、prompt/bundle/model/request/response digest、标准�
 
 ## 5. 配置 Managed 模型 Provider
 
-Managed 模型调用层（capture、design、impact 等 DAG 节点的模型槽位）通过 v2 配置里的 `model_providers` 数组接入真实 LLM API。每个条目是一个 OpenAI 兼容端点，可以按槽位分发，也可以声明一个 default 兜底：
+Managed 模型调用层（capture、design、impact 等 DAG 节点的模型槽位）通过 `model_providers` 数组接入宿主信任的 Provider。推荐 v3 引用配置：仓库只选择 Provider、模型、槽位和超时；端点与环境变量名由宿主控制，不接收任意 URL 或 key 值。以下是原默认模型加可选 Jev Impact 的组合示例，不会自动应用到现有项目：
 
 ```json
 {
-  "runtime_config_version": 2,
+  "runtime_config_version": 3,
   "gates": [],
   "model_providers": [
     {
-      "provider_id": "deepseek",
-      "endpoint": "https://api.deepseek.com/chat/completions",
+      "provider_ref": "deepseek",
       "model": "deepseek-v4-pro",
-      "api_key_env": "DEEPSEEK_API_KEY",
-      "env_allowlist": ["DEEPSEEK_API_KEY"],
       "timeout_ms": 60000,
-      "slots": ["grounded_synthesis", "design_review"],
-      "default": false
+      "slots": [],
+      "is_default": true
+    },
+    {
+      "provider_ref": "typesafe",
+      "model": "jev-1.13.0",
+      "timeout_ms": 30000,
+      "slots": ["impact_advisory"],
+      "is_default": false
     }
   ]
 }
 ```
 
-- `slots` 填模型槽位或端口标识（如 `grounded_synthesis`、`design_review`、`impact_advisory`、`plan_proposal`、`feedback_analysis`）；同一槽位只能被一个 provider 声明。`"default": true` 的条目（至多一个）覆盖所有未列出的槽位；两者都没有的槽位解析为空，Runner 以 `provider_required` fail closed。
-- 凭据与 Judge 同规则：`api_key_env` 必须出现在 `env_allowlist` 中，key 只存在于运行进程的环境变量里，agent-dsh 的 `DEEPSEEK_API_KEY` 可直接复用。
-- 端点校验与 Judge 一致：仅 HTTPS、禁止 URL credential/query/fragment、发送凭据前拒绝 loopback/private address 与 DNS 私网解析；429/5xx 有界重试，timeout、超长响应、非 JSON 响应分别映射为 `timeout` / `budget_exhausted` / `invalid_output`。
-- 与 Judge 不同，managed 调用不发 `response_format`：输出契约由编译后的 prompt 承担，Runner 端按钉住的 output schema digest 验证，因此官方 DeepSeek 端点即可使用。
-- `provider_identity` 由 CLI 派生为 `provider_<provider_id>`，`config_digest` 覆盖端点 origin、模型、超时与槽位——不含任何凭据材料。
+- 同一槽位只能由一个显式条目声明；`is_default: true` 至多一个，覆盖其余槽位。若原条目显式声明了 `impact_advisory`，接入 Jev 时先从原条目移除该槽位。既无显式配置也无 default 时，仍以 `provider_required` 阻塞。
+- DeepSeek 使用宿主允许的 `DEEPSEEK_API_KEY`。TypeSafe 固定使用 `TYPESAFE_API_KEY`、`https://api.typesafe.ai/v1/systemone` 和模型 `jev-1.13.0`，只允许 `impact_advisory`，不得作为 default、占用其他槽位或通过 v2 inline endpoint 启用。key 只来自运行进程环境，不能写入仓库。
+- 原 v2 非 Jev 配置保留兼容，但声明必须与宿主信任策略精确一致；v1 不接受 `model_providers`。不要把 v2 的 `default` 字段与 v3 的 `is_default` 混用。
+- DeepSeek 仍走 OpenAI-compatible chat-completions，429/5xx 有界重试，managed 请求不发 `response_format`，由 Runner 验证输出 Schema。Jev 走一次 System One `state + questions` 请求，禁止重定向、自动 HTTP 重试、分批和自动模型回退。
+- `provider_identity` 和信任策略来自宿主；配置摘要包含无密配置与信任策略摘要。Jev 额外绑定传输、投影、映射和限制版本；key 值不参与摘要，其他 Provider 的摘要算法不因 Jev 接入而变化。
+
+### 5.1 Jev 适用范围与恢复
+
+Jev 只判断给定候选是否需要进一步检查，不替代确定性传播，不生成关系边或开放式风险解释。明确 affected 只增补 `inspect`；unrelated 不删除确定性条目。建议强度由概率离散映射，**不是工程正确率**。整体 ImpactSet 仍需按现有策略人工批准。
+
+| 情况 | 行为与恢复 |
+| --- | --- |
+| 最多 20 个候选、canonical UTF-8 state 最多 16 KiB | 超限即调用前阻塞；不截断、不分批收费。可显式切回原模型 |
+| Requirement 等支持类型缺少业务内容 | 零网络调用，显示补证问题；经 Capture/Graph 更新权威事实，再按失效规则恢复 |
+| Component/CodeArtifact/扫描 Test 缺乏本版支持的行为投影 | `unsupported_projection`，不是可循环补证问题；切回原模型或等待新版投影 |
+| 输出 insufficient 或未达到明确判断阈值 | 补证阻塞，不部分合并，不申请 ImpactSet 批准 |
+| 已启用的 advisory 失败或结果不明 | 阻塞并保留原因；显式恢复产生新 attempt，不无痕重发。成功结果可验证回放 |
+| 输入有效且无候选 | 零网络调用，保留本地阶段诊断；不是模型 Invocation 或完成 Evidence |
+| Lite 未配置 advisory | 保持纯确定性零模型路径；不因新增 Provider 实现而自动启用 |
+
+成功提议（包括零候选）还会在原 `diagnostics/impact-advisory/` 留存候选总数、排除总数及互斥原因计数：已在确定性集合、未 accepted、不属于候选类型，按此前后顺序归类。统计不代表排除节点无影响；不会外发这些节点的正文，也不进入模型判断或领域 semantic digest。失败/补证继续保留原阻塞原因，不伪造成功提议。
+
+切回原默认 Provider：在新配置中移除 `typesafe` 显式条目，让 `impact_advisory` 解析到原 default；或显式绑定回原 Provider。必须遵守现有配置绑定失效与重新审批规则，不能编辑冻结结果或复用旧批准。这里是用户主动配置变更，不是运行时自动 fallback。Standard/Governed 的必需槽位要求不变。
+
+Live 详情中的“项目级模型调用记录”显示 Provider、状态、可用用量、失败原因和结果引用；它不是当前 operation 专属证据。无用量显示“不可用”，本地补证不会伪造调用记录。真实 Jev 调用的费用和外发范围仍需单独授权；本地 Mock 验收不能证明生产准确率或候选召回率。
 
 ## 6. 启动和关闭 Dashboard
 

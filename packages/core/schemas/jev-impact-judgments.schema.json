@@ -1,0 +1,71 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.universal-harness.dev/1.1/jev-impact-judgments.schema.json",
+  "additionalProperties": false,
+  "type": "object",
+  "required": ["schema_version", "provider_response", "harness"],
+  "properties": {
+    "schema_version": { "const": "jev-impact-judgments.v1", "type": "string" },
+    "provider_response": {
+      "additionalProperties": false,
+      "type": "object",
+      "required": ["model", "answers", "usage"],
+      "properties": {
+        "model": { "const": "jev-1.13.0", "type": "string" },
+        "answers": {
+          "additionalProperties": false,
+          "minProperties": 1,
+          "maxProperties": 20,
+          "type": "object",
+          "patternProperties": {
+            "^[a-z][a-z0-9-]*_[A-Za-z0-9_-]+$": {
+              "additionalProperties": false,
+              "type": "object",
+              "required": ["type", "choice", "probabilities", "confidence"],
+              "properties": {
+                "type": { "const": "choice", "type": "string" },
+                "choice": {
+                  "anyOf": [
+                    { "const": "affected", "type": "string" },
+                    { "const": "unrelated", "type": "string" },
+                    { "const": "insufficient", "type": "string" }
+                  ]
+                },
+                "probabilities": {
+                  "additionalProperties": false,
+                  "type": "object",
+                  "required": ["affected", "unrelated", "insufficient"],
+                  "properties": {
+                    "affected": { "minimum": 0, "maximum": 1, "type": "number" },
+                    "unrelated": { "minimum": 0, "maximum": 1, "type": "number" },
+                    "insufficient": { "minimum": 0, "maximum": 1, "type": "number" }
+                  }
+                },
+                "confidence": { "minimum": 0, "maximum": 1, "type": "number" }
+              }
+            }
+          }
+        },
+        "usage": {
+          "additionalProperties": false,
+          "type": "object",
+          "required": ["input_tokens", "output_tokens"],
+          "properties": {
+            "input_tokens": { "minimum": 0, "maximum": 9007199254740991, "type": "integer" },
+            "output_tokens": { "minimum": 0, "maximum": 9007199254740991, "type": "integer" }
+          }
+        }
+      }
+    },
+    "harness": {
+      "additionalProperties": false,
+      "type": "object",
+      "required": ["request_digest", "candidate_set_digest", "mapping_version"],
+      "properties": {
+        "request_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
+        "candidate_set_digest": { "pattern": "^[a-f0-9]{64}$", "type": "string" },
+        "mapping_version": { "const": "jev-impact-mapping.v1", "type": "string" }
+      }
+    }
+  }
+}

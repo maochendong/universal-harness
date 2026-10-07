@@ -132,6 +132,7 @@ describe("protocol 1.1 schema plumbing", () => {
       "model-port-failure",
       "impact-advisory",
       "impact-advisory-output",
+      "jev-impact-judgments",
       "design-set-proposal",
       "design-set-content",
       "design-artifact-content",

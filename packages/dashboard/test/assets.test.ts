@@ -54,6 +54,11 @@ describe("Dashboard assets", () => {
     expect(html).toContain('role="status"');
     expect(javascript).toContain("navigator.clipboard.writeText");
     expect(javascript).toContain("复制完整摘要");
+    expect(html).toContain("项目级模型调用记录");
+    expect(html).toContain("不代表当前迭代的证据");
+    expect(javascript).toContain("/api/v1/model-invocations?");
+    expect(javascript).toContain("Jev · 建议强度非正确率");
+    expect(javascript).toContain("复制结果引用");
     // M3: the three approved remote-collaboration surfaces (plan Task 8).
     expect(html).toContain('id="connection-card"');
     expect(html).toContain('id="connection-state"');

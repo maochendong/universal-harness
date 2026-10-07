@@ -7,6 +7,7 @@ import {
 } from "@universal-harness-internal/core";
 import {
   createManagedProviderResolver,
+  createJevImpactProviderFactory,
   createOpenAiCompatManagedProvider,
   DEFAULT_BUDGET,
   type ManagedProviderRegistration,
@@ -44,6 +45,14 @@ export const BUILTIN_TRUSTED_PROVIDER_REGISTRY = createTrustedProviderRegistry([
     api_key_env: "DEEPSEEK_API_KEY",
     env_allowlist: ["DEEPSEEK_API_KEY"],
     allowed_consumers: ["managed_model", "llm_judge"],
+  },
+  {
+    provider_ref: "typesafe",
+    provider_identity: "provider_typesafe",
+    endpoint: "https://api.typesafe.ai/v1/systemone",
+    api_key_env: "TYPESAFE_API_KEY",
+    env_allowlist: ["TYPESAFE_API_KEY"],
+    allowed_consumers: ["managed_model"],
   },
 ]);
 
@@ -105,6 +114,45 @@ function providerConfigDigest(
   });
 }
 
+function usesJev(
+  entry: ProjectModelProviderConfig | ProjectModelProviderReference,
+  trusted: ResolvedTrustedProvider,
+): boolean {
+  return (
+    trusted.provider_ref === "typesafe" ||
+    trusted.provider_identity === "provider_typesafe" ||
+    trusted.endpoint === "https://api.typesafe.ai/v1/systemone" ||
+    entry.model.startsWith("jev")
+  );
+}
+
+function assertJevPolicy(
+  config: ProjectRuntimeConfig,
+  entry: ProjectModelProviderConfig | ProjectModelProviderReference,
+  trusted: ResolvedTrustedProvider,
+): void {
+  if (config.runtime_config_version !== 3 || !("provider_ref" in entry)) {
+    throw new TrustedModelProviderPolicyError(
+      "Jev requires V3 provider references; legacy inline configuration is unsupported",
+    );
+  }
+  if (
+    entry.provider_ref !== "typesafe" ||
+    entry.model !== "jev-1.13.0" ||
+    trusted.provider_ref !== "typesafe" ||
+    trusted.provider_identity !== "provider_typesafe" ||
+    trusted.endpoint !== "https://api.typesafe.ai/v1/systemone" ||
+    trusted.api_key_env !== "TYPESAFE_API_KEY" ||
+    trusted.env_allowlist.length !== 1 ||
+    trusted.env_allowlist[0] !== "TYPESAFE_API_KEY" ||
+    trusted.allow_loopback_http
+  ) {
+    throw new TrustedModelProviderPolicyError(
+      "Jev requires the pinned TypeSafe model, endpoint, identity and credential policy; aliases are unsupported",
+    );
+  }
+}
+
 /**
  * Bind untrusted project references to host-owned provider policy. Version 3
  * contributes only provider/model/slot/budget choices. Version 1/2 records are
@@ -119,8 +167,34 @@ export function assembleModelProviders(
   const entries = config.model_providers ?? [];
   const registrations: ManagedProviderRegistration[] = entries.map((entry) => {
     const trusted = resolveTrusted(registry, entry);
+    const jev = usesJev(entry, trusted);
+    if (jev) assertJevPolicy(config, entry, trusted);
     if (config.runtime_config_version === 2) {
       assertLegacyExactMatch(entry as ProjectModelProviderConfig, trusted);
+    }
+    if (jev) {
+      const factory = createJevImpactProviderFactory({
+        ...(deps.fetch === undefined ? {} : { fetch: deps.fetch }),
+        ...(deps.environment === undefined ? {} : { ambientEnvironment: deps.environment }),
+      });
+      return {
+        kind: "jev_impact",
+        bind: factory.bind,
+        provider_config: {
+          provider_identity: trusted.provider_identity,
+          config_digest: contentDigest({
+            provider_config_digest: providerConfigDigest(entry, trusted),
+            transport_version: "jev-systemone.v1",
+            projection_version: "jev-impact-projection.v1",
+            mapping_version: "jev-impact-mapping.v1",
+            limits_version: "jev-impact-limits.v1",
+          }),
+          budget_profile: "managed-standard",
+        },
+        slots: entry.slots,
+        is_default: entry.is_default,
+        budget: { timeout_ms: entry.timeout_ms, max_output_bytes: DEFAULT_BUDGET.max_output_bytes },
+      };
     }
     return {
       provider: createOpenAiCompatManagedProvider(

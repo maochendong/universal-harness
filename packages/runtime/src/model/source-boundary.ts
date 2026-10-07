@@ -70,6 +70,7 @@ const SECRET_PATTERNS: readonly RegExp[] = [
   /\bgithub_pat_[A-Za-z0-9_]{20,}\b/u,
   /\bxox[baprs]-[A-Za-z0-9-]{10,}\b/u,
   /\bsk-[A-Za-z0-9]{20,}\b/u,
+  /\bapikey_[a-f0-9]{32}_[a-f0-9]{64}\b/iu,
 ];
 const CREDENTIAL_PATH_PATTERN =
   /(?:\/Users\/|\/home\/|[A-Za-z]:\\Users\\|~\/\.(?:ssh|aws|config)\b)/u;

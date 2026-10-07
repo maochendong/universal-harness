@@ -426,7 +426,7 @@ exports[`harness CLI inspection commands > runs doctor checks in and outside a p
       },
       {
         "category": "schema",
-        "detail": "11 shipped prompt contracts compose cleanly",
+        "detail": "12 shipped prompt contracts compose cleanly",
         "name": "prompt_registry",
         "status": "pass",
       },

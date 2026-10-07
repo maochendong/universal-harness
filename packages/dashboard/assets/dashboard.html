@@ -398,6 +398,28 @@
               </div>
             </aside>
           </div>
+          <section class="model-invocations" aria-labelledby="model-invocation-title">
+            <div class="approval-toolbar">
+              <div>
+                <span>PROJECT REGISTER / MODEL INVOCATIONS</span>
+                <h3 id="model-invocation-title">项目级模型调用记录</h3>
+              </div>
+              <button class="command" id="model-invocation-refresh" type="button">
+                刷新模型调用
+              </button>
+            </div>
+            <p class="projection-note">
+              以下为整个项目的调用记录，不代表当前迭代的证据；不根据 ID
+              猜测所属操作。当前操作的阻塞原因仍以原状态详情为准。
+            </p>
+            <div class="model-invocation-list" id="model-invocation-list"></div>
+            <button class="command" id="model-invocation-more" type="button" hidden>
+              加载更多模型调用
+            </button>
+            <p class="state-line" data-state="model-invocations" role="status">
+              尚未加载项目级模型调用记录。
+            </p>
+          </section>
           <section
             id="artifact-view"
             class="artifact-view"

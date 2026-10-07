@@ -2,6 +2,10 @@ import { describe, expect, it } from "vitest";
 
 import { PLAN_PROPOSAL_PROMPT_VERSION } from "@universal-harness-internal/runtime";
 import { DESIGN_PROPOSAL_PROMPT_VERSION } from "@universal-harness-internal/core";
+import {
+  IMPACT_ADVISORY_PROMPT_VERSION,
+  JEV_IMPACT_PROMPT_VERSION,
+} from "@universal-harness-internal/graph";
 
 import {
   SHIPPED_PROMPT_CONTRACT_REGISTRATIONS,
@@ -17,7 +21,17 @@ import {
 describe("shipped prompt contract registry", () => {
   it("composes every domain registration and resolves their aliases", () => {
     const registry = createShippedPromptContractRegistry();
-    expect(SHIPPED_PROMPT_CONTRACT_REGISTRATIONS).toHaveLength(11);
+    expect(SHIPPED_PROMPT_CONTRACT_REGISTRATIONS).toHaveLength(12);
+    expect(
+      registry.resolve({ port_id: "impact_advisory", prompt_version: JEV_IMPACT_PROMPT_VERSION })
+        .prompt_contract_id,
+    ).toBe("harness:prompt:jev-impact-advisory");
+    expect(
+      registry.resolve({
+        port_id: "impact_advisory",
+        prompt_version: IMPACT_ADVISORY_PROMPT_VERSION,
+      }).prompt_contract_id,
+    ).toBe("harness:prompt:impact-advisory");
     expect(
       registry.resolve({
         port_id: "design_proposal",
@@ -42,6 +56,6 @@ describe("shipped prompt contract registry", () => {
   it("reports a clean probe for the doctor check", () => {
     const probe = probeShippedPromptRegistry();
     expect(probe.compositionError).toBeUndefined();
-    expect(probe.contractCount).toBe(11);
+    expect(probe.contractCount).toBe(12);
   });
 });

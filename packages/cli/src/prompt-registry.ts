@@ -10,7 +10,10 @@ import {
   createPromptContractRegistry,
   type PromptContractRegistry,
 } from "@universal-harness-internal/core";
-import { IMPACT_ADVISORY_PROMPT_REGISTRATION } from "@universal-harness-internal/graph";
+import {
+  IMPACT_ADVISORY_PROMPT_REGISTRATION,
+  JEV_IMPACT_PROMPT_REGISTRATION,
+} from "@universal-harness-internal/graph";
 import { FEEDBACK_ANALYSIS_PROMPT_REGISTRATION } from "@universal-harness-internal/eval";
 import { PLAN_PROPOSAL_PROMPT_REGISTRATION } from "@universal-harness-internal/runtime";
 
@@ -31,6 +34,7 @@ export const SHIPPED_PROMPT_CONTRACT_REGISTRATIONS = [
   DESIGN_PROPOSAL_PROMPT_REGISTRATION,
   DESIGN_REVIEW_PROMPT_REGISTRATION,
   IMPACT_ADVISORY_PROMPT_REGISTRATION,
+  JEV_IMPACT_PROMPT_REGISTRATION,
   PLAN_PROPOSAL_PROMPT_REGISTRATION,
   FEEDBACK_ANALYSIS_PROMPT_REGISTRATION,
 ] as const;

@@ -14,3 +14,7 @@ export * from "./prompt-policy.js";
 export * from "./provider-registry.js";
 export * from "./result-validation.js";
 export * from "./source-boundary.js";
+export * from "./jev-impact-provider.js";
+export * from "./jev-impact-input.js";
+export * from "./jev-impact-mapping.js";
+export * from "./jev-impact-adapter.js";
